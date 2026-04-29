@@ -12,6 +12,9 @@
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
+#include "providers/folhinha/FolhinhaBadges.hpp"
+#include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -629,6 +632,9 @@ void Split::addShortcuts()
              {
                  getApp()->getTwitchBadges()->loadTwitchBadges(
                      this->getChannel());
+                 getApp()->getHomiesBadges()->loadHomiesBadges();
+                 getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
+                 getApp()->getJilChatBadges()->loadJilChatBadges();
              }
 
              return "";

@@ -31,6 +31,7 @@
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/recentmessages/Api.hpp"
@@ -1129,6 +1130,8 @@ void TwitchChannel::refreshBadgesProviders()
         badges->refreshNow();
         this->addSystemMessage("Moltorino badges reloaded.");
     }
+    getApp()->getJilChatBadges()->loadJilChatBadges();
+    this->addSystemMessage("JilChat badges reloaded.");
 }
 
 void TwitchChannel::refreshSevenTVChannelEmotes(bool manualRefresh)

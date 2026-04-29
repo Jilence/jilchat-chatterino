@@ -44,6 +44,7 @@ class BttvBadges;
 class SeventvBadges;
 class HomiesBadges;
 class FolhinhaBadges;
+class JilChatBadges;
 class SeventvPersonalEmotes;
 class ImageUploader;
 class SeventvAPI;
@@ -114,6 +115,7 @@ public:
     virtual ChatsenBadges *getChatsenBadges() = 0;
     virtual MoltorinoSupporterBadges *getMoltorinoSupporterBadges() = 0;
     virtual RepeatedMessageDetector *getRepeatedMessageDetector() = 0;
+    virtual JilChatBadges *getJilChatBadges() = 0;
     virtual IUserDataController *getUserData() = 0;
     virtual ISoundController *getSound() = 0;
     virtual ITwitchLiveController *getTwitchLiveController() = 0;
@@ -201,6 +203,7 @@ private:
     std::unique_ptr<ChatsenBadges> chatsenBadges;
     std::unique_ptr<MoltorinoSupporterBadges> moltorinoSupporterBadges;
     std::unique_ptr<RepeatedMessageDetector> repeatedMessageDetector;
+    std::unique_ptr<JilChatBadges> jilChatBadges;
     std::unique_ptr<SeventvPaints> seventvPaints;
     std::unique_ptr<SeventvPersonalEmotes> seventvPersonalEmotes;
     std::unique_ptr<UserDataController> userData;
@@ -257,6 +260,7 @@ public:
     ChatsenBadges *getChatsenBadges() override;
     MoltorinoSupporterBadges *getMoltorinoSupporterBadges() override;
     RepeatedMessageDetector *getRepeatedMessageDetector() override;
+    JilChatBadges *getJilChatBadges() override;
     IUserDataController *getUserData() override;
     ISoundController *getSound() override;
     ITwitchLiveController *getTwitchLiveController() override;

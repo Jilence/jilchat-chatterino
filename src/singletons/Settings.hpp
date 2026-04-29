@@ -388,6 +388,7 @@ public:
     BoolSetting showSelectBadgeButton = {"/client/showSelectBadgeButton", true};
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
+    BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
     BoolSetting showUserinfoPopupChatters = {
         "/appearance/userinfoPopup/showChatters", true};
     BoolSetting showUserinfoPopupLastLive = {

@@ -34,6 +34,7 @@
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
@@ -2025,6 +2026,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
     builder.appendChatsenBadges(userID);
     builder.appendHomiesBadges(userID);
     builder.appendFolhinhaBadges(userID);
+    builder.appendJilChatBadges(userID);
 
     builder.appendUsername(tags, args);
 
@@ -3147,6 +3149,17 @@ void MessageBuilder::appendMoltorinoBadges(const QString &userID)
                                     MessageElementFlag::BadgeMoltorino);
         this->message().externalBadges.emplace_back(badge.emote->name.string);
         return;
+    }
+}
+
+void MessageBuilder::appendJilChatBadges(const QString &userID)
+{
+    for (const auto &badge : getApp()->getJilChatBadges()->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeJilChat);
+
+        /// e.g. "jilchat:founder"
+        this->message().externalBadges.emplace_back(badge->name.string);
     }
 }
 

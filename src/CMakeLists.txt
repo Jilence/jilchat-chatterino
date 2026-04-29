@@ -426,6 +426,9 @@ set(SOURCE_FILES
         providers/chatsen/ChatsenBadges.cpp
         providers/chatsen/ChatsenBadges.hpp
 
+        providers/jilchat/JilChatBadges.cpp
+        providers/jilchat/JilChatBadges.hpp
+
         providers/colors/ColorProvider.cpp
         providers/colors/ColorProvider.hpp
 

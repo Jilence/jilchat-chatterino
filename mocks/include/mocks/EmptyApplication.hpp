@@ -216,6 +216,12 @@ public:
         return nullptr;
     }
 
+    JilChatBadges *getJilChatBadges() override
+    {
+        assert(!"getJilChatBadges was called without being initialized");
+        return nullptr;
+    }
+
     IUserDataController *getUserData() override
     {
         assert(false && "EmptyApplication::getUserData was called without "
