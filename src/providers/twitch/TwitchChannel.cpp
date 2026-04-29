@@ -31,6 +31,7 @@
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/recentmessages/Api.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
@@ -451,6 +452,8 @@ void TwitchChannel::refreshBadgesProviders()
     this->addSystemMessage("Homies badges reloaded.");
     getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
     this->addSystemMessage("FolhinhaBot badges reloaded.");
+    getApp()->getJilChatBadges()->loadJilChatBadges();
+    this->addSystemMessage("JilChat badges reloaded.");
 }
 
 void TwitchChannel::refreshSevenTVChannelEmotes(bool manualRefresh)

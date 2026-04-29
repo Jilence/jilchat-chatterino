@@ -31,6 +31,7 @@
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
@@ -1810,6 +1811,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
     builder.appendSeventvBadges(userID);
     builder.appendHomiesBadges(userID);
     builder.appendFolhinhaBadges(userID);
+    builder.appendJilChatBadges(userID);
 
     builder.appendUsername(tags, args);
 
@@ -2848,6 +2850,17 @@ void MessageBuilder::appendFolhinhaBadges(const QString &userID)
     if (auto badge = getApp()->getFolhinhaBadges()->getBadge({userID}))
     {
         this->emplace<BadgeElement>(*badge, MessageElementFlag::BadgeFolhinha);
+    }
+}
+
+void MessageBuilder::appendJilChatBadges(const QString &userID)
+{
+    for (const auto &badge : getApp()->getJilChatBadges()->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeJilChat);
+
+        /// e.g. "jilchat:founder"
+        this->message().externalBadges.emplace_back(badge->name.string);
     }
 }
 

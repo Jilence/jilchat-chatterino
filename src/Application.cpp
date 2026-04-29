@@ -45,6 +45,7 @@
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
@@ -187,6 +188,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , seventvBadges(new SeventvBadges)
     , homiesBadges(new HomiesBadges)
     , folhinhaBadges(new FolhinhaBadges)
+    , jilChatBadges(new JilChatBadges)
     , seventvPaints(new SeventvPaints)
     , seventvPersonalEmotes(new SeventvPersonalEmotes)
     , userData(new UserDataController(paths))
@@ -470,6 +472,14 @@ FolhinhaBadges *Application::getFolhinhaBadges()
     return this->folhinhaBadges.get();
 }
 
+JilChatBadges *Application::getJilChatBadges()
+{
+    // JilChatBadges handles its own locks, so we don't need to assert that this is called in the GUI thread
+    assert(this->jilChatBadges);
+
+    return this->jilChatBadges.get();
+}
+
 IUserDataController *Application::getUserData()
 {
     assertInGuiThread();
@@ -700,6 +710,9 @@ void Application::stop()
     this->twitchLiveController.reset();
     this->sound.reset();
     this->userData.reset();
+    this->jilChatBadges.reset();
+    this->folhinhaBadges.reset();
+    this->homiesBadges.reset();
     this->seventvBadges.reset();
     this->ffzBadges.reset();
     this->twitch.reset();

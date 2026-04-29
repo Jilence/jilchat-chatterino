@@ -23,6 +23,7 @@
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/twitch/TwitchBadge.hpp"
 #include "providers/twitch/TwitchBadges.hpp"
@@ -96,6 +97,11 @@ public:
         return &this->homiesBadges;
     }
 
+    JilChatBadges *getJilChatBadges() override
+    {
+        return &this->jilChatBadges;
+    }
+
     HighlightController *getHighlights() override
     {
         return &this->highlights;
@@ -122,6 +128,7 @@ public:
     SeventvBadges seventvBadges;
     FolhinhaBadges folhinhaBadges;
     HomiesBadges homiesBadges;
+    JilChatBadges jilChatBadges;
     HighlightController highlights;
     TwitchBadges twitchBadges;
 };

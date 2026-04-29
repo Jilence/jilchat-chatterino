@@ -52,6 +52,10 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"folhinha", "folhinhabot"})
         ->setTooltip("FolhinhaBot Plus and Founder badges")
         ->addTo(layout);
+    SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
+        ->addKeywords({"jilchat", "jil", "badges"})
+        ->setTooltip("JilChat badges")
+        ->addTo(layout);
 
     layout.addTitle("Userinfo popup");
     SettingWidget::checkbox("Show chatters", s.showUserinfoPopupChatters)

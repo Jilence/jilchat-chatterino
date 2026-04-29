@@ -248,6 +248,7 @@ void WindowManager::updateWordTypeMask()
     flags.set(settings->showBadgesSevenTV ? MEF::BadgeSevenTV : MEF::None);
     flags.set(settings->showBadgesHomies ? MEF::BadgeHomies : MEF::None);
     flags.set(settings->showBadgesFolhinha ? MEF::BadgeFolhinha : MEF::None);
+    flags.set(settings->showBadgesJilChat ? MEF::BadgeJilChat : MEF::None);
 
     // username
     flags.set(MEF::Username);

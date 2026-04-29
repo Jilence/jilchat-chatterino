@@ -408,6 +408,9 @@ set(SOURCE_FILES
         providers/folhinha/FolhinhaBadges.cpp
         providers/folhinha/FolhinhaBadges.hpp
 
+        providers/jilchat/JilChatBadges.cpp
+        providers/jilchat/JilChatBadges.hpp
+
         providers/colors/ColorProvider.cpp
         providers/colors/ColorProvider.hpp
 

@@ -335,6 +335,7 @@ public:
                                         true};
     BoolSetting showBadgesHomies = {"/appearance/badges/homies", true};
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
+    BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
     BoolSetting showUserinfoPopupChatters = {
         "/appearance/userinfoPopup/showChatters", true};
     BoolSetting showUserinfoPopupLastLive = {

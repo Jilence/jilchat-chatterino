@@ -135,10 +135,14 @@ enum class MessageElementFlag : int64_t {
     // - FolhinhaBot Supporter
     BadgeFolhinha = (1LL << 62),
 
+    // Slot 10: JilChat
+    // - JilChat badges
+    BadgeJilChat = (1LL << 60),
+
     Badges = BadgeGlobalAuthority | BadgePredictions | BadgeChannelAuthority |
              BadgeSubscription | BadgeVanity | BadgeChatterino | BadgeSevenTV |
              BadgeFfz | BadgeSharedChannel | BadgeBttv | BadgeHomies |
-             BadgeFolhinha,
+             BadgeFolhinha | BadgeJilChat,
 
     ChannelName = (1LL << 20),
 
