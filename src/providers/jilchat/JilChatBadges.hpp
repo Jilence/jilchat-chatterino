@@ -30,7 +30,7 @@ public:
 private:
     void applyBadgeJson(const QJsonArray &jsonRoot);
 
-    std::shared_mutex mutex_;
+    mutable std::shared_mutex mutex_;
 
     /**
      * Maps Twitch user IDs to their JilChat badges
