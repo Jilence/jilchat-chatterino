@@ -1,3 +1,5 @@
+another fork but with [jilchat badges](https://jil.chat) :)
+
 just a fork of features i like from other forks + [my own features](https://leafyrino.leafyzito.dev/) :)
 
 Features taken from:
