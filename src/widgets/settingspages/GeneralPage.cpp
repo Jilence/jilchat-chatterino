@@ -1188,6 +1188,10 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"ffz"})
         ->setTooltip("e.g. Bot, FrankerFaceZ supporter, FrankerFaceZ developer")
         ->addTo(layout);
+    SettingWidget::checkbox("FFZ:AP", s.showBadgesFfzAp)
+        ->addKeywords({"ffzap", "ffz:ap"})
+        ->setTooltip("FFZ:AP supporter badges")
+        ->addTo(layout);
     SettingWidget::checkbox("7TV", s.showBadgesSevenTV)
         ->addKeywords({"seventv"})
         ->setTooltip("Badges for 7TV admins, developers, and supporters")

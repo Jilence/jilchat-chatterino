@@ -402,6 +402,9 @@ set(SOURCE_FILES
         providers/chatterino/ChatterinoBadges.cpp
         providers/chatterino/ChatterinoBadges.hpp
 
+        providers/ffzap/FfzApBadges.cpp
+        providers/ffzap/FfzApBadges.hpp
+
         providers/homies/HomiesBadges.cpp
         providers/homies/HomiesBadges.hpp
 

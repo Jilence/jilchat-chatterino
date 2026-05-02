@@ -43,6 +43,7 @@ class Toasts;
 class IChatterinoBadges;
 class ChatterinoBadges;
 class SeventvPaints;
+class FfzApBadges;
 class FfzBadges;
 class BttvBadges;
 class SeventvBadges;
@@ -102,6 +103,7 @@ public:
     virtual PubSub *getTwitchPubSub() = 0;
     virtual ILogging *getChatLogger() = 0;
     virtual IChatterinoBadges *getChatterinoBadges() = 0;
+    virtual FfzApBadges *getFfzApBadges() = 0;
     virtual FfzBadges *getFfzBadges() = 0;
     virtual BttvBadges *getBttvBadges() = 0;
     virtual SeventvBadges *getSeventvBadges() = 0;
@@ -185,6 +187,7 @@ private:
     std::unique_ptr<NotificationController> notifications;
     std::unique_ptr<HighlightController> highlights;
     std::unique_ptr<TwitchIrcServer> twitch;
+    std::unique_ptr<FfzApBadges> ffzApBadges;
     std::unique_ptr<FfzBadges> ffzBadges;
     std::unique_ptr<BttvBadges> bttvBadges;
     std::unique_ptr<SeventvBadges> seventvBadges;
@@ -237,6 +240,7 @@ public:
     ITwitchIrcServer *getTwitch() override;
     PubSub *getTwitchPubSub() override;
     ILogging *getChatLogger() override;
+    FfzApBadges *getFfzApBadges() override;
     FfzBadges *getFfzBadges() override;
     BttvBadges *getBttvBadges() override;
     SeventvBadges *getSeventvBadges() override;

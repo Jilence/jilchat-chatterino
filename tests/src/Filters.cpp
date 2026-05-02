@@ -21,6 +21,7 @@
 #include "mocks/UserData.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/ffz/FfzBadges.hpp"
+#include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
@@ -87,6 +88,11 @@ public:
         return &this->seventvBadges;
     }
 
+    FfzApBadges *getFfzApBadges() override
+    {
+        return &this->ffzApBadges;
+    }
+
     FolhinhaBadges *getFolhinhaBadges() override
     {
         return &this->folhinhaBadges;
@@ -124,6 +130,7 @@ public:
     mock::MockTwitchIrcServer twitch;
     mock::ChatterinoBadges chatterinoBadges;
     FfzBadges ffzBadges;
+    FfzApBadges ffzApBadges;
     BttvBadges bttvBadges;
     SeventvBadges seventvBadges;
     FolhinhaBadges folhinhaBadges;

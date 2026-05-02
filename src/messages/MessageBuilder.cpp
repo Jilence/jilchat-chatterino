@@ -29,6 +29,7 @@
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
@@ -1809,6 +1810,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
     builder.appendFfzBadges(twitchChannel, userID);
     builder.appendBttvBadges(userID);
     builder.appendSeventvBadges(userID);
+    builder.appendFfzApBadges(userID);
     builder.appendHomiesBadges(userID);
     builder.appendFolhinhaBadges(userID);
     builder.appendJilChatBadges(userID);
@@ -2825,6 +2827,17 @@ void MessageBuilder::appendSeventvBadges(const QString &userID)
         this->emplace<BadgeElement>(*badge, MessageElementFlag::BadgeSevenTV);
 
         /// e.g. "7tv:NNYS 2024"
+        this->message().externalBadges.emplace_back((*badge)->name.string);
+    }
+}
+
+void MessageBuilder::appendFfzApBadges(const QString &userID)
+{
+    if (auto badge = getApp()->getFfzApBadges()->getBadge({userID}))
+    {
+        this->emplace<BadgeElement>(*badge, MessageElementFlag::BadgeFfzAp);
+
+        /// e.g. "ffzap:supporter"
         this->message().externalBadges.emplace_back((*badge)->name.string);
     }
 }

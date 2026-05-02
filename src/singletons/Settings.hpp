@@ -333,6 +333,7 @@ public:
     BoolSetting showBadgesSevenTV = {"/appearance/badges/seventv", true};
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
+    BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
     BoolSetting showBadgesHomies = {"/appearance/badges/homies", true};
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
     BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};

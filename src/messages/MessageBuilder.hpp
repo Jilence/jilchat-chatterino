@@ -350,6 +350,7 @@ private:
     void appendFfzBadges(TwitchChannel *twitchChannel, const QString &userID);
     void appendBttvBadges(const QString &userID);
     void appendSeventvBadges(const QString &userID);
+    void appendFfzApBadges(const QString &userID);
     void appendHomiesBadges(const QString &userID);
     void appendFolhinhaBadges(const QString &userID);
     void appendJilChatBadges(const QString &userID);

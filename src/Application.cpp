@@ -43,6 +43,7 @@
 #include "providers/bttv/BttvLiveUpdates.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/ffz/FfzBadges.hpp"
+#include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
@@ -183,6 +184,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , notifications(new NotificationController)
     , highlights(new HighlightController(_settings, this->accounts.get()))
     , twitch(new TwitchIrcServer)
+    , ffzApBadges(new FfzApBadges)
     , ffzBadges(new FfzBadges)
     , bttvBadges(new BttvBadges)
     , seventvBadges(new SeventvBadges)
@@ -430,6 +432,14 @@ HighlightController *Application::getHighlights()
     assert(this->highlights);
 
     return this->highlights.get();
+}
+
+FfzApBadges *Application::getFfzApBadges()
+{
+    // FfzApBadges handles its own locks, so we don't need to assert that this is called in the GUI thread
+    assert(this->ffzApBadges);
+
+    return this->ffzApBadges.get();
 }
 
 FfzBadges *Application::getFfzBadges()
@@ -714,6 +724,7 @@ void Application::stop()
     this->folhinhaBadges.reset();
     this->homiesBadges.reset();
     this->seventvBadges.reset();
+    this->ffzApBadges.reset();
     this->ffzBadges.reset();
     this->twitch.reset();
     this->highlights.reset();

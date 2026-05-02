@@ -176,6 +176,12 @@ public:
         return nullptr;
     }
 
+    FfzApBadges *getFfzApBadges() override
+    {
+        assert(!"getFfzApBadges was called without being initialized");
+        return nullptr;
+    }
+
     HomiesBadges *getHomiesBadges() override
     {
         assert(!"getHomiesBadges was called without being initialized");

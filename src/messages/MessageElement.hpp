@@ -139,10 +139,14 @@ enum class MessageElementFlag : int64_t {
     // - JilChat badges
     BadgeJilChat = (1LL << 60),
 
+    // Slot 11: FFZ:AP
+    // - FFZ:AP supporter badges
+    BadgeFfzAp = (1LL << 59),
+
     Badges = BadgeGlobalAuthority | BadgePredictions | BadgeChannelAuthority |
              BadgeSubscription | BadgeVanity | BadgeChatterino | BadgeSevenTV |
              BadgeFfz | BadgeSharedChannel | BadgeBttv | BadgeHomies |
-             BadgeFolhinha | BadgeJilChat,
+             BadgeFolhinha | BadgeJilChat | BadgeFfzAp,
 
     ChannelName = (1LL << 20),
 

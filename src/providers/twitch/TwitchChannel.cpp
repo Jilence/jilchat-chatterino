@@ -29,6 +29,7 @@
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
@@ -448,6 +449,8 @@ void TwitchChannel::refreshFFZChannelEmotes(bool manualRefresh)
 
 void TwitchChannel::refreshBadgesProviders()
 {
+    getApp()->getFfzApBadges()->loadFfzApBadges();
+    this->addSystemMessage("FFZ:AP badges reloaded.");
     getApp()->getHomiesBadges()->loadHomiesBadges();
     this->addSystemMessage("Homies badges reloaded.");
     getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
