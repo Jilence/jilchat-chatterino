@@ -49,6 +49,7 @@
 #include "widgets/splits/SplitMpsOverlay.hpp"
 #include "widgets/splits/SplitOverlay.hpp"
 #include "widgets/splits/SplitPinnedMessagePanel.hpp"
+#include "widgets/splits/SplitPollPanel.hpp"
 #include "widgets/splits/SplitPredictionPanel.hpp"
 #include "widgets/Window.hpp"
 
@@ -103,6 +104,7 @@ Split::Split(QWidget *parent)
     , header_(new SplitHeader(this))
     , pinnedMessagePanel_(new SplitPinnedMessagePanel(this))
     , predictionPanel_(new SplitPredictionPanel(this))
+    , pollPanel_(new SplitPollPanel(this))
     , view_(new ChannelView(this, this, ChannelView::Context::None,
                             getSettings()->scrollbackSplitLimit))
     , input_(new SplitInput(this))
@@ -119,6 +121,7 @@ Split::Split(QWidget *parent)
     this->vbox_->addWidget(this->header_);
     this->vbox_->addWidget(this->pinnedMessagePanel_);
     this->vbox_->addWidget(this->predictionPanel_);
+    this->vbox_->addWidget(this->pollPanel_);
     this->vbox_->addWidget(this->view_, 1);
     this->vbox_->addWidget(this->input_);
 
@@ -236,6 +239,7 @@ Split::Split(QWidget *parent)
     this->view_->installEventFilter(this);
     this->pinnedMessagePanel_->installEventFilter(this);
     this->predictionPanel_->installEventFilter(this);
+    this->pollPanel_->installEventFilter(this);
     this->installEventFilter(this);
 
     QTimer::singleShot(0, this, [this] {
@@ -300,6 +304,7 @@ Split::Split(QWidget *parent)
     this->signalHolder_.managedConnect(this->focused, [this] {
         this->pinnedMessagePanel_->refresh();
         this->predictionPanel_->refresh();
+        this->pollPanel_->refresh();
     });
     this->signalHolder_.managedConnect(this->input_->ui_.textEdit->focusLost,
                                        [this] {
@@ -1015,11 +1020,13 @@ void Split::setChannel(IndirectChannel newChannel)
     {
         this->pinnedMessagePanel_->setTwitchChannel(tc);
         this->predictionPanel_->setTwitchChannel(tc);
+        this->pollPanel_->setTwitchChannel(tc);
     }
     else
     {
         this->pinnedMessagePanel_->setTwitchChannel(nullptr);
         this->predictionPanel_->setTwitchChannel(nullptr);
+        this->pollPanel_->setTwitchChannel(nullptr);
     }
 
     this->header_->updateIcons();
@@ -1057,6 +1064,141 @@ std::optional<bool> Split::checkSpellingOverride() const
 void Split::setCheckSpellingOverride(std::optional<bool> override)
 {
     this->input_->setCheckSpellingOverride(override);
+}
+
+void Split::syncPerSplitPanelHidesToPanels()
+{
+    this->pinnedMessagePanel_->startOrStopTimer();
+    if (this->perSplitHidePinnedMessage_)
+    {
+        this->pinnedMessagePanel_->hidePanel();
+    }
+    else
+    {
+        this->pinnedMessagePanel_->refresh();
+    }
+
+    this->predictionPanel_->startOrStopTimer();
+    if (this->perSplitHidePrediction_)
+    {
+        this->predictionPanel_->hidePanel();
+    }
+    else
+    {
+        this->predictionPanel_->refresh();
+    }
+
+    this->pollPanel_->startOrStopTimer();
+    if (this->perSplitHidePoll_)
+    {
+        this->pollPanel_->hidePanel();
+    }
+    else
+    {
+        this->pollPanel_->refresh();
+    }
+}
+
+bool Split::perSplitHidePinnedMessage() const
+{
+    return this->perSplitHidePinnedMessage_;
+}
+
+void Split::setPerSplitHidePinnedMessage(bool hide)
+{
+    if (this->perSplitHidePinnedMessage_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePinnedMessage_ = hide;
+    this->pinnedMessagePanel_->startOrStopTimer();
+    if (hide)
+    {
+        this->pinnedMessagePanel_->hidePanel();
+    }
+    else
+    {
+        this->pinnedMessagePanel_->refresh();
+    }
+    getApp()->getWindows()->queueSave();
+}
+
+bool Split::perSplitHidePrediction() const
+{
+    return this->perSplitHidePrediction_;
+}
+
+void Split::setPerSplitHidePrediction(bool hide)
+{
+    if (this->perSplitHidePrediction_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePrediction_ = hide;
+    this->predictionPanel_->startOrStopTimer();
+    if (hide)
+    {
+        this->predictionPanel_->hidePanel();
+    }
+    else
+    {
+        this->predictionPanel_->refresh();
+    }
+    getApp()->getWindows()->queueSave();
+}
+
+bool Split::perSplitHidePoll() const
+{
+    return this->perSplitHidePoll_;
+}
+
+void Split::setPerSplitHidePoll(bool hide)
+{
+    if (this->perSplitHidePoll_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePoll_ = hide;
+    this->pollPanel_->startOrStopTimer();
+    if (hide)
+    {
+        this->pollPanel_->hidePanel();
+    }
+    else
+    {
+        this->pollPanel_->refresh();
+    }
+    getApp()->getWindows()->queueSave();
+}
+
+void Split::setPerSplitHideAllPanels(bool hide)
+{
+    if (this->perSplitHidePinnedMessage_ == hide &&
+        this->perSplitHidePrediction_ == hide &&
+        this->perSplitHidePoll_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePinnedMessage_ = hide;
+    this->perSplitHidePrediction_ = hide;
+    this->perSplitHidePoll_ = hide;
+    this->syncPerSplitPanelHidesToPanels();
+    getApp()->getWindows()->queueSave();
+}
+
+void Split::loadPerSplitPanelHides(bool hidePinned, bool hidePrediction,
+                                   bool hidePoll)
+{
+    if (this->perSplitHidePinnedMessage_ == hidePinned &&
+        this->perSplitHidePrediction_ == hidePrediction &&
+        this->perSplitHidePoll_ == hidePoll)
+    {
+        return;
+    }
+    this->perSplitHidePinnedMessage_ = hidePinned;
+    this->perSplitHidePrediction_ = hidePrediction;
+    this->perSplitHidePoll_ = hidePoll;
+    this->syncPerSplitPanelHidesToPanels();
 }
 
 void Split::insertTextToInput(const QString &text)
@@ -1108,6 +1250,7 @@ void Split::recoverDismissedPanels()
 {
     this->pinnedMessagePanel_->recoverDismissedPanel();
     this->predictionPanel_->recoverDismissedPanel();
+    this->pollPanel_->recoverDismissedPanel();
 }
 
 void Split::updateLastReadMessage()
@@ -1169,7 +1312,8 @@ bool Split::eventFilter(QObject *watched, QEvent *event)
         case QEvent::LayoutRequest: {
             if (watched == this || watched == this->view_ ||
                 watched == this->pinnedMessagePanel_ ||
-                watched == this->predictionPanel_)
+                watched == this->predictionPanel_ ||
+                watched == this->pollPanel_)
             {
                 this->updateMpsOverlayAnchor();
             }

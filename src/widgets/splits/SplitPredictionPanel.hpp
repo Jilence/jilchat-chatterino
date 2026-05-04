@@ -40,6 +40,7 @@ class TwitchChannel;
 class SplitPredictionPanel : public BaseWidget
 {
     Q_OBJECT
+    friend class Split;
 
 public:
     explicit SplitPredictionPanel(Split *split);
@@ -131,7 +132,6 @@ private:
     QLabel *yourPointsLabel_{};
     QLabel *yourPointsValue_{};
     QLabel *betAmountCaption_{};
-    QLabel *disclaimerLabel_{};
     QWidget *betRow_{};
     QSpinBox *betAmountSpin_{};
     QPushButton *betButton0_{};

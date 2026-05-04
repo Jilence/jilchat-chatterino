@@ -235,40 +235,6 @@ QUrl predictionStartSoundUrl()
     return QUrl::fromLocalFile(path);
 }
 
-QString betOutcomeButtonStyleSheet(const QColor &accent,
-                                   const QColor &labelColor, bool enabled)
-{
-    const QString accentCss = accent.name(QColor::HexArgb);
-    const QString labelCss = labelColor.name(QColor::HexArgb);
-    if (!enabled)
-    {
-        const QColor dimText =
-            QColor::fromRgbF(labelColor.redF() * 0.5, labelColor.greenF() * 0.5,
-                             labelColor.blueF() * 0.5, labelColor.alphaF());
-        const QColor dimBorder =
-            QColor::fromRgbF(accent.redF() * 0.45 + dimText.redF() * 0.25,
-                             accent.greenF() * 0.45 + dimText.greenF() * 0.25,
-                             accent.blueF() * 0.45 + dimText.blueF() * 0.25,
-                             std::max(0.35f, accent.alphaF()));
-        return QStringLiteral(
-                   "QPushButton { color: %1; text-decoration: none; "
-                   "border: 2px solid %2; border-radius: 4px; padding: 4px "
-                   "8px; "
-                   "background-color: transparent; font-style: italic; }")
-            .arg(dimText.name(QColor::HexArgb),
-                 dimBorder.name(QColor::HexArgb));
-    }
-    const int r = accent.red(), g = accent.green(), b = accent.blue();
-    const QString bg1 = QColor(r, g, b, 55).name(QColor::HexArgb);
-    const QString bg2 = QColor(r, g, b, 90).name(QColor::HexArgb);
-    return QStringLiteral(
-               "QPushButton { color: %1; text-decoration: none; "
-               "border: 2px solid %2; border-radius: 4px; padding: 4px 8px; "
-               "background-color: %3; font-weight: 600; }"
-               "QPushButton:hover { background-color: %4; }")
-        .arg(labelCss, accentCss, bg1, bg2);
-}
-
 QString formatPointsCompact(int points)
 {
     points = std::max(0, points);
@@ -525,16 +491,6 @@ SplitPredictionPanel::SplitPredictionPanel(Split *split)
     this->betRow_->hide();
     this->expandedLayout_->addWidget(this->betRow_);
 
-    this->expandedLayout_->addSpacing(6);
-    this->disclaimerLabel_ = new QLabel(
-        QStringLiteral(
-            "Channel points features are in beta. They may change or stop "
-            "working if Twitch updates their API."),
-        this->expandedWidget_);
-    this->disclaimerLabel_->setWordWrap(true);
-    this->disclaimerLabel_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    this->expandedLayout_->addWidget(this->disclaimerLabel_);
-
     mainLayout->addWidget(topRow);
 
     this->collapsedPoolBar_ = new PredictionPoolBar(this);
@@ -548,9 +504,10 @@ SplitPredictionPanel::SplitPredictionPanel(Split *split)
     this->installClickFocusesSplit(this);
 
     getSettings()->showPredictionPanel.connect(
-        [this](const bool &enabled) {
+        [this](const bool & /*enabled*/) {
             this->startOrStopTimer();
-            if (!enabled)
+            if (!getSettings()->showPredictionPanel ||
+                this->split_->perSplitHidePrediction())
             {
                 this->hidePanel();
             }
@@ -656,7 +613,8 @@ void SplitPredictionPanel::startOrStopTimer()
 {
     this->pollTimer_.stop();
 
-    if (!getSettings()->showPredictionPanel)
+    if (!getSettings()->showPredictionPanel ||
+        this->split_->perSplitHidePrediction())
     {
         return;
     }
@@ -678,7 +636,8 @@ void SplitPredictionPanel::startOrStopTimer()
 
 void SplitPredictionPanel::fetchPredictions()
 {
-    if (!getSettings()->showPredictionPanel)
+    if (!getSettings()->showPredictionPanel ||
+        this->split_->perSplitHidePrediction())
     {
         this->hidePanel();
         return;
@@ -733,6 +692,11 @@ void SplitPredictionPanel::fetchPredictions()
                 if (this->lastLivePrediction_.has_value() &&
                     !this->lastLivePrediction_->id.isEmpty())
                 {
+                    if (this->lastLivePrediction_->outcomes.size() != 2)
+                    {
+                        this->hidePanel();
+                        return;
+                    }
                     if (!this->dismissedForPredictionId_.isEmpty() &&
                         this->lastLivePrediction_->id ==
                             this->dismissedForPredictionId_)
@@ -783,6 +747,11 @@ void SplitPredictionPanel::fetchPredictions()
 
             if (isResolvedLike(pr))
             {
+                if (pr.outcomes.size() != 2)
+                {
+                    this->hidePanel();
+                    return;
+                }
                 this->currentDisplayId_ = pr.id;
                 this->renderPrediction(pr, false);
                 this->show();
@@ -804,6 +773,11 @@ void SplitPredictionPanel::fetchPredictions()
             this->lingering_ = false;
             this->lingerEventId_.clear();
             HelixPrediction merged = pr;
+            if (merged.outcomes.size() != 2)
+            {
+                this->hidePanel();
+                return;
+            }
             if (this->lastLivePrediction_.has_value())
             {
                 const auto &prev = *this->lastLivePrediction_;
@@ -865,7 +839,8 @@ void SplitPredictionPanel::fetchChannelPoints()
     {
         return;
     }
-    if (!getSettings()->showPredictionPanel)
+    if (!getSettings()->showPredictionPanel ||
+        this->split_->perSplitHidePrediction())
     {
         return;
     }
@@ -929,14 +904,15 @@ void SplitPredictionPanel::renderPrediction(const HelixPrediction &prediction,
 {
     this->predictionUiLiveMode_ = liveMode;
 
-    if (!getSettings()->showPredictionPanel)
+    if (!getSettings()->showPredictionPanel ||
+        this->split_->perSplitHidePrediction())
     {
         this->hidePanel();
         return;
     }
 
     const auto &outcomes = prediction.outcomes;
-    if (outcomes.empty())
+    if (outcomes.size() != 2)
     {
         this->hidePanel();
         return;
@@ -1016,13 +992,12 @@ void SplitPredictionPanel::renderPrediction(const HelixPrediction &prediction,
     this->statusLabel_->setText(statusText);
 
     const HelixPredictionOutcome *o0 = &outcomes[0];
-    const HelixPredictionOutcome *o1 =
-        outcomes.size() > 1 ? &outcomes[1] : nullptr;
+    const HelixPredictionOutcome *o1 = &outcomes[1];
 
     int p0 = std::max(0, o0->channelPoints);
-    int p1 = o1 ? std::max(0, o1->channelPoints) : 0;
+    int p1 = std::max(0, o1->channelPoints);
     const int total = p0 + p1;
-    const bool canShowCollapsedBar = (o1 != nullptr) && (total > 0);
+    const bool canShowCollapsedBar = (total > 0);
     int pct0 = 50;
     int pct1 = 50;
     if (total > 0)
@@ -1042,48 +1017,32 @@ void SplitPredictionPanel::renderPrediction(const HelixPrediction &prediction,
     this->outcomeWon0_->setVisible(wSide == 0);
     this->outcomeWon1_->setVisible(wSide == 1);
 
-    if (o1 != nullptr)
+    this->outcomeTitle1_->show();
+    this->outcomeDetails1_->show();
+    this->outcomeTitle1_->setText(o1->title);
+    const double leftFrac =
+        total > 0 ? static_cast<double>(p0) / static_cast<double>(total) : 0.5;
+    this->poolBar_->setLeftFraction(leftFrac);
+    if (this->collapsedPoolBar_ != nullptr)
     {
-        this->outcomeTitle1_->show();
-        this->outcomeDetails1_->show();
-        this->outcomeTitle1_->setText(o1->title);
-        const double leftFrac =
-            total > 0 ? static_cast<double>(p0) / static_cast<double>(total)
-                      : 0.5;
-        this->poolBar_->setLeftFraction(leftFrac);
-        if (this->collapsedPoolBar_ != nullptr)
+        if (canShowCollapsedBar)
         {
-            if (canShowCollapsedBar)
-            {
-                this->collapsedPoolBar_->setLeftFraction(leftFrac);
-                this->collapsedPoolBar_->setVisible(!this->expanded_);
-            }
-            else
-            {
-                this->collapsedPoolBar_->hide();
-            }
+            this->collapsedPoolBar_->setLeftFraction(leftFrac);
+            this->collapsedPoolBar_->setVisible(!this->expanded_);
         }
-
-        const double r1 =
-            (total > 0 && p1 > 0) ? static_cast<double>(total) / p1 : 0.0;
-        const QString pct1s = QStringLiteral("%1%").arg(pct1);
-        this->outcomeDetails1_->setText(
-            QStringLiteral("%1 • %2 • %3")
-                .arg(pct1s, formatReturnRatio(r1), formatPointsCompact(p1)));
-        this->poolBar_->setOutcomeMeta({}, {}, {}, {});
-    }
-    else
-    {
-        this->outcomeTitle1_->hide();
-        this->outcomeDetails1_->hide();
-        this->outcomeWon1_->hide();
-        this->poolBar_->setLeftFraction(1.0);
-        this->poolBar_->setOutcomeMeta({}, {}, {}, {});
-        if (this->collapsedPoolBar_ != nullptr)
+        else
         {
             this->collapsedPoolBar_->hide();
         }
     }
+
+    const double r1 =
+        (total > 0 && p1 > 0) ? static_cast<double>(total) / p1 : 0.0;
+    const QString pct1s = QStringLiteral("%1%").arg(pct1);
+    this->outcomeDetails1_->setText(
+        QStringLiteral("%1 • %2 • %3")
+            .arg(pct1s, formatReturnRatio(r1), formatPointsCompact(p1)));
+    this->poolBar_->setOutcomeMeta({}, {}, {}, {});
 
     this->lastTitleForElide_ = prediction.title;
     this->refreshTopRowText();
@@ -1337,14 +1296,6 @@ void SplitPredictionPanel::updateStyleSheets()
         this->outcomeWon1_->setStyleSheet(wonStyle);
     }
 
-    if (this->disclaimerLabel_ != nullptr)
-    {
-        const auto disclaimerCss =
-            this->theme->messages.textColors.system.name(QColor::HexArgb);
-        this->disclaimerLabel_->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; }").arg(disclaimerCss));
-    }
-
     const QString btnStyle =
         QStringLiteral("QPushButton { color: %1; text-decoration: underline; "
                        "border: none; "
@@ -1417,12 +1368,6 @@ void SplitPredictionPanel::scaleChangedEvent(float scale)
         {
             w->setFont(f);
         }
-    }
-    if (this->disclaimerLabel_ != nullptr)
-    {
-        QFont df = f;
-        df.setPointSize(std::max(7, f.pointSize() - 1));
-        this->disclaimerLabel_->setFont(df);
     }
     QFont bf = f;
     bf.setBold(true);
@@ -1508,6 +1453,7 @@ void SplitPredictionPanel::rememberViewerPickForEvent(const QString &eventId,
 bool SplitPredictionPanel::baseBetContextForBetting() const
 {
     if (!getSettings()->showPredictionPanel ||
+        this->split_->perSplitHidePrediction() ||
         this->twitchChannel_ == nullptr ||
         getApp()->getAccounts()->twitch.getCurrent()->isAnon() ||
         this->lingering_ || !this->lastLivePrediction_.has_value())
@@ -1536,6 +1482,7 @@ void SplitPredictionPanel::updateYourPickSummaryLabel()
     };
 
     if (!getSettings()->showPredictionPanel ||
+        this->split_->perSplitHidePrediction() ||
         this->twitchChannel_ == nullptr ||
         getApp()->getAccounts()->twitch.getCurrent()->isAnon() ||
         this->lingering_ || !this->predictionUiLiveMode_)
@@ -1740,9 +1687,9 @@ void SplitPredictionPanel::refreshBetOutcomeButtonStyles()
     const QColor c0 = twitchOutcomeAccentColor(pr.outcomes[0].color, accent);
     const QColor c1 = twitchOutcomeAccentColor(pr.outcomes[1].color, accent);
 
-    this->betButton0_->setStyleSheet(betOutcomeButtonStyleSheet(
+    this->betButton0_->setStyleSheet(splitAccentActionButtonStyleSheet(
         c0, labelColor, this->betButton0_->isEnabled()));
-    this->betButton1_->setStyleSheet(betOutcomeButtonStyleSheet(
+    this->betButton1_->setStyleSheet(splitAccentActionButtonStyleSheet(
         c1, labelColor, this->betButton1_->isEnabled()));
 }
 
