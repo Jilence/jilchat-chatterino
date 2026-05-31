@@ -46,13 +46,15 @@ class MiniaudioBackend : public ISoundController
     std::atomic<State> state{State::Uninitialized};
 
 public:
+    using ISoundController::play;
+
     explicit MiniaudioBackend(bool keepEngineAlive_);
     ~MiniaudioBackend() override;
 
     // Play a sound from the given url
     // If the url points to something that isn't a local file, it will play
     // the default sound initialized in the initialize method
-    void play(const QUrl &sound) final;
+    void play(const QUrl &sound, float volume) final;
 
 private:
     // Used for selecting & initializing an appropriate sound backend
@@ -68,6 +70,7 @@ private:
     // Stores N sounds for simultaneous default ping playback
     // We can't use the engine API for this as this requires direct access to a custom data_source
     std::vector<std::unique_ptr<ma_sound>> defaultPingSounds;
+    std::vector<std::unique_ptr<ma_sound>> activeFileSounds;
 
     // Thread guard for the play method
     // Ensures play is only ever called from the same thread

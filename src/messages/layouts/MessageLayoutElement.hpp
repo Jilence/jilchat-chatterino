@@ -218,6 +218,28 @@ private:
     QString line2;
 };
 
+class VoiceMessageLayoutElement : public MessageLayoutElement
+{
+public:
+    VoiceMessageLayoutElement(MessageElement &creator, QString voiceId,
+                              QSizeF size, float scale);
+
+protected:
+    void addCopyTextToString(QString &str, uint32_t from = 0,
+                             uint32_t to = UINT32_MAX) const override;
+    size_t getSelectionIndexCount() const override;
+    void paint(QPainter &painter, const MessageColors &messageColors) override;
+    bool paintAnimated(QPainter &painter, qreal yOffset) override;
+    int getMouseOverIndex(QPointF abs) const override;
+    qreal getXFromIndex(size_t index) override;
+
+private:
+    qreal barHeight(int index, int count) const;
+
+    QString voiceId_;
+    float scale_;
+};
+
 class ReplyCurveLayoutElement : public MessageLayoutElement
 {
 public:

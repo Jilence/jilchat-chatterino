@@ -13,10 +13,11 @@ NullBackend::NullBackend()
     qCInfo(chatterinoSound) << "Initializing null sound backend";
 }
 
-void NullBackend::play(const QUrl &sound)
+void NullBackend::play(const QUrl &sound, float volume)
 {
     // Do nothing
-    qCDebug(chatterinoSound) << "null backend asked to play" << sound;
+    qCDebug(chatterinoSound) << "null backend asked to play" << sound
+                              << volume;
 }
 
 }  // namespace chatterino

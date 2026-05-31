@@ -460,6 +460,31 @@ private:
     QStringList original_;
 };
 
+class VoiceMessageElement : public MessageElement
+{
+public:
+    static constexpr std::string_view TYPE = "jil-voice-message";
+
+    VoiceMessageElement(QString voiceId, QString originalUrl,
+                        MessageElementFlags flags);
+
+    void addToContainer(MessageLayoutContainer &container,
+                        const MessageLayoutContext &ctx) override;
+
+    Link getLink() const override;
+
+    QJsonObject toJson() const override;
+    std::string_view type() const override;
+    std::unique_ptr<MessageElement> clone() const override;
+
+    const QString &voiceId() const;
+    const QString &originalUrl() const;
+
+private:
+    QString voiceId_;
+    QString originalUrl_;
+};
+
 /**
  * @brief Contains a username mention.
  *

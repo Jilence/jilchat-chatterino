@@ -61,6 +61,19 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->setTooltip("FFZ:AP supporter badges")
         ->addTo(layout);
 
+    layout.addTitle("Voice messages");
+    SettingWidget::intInput("Default voice message volume",
+                            s.jilChatVoiceVolume,
+                            {
+                                .min = 0,
+                                .max = 100,
+                                .singleStep = 5,
+                                .suffix = QStringLiteral("%"),
+                            })
+        ->addKeywords({"jilchat", "voice", "volume", "sound"})
+        ->setTooltip("Controls the volume for JilChat voice messages.")
+        ->addTo(layout);
+
     layout.addTitle("Userinfo popup");
     SettingWidget::checkbox("Show chatters", s.showUserinfoPopupChatters)
         ->addKeywords(

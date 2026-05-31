@@ -1133,6 +1133,53 @@ void MessageBuilder::addLink(const linkparser::Parsed &parsedLink,
         lowercaseLinkString = textOverride;
     }
 
+    const bool isJilVoiceLink =
+        (parsedLink.host.toString().compare(QStringLiteral("jil.chat"),
+                                            Qt::CaseInsensitive) == 0 ||
+         parsedLink.host.toString().compare(QStringLiteral("www.jil.chat"),
+                                            Qt::CaseInsensitive) == 0) &&
+        parsedLink.rest.startsWith(u"/v/") && parsedLink.rest.size() > 3;
+    if (isJilVoiceLink && textOverride.isEmpty())
+    {
+        QString voiceId = parsedLink.rest.mid(3).toString();
+        const auto slashStart = voiceId.indexOf(u'/');
+        if (slashStart != -1)
+        {
+            voiceId.truncate(slashStart);
+        }
+        const auto queryStart = voiceId.indexOf(u'?');
+        if (queryStart != -1)
+        {
+            voiceId.truncate(queryStart);
+        }
+        const auto fragmentStart = voiceId.indexOf(u'#');
+        if (fragmentStart != -1)
+        {
+            voiceId.truncate(fragmentStart);
+        }
+        if (!voiceId.isEmpty())
+        {
+            if (parsedLink.hasPrefix(source))
+            {
+                this->emplace<TextElement>(parsedLink.prefix(source).toString(),
+                                           MessageElementFlag::Text,
+                                           this->textColor_)
+                    ->setTrailingSpace(false);
+            }
+
+            auto *el = this->emplace<VoiceMessageElement>(
+                voiceId, origLink, MessageElementFlag::Text);
+            if (parsedLink.hasSuffix(source))
+            {
+                el->setTrailingSpace(false);
+                this->emplace<TextElement>(
+                    parsedLink.suffix(source).toString(),
+                    MessageElementFlag::Text, this->textColor_);
+            }
+            return;
+        }
+    }
+
     auto textColor = MessageColor(MessageColor::Link);
 
     if (parsedLink.hasPrefix(source))

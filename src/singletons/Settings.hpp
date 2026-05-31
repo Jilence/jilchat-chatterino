@@ -338,6 +338,9 @@ public:
     BoolSetting showBadgesHomies = {"/appearance/badges/homies", true};
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
     BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
+    IntSetting jilChatVoiceVolume = {"/jilchat/voice/volume", 80};
+    QStringSetting jilChatVoiceVolumeOverrides = {
+        "/jilchat/voice/volumeOverrides", "{}"};
     BoolSetting showUserinfoPopupChatters = {
         "/appearance/userinfoPopup/showChatters", true};
     BoolSetting showUserinfoPopupLastLive = {
