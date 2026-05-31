@@ -850,7 +850,7 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
 }
 
 bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
-                                              qreal /*yOffset*/)
+                                              qreal yOffset)
 {
     const auto progress = jilchat::getVoiceProgress(this->voiceId_);
     if (progress <= 0.0)
@@ -858,8 +858,10 @@ bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
         return true;
     }
 
-    const auto rect = this->getRect();
-    const auto wave = this->waveformRect();
+    auto rect = this->getRect();
+    rect.moveTop(rect.y() + yOffset);
+    auto wave = this->waveformRect();
+    wave.moveTop(wave.y() + yOffset);
     const qreal barWidth = 2 * this->scale_;
     const qreal gap = 2 * this->scale_;
     const qreal filledRight = wave.left() + wave.width() * progress;
