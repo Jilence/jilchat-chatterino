@@ -30,6 +30,7 @@ class PinnedMessageBanner;
 class PollBanner;
 class PredictionBanner;
 class SplitInput;
+class SplitVoiceMessagePanel;
 class SplitContainer;
 class SplitOverlay;
 class SplitMpsOverlay;
@@ -214,6 +215,7 @@ private:
     PinnedMessageBanner *const pinnedBanner_;
     PredictionBanner *const predictionBanner_;
     PollBanner *const pollBanner_;
+    SplitVoiceMessagePanel *const voiceMessagePanel_;
     ChannelView *const view_;
     SplitInput *const input_;
     SplitOverlay *const overlay_;

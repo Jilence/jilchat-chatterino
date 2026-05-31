@@ -16,6 +16,7 @@
 
 #include <climits>
 #include <cstdint>
+#include <optional>
 
 class QPainter;
 
@@ -203,6 +204,8 @@ class VoiceMessageLayoutElement : public MessageLayoutElement
 public:
     VoiceMessageLayoutElement(MessageElement &creator, QString voiceId,
                               QSizeF size, float scale);
+    bool isOverPlayButton(QPointF point) const;
+    std::optional<double> seekProgressAt(QPointF point) const;
 
 protected:
     void addCopyTextToString(QString &str, uint32_t from = 0,
@@ -215,6 +218,8 @@ protected:
 
 private:
     qreal barHeight(int index, int count) const;
+    QRectF playButtonRect() const;
+    QRectF waveformRect() const;
 
     QString voiceId_;
     float scale_;

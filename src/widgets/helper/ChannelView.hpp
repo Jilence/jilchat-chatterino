@@ -306,7 +306,9 @@ protected:
     void showEvent(QShowEvent *event) override;
 
     void handleLinkClick(QMouseEvent *event, const Link &link,
-                         MessageLayout *layout);
+                         MessageLayout *layout,
+                         const MessageLayoutElement *hoveredElement = nullptr,
+                         QPointF relativePos = {});
 
     bool tryGetMessageAt(QPointF p, std::shared_ptr<MessageLayout> &message,
                          QPointF &relativePos, int &index);
@@ -341,7 +343,7 @@ private:
 
     void handleMouseClick(QMouseEvent *event,
                           const MessageLayoutElement *hoveredElement,
-                          MessageLayoutPtr layout);
+                          MessageLayoutPtr layout, QPointF relativePos);
     void addContextMenuItems(const MessageLayoutElement *hoveredElement,
                              MessageLayoutPtr layout, QMouseEvent *event);
     void addMessageContextMenuItems(QMenu *menu,

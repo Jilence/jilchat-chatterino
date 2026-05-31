@@ -51,6 +51,7 @@
 #include "widgets/splits/SplitInput.hpp"
 #include "widgets/splits/SplitMpsOverlay.hpp"
 #include "widgets/splits/SplitOverlay.hpp"
+#include "widgets/splits/SplitVoiceMessagePanel.hpp"
 #include "widgets/Window.hpp"
 
 #include <QApplication>
@@ -140,6 +141,7 @@ Split::Split(QWidget *parent)
     , pinnedBanner_(new PinnedMessageBanner(this, this))
     , predictionBanner_(new PredictionBanner(this, this))
     , pollBanner_(new PollBanner(this, this))
+    , voiceMessagePanel_(new SplitVoiceMessagePanel(this))
     , view_(new ChannelView(this, this, ChannelView::Context::None,
                             getSettings()->scrollbackSplitLimit))
     , input_(new SplitInput(this))
@@ -154,6 +156,7 @@ Split::Split(QWidget *parent)
     this->vbox_->setContentsMargins(1, 1, 1, 1);
 
     this->vbox_->addWidget(this->header_);
+    this->vbox_->addWidget(this->voiceMessagePanel_);
     this->vbox_->addWidget(this->pinnedBanner_);
     this->vbox_->addWidget(this->predictionBanner_);
     this->vbox_->addWidget(this->pollBanner_);
@@ -274,6 +277,7 @@ Split::Split(QWidget *parent)
     this->updateMpsOverlayAnchor();
 
     this->view_->installEventFilter(this);
+    this->voiceMessagePanel_->installEventFilter(this);
     this->pinnedBanner_->installEventFilter(this);
     this->predictionBanner_->installEventFilter(this);
     this->pollBanner_->installEventFilter(this);
@@ -2255,6 +2259,7 @@ bool Split::eventFilter(QObject *watched, QEvent *event)
         case QEvent::Hide:
         case QEvent::LayoutRequest: {
             if (watched == this || watched == this->view_ ||
+                watched == this->voiceMessagePanel_ ||
                 watched == this->pinnedBanner_ ||
                 watched == this->predictionBanner_ ||
                 watched == this->pollBanner_)

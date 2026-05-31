@@ -1016,6 +1016,8 @@ set(SOURCE_FILES
         widgets/splits/SplitHeader.hpp
         widgets/splits/SplitInput.cpp
         widgets/splits/SplitInput.hpp
+        widgets/splits/SplitVoiceMessagePanel.cpp
+        widgets/splits/SplitVoiceMessagePanel.hpp
         widgets/splits/SplitOverlay.cpp
         widgets/splits/SplitOverlay.hpp
         )
