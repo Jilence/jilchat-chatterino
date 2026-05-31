@@ -149,11 +149,11 @@ find_package(Qt${MAJOR_QT_VERSION} REQUIRED
     Widgets
     Gui
     Network
-    Multimedia
     Svg
     SvgWidgets
     Concurrent
 )
+find_package(Qt${MAJOR_QT_VERSION} COMPONENTS Multimedia)
 
 find_package(Qt${MAJOR_QT_VERSION} COMPONENTS WidgetsPrivate)
 find_package(Qt${MAJOR_QT_VERSION} COMPONENTS NetworkPrivate)

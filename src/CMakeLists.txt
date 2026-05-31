@@ -1034,7 +1034,6 @@ target_link_libraries(${LIBRARY_PROJECT}
         Qt${MAJOR_QT_VERSION}::WidgetsPrivate # for pixmap filters (paints)
         Qt${MAJOR_QT_VERSION}::Gui
         Qt${MAJOR_QT_VERSION}::Network
-        Qt${MAJOR_QT_VERSION}::Multimedia
         Qt${MAJOR_QT_VERSION}::NetworkPrivate # for DELETE with a body (Kick)
         Qt${MAJOR_QT_VERSION}::Svg
         Qt${MAJOR_QT_VERSION}::SvgWidgets
@@ -1053,6 +1052,11 @@ target_link_libraries(${LIBRARY_PROJECT}
         )
 if (CHATTERINO_PLUGINS)
     target_link_libraries(${LIBRARY_PROJECT} PUBLIC lua sol2::sol2)
+endif()
+
+if (TARGET Qt${MAJOR_QT_VERSION}::Multimedia)
+    target_link_libraries(${LIBRARY_PROJECT} PUBLIC Qt${MAJOR_QT_VERSION}::Multimedia)
+    target_compile_definitions(${LIBRARY_PROJECT} PUBLIC CHATTERINO_HAVE_QT_MULTIMEDIA)
 endif()
 
 if (CHATTERINO_SPELLCHECK)

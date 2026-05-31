@@ -4,35 +4,44 @@
 
 #include "providers/jilchat/JilChatVoice.hpp"
 
+#ifndef CHATTERINO_HAVE_QT_MULTIMEDIA
+#    include "Application.hpp"
+#    include "controllers/sound/ISoundController.hpp"
+#endif
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/Outcome.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
 
-#include <QAudioOutput>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QHash>
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QJsonValue>
-#include <QList>
-#include <QMediaPlayer>
-#include <QObject>
-#include <QPointer>
 #include <QStandardPaths>
 #include <QUuid>
 
 #include <algorithm>
 
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+#    include <QAudioOutput>
+#    include <QHash>
+#    include <QList>
+#    include <QMediaPlayer>
+#    include <QObject>
+#    include <QPointer>
+#endif
+
 namespace chatterino::jilchat {
 
 namespace {
 
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
 QHash<QString, QList<QPointer<QAudioOutput>>> activeAudioOutputs;
+#endif
 
 QJsonObject volumeOverrides()
 {
@@ -52,6 +61,7 @@ void saveVolumeOverrides(const QJsonObject &overrides)
             QJsonDocument::Compact));
 }
 
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
 void updateActiveVoiceVolume(const QString &voiceId, int volume)
 {
     if (voiceId.isEmpty())
@@ -85,9 +95,11 @@ void updateActiveVoiceVolume(const QString &voiceId, int volume)
         }
     });
 }
+#endif
 
 void playVoiceFile(const QString &path, const QString &voiceId)
 {
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
     runInGuiThread([path, voiceId] {
         auto *player = new QMediaPlayer;
         auto *audioOutput = new QAudioOutput(player);
@@ -127,6 +139,10 @@ void playVoiceFile(const QString &path, const QString &voiceId)
 
         player->play();
     });
+#else
+    getApp()->getSound()->play(QUrl::fromLocalFile(path),
+                               getVoiceVolume(voiceId) / 100.F);
+#endif
 }
 
 QString cachePathFor(const QString &voiceId, const QUrl &audioUrl)
@@ -228,7 +244,9 @@ void setVoiceVolume(const QString &voiceId, int volume)
     auto overrides = volumeOverrides();
     overrides[voiceId] = std::clamp(volume, 0, 100);
     saveVolumeOverrides(overrides);
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
     updateActiveVoiceVolume(voiceId, getVoiceVolume(voiceId));
+#endif
 }
 
 void resetVoiceVolume(const QString &voiceId)
@@ -241,7 +259,9 @@ void resetVoiceVolume(const QString &voiceId)
     auto overrides = volumeOverrides();
     overrides.remove(voiceId);
     saveVolumeOverrides(overrides);
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
     updateActiveVoiceVolume(voiceId, getVoiceVolume(voiceId));
+#endif
 }
 
 void playVoiceMessage(const QString &voiceId)
