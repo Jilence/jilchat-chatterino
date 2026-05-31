@@ -235,7 +235,7 @@ jobs:
         with:
           cache: true
           cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
-          modules: qtimageformats
+          modules: qtimageformats qtmultimedia
           version: ${{ matrix.qt-version }}
 
       # WINDOWS
