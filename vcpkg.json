@@ -34,7 +34,8 @@
       "default-features": false,
       "features": ["webp"]
     },
-    "qtsvg"
+    "qtsvg",
+    "qtmultimedia"
   ],
   "features": {
     "benchmarks": {

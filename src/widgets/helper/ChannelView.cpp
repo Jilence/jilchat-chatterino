@@ -67,12 +67,16 @@
 #include <QGestureEvent>
 #include <QGraphicsBlurEffect>
 #include <QJsonDocument>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QMessageBox>
 #include <QPainter>
 #include <QScreen>
+#include <QSlider>
 #include <QStringBuilder>
 #include <QUrl>
 #include <QVariantAnimation>
+#include <QWidgetAction>
 
 #include <algorithm>
 #include <chrono>
@@ -229,6 +233,40 @@ void addLinkContextMenuItems(QMenu *menu,
                 QStringLiteral("Voice volume: %1%").arg(current));
             auto *voiceMenu = new QMenu(menu);
             voiceMenuAction->setMenu(voiceMenu);
+
+            auto *sliderWidget = new QWidget(voiceMenu);
+            auto *sliderLayout = new QHBoxLayout(sliderWidget);
+            sliderLayout->setContentsMargins(8, 4, 8, 4);
+            sliderLayout->setSpacing(8);
+
+            auto *slider = new QSlider(Qt::Horizontal, sliderWidget);
+            slider->setRange(0, 100);
+            slider->setSingleStep(5);
+            slider->setPageStep(10);
+            slider->setValue(current);
+            slider->setMinimumWidth(120);
+
+            auto *sliderLabel = new QLabel(
+                QStringLiteral("%1%").arg(current), sliderWidget);
+            sliderLabel->setMinimumWidth(36);
+            sliderLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+            sliderLayout->addWidget(slider);
+            sliderLayout->addWidget(sliderLabel);
+
+            QObject::connect(slider, &QSlider::valueChanged, voiceMenu,
+                             [voiceId = link.value, view, sliderLabel](
+                                 int value) {
+                                 sliderLabel->setText(
+                                     QStringLiteral("%1%").arg(value));
+                                 jilchat::setVoiceVolume(voiceId, value);
+                                 view->queueUpdate();
+                             });
+
+            auto *sliderAction = new QWidgetAction(voiceMenu);
+            sliderAction->setDefaultWidget(sliderWidget);
+            voiceMenu->addAction(sliderAction);
+            voiceMenu->addSeparator();
 
             for (const auto volume : {25, 50, 75, 100})
             {

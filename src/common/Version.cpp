@@ -18,13 +18,7 @@ Version::Version()
     , dateOfBuild_(QStringLiteral(CHATTERINO_CMAKE_GEN_DATE))
     , isNightly_(CHATTERINO_NIGHTLY_BUILD == 1)
 {
-    this->fullVersion_ = "Leafyrino ";
-    if (this->isNightly())
-    {
-        this->fullVersion_ += "Nightly ";
-    }
-
-    this->fullVersion_ += this->version_;
+    this->fullVersion_ = "JilChat Chatterino v." + this->version_;
 
 #ifndef NDEBUG
     this->fullVersion_ += " DEBUG";
