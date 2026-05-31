@@ -346,6 +346,9 @@ void Updates::installUpdates()
 void Updates::checkForUpdates()
 {
 #ifndef CHATTERINO_DISABLE_UPDATER
+    this->setStatus_(NoUpdateAvailable);
+    return;
+
     auto version = Version::instance();
 
     if (!version.isSupportedOS())
