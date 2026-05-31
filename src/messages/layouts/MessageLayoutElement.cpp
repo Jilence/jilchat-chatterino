@@ -792,7 +792,7 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     const qreal barWidth = 2 * this->scale_;
     const qreal gap = 2 * this->scale_;
     const qreal barsLeft = rect.left() + 30 * this->scale_;
-    const qreal barsRight = rect.right() - 44 * this->scale_;
+    const qreal barsRight = rect.right() - 54 * this->scale_;
     const int count = std::max(
         1, static_cast<int>((barsRight - barsLeft) / (barWidth + gap)));
     for (int i = 0; i < count; ++i)
@@ -805,12 +805,12 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     }
 
     painter.setPen(messageColors.systemText);
-    painter.setFont(getApp()->getFonts()->getFont(FontStyle::ChatSmall,
+    painter.setFont(getApp()->getFonts()->getFont(FontStyle::ChatMediumBold,
                                                   this->scale_));
     const auto volumeText =
         QStringLiteral("%1%").arg(jilchat::getVoiceVolume(this->voiceId_));
-    painter.drawText(QRectF(rect.right() - 43 * this->scale_, rect.top(),
-                            34 * this->scale_, rect.height()),
+    painter.drawText(QRectF(rect.right() - 52 * this->scale_, rect.top(),
+                            43 * this->scale_, rect.height()),
                      Qt::AlignVCenter | Qt::AlignRight,
                      volumeText);
     painter.restore();
