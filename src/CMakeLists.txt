@@ -950,6 +950,8 @@ set(SOURCE_FILES
         widgets/splits/PredictionPoolBar.hpp
         widgets/splits/SplitPinnedMessagePanel.cpp
         widgets/splits/SplitPinnedMessagePanel.hpp
+        widgets/splits/SplitVoiceMessagePanel.cpp
+        widgets/splits/SplitVoiceMessagePanel.hpp
         widgets/splits/SplitPredictionPanel.cpp
         widgets/splits/SplitPredictionPanel.hpp
         widgets/splits/SplitPollPanel.cpp

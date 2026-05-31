@@ -696,6 +696,38 @@ VoiceMessageLayoutElement::VoiceMessageLayoutElement(MessageElement &creator,
     this->trailingSpace = creator.hasTrailingSpace();
 }
 
+QRectF VoiceMessageLayoutElement::playButtonRect() const
+{
+    const auto rect = this->getRect();
+    return QRectF(rect.left(), rect.top(), 28 * this->scale_, rect.height());
+}
+
+QRectF VoiceMessageLayoutElement::waveformRect() const
+{
+    const auto rect = this->getRect();
+    const qreal barsLeft = rect.left() + 30 * this->scale_;
+    const qreal barsRight = rect.right() - 54 * this->scale_;
+    return QRectF(barsLeft, rect.top(), std::max<qreal>(0, barsRight - barsLeft),
+                  rect.height());
+}
+
+bool VoiceMessageLayoutElement::isOverPlayButton(QPointF point) const
+{
+    return this->playButtonRect().contains(point);
+}
+
+std::optional<double> VoiceMessageLayoutElement::seekProgressAt(
+    QPointF point) const
+{
+    const auto wave = this->waveformRect();
+    if (!wave.contains(point) || wave.width() <= 0)
+    {
+        return std::nullopt;
+    }
+
+    return std::clamp((point.x() - wave.left()) / wave.width(), 0.0, 1.0);
+}
+
 void VoiceMessageLayoutElement::addCopyTextToString(QString &str,
                                                     uint32_t /*from*/,
                                                     uint32_t to) const
@@ -741,8 +773,9 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
 
     const qreal barWidth = 2 * this->scale_;
     const qreal gap = 2 * this->scale_;
-    const qreal barsLeft = rect.left() + 30 * this->scale_;
-    const qreal barsRight = rect.right() - 54 * this->scale_;
+    const auto wave = this->waveformRect();
+    const qreal barsLeft = wave.left();
+    const qreal barsRight = wave.right();
     const int count = std::max(
         1, static_cast<int>((barsRight - barsLeft) / (barWidth + gap)));
     for (int i = 0; i < count; ++i)
@@ -766,10 +799,45 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     painter.restore();
 }
 
-bool VoiceMessageLayoutElement::paintAnimated(QPainter & /*painter*/,
+bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
                                               qreal /*yOffset*/)
 {
-    return false;
+    const auto progress = jilchat::getVoiceProgress(this->voiceId_);
+    if (progress <= 0.0)
+    {
+        return true;
+    }
+
+    const auto rect = this->getRect();
+    const auto wave = this->waveformRect();
+    const qreal barWidth = 2 * this->scale_;
+    const qreal gap = 2 * this->scale_;
+    const qreal filledRight = wave.left() + wave.width() * progress;
+    const int count =
+        std::max(1, static_cast<int>(wave.width() / (barWidth + gap)));
+    const QColor accent(145, 66, 255);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(accent);
+
+    for (int i = 0; i < count; ++i)
+    {
+        const qreal x = wave.left() + i * (barWidth + gap);
+        if (x > filledRight)
+        {
+            break;
+        }
+
+        const qreal height = this->barHeight(i, count) * this->scale_;
+        const QRectF bar(x, rect.center().y() - height / 2.0, barWidth,
+                         height);
+        painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
+    }
+
+    painter.restore();
+    return true;
 }
 
 int VoiceMessageLayoutElement::getMouseOverIndex(QPointF /*abs*/) const

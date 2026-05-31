@@ -51,6 +51,7 @@
 #include "widgets/splits/SplitPinnedMessagePanel.hpp"
 #include "widgets/splits/SplitPollPanel.hpp"
 #include "widgets/splits/SplitPredictionPanel.hpp"
+#include "widgets/splits/SplitVoiceMessagePanel.hpp"
 #include "widgets/Window.hpp"
 
 #include <QApplication>
@@ -103,6 +104,7 @@ Split::Split(QWidget *parent)
     , vbox_(new QVBoxLayout(this))
     , header_(new SplitHeader(this))
     , pinnedMessagePanel_(new SplitPinnedMessagePanel(this))
+    , voiceMessagePanel_(new SplitVoiceMessagePanel(this))
     , predictionPanel_(new SplitPredictionPanel(this))
     , pollPanel_(new SplitPollPanel(this))
     , view_(new ChannelView(this, this, ChannelView::Context::None,
@@ -119,6 +121,7 @@ Split::Split(QWidget *parent)
     this->vbox_->setContentsMargins(1, 1, 1, 1);
 
     this->vbox_->addWidget(this->header_);
+    this->vbox_->addWidget(this->voiceMessagePanel_);
     this->vbox_->addWidget(this->pinnedMessagePanel_);
     this->vbox_->addWidget(this->predictionPanel_);
     this->vbox_->addWidget(this->pollPanel_);
@@ -238,6 +241,7 @@ Split::Split(QWidget *parent)
     // panels show/hide without resizing the split
     this->view_->installEventFilter(this);
     this->pinnedMessagePanel_->installEventFilter(this);
+    this->voiceMessagePanel_->installEventFilter(this);
     this->predictionPanel_->installEventFilter(this);
     this->pollPanel_->installEventFilter(this);
     this->installEventFilter(this);
@@ -1312,6 +1316,7 @@ bool Split::eventFilter(QObject *watched, QEvent *event)
         case QEvent::LayoutRequest: {
             if (watched == this || watched == this->view_ ||
                 watched == this->pinnedMessagePanel_ ||
+                watched == this->voiceMessagePanel_ ||
                 watched == this->predictionPanel_ ||
                 watched == this->pollPanel_)
             {

@@ -2594,14 +2594,15 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
         layout->getElementAt(relativePos);
 
     // handle the click
-    this->handleMouseClick(event, hoverLayoutElement, layout);
+    this->handleMouseClick(event, hoverLayoutElement, layout, relativePos);
 
     this->update();
 }
 
 void ChannelView::handleMouseClick(QMouseEvent *event,
                                    const MessageLayoutElement *hoveredElement,
-                                   MessageLayoutPtr layout)
+                                   MessageLayoutPtr layout,
+                                   QPointF relativePos)
 {
     switch (event->button())
     {
@@ -2614,7 +2615,8 @@ void ChannelView::handleMouseClick(QMouseEvent *event,
             const auto &link = hoveredElement->getLink();
             if (!getSettings()->linksDoubleClickOnly)
             {
-                this->handleLinkClick(event, link, layout.get());
+                this->handleLinkClick(event, link, layout.get(),
+                                      hoveredElement, relativePos);
             }
 
             // Invoke to signal from EmotePopup.
@@ -2751,7 +2753,8 @@ void ChannelView::handleMouseClick(QMouseEvent *event,
             const auto &link = hoveredElement->getLink();
             if (!getSettings()->linksDoubleClickOnly)
             {
-                this->handleLinkClick(event, link, layout.get());
+                this->handleLinkClick(event, link, layout.get(),
+                                      hoveredElement, relativePos);
             }
         }
         break;
@@ -3194,7 +3197,8 @@ void ChannelView::mouseDoubleClickEvent(QMouseEvent *event)
     if (getSettings()->linksDoubleClickOnly)
     {
         const auto &link = hoverLayoutElement->getLink();
-        this->handleLinkClick(event, link, layout.get());
+        this->handleLinkClick(event, link, layout.get(), hoverLayoutElement,
+                              relativePos);
     }
 }
 
@@ -3276,7 +3280,9 @@ bool ChannelView::mayContainMessage(const MessagePtr &message)
 }
 
 void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
-                                  MessageLayout *layout)
+                                  MessageLayout *layout,
+                                  const MessageLayoutElement *hoveredElement,
+                                  QPointF relativePos)
 {
     if (event->button() != Qt::LeftButton &&
         event->button() != Qt::MiddleButton)
@@ -3307,6 +3313,24 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
         break;
 
         case Link::JilVoiceMessage: {
+            if (event->button() == Qt::LeftButton)
+            {
+                if (auto *voiceElement =
+                        dynamic_cast<const VoiceMessageLayoutElement *>(
+                            hoveredElement))
+                {
+                    if (!voiceElement->isOverPlayButton(relativePos))
+                    {
+                        if (const auto progress =
+                                voiceElement->seekProgressAt(relativePos))
+                        {
+                            jilchat::seekVoiceMessage(link.value, *progress);
+                            break;
+                        }
+                    }
+                }
+            }
+
             jilchat::playVoiceMessage(link.value);
         }
         break;

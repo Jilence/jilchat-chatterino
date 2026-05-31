@@ -26,6 +26,7 @@ class SplitInput;
 class SplitPinnedMessagePanel;
 class SplitPollPanel;
 class SplitPredictionPanel;
+class SplitVoiceMessagePanel;
 class SplitContainer;
 class SplitOverlay;
 class SplitMpsOverlay;
@@ -192,6 +193,7 @@ private:
     QVBoxLayout *const vbox_;
     SplitHeader *const header_;
     SplitPinnedMessagePanel *const pinnedMessagePanel_;
+    SplitVoiceMessagePanel *const voiceMessagePanel_;
     SplitPredictionPanel *const predictionPanel_;
     SplitPollPanel *const pollPanel_;
     ChannelView *const view_;

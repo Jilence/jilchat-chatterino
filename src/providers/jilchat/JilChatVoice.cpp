@@ -11,6 +11,7 @@
 #include "controllers/accounts/AccountController.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/WindowManager.hpp"
 #include "util/PostToThread.hpp"
 
 #include <QCryptographicHash>
@@ -44,6 +45,9 @@ QString jilChatJwt;
 
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
 QHash<QString, QList<QPointer<QAudioOutput>>> activeAudioOutputs;
+QHash<QString, QPointer<QMediaPlayer>> activePlayers;
+QHash<QString, qint64> activePositions;
+QHash<QString, qint64> activeDurations;
 #endif
 
 QJsonObject volumeOverrides()
@@ -100,25 +104,72 @@ void updateActiveVoiceVolume(const QString &voiceId, int volume)
 }
 #endif
 
-void playVoiceFile(const QString &path, const QString &voiceId)
+void requestVoiceRepaint()
+{
+    getApp()->getWindows()->repaintGifEmotes();
+}
+
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+void applyStartPosition(QMediaPlayer *player, double startProgress)
+{
+    if (startProgress < 0)
+    {
+        return;
+    }
+
+    const auto duration = player->duration();
+    if (duration <= 0)
+    {
+        return;
+    }
+
+    player->setPosition(
+        static_cast<qint64>(duration * std::clamp(startProgress, 0.0, 1.0)));
+}
+#endif
+
+void playVoiceFile(const QString &path, const QString &voiceId,
+                   double startProgress = -1.0)
 {
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
-    runInGuiThread([path, voiceId] {
+    runInGuiThread([path, voiceId, startProgress] {
+        if (auto existing = activePlayers.value(voiceId); existing != nullptr)
+        {
+            existing->deleteLater();
+        }
+
         auto *player = new QMediaPlayer;
         auto *audioOutput = new QAudioOutput(player);
 
         audioOutput->setVolume(getVoiceVolume(voiceId) / 100.F);
         player->setAudioOutput(audioOutput);
         player->setSource(QUrl::fromLocalFile(path));
+        activePlayers[voiceId] = QPointer<QMediaPlayer>(player);
         activeAudioOutputs[voiceId].append(QPointer<QAudioOutput>(audioOutput));
 
         QObject::connect(player, &QMediaPlayer::mediaStatusChanged, player,
-                         [player](QMediaPlayer::MediaStatus status) {
+                         [player, voiceId,
+                          startProgress](QMediaPlayer::MediaStatus status) {
+                             if (status == QMediaPlayer::LoadedMedia ||
+                                 status == QMediaPlayer::BufferedMedia)
+                             {
+                                 applyStartPosition(player, startProgress);
+                             }
                              if (status == QMediaPlayer::EndOfMedia ||
                                  status == QMediaPlayer::InvalidMedia)
                              {
                                  player->deleteLater();
                              }
+                         });
+        QObject::connect(player, &QMediaPlayer::positionChanged, player,
+                         [voiceId](qint64 position) {
+                             activePositions[voiceId] = position;
+                             requestVoiceRepaint();
+                         });
+        QObject::connect(player, &QMediaPlayer::durationChanged, player,
+                         [voiceId](qint64 duration) {
+                             activeDurations[voiceId] = duration;
+                             requestVoiceRepaint();
                          });
         QObject::connect(player, &QMediaPlayer::errorOccurred, player,
                          [player, voiceId](QMediaPlayer::Error /*error*/,
@@ -129,8 +180,19 @@ void playVoiceFile(const QString &path, const QString &voiceId)
                              player->deleteLater();
                          });
         QObject::connect(player, &QObject::destroyed,
-                         [voiceId, output = QPointer<QAudioOutput>(
-                                       audioOutput)] {
+                         [voiceId, playerPtr = QPointer<QMediaPlayer>(player),
+                          output = QPointer<QAudioOutput>(audioOutput)] {
+                             const auto activePlayer =
+                                 activePlayers.value(voiceId);
+                             const bool destroyedActivePlayer =
+                                 activePlayer == playerPtr ||
+                                 activePlayer == nullptr;
+                             if (destroyedActivePlayer)
+                             {
+                                 activePlayers.remove(voiceId);
+                                 activePositions.remove(voiceId);
+                                 activeDurations.remove(voiceId);
+                             }
                              auto it = activeAudioOutputs.find(voiceId);
                              if (it == activeAudioOutputs.end())
                              {
@@ -141,12 +203,14 @@ void playVoiceFile(const QString &path, const QString &voiceId)
                              {
                                  activeAudioOutputs.erase(it);
                              }
+                             requestVoiceRepaint();
                          });
 
         player->play();
     });
 #else
     (void)path;
+    (void)startProgress;
     QDesktopServices::openUrl(
         QUrl(QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
 #endif
@@ -178,19 +242,21 @@ QString cachePathFor(const QString &voiceId, const QUrl &audioUrl)
     return dir.filePath(safeId + QStringLiteral(".") + suffix);
 }
 
-void playDownloadedVoice(const QString &voiceId, const QUrl &audioUrl)
+void playDownloadedVoice(const QString &voiceId, const QUrl &audioUrl,
+                         double startProgress = -1.0)
 {
     const auto path = cachePathFor(voiceId, audioUrl);
     if (QFileInfo::exists(path))
     {
-        playVoiceFile(path, voiceId);
+        playVoiceFile(path, voiceId, startProgress);
         return;
     }
 
     NetworkRequest(audioUrl)
         .timeout(15 * 1000)
         .followRedirects(true)
-        .onSuccess([path, voiceId](const NetworkResult &result) -> Outcome {
+        .onSuccess([path, voiceId,
+                    startProgress](const NetworkResult &result) -> Outcome {
             const auto tempPath =
                 path + QStringLiteral(".") +
                 QUuid::createUuid().toString(QUuid::Id128) +
@@ -207,14 +273,14 @@ void playDownloadedVoice(const QString &voiceId, const QUrl &audioUrl)
                 if (QFileInfo::exists(path))
                 {
                     QFile::remove(tempPath);
-                    playVoiceFile(path, voiceId);
+                    playVoiceFile(path, voiceId, startProgress);
                     return Success;
                 }
                 QFile::remove(tempPath);
                 return Failure;
             }
 
-            playVoiceFile(path, voiceId);
+            playVoiceFile(path, voiceId, startProgress);
             return Success;
         })
         .execute();
@@ -257,7 +323,7 @@ void authenticateJilChat(const std::function<void(QString)> &onSuccess,
 }
 
 void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
-                    bool retriedAuth = false)
+                    bool retriedAuth = false, double startProgress = -1.0)
 {
     const QUrl metaUrl(QStringLiteral("https://api.jil.chat/v1/voice/%1")
                            .arg(voiceId));
@@ -272,7 +338,8 @@ void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
     }
 
     std::move(request)
-        .onSuccess([voiceId](const NetworkResult &result) -> Outcome {
+        .onSuccess([voiceId,
+                    startProgress](const NetworkResult &result) -> Outcome {
             const auto root = result.parseJson();
             const auto audioUrlString = root.value("audio_url").toString();
             const QUrl audioUrl(audioUrlString);
@@ -283,17 +350,19 @@ void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
                 return Failure;
             }
 
-            playDownloadedVoice(voiceId, audioUrl);
+            playDownloadedVoice(voiceId, audioUrl, startProgress);
             return Success;
         })
-        .onError([voiceId, retriedAuth](const NetworkResult &result) {
+        .onError([voiceId, retriedAuth,
+                  startProgress](const NetworkResult &result) {
             const auto status = result.status().value_or(0);
             if ((status == 401 || status == 403) && !retriedAuth)
             {
                 jilChatJwt.clear();
                 authenticateJilChat(
-                    [voiceId](const QString &freshJwt) {
-                        fetchVoiceMeta(voiceId, freshJwt, true);
+                    [voiceId, startProgress](const QString &freshJwt) {
+                        fetchVoiceMeta(voiceId, freshJwt, true,
+                                       startProgress);
                     },
                     [voiceId] {
                         QDesktopServices::openUrl(QUrl(
@@ -360,6 +429,38 @@ void resetVoiceVolume(const QString &voiceId)
 #endif
 }
 
+QString getActiveVoiceId()
+{
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+    for (auto it = activePlayers.cbegin(); it != activePlayers.cend(); ++it)
+    {
+        if (it.value() != nullptr)
+        {
+            return it.key();
+        }
+    }
+#endif
+    return {};
+}
+
+double getVoiceProgress(const QString &voiceId)
+{
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+    const auto duration = activeDurations.value(voiceId, 0);
+    if (duration <= 0)
+    {
+        return 0.0;
+    }
+
+    return std::clamp(activePositions.value(voiceId, 0) /
+                          static_cast<double>(duration),
+                      0.0, 1.0);
+#else
+    (void)voiceId;
+    return 0.0;
+#endif
+}
+
 void playVoiceMessage(const QString &voiceId)
 {
     if (voiceId.isEmpty())
@@ -368,6 +469,59 @@ void playVoiceMessage(const QString &voiceId)
     }
 
     fetchVoiceMeta(voiceId, {});
+}
+
+void seekVoiceMessage(const QString &voiceId, double progress)
+{
+    if (voiceId.isEmpty())
+    {
+        return;
+    }
+
+    progress = std::clamp(progress, 0.0, 1.0);
+
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+    runInGuiThread([voiceId, progress] {
+        auto player = activePlayers.value(voiceId);
+        if (player == nullptr)
+        {
+            fetchVoiceMeta(voiceId, {}, false, progress);
+            return;
+        }
+
+        applyStartPosition(player, progress);
+        player->play();
+        requestVoiceRepaint();
+    });
+#else
+    (void)progress;
+    QDesktopServices::openUrl(
+        QUrl(QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
+#endif
+}
+
+void stopVoiceMessage(const QString &voiceId)
+{
+    if (voiceId.isEmpty())
+    {
+        return;
+    }
+
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+    runInGuiThread([voiceId] {
+        auto player = activePlayers.value(voiceId);
+        if (player == nullptr)
+        {
+            return;
+        }
+
+        player->stop();
+        player->deleteLater();
+        requestVoiceRepaint();
+    });
+#else
+    (void)voiceId;
+#endif
 }
 
 }  // namespace chatterino::jilchat
