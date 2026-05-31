@@ -28,6 +28,7 @@
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/links/LinkInfo.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/translation/Translator.hpp"
@@ -865,7 +866,8 @@ void addImageContextMenuItems(QMenu *menu,
 }
 
 void addLinkContextMenuItems(QMenu *menu,
-                             const MessageLayoutElement *hoveredElement)
+                             const MessageLayoutElement *hoveredElement,
+                             ChannelView *view)
 {
     if (hoveredElement == nullptr)
     {
@@ -876,6 +878,55 @@ void addLinkContextMenuItems(QMenu *menu,
 
     if (link.type != Link::Url)
     {
+        if (link.type == Link::JilVoiceMessage)
+        {
+            const auto voiceUrl =
+                QStringLiteral("https://jil.chat/v/%1").arg(link.value);
+            const auto current = jilchat::getVoiceVolume(link.value);
+            auto *voiceMenuAction = menu->addAction(
+                QStringLiteral("Voice volume: %1%").arg(current));
+            auto *voiceMenu = new QMenu(menu);
+            voiceMenuAction->setMenu(voiceMenu);
+
+            for (const auto volume : {25, 50, 75, 100})
+            {
+                auto *action = voiceMenu->addAction(
+                    QStringLiteral("%1%").arg(volume),
+                    [voiceId = link.value, volume, view] {
+                        jilchat::setVoiceVolume(voiceId, volume);
+                        view->queueUpdate();
+                    });
+                action->setCheckable(true);
+                action->setChecked(current == volume);
+            }
+
+            voiceMenu->addSeparator();
+            voiceMenu->addAction("Quieter", [voiceId = link.value, current,
+                                             view] {
+                jilchat::setVoiceVolume(voiceId, current - 10);
+                view->queueUpdate();
+            });
+            voiceMenu->addAction("Louder", [voiceId = link.value, current,
+                                            view] {
+                jilchat::setVoiceVolume(voiceId, current + 10);
+                view->queueUpdate();
+            });
+            voiceMenu->addAction("Use default volume",
+                                 [voiceId = link.value, view] {
+                                     jilchat::resetVoiceVolume(voiceId);
+                                     view->queueUpdate();
+                                 });
+            voiceMenu->addAction("Play", [voiceId = link.value] {
+                jilchat::playVoiceMessage(voiceId);
+            });
+            menu->addAction("&Copy link", [voiceUrl] {
+                crossPlatformCopy(voiceUrl);
+            });
+            menu->addAction("&Open link", [voiceUrl] {
+                QDesktopServices::openUrl(QUrl(voiceUrl));
+            });
+            menu->addSeparator();
+        }
         return;
     }
 
@@ -3647,7 +3698,7 @@ void ChannelView::addContextMenuItems(
     addImageContextMenuItems(menu, hoveredElement);
 
     // Add link options if the element clicked contains a link
-    addLinkContextMenuItems(menu, hoveredElement);
+    addLinkContextMenuItems(menu, hoveredElement, this);
 
     // Add message options
     this->addMessageContextMenuItems(menu, layout);
@@ -4304,6 +4355,11 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
             {
                 QDesktopServices::openUrl(QUrl(link.value));
             }
+        }
+        break;
+
+        case Link::JilVoiceMessage: {
+            jilchat::playVoiceMessage(link.value);
         }
         break;
 

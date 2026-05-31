@@ -428,6 +428,8 @@ set(SOURCE_FILES
 
         providers/jilchat/JilChatBadges.cpp
         providers/jilchat/JilChatBadges.hpp
+        providers/jilchat/JilChatVoice.cpp
+        providers/jilchat/JilChatVoice.hpp
 
         providers/colors/ColorProvider.cpp
         providers/colors/ColorProvider.hpp

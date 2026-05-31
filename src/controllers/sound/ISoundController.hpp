@@ -23,7 +23,19 @@ public:
     ISoundController &operator=(const ISoundController &) = delete;
     ISoundController &operator=(ISoundController &&) = delete;
 
-    virtual void play(const QUrl &sound) = 0;
+    // Play a sound from the given url at full volume.
+    // This function should not block.
+    void play(const QUrl &sound)
+    {
+        this->play(sound, 1.F);
+    }
+
+    // Play a sound from the given url at the given volume.
+    // If the url points to something that isn't a local file, it will play
+    // the default sound initialized in the initialize method.
+    //
+    // This function should not block.
+    virtual void play(const QUrl &sound, float volume) = 0;
 };
 
 }  // namespace chatterino

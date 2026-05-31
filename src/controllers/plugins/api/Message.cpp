@@ -132,6 +132,7 @@ void setLinkOn(MessageElement *el, const Link &link)
         case Link::OpenAccountsPage:
         case Link::Reconnect:
         case Link::ViewThread:
+        case Link::JilVoiceMessage:
             throw std::runtime_error("Invalid link type. How'd this happen?");
     }
     el->setTooltip(tooltip);

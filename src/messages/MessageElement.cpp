@@ -1518,6 +1518,68 @@ std::string_view EmoteLinkElement::type() const
     return std::remove_pointer_t<decltype(this)>::TYPE;
 }
 
+VoiceMessageElement::VoiceMessageElement(QString voiceId, QString originalUrl,
+                                         MessageElementFlags flags)
+    : MessageElement(flags)
+    , voiceId_(std::move(voiceId))
+    , originalUrl_(std::move(originalUrl))
+{
+    this->setTooltip(QStringLiteral("JilChat voice message"));
+}
+
+void VoiceMessageElement::addToContainer(MessageLayoutContainer &container,
+                                         const MessageLayoutContext &ctx)
+{
+    if (!ctx.flags.hasAny(this->getFlags()))
+    {
+        return;
+    }
+
+    const auto scale = container.getScale();
+    const QSizeF size(168 * scale, 26 * scale);
+    auto *element =
+        new VoiceMessageLayoutElement(*this, this->voiceId_, size, scale);
+    element->setLink(this->getLink());
+    container.addElement(element);
+}
+
+Link VoiceMessageElement::getLink() const
+{
+    return {Link::JilVoiceMessage, this->voiceId_};
+}
+
+QJsonObject VoiceMessageElement::toJson() const
+{
+    auto base = MessageElement::toJson();
+    base["type"_L1] = u"VoiceMessageElement"_s;
+    base["voiceId"_L1] = this->voiceId_;
+    base["url"_L1] = this->originalUrl_;
+    return base;
+}
+
+std::string_view VoiceMessageElement::type() const
+{
+    return std::remove_pointer_t<decltype(this)>::TYPE;
+}
+
+std::unique_ptr<MessageElement> VoiceMessageElement::clone() const
+{
+    auto elem = std::make_unique<VoiceMessageElement>(
+        this->voiceId_, this->originalUrl_, this->getFlags());
+    elem->cloneFrom(*this);
+    return elem;
+}
+
+const QString &VoiceMessageElement::voiceId() const
+{
+    return this->voiceId_;
+}
+
+const QString &VoiceMessageElement::originalUrl() const
+{
+    return this->originalUrl_;
+}
+
 MentionElement::MentionElement(const QString &displayName, QString loginName_,
                                MessageColor fallbackColor_,
                                MessageColor userColor_)

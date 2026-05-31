@@ -11,6 +11,7 @@
 #include "messages/MessageElement.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/twitch/TwitchEmotes.hpp"
 #include "singletons/Settings.hpp"
 #include "util/DebugCount.hpp"
@@ -26,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace {
 
@@ -732,6 +734,116 @@ qreal TextIconLayoutElement::getXFromIndex(size_t index)
     {
         return this->getRect().right();
     }
+}
+
+VoiceMessageLayoutElement::VoiceMessageLayoutElement(MessageElement &creator,
+                                                     QString voiceId,
+                                                     QSizeF size, float scale)
+    : MessageLayoutElement(creator, size)
+    , voiceId_(std::move(voiceId))
+    , scale_(scale)
+{
+    this->trailingSpace = creator.hasTrailingSpace();
+}
+
+void VoiceMessageLayoutElement::addCopyTextToString(QString &str,
+                                                    uint32_t /*from*/,
+                                                    uint32_t to) const
+{
+    str += QStringLiteral("https://jil.chat/v/%1").arg(this->voiceId_);
+    if (this->hasTrailingSpace() && to >= 2)
+    {
+        str += ' ';
+    }
+}
+
+size_t VoiceMessageLayoutElement::getSelectionIndexCount() const
+{
+    return this->trailingSpace ? 2 : 1;
+}
+
+void VoiceMessageLayoutElement::paint(QPainter &painter,
+                                      const MessageColors &messageColors)
+{
+    const auto rect = this->getRect();
+    const qreal radius = rect.height() / 2.0;
+    const QColor accent(145, 66, 255);
+    QColor bg = messageColors.regularText;
+    bg.setAlphaF(0.08);
+    QColor muted = messageColors.regularText;
+    muted.setAlphaF(0.24);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(bg);
+    painter.drawRoundedRect(rect, radius, radius);
+
+    QPainterPath triangle;
+    const qreal iconX = rect.left() + 10 * this->scale_;
+    const qreal iconY = rect.center().y();
+    triangle.moveTo(iconX, iconY - 5 * this->scale_);
+    triangle.lineTo(iconX, iconY + 5 * this->scale_);
+    triangle.lineTo(iconX + 8 * this->scale_, iconY);
+    triangle.closeSubpath();
+    painter.setBrush(accent);
+    painter.drawPath(triangle);
+
+    const qreal barWidth = 2 * this->scale_;
+    const qreal gap = 2 * this->scale_;
+    const qreal barsLeft = rect.left() + 30 * this->scale_;
+    const qreal barsRight = rect.right() - 44 * this->scale_;
+    const int count = std::max(
+        1, static_cast<int>((barsRight - barsLeft) / (barWidth + gap)));
+    for (int i = 0; i < count; ++i)
+    {
+        const qreal height = this->barHeight(i, count) * this->scale_;
+        const QRectF bar(barsLeft + i * (barWidth + gap),
+                         rect.center().y() - height / 2.0, barWidth, height);
+        painter.setBrush(muted);
+        painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
+    }
+
+    painter.setPen(messageColors.systemText);
+    painter.setFont(getApp()->getFonts()->getFont(FontStyle::ChatSmall,
+                                                  this->scale_));
+    const auto volumeText =
+        QStringLiteral("%1%").arg(jilchat::getVoiceVolume(this->voiceId_));
+    painter.drawText(QRectF(rect.right() - 43 * this->scale_, rect.top(),
+                            34 * this->scale_, rect.height()),
+                     Qt::AlignVCenter | Qt::AlignRight,
+                     volumeText);
+    painter.restore();
+}
+
+bool VoiceMessageLayoutElement::paintAnimated(QPainter & /*painter*/,
+                                              qreal /*yOffset*/)
+{
+    return false;
+}
+
+int VoiceMessageLayoutElement::getMouseOverIndex(QPointF /*abs*/) const
+{
+    return 0;
+}
+
+qreal VoiceMessageLayoutElement::getXFromIndex(size_t index)
+{
+    return index <= 0 ? this->getRect().left() : this->getRect().right();
+}
+
+qreal VoiceMessageLayoutElement::barHeight(int index, int /*count*/) const
+{
+    uint h = uint(index) * 2654435761U;
+    for (const auto c : this->voiceId_)
+    {
+        h = (h * 31U) + uint(c.unicode());
+    }
+    h ^= h >> 16;
+    h *= 0x45d9f3bU;
+    h ^= h >> 16;
+    const qreal norm = qreal(h & 0xFFFFU) / qreal(0xFFFFU);
+    return 4 + norm * 12;
 }
 
 ReplyCurveLayoutElement::ReplyCurveLayoutElement(MessageElement &creator,

@@ -73,6 +73,19 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->setTooltip("Show the badge picker button in the chat input bar.")
         ->addTo(layout);
 
+    layout.addTitle("Voice messages");
+    SettingWidget::intInput("Default voice message volume",
+                            s.jilChatVoiceVolume,
+                            {
+                                .min = 0,
+                                .max = 100,
+                                .singleStep = 5,
+                                .suffix = QStringLiteral("%"),
+                            })
+        ->addKeywords({"jilchat", "voice", "volume", "sound"})
+        ->setTooltip("Controls the volume for JilChat voice messages.")
+        ->addTo(layout);
+
     layout.addTitle("Usercard");
     layout.addDescription("Choose which extra details appear on usercards.");
 

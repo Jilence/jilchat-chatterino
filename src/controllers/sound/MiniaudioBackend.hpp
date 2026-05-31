@@ -43,10 +43,15 @@ class MiniaudioBackend : public ISoundController
     std::atomic<State> state{State::Uninitialized};
 
 public:
+    using ISoundController::play;
+
     explicit MiniaudioBackend(bool keepEngineAlive_);
     ~MiniaudioBackend() override;
 
-    void play(const QUrl &sound) final;
+    // Play a sound from the given url
+    // If the url points to something that isn't a local file, it will play
+    // the default sound initialized in the initialize method
+    void play(const QUrl &sound, float volume) final;
 
 private:
     std::unique_ptr<ma_context> context;
@@ -58,6 +63,7 @@ private:
     std::vector<std::unique_ptr<ma_decoder>> defaultPingDecoders;
 
     std::vector<std::unique_ptr<ma_sound>> defaultPingSounds;
+    std::vector<std::unique_ptr<ma_sound>> activeFileSounds;
 
     ThreadGuard tgPlay;
 

@@ -16,6 +16,7 @@
 #include <QFile>
 #include <QScopeGuard>
 
+#include <algorithm>
 #include <memory>
 
 namespace {
@@ -219,6 +220,11 @@ MiniaudioBackend::~MiniaudioBackend()
         {
             ma_sound_uninit(snd.get());
         }
+        for (const auto &snd : this->activeFileSounds)
+        {
+            ma_sound_uninit(snd.get());
+        }
+        this->activeFileSounds.clear();
         for (const auto &dec : this->defaultPingDecoders)
         {
             ma_decoder_uninit(dec.get());
@@ -244,7 +250,7 @@ MiniaudioBackend::~MiniaudioBackend()
     }
 }
 
-void MiniaudioBackend::play(const QUrl &sound)
+void MiniaudioBackend::play(const QUrl &sound, float volume)
 {
     if (this->state != State::Initialized)
     {
@@ -253,7 +259,7 @@ void MiniaudioBackend::play(const QUrl &sound)
         return;
     }
 
-    boost::asio::post(this->ioContext, [this, sound] {
+    boost::asio::post(this->ioContext, [this, sound, volume] {
         static size_t i = 0;
 
         this->tgPlay.guard();
@@ -265,6 +271,17 @@ void MiniaudioBackend::play(const QUrl &sound)
             return;
         }
 
+        std::erase_if(this->activeFileSounds, [](const auto &snd) {
+            if (!ma_sound_at_end(snd.get()))
+            {
+                return false;
+            }
+            ma_sound_uninit(snd.get());
+            return true;
+        });
+
+        this->sleepTimer.cancel();
+
         auto result = ma_engine_start(this->engine.get());
         if (result != MA_SUCCESS)
         {
@@ -275,25 +292,47 @@ void MiniaudioBackend::play(const QUrl &sound)
         if (sound.isLocalFile())
         {
             auto soundPath = sound.toLocalFile();
-            result = ma_engine_play_sound(this->engine.get(),
-                                          qPrintable(soundPath), nullptr);
+            auto fileSound = std::make_unique<ma_sound>();
+            ma_uint32 soundFlags = 0;
+            soundFlags |= MA_SOUND_FLAG_DECODE;
+            soundFlags |= MA_SOUND_FLAG_NO_PITCH;
+            soundFlags |= MA_SOUND_FLAG_NO_SPATIALIZATION;
+
+            result = ma_sound_init_from_file(this->engine.get(),
+                                             qPrintable(soundPath), soundFlags,
+                                             nullptr, nullptr,
+                                             fileSound.get());
+            if (result != MA_SUCCESS)
+            {
+                qCWarning(chatterinoSound) << "Failed to load sound" << sound
+                                           << soundPath << ":" << result;
+                return;
+            }
+
+            ma_sound_set_volume(fileSound.get(),
+                                std::clamp(volume, 0.F, 1.F));
+            result = ma_sound_start(fileSound.get());
             if (result != MA_SUCCESS)
             {
                 qCWarning(chatterinoSound) << "Failed to play sound" << sound
                                            << soundPath << ":" << result;
+                ma_sound_uninit(fileSound.get());
+                return;
             }
+
+            this->activeFileSounds.push_back(std::move(fileSound));
+            return;
         }
-        else
+
+        // Play default sound, loaded from our resources in the constructor
+        auto &snd = this->defaultPingSounds[++i % NUM_SOUNDS];
+        ma_sound_seek_to_pcm_frame(snd.get(), 0);
+        ma_sound_set_volume(snd.get(), std::clamp(volume, 0.F, 1.F));
+        result = ma_sound_start(snd.get());
+        if (result != MA_SUCCESS)
         {
-            // Play default sound, loaded from our resources in the constructor
-            auto &snd = this->defaultPingSounds[++i % NUM_SOUNDS];
-            ma_sound_seek_to_pcm_frame(snd.get(), 0);
-            result = ma_sound_start(snd.get());
-            if (result != MA_SUCCESS)
-            {
-                qCWarning(chatterinoSound)
-                    << "Failed to play default ping" << result;
-            }
+            qCWarning(chatterinoSound) << "Failed to play default ping"
+                                       << result;
         }
 
         if (!this->keepEngineAlive)
