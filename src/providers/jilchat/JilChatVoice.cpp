@@ -4,13 +4,13 @@
 
 #include "providers/jilchat/JilChatVoice.hpp"
 
-#ifndef CHATTERINO_HAVE_QT_MULTIMEDIA
-#    include "Application.hpp"
-#    include "controllers/sound/ISoundController.hpp"
-#endif
+#include "Application.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/Outcome.hpp"
+#include "controllers/accounts/AccountController.hpp"
+#include "controllers/sound/ISoundController.hpp"
+#include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
 
@@ -25,6 +25,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <functional>
 
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
 #    include <QAudioOutput>
@@ -38,6 +39,8 @@
 namespace chatterino::jilchat {
 
 namespace {
+
+QString jilChatJwt;
 
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
 QHash<QString, QList<QPointer<QAudioOutput>>> activeAudioOutputs;
@@ -213,6 +216,85 @@ void playDownloadedVoice(const QString &voiceId, const QUrl &audioUrl)
         .execute();
 }
 
+void authenticateJilChat(const std::function<void(QString)> &onSuccess,
+                         const std::function<void()> &onFailure)
+{
+    auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (!account || account->isAnon() || account->getOAuthToken().isEmpty())
+    {
+        onFailure();
+        return;
+    }
+
+    QJsonObject body;
+    body["twitch_token"] = account->getOAuthToken();
+
+    NetworkRequest(QUrl(QStringLiteral("https://api.jil.chat/v1/auth/login")),
+                   NetworkRequestType::Post)
+        .timeout(10 * 1000)
+        .followRedirects(true)
+        .json(body)
+        .onSuccess([onSuccess, onFailure](const NetworkResult &result) {
+            const auto root = result.parseJson();
+            const auto jwt = root.value("jwt").toString();
+            if (jwt.isEmpty())
+            {
+                onFailure();
+                return;
+            }
+
+            jilChatJwt = jwt;
+            onSuccess(jwt);
+        })
+        .onError([onFailure](const NetworkResult &) {
+            onFailure();
+        })
+        .execute();
+}
+
+void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
+                    bool retriedAuth = false)
+{
+    const QUrl metaUrl(QStringLiteral("https://api.jil.chat/v1/voice/%1")
+                           .arg(voiceId));
+    auto request = NetworkRequest(metaUrl)
+                       .timeout(10 * 1000)
+                       .followRedirects(true)
+                       .header("Accept", "application/json");
+    if (!jwt.isEmpty())
+    {
+        request = std::move(request).header(
+            "Authorization", QStringLiteral("Bearer %1").arg(jwt));
+    }
+
+    std::move(request)
+        .onSuccess([voiceId](const NetworkResult &result) -> Outcome {
+            const auto root = result.parseJson();
+            const auto audioUrlString = root.value("audio_url").toString();
+            const QUrl audioUrl(audioUrlString);
+            if (!audioUrl.isValid() || audioUrl.isEmpty())
+            {
+                return Failure;
+            }
+
+            playDownloadedVoice(voiceId, audioUrl);
+            return Success;
+        })
+        .onError([voiceId, retriedAuth](const NetworkResult &result) {
+            const auto status = result.status().value_or(0);
+            if ((status == 401 || status == 403) && !retriedAuth)
+            {
+                jilChatJwt.clear();
+                authenticateJilChat(
+                    [voiceId](const QString &freshJwt) {
+                        fetchVoiceMeta(voiceId, freshJwt, true);
+                    },
+                    [] {});
+            }
+        })
+        .execute();
+}
+
 }  // namespace
 
 int getVoiceVolume(const QString &voiceId)
@@ -271,24 +353,7 @@ void playVoiceMessage(const QString &voiceId)
         return;
     }
 
-    const QUrl metaUrl(QStringLiteral("https://api.jil.chat/v1/voice/%1")
-                           .arg(voiceId));
-    NetworkRequest(metaUrl)
-        .timeout(10 * 1000)
-        .followRedirects(true)
-        .onSuccess([voiceId](const NetworkResult &result) -> Outcome {
-            const auto root = result.parseJson();
-            const auto audioUrlString = root.value("audio_url").toString();
-            const QUrl audioUrl(audioUrlString);
-            if (!audioUrl.isValid() || audioUrl.isEmpty())
-            {
-                return Failure;
-            }
-
-            playDownloadedVoice(voiceId, audioUrl);
-            return Success;
-        })
-        .execute();
+    fetchVoiceMeta(voiceId, {});
 }
 
 }  // namespace chatterino::jilchat
