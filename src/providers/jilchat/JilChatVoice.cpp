@@ -9,12 +9,12 @@
 #include "common/network/NetworkResult.hpp"
 #include "common/Outcome.hpp"
 #include "controllers/accounts/AccountController.hpp"
-#include "controllers/sound/ISoundController.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
 
 #include <QCryptographicHash>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -121,8 +121,11 @@ void playVoiceFile(const QString &path, const QString &voiceId)
                              }
                          });
         QObject::connect(player, &QMediaPlayer::errorOccurred, player,
-                         [player](QMediaPlayer::Error /*error*/,
+                         [player, voiceId](QMediaPlayer::Error /*error*/,
                                   const QString & /*errorString*/) {
+                             QDesktopServices::openUrl(QUrl(
+                                 QStringLiteral("https://jil.chat/v/%1")
+                                     .arg(voiceId)));
                              player->deleteLater();
                          });
         QObject::connect(player, &QObject::destroyed,
@@ -143,8 +146,9 @@ void playVoiceFile(const QString &path, const QString &voiceId)
         player->play();
     });
 #else
-    getApp()->getSound()->play(QUrl::fromLocalFile(path),
-                               getVoiceVolume(voiceId) / 100.F);
+    (void)path;
+    QDesktopServices::openUrl(
+        QUrl(QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
 #endif
 }
 
@@ -161,10 +165,10 @@ QString cachePathFor(const QString &voiceId, const QUrl &audioUrl)
     dir.mkpath(QStringLiteral("jilchat-voice"));
     dir.cd(QStringLiteral("jilchat-voice"));
 
-    auto suffix = QFileInfo(audioUrl.path()).suffix();
-    if (suffix.isEmpty())
+    auto suffix = QFileInfo(audioUrl.path()).suffix().toLower();
+    if (suffix.isEmpty() || suffix == QStringLiteral("mp3"))
     {
-        suffix = QStringLiteral("mp3");
+        suffix = QStringLiteral("mp4");
     }
 
     const auto safeId =
@@ -274,6 +278,8 @@ void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
             const QUrl audioUrl(audioUrlString);
             if (!audioUrl.isValid() || audioUrl.isEmpty())
             {
+                QDesktopServices::openUrl(QUrl(
+                    QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
                 return Failure;
             }
 
@@ -289,8 +295,16 @@ void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
                     [voiceId](const QString &freshJwt) {
                         fetchVoiceMeta(voiceId, freshJwt, true);
                     },
-                    [] {});
+                    [voiceId] {
+                        QDesktopServices::openUrl(QUrl(
+                            QStringLiteral("https://jil.chat/v/%1")
+                                .arg(voiceId)));
+                    });
+                return;
             }
+
+            QDesktopServices::openUrl(
+                QUrl(QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
         })
         .execute();
 }

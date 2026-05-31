@@ -22,7 +22,7 @@ class Chatterino(ConanFile):
     generators = "CMakeDeps"
 
     def requirements(self):
-        self.requires("boost/1.90.0")
+        self.requires("boost/1.89.0")
 
         # if self.settings.os != "Windows":
         #     return
