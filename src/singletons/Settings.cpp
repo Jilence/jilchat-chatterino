@@ -16,9 +16,16 @@
 #include "debug/Benchmark.hpp"
 #include "pajlada/settings/signalargs.hpp"
 #include "util/Backup.hpp"
+#include "util/CombinePath.hpp"
 #include "util/WindowsHelper.hpp"
 
 #include <pajlada/signals/scoped-connection.hpp>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QSaveFile>
 #include <QStringList>
 #include <rapidjson/pointer.h>
 
@@ -90,6 +97,114 @@ QString formatOutgoingTranslationChannelSettings(
 {
     return QStringList{settings.channel, settings.mode, settings.targetLanguage}
         .join(QLatin1Char('\t'));
+}
+
+constexpr auto SETTINGS_IMPORT_FORMAT = "leafyrino-settings-export";
+constexpr auto PENDING_SETTINGS_IMPORT_FILENAME = "pending-settings-import.json";
+const QStringList SETTINGS_IMPORT_FILES = {
+    u"settings.json"_s,
+    u"commands.json"_s,
+    u"window-layout.json"_s,
+};
+
+QJsonDocument readJsonFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        return {};
+    }
+
+    QJsonParseError parseError;
+    auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+    {
+        return {};
+    }
+
+    return document;
+}
+
+bool writeJsonFile(const QString &path, const QJsonObject &object)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+    {
+        return false;
+    }
+
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Indented));
+    return file.commit();
+}
+
+QJsonObject preserveLocalAccounts(QJsonObject importedSettings,
+                                  const QJsonObject &currentSettings)
+{
+    importedSettings.remove(u"accounts"_s);
+    importedSettings.remove(u"kickAccounts"_s);
+
+    if (currentSettings.contains(u"accounts"_s))
+    {
+        importedSettings.insert(u"accounts"_s, currentSettings[u"accounts"_s]);
+    }
+    if (currentSettings.contains(u"kickAccounts"_s))
+    {
+        importedSettings.insert(u"kickAccounts"_s,
+                                currentSettings[u"kickAccounts"_s]);
+    }
+
+    return importedSettings;
+}
+
+void applyPendingSettingsImport(const QString &settingsDirectory)
+{
+    const auto pendingPath =
+        combinePath(settingsDirectory, PENDING_SETTINGS_IMPORT_FILENAME);
+    if (!QFileInfo::exists(pendingPath))
+    {
+        return;
+    }
+
+    auto importDocument = readJsonFile(pendingPath);
+    if (importDocument.isNull())
+    {
+        return;
+    }
+
+    const auto importObject = importDocument.object();
+    if (importObject[u"format"_s].toString() != SETTINGS_IMPORT_FORMAT ||
+        !importObject[u"files"_s].isObject())
+    {
+        return;
+    }
+
+    const auto files = importObject[u"files"_s].toObject();
+    const auto settingsPath = combinePath(settingsDirectory, "settings.json");
+    const auto currentSettings = QFileInfo::exists(settingsPath)
+                                     ? readJsonFile(settingsPath).object()
+                                     : QJsonObject{};
+
+    for (const auto &relativeFile : SETTINGS_IMPORT_FILES)
+    {
+        if (!files.contains(relativeFile) || !files[relativeFile].isObject())
+        {
+            continue;
+        }
+
+        auto object = files[relativeFile].toObject();
+        if (relativeFile == u"settings.json"_s)
+        {
+            object = preserveLocalAccounts(object, currentSettings);
+        }
+
+        if (!writeJsonFile(combinePath(settingsDirectory, relativeFile),
+                           object))
+        {
+            return;
+        }
+    }
+
+    QFile::remove(pendingPath);
 }
 
 }  // namespace
@@ -400,6 +515,8 @@ Settings::Settings(const Args &args, const QString &settingsDirectory,
     : prevInstance_(Settings::instance_)
     , disableSaving(args.dontSaveSettings)
 {
+    applyPendingSettingsImport(settingsDirectory);
+
     QString settingsPath = settingsDirectory + "/settings.json";
 
     // get global instance of the settings library
