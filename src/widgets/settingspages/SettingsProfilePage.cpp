@@ -26,6 +26,7 @@
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QVBoxLayout>
+#include <QWidget>
 
 namespace {
 
