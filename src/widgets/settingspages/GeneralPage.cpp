@@ -331,6 +331,23 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 {
     auto &s = *getSettings();
 
+    layout.addTitle("Settings Import/Export");
+    layout.addDescription(
+        "Export or import all local settings, hotkeys, highlights, moderation "
+        "buttons, commands, and tabs. Accounts are not exported.");
+    {
+        auto *box = new QHBoxLayout;
+        box->addWidget(layout.makeButton("Export settings", [this]() {
+            exportSettingsProfile(this);
+        }));
+        box->addWidget(layout.makeButton("Import settings", [this]() {
+            importSettingsProfile(this);
+        }));
+        box->addStretch(1);
+
+        layout.addLayout(box);
+    }
+
     layout.addTitle("Interface");
 
     {
@@ -1163,23 +1180,6 @@ void GeneralPage::initLayout(GeneralPageView &layout)
     }
 
     layout.addTitle("AppData & Cache");
-
-    layout.addSubtitle("Settings Profile");
-    layout.addDescription(
-        "Export or import all local settings, hotkeys, highlights, moderation "
-        "buttons, commands, and tabs. Accounts are not exported.");
-    {
-        auto *box = new QHBoxLayout;
-        box->addWidget(layout.makeButton("Export settings", [this]() {
-            exportSettingsProfile(this);
-        }));
-        box->addWidget(layout.makeButton("Import settings", [this]() {
-            importSettingsProfile(this);
-        }));
-        box->addStretch(1);
-
-        layout.addLayout(box);
-    }
 
     layout.addSubtitle("Application Data");
     layout.addDescription("All local files like settings and cache files are "
