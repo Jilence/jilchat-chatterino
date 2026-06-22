@@ -297,7 +297,6 @@ void KickApi::sendMessage(uint64_t broadcasterUserID, const QString &message,
         [cb = std::move(cb)](const ExpectedStr<Response> &res) {
             if (!res)
             {
-<<<<<<< HEAD
                 cb(ExpectedStr<void>{makeUnexpected(res.error())});
                 return;
             }
@@ -308,17 +307,6 @@ void KickApi::sendMessage(uint64_t broadcasterUserID, const QString &message,
                 return;
             }
             cb(ExpectedStr<void>{});
-=======
-                cb(makeUnexpected(res.error()));
-                return;
-            }
-            if (res->isSent)
-            {
-                cb(ExpectedStr<void>{});
-                return;
-            }
-            cb(makeUnexpected(u"Message was not sent"_s));
->>>>>>> nightly-build
         });
 }
 
