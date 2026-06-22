@@ -74,6 +74,13 @@ enum class ChatSendProtocol : int {
     Helix = 2,
 };
 
+enum class RecentMessagesApi : int {
+    Robotty = 0,
+    Zneix = 1,
+    Lilb = 2,
+    Zonian = 3,
+};
+
 enum class ShowModerationState : int {
     // Always show this moderation-related item
     Always = 0,
@@ -161,6 +168,23 @@ constexpr std::optional<std::string_view> qmagicenumDisplayName(
             return "5 seconds";
         case SplitMpsWindow::Seconds10:
             return "10 seconds";
+    }
+    return {};
+}
+
+constexpr std::optional<std::string_view> qmagicenumDisplayName(
+    RecentMessagesApi value) noexcept
+{
+    switch (value)
+    {
+        case RecentMessagesApi::Robotty:
+            return "Robotty - recent-messages.robotty.de";
+        case RecentMessagesApi::Zneix:
+            return "Zneix - recent-messages.zneix.eu";
+        case RecentMessagesApi::Lilb:
+            return "lilb - rm.lilb.dev";
+        case RecentMessagesApi::Zonian:
+            return "Zonian - logs.zonian.dev";
     }
     return {};
 }
@@ -855,6 +879,8 @@ public:
 
     BoolSetting loadTwitchMessageHistoryOnConnect = {
         "/misc/twitch/loadMessageHistoryOnConnect", true};
+    EnumStringSetting<RecentMessagesApi> recentMessagesApi = {
+        "/misc/twitch/recentMessagesApi", RecentMessagesApi::Robotty};
     IntSetting twitchMessageHistoryLimit = {
         "/misc/twitch/messageHistoryLimit",
         800,
@@ -890,6 +916,8 @@ public:
     BoolSetting showUsercardFollowerCount = {"/usercard/showFollowerCount",
                                              true};
     BoolSetting showUsercardCreatedDate = {"/usercard/showCreatedDate", true};
+    BoolSetting showFollowButtonInUsercard{"/usercard/showFollowButton", true};
+    BoolSetting confirmUnfollowFromUsercard{"/usercard/confirmUnfollow", true};
     BoolSetting showUsercardFollowage = {"/usercard/showFollowage", true};
     BoolSetting showUsercardFollowageRelativeTime = {
         "/usercard/showFollowageRelativeTime", true};
@@ -900,6 +928,8 @@ public:
                                              true};
     BoolSetting showUsercardChatterCount = {"/usercard/showChatterCount", true};
     BoolSetting showUsercardLastLive = {"/usercard/showLastLive", true};
+    BoolSetting showUsercardLiveViewerCount = {"/usercard/showLiveViewerCount",
+                                               false};
     BoolSetting showUsercardColor = {"/usercard/showColor", true};
     BoolSetting showUsercardSevenTVPaint = {"/usercard/showSevenTVPaint", true};
     BoolSetting showUsercardStatus = {"/usercard/showStatus", true};
@@ -1014,6 +1044,8 @@ public:
     /// Header controls and banner chrome scale, separate from message text.
     FloatSetting pinnedContentScale{"/moltorino/pinnedMessages/contentScale",
                                     1.1f};
+    BoolSetting showPinNotifications{
+        "/moltorino/pinnedMessages/showPinNotifications", true};
     BoolSetting showUnpinNotifications{
         "/moltorino/pinnedMessages/showUnpinNotifications", true};
     IntSetting defaultPinDuration{"/moltorino/pinnedMessages/defaultDuration",

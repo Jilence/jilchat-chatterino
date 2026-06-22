@@ -101,6 +101,12 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "the stream title.")
         ->addKeywords({"usercard", "last", "live", "stream"})
         ->addTo(layout);
+    SettingWidget::checkbox("Show live viewer count",
+                            s.showUsercardLiveViewerCount)
+        ->setTooltip("When enabled, replaces the red live dot next to the "
+                     "username with the live viewer count.")
+        ->addKeywords({"usercard", "live", "viewer", "count", "indicator"})
+        ->addTo(layout);
     SettingWidget::checkbox("Show user color", s.showUsercardColor)
         ->setTooltip("Show the user's Twitch chat color.")
         ->addKeywords({"usercard", "color", "chat"})
@@ -120,6 +126,18 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::checkbox("Show followage", s.showUsercardFollowage)
         ->addKeywords({"usercard", "followage", "follow"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show follow button", s.showFollowButtonInUsercard)
+        ->setTooltip("Show a follow/unfollow button on usercards. Requires "
+                     "Moltorino auth (Settings → Moltorino → Authentication).")
+        ->addKeywords({"usercard", "follow", "button"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Confirm before unfollowing from usercard",
+                            s.confirmUnfollowFromUsercard)
+        ->conditionallyEnabledBy(s.showFollowButtonInUsercard)
+        ->setTooltip("Ask before the usercard follow button unfollows a user. "
+                     "The /unfollow command still runs without a prompt.")
+        ->addKeywords({"usercard", "follow", "unfollow", "confirm"})
         ->addTo(layout);
     SettingWidget::checkbox("Show gift sub gifter", s.showUsercardSubGiftGifter)
         ->setTooltip("When the user has an active gifted subscription in a "
