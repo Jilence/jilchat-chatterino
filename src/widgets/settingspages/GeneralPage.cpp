@@ -1053,11 +1053,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->setTooltip("Show the stream title")
         ->addTo(layout);
 
-    layout.addSubtitle("R9K");
+    layout.addSubtitle("Unique chat (R9K)");
     auto toggleLocalr9kSeq = getApp()->getHotkeys()->getDisplaySequence(
         HotkeyCategory::Window, "toggleLocalR9K");
     QString toggleLocalr9kShortcut =
-        "an assigned hotkey (Window -> Toggle local R9K)";
+        "an assigned hotkey (Window -> Toggle local unique chat (R9K))";
     if (!toggleLocalr9kSeq.isEmpty())
     {
         toggleLocalr9kShortcut = toggleLocalr9kSeq.toString(
@@ -1356,16 +1356,6 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->setTooltip("When possible, restart Chatterino if the program crashes")
         ->addTo(layout);
 
-#if defined(Q_OS_LINUX) && !defined(NO_QTKEYCHAIN)
-    if (!getApp()->getPaths().isPortable())
-    {
-        SettingWidget::checkbox(
-            "Use libsecret/KWallet/Gnome keychain to secure passwords",
-            s.useKeyring)
-            ->addTo(layout);
-    }
-#endif
-
     SettingWidget::checkbox("Show 7TV Animated Profile Picture",
                             s.displaySevenTVAnimatedProfile)
         ->addTo(layout);
@@ -1661,6 +1651,21 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                             s.disableTabRenamingOnClick)
         ->setTooltip("Prevents the rename dialog from opening when a tab is "
                      "double-clicked")
+        ->addTo(layout);
+
+    SettingWidget::intInput(
+        "Shared chat session status refresh interval",
+        s.sharedChatSessionRefreshInterval,
+        {.min = 5, .max = 999, .singleStep = 1, .suffix = "s"})
+        ->setTooltip("How often Chatterino polls the Twitch API for the "
+                     "shared chat session status.")
+        ->addTo(layout);
+
+    SettingWidget::checkbox("Show shared chat badge for all messages",
+                            s.sharedChatAlwaysShowBadge)
+        ->setTooltip(
+            "If turned off, only messages from other participants have a "
+            "shared chat badge")
         ->addTo(layout);
 
     layout.addStretch();

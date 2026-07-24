@@ -6,6 +6,7 @@
 
 #include "Application.hpp"
 #include "common/Args.hpp"
+#include "common/Modes.hpp"
 #include "controllers/filters/FilterRecord.hpp"
 #include "controllers/highlights/HighlightBadge.hpp"
 #include "controllers/highlights/HighlightBlacklistUser.hpp"
@@ -510,10 +511,14 @@ void Settings::setOutgoingTranslationTargetLanguageForChannel(
 
 Settings *Settings::instance_ = nullptr;
 
-Settings::Settings(const Args &args, const QString &settingsDirectory,
-                   bool isTest)
+Settings::Settings(const Modes &modes, const Args &args,
+                   const QString &settingsDirectory,
+                   const SettingsArgs &settingsArgs)
     : prevInstance_(Settings::instance_)
     , disableSaving(args.dontSaveSettings)
+    , createShortcutForToasts(
+          "/notifications/createShortcutForToasts",
+          (modes.isPortable || modes.isExternallyPackaged) ? false : true)
 {
     applyPendingSettingsImport(settingsDirectory);
 
@@ -522,7 +527,7 @@ Settings::Settings(const Args &args, const QString &settingsDirectory,
     // get global instance of the settings library
     auto settingsInstance = pajlada::Settings::SettingManager::getInstance();
 
-    if (isTest)
+    if (settingsArgs.isTest)
     {
         settingsInstance->load(qPrintable(settingsPath));
     }

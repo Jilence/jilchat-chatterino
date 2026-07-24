@@ -384,7 +384,7 @@ declare namespace c2 {
     }
 
     interface VipBadgeElement extends Omit<BadgeElement, "type"> {
-        type: "ffz-badge";
+        type: "vip-badge";
     }
 
     interface FfzBadgeElement extends Omit<BadgeElement, "type"> {
@@ -451,6 +451,12 @@ declare namespace c2 {
         EventSub = 0,
         ModerationAction = 0,
         InvalidReplyTarget = 0,
+        WatchStreak = 0,
+        Announcement = 0,
+        UncategorizedNotification = 0,
+        ChatWarning = 0,
+        RepeatedMessage = 0,
+        Follow = 0,
     }
 
     enum MessageElementFlag {
@@ -534,6 +540,20 @@ declare namespace c2 {
     }
 
     function current_account(): TwitchAccount;
+
+    class DateTime {
+        static from_iso_string(str: string): DateTime;
+        to_iso_string(): string;
+        to_iso_string_without_ms(): string;
+
+        static current_local(): DateTime;
+        static current_utc(): DateTime;
+
+        static from_unix_milliseconds(ts: number): DateTime;
+        static from_unix_seconds(ts: number): DateTime;
+        to_unix_milliseconds(): number;
+        to_unix_seconds(): number;
+    }
 }
 
 declare module "chatterino.json" {

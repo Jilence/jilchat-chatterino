@@ -279,6 +279,8 @@ set(SOURCE_FILES
         controllers/plugins/api/ChannelRef.hpp
         controllers/plugins/api/ConnectionHandle.cpp
         controllers/plugins/api/ConnectionHandle.hpp
+        controllers/plugins/api/DateTime.cpp
+        controllers/plugins/api/DateTime.hpp
         controllers/plugins/api/DebugLibrary.cpp
         controllers/plugins/api/DebugLibrary.hpp
         controllers/plugins/api/EventType.hpp
@@ -328,6 +330,9 @@ set(SOURCE_FILES
 
         controllers/twitch/LiveController.cpp
         controllers/twitch/LiveController.hpp
+
+        controllers/channelpoints/ChannelPointsChartStore.cpp
+        controllers/channelpoints/ChannelPointsChartStore.hpp
 
         controllers/userdata/UserDataController.cpp
         controllers/userdata/UserDataController.hpp
@@ -617,11 +622,14 @@ set(SOURCE_FILES
 
         providers/twitch/api/Helix.cpp
         providers/twitch/api/Helix.hpp
+        providers/twitch/api/HelixEnums.hpp
         providers/twitch/api/TwitchGql.cpp
         providers/twitch/api/TwitchGql.hpp
 
         singletons/CrashHandler.cpp
         singletons/CrashHandler.hpp
+        singletons/FileLogger.cpp
+        singletons/FileLogger.hpp
         singletons/Fonts.cpp
         singletons/Fonts.hpp
         singletons/ImageUploader.cpp
@@ -716,6 +724,8 @@ set(SOURCE_FILES
         util/SignalListener.hpp
         util/StreamLink.cpp
         util/StreamLink.hpp
+        util/TabHistory.cpp
+        util/TabHistory.hpp
         util/ThreadGuard.hpp
         util/Twitch.cpp
         util/Twitch.hpp
@@ -808,6 +818,10 @@ set(SOURCE_FILES
         widgets/dialogs/ChannelFilterEditorDialog.hpp
         widgets/dialogs/ChannelPointsDialog.cpp
         widgets/dialogs/ChannelPointsDialog.hpp
+        widgets/dialogs/ChannelPointsChartDialog.cpp
+        widgets/dialogs/ChannelPointsChartDialog.hpp
+        widgets/dialogs/ChannelPointsChartView.cpp
+        widgets/dialogs/ChannelPointsChartView.hpp
         widgets/dialogs/ColorPickerDialog.cpp
         widgets/dialogs/ColorPickerDialog.hpp
         widgets/dialogs/EditHotkeyDialog.cpp
@@ -1042,6 +1056,12 @@ list(APPEND SOURCE_FILES ${RES_AUTOGEN_FILES})
 
 add_library(${LIBRARY_PROJECT} OBJECT ${SOURCE_FILES})
 
+if (APPLE)
+    target_link_libraries(${LIBRARY_PROJECT} PRIVATE
+        "$<LINK_LIBRARY:FRAMEWORK,Security>"
+    )
+endif ()
+
 if(CHATTERINO_PLUGINS)
     target_compile_definitions(${LIBRARY_PROJECT}
         PUBLIC
@@ -1106,6 +1126,7 @@ target_link_libraries(${LIBRARY_PROJECT}
         Qt${MAJOR_QT_VERSION}::Svg
         Qt${MAJOR_QT_VERSION}::SvgWidgets
         Qt${MAJOR_QT_VERSION}::Concurrent
+        Qt${MAJOR_QT_VERSION}::Charts
 
         LibCommuni::LibCommuni
         Pajlada::Serialize

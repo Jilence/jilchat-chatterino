@@ -6,14 +6,15 @@
 
 #include <QString>
 
-#include <optional>
-
 namespace chatterino {
+
+class Modes;
+class Args;
 
 class Paths
 {
 public:
-    Paths();
+    Paths(const Args &args, const Modes &modes);
 
     QString rootAppDataDirectory;
 
@@ -38,8 +39,6 @@ public:
     QString ipcDirectory;
 
     bool createFolder(const QString &folderPath);
-    [[deprecated("use Modes::instance().portable instead")]] bool isPortable()
-        const;
 
     QString cacheDirectory() const;
 
@@ -47,12 +46,10 @@ public:
 
 private:
     void initAppFilePathHash();
-    void initCheckPortable();
-    void initRootDirectory();
+    void initRootDirectory(const Args &args, const Modes &modes);
     void initSubDirectories();
 
-    std::optional<bool> portable_;
-
+    // Directory for cache files. Same as <appDataDirectory>/Misc
     QString cacheDirectory_;
 };
 

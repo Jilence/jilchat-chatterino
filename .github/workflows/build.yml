@@ -34,19 +34,13 @@ env:
   C2_APP_BUNDLE: Leafyrino.app
 
 jobs:
-  build-ubuntu-docker:
-    # Our Ubuntu builds are built using Docker images that have been pre-published.
-    # This speeds up builds for us since we do some pre-building of packages that takes a long time
-    # However, this means if you need to add a dependency to the build, you'll need to do that
-    # in the https://github.com/Chatterino/docker repository first.
-    name: "Build Ubuntu in Docker"
-    runs-on: ubuntu-latest
-    container: ${{ matrix.container }}
+  build-ubuntu:
+    name: "Build Ubuntu ${{ matrix.os }}, Qt ${{ matrix.qt-version }}"
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-22.04
-            container: ghcr.io/chatterino/chatterino2-build-ubuntu-22.04:latest
             qt-version: 6.7.2
             force-lto: false
             skip-artifact: false
@@ -55,35 +49,68 @@ jobs:
             build-deb: true
             plugins: true
           - os: ubuntu-24.04
-            container: ghcr.io/chatterino/chatterino2-build-ubuntu-24.04:latest
-            qt-version: 6.7.2
+            qt-version: 6.9.3
             force-lto: false
             skip-artifact: false
             skip-crashpad: false
             build-appimage: false
             build-deb: true
             plugins: true
-          - os: ubuntu-24.04
-            container: ghcr.io/chatterino/chatterino2-build-ubuntu-24.04:latest
-            qt-version: 6.7.2
+          - os: ubuntu-26.04
+            qt-version: 6.9.3
             force-lto: false
             skip-artifact: false
             skip-crashpad: false
-            build-deb: false
-            plugins: false
+            build-appimage: false
+            build-deb: true
+            plugins: true
     env:
       C2_ENABLE_LTO: ${{ matrix.force-lto }}
       C2_ENABLE_CRASHPAD: ${{ matrix.skip-crashpad == false }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0 # allows for tags access
 
-      - name: Fix git permission error
+      - name: Install system dependencies
         run: |
-          git config --global --add safe.directory '*'
+          sudo apt-get update
+          PACKAGES="cmake g++ git pkg-config libboost-dev libnotify-dev libssl-dev libsecret-1-dev hunspell libhunspell-dev file fuse libfuse2 patchelf"
+          if [ "${{ matrix.os }}" = "ubuntu-24.04" ] || [ "${{ matrix.os }}" = "ubuntu-26.04" ]; then
+            PACKAGES="$PACKAGES libboost-json-dev"
+          fi
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PACKAGES
+
+      - name: Cache Boost (Ubuntu 22.04)
+        if: matrix.os == 'ubuntu-22.04'
+        uses: actions/cache@v4
+        id: boost-cache
+        with:
+          path: ~/boost-1.83.0
+          key: boost-1.83.0-ubuntu-22.04-v1
+
+      - name: Install Boost with JSON (Ubuntu 22.04)
+        if: matrix.os == 'ubuntu-22.04' && steps.boost-cache.outputs.cache-hit != 'true'
+        run: |
+          BOOST_VER=1.83.0
+          BOOST_PREFIX="$HOME/boost-${BOOST_VER}"
+          BUILD_DIR="$(mktemp -d)"
+          cd "$BUILD_DIR"
+          wget -q "https://archives.boost.io/release/${BOOST_VER}/source/boost_1_83_0.tar.gz"
+          tar xf boost_1_83_0.tar.gz
+          cd boost_1_83_0
+          ./bootstrap.sh --prefix="${BOOST_PREFIX}"
+          ./b2 install --with-json --prefix="${BOOST_PREFIX}" -j"$(nproc)"
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          cache: true
+          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
+          modules: qtimageformats qtcharts
+          version: ${{ matrix.qt-version }}
 
       - name: Determine build type
         id: build-type
@@ -112,6 +139,9 @@ jobs:
         run: |
           mkdir build
           cd build
+          if [ "${{ matrix.os }}" = "ubuntu-22.04" ]; then
+            export CMAKE_PREFIX_PATH="$HOME/boost-1.83.0${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          fi
           CXXFLAGS=-fno-sized-deallocation cmake \
             -DCMAKE_INSTALL_PREFIX=appdir/usr/ \
             -DCMAKE_BUILD_TYPE=Release \
@@ -119,13 +149,11 @@ jobs:
             -DUSE_PRECOMPILED_HEADERS=OFF \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=On \
             -DCHATTERINO_LTO="$C2_ENABLE_LTO" \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR/lib/cmake" \
-            -DCHATTERINO_STATIC_QT_BUILD=On \
             -DCHATTERINO_NIGHTLY_BUILD=${{ steps.build-type.outputs.NIGHTLY_BUILD }} \
             -DFORCE_JSON_GENERATION=Off \
             -DCHATTERINO_PLUGINS=${{ case(matrix.plugins, 'On', 'Off') }} \
             ..
-          make -j"$(nproc)"
+          cmake --build . -j"$(nproc)"
 
       - name: Package - AppImage (Ubuntu)
         if: matrix.build-appimage
@@ -150,7 +178,7 @@ jobs:
         if: matrix.build-deb
         uses: actions/upload-artifact@v7
         with:
-          name: Chatterino-${{ matrix.os }}-Qt-${{ matrix.qt-version }}.deb
+          name: Chatterino-${{ matrix.os }}.deb
           path: build/Chatterino-${{ matrix.os }}-x86_64.deb
 
   build-flatpak:
@@ -201,7 +229,7 @@ jobs:
       C2_ARCH: ${{ case(endsWith(matrix.os, '-arm') || startsWith(matrix.os, 'macos'), 'arm', 'x86-64') }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0 # allows for tags access
@@ -235,7 +263,7 @@ jobs:
         with:
           cache: true
           cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
-          modules: qtimageformats qtmultimedia
+          modules: qtimageformats qtcharts
           version: ${{ matrix.qt-version }}
 
       # WINDOWS
@@ -259,7 +287,7 @@ jobs:
 
       - name: Cache conan packages (Windows)
         if: startsWith(matrix.os, 'windows')
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-conan-user-${{ hashFiles('**/conanfile.py') }}-QT6
           path: ~/.conan2/
@@ -269,6 +297,12 @@ jobs:
         if: startsWith(matrix.os, 'windows')
         with:
           python-version: "3.13"
+
+      - name: Install Clang (Windows)
+        uses: Nerixyz/install-llvm-action@4af87402e075801cb1ba829dcee5bfafdc733616
+        if: startsWith(matrix.os, 'windows')
+        with:
+          version: 22
 
       - name: Install and Setup Conan (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -297,13 +331,29 @@ jobs:
         shell: pwsh
         run: |
           cd build
+          # GitHub windows runners ship Chocolatey `ccache`, which CMake picks up as
+          # CMAKE_RC_COMPILER_LAUNCHER. That wraps `cmake -E cmake_llvm_rc` and breaks
+          # windows.rc via ccache @response files. Upstream uses llvm-rc + sccache for
+          # CXX only; strip ccache and clear launcher env so RC stays unwrapped.
+          $env:Path = (
+            $env:Path -split ';' |
+            Where-Object { $_ -and -not (Test-Path (Join-Path $_ 'ccache.exe')) }
+          ) -join ';'
+          Remove-Item Env:CMAKE_RC_COMPILER_LAUNCHER -ErrorAction SilentlyContinue
+          Remove-Item Env:CMAKE_CXX_COMPILER_LAUNCHER -ErrorAction SilentlyContinue
+          Remove-Item Env:CMAKE_C_COMPILER_LAUNCHER -ErrorAction SilentlyContinue
           cmake `
               -G Ninja `
+              -DCMAKE_CXX_COMPILER=clang-cl `
+              -DCMAKE_C_COMPILER=clang-cl `
+              -DCMAKE_RC_COMPILER=llvm-rc `
+              -DCMAKE_LINKER_TYPE=LLD `
               -DCMAKE_BUILD_TYPE=RelWithDebInfo `
               -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake" `
               -DUSE_PRECOMPILED_HEADERS=ON `
               -DBUILD_WITH_CRASHPAD="$Env:C2_ENABLE_CRASHPAD" `
               -DCHATTERINO_LTO="$Env:C2_ENABLE_LTO" `
+              -DCHATTERINO_FORCE_LTO="$Env:C2_ENABLE_LTO" `
               -DFORCE_JSON_GENERATION=${{ env.C2_ARCH == 'arm' && 'Off' || 'On' }} `
               -DSKIP_JSON_GENERATION=${{ env.C2_ARCH == 'arm' && 'On' || 'Off' }} `
               -DCHATTERINO_NIGHTLY_BUILD="${{ steps.build-type.outputs.NIGHTLY_BUILD }}" `
@@ -368,7 +418,7 @@ jobs:
           cmake \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-              -DUSE_PRECOMPILED_HEADERS=OFF \
+              -DUSE_PRECOMPILED_HEADERS=ON \
               -DCHATTERINO_LTO="$C2_ENABLE_LTO" \
               -DCHATTERINO_NO_AVIF_PLUGIN=On \
               -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
@@ -443,14 +493,14 @@ jobs:
           path: build/chatterino-macos-Qt-${{ matrix.qt-version }}-universal.dmg
 
   create-release:
-    needs: [build-ubuntu-docker, build-flatpak, build]
+    needs: [build-ubuntu, build-flatpak, build]
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/leafyrino')
     permissions:
       contents: write # create release
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # allows for tags access
 
@@ -503,3 +553,12 @@ jobs:
           git tag -f nightly-build
           git push -f origin nightly-build
         shell: bash
+
+  collect:
+    needs: [build, build-ubuntu, build-flatpak]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - run: jq --exit-status 'all(.result == "success")' <<< '${{ toJson(needs) }}'
+      - name: Done
+        run: exit 0

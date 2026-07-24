@@ -210,6 +210,8 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
         settings.removeSpacesBetweenEmotes);
     this->forceLayoutChannelViewsListener.add(settings.emoteScale);
     this->forceLayoutChannelViewsListener.add(settings.timestampFormat);
+    this->forceLayoutChannelViewsListener.add(
+        settings.showTimestampDateTooltip);
     this->forceLayoutChannelViewsListener.add(settings.collpseMessagesMinLines);
     this->forceLayoutChannelViewsListener.add(settings.enableRedeemedHighlight);
     this->forceLayoutChannelViewsListener.add(
@@ -396,6 +398,11 @@ Window *WindowManager::getLastSelectedWindow() const
     }
 
     return this->selectedWindow_;
+}
+
+std::span<Window *const> WindowManager::windows() const
+{
+    return this->windows_;
 }
 
 Window &WindowManager::createWindow(WindowType type, bool show, QWidget *parent)
@@ -719,9 +726,11 @@ void WindowManager::initialize()
     {
         WindowLayout windowLayout;
 
-        if (this->appArgs.customChannelLayout)
+        if (std::optional<WindowLayout> layout =
+                this->appArgs.makeCustomChannelLayout(
+                    this->windowLayoutFilePath))
         {
-            windowLayout = this->appArgs.customChannelLayout.value();
+            windowLayout = layout.value();
         }
         else
         {
@@ -1110,10 +1119,11 @@ void WindowManager::encodeChannel(IndirectChannel channel, QJsonObject &obj)
 {
     assertInGuiThread();
 
+    obj.insert("type", qmagicenum::enumNameString(channel.getType()));
     switch (channel.getType())
     {
-        case Channel::Type::Twitch: {
-            obj.insert("type", "twitch");
+        case Channel::Type::Twitch:
+        case Channel::Type::Misc:
             obj.insert("name", channel.get()->getName());
             if (auto *twitchChannel =
                     dynamic_cast<TwitchChannel *>(channel.get().get()))
@@ -1123,35 +1133,16 @@ void WindowManager::encodeChannel(IndirectChannel channel, QJsonObject &obj)
                     obj.insert("anonymous", true);
                 }
             }
-        }
-        break;
-        case Channel::Type::TwitchAutomod: {
-            obj.insert("type", "automod");
-        }
-        break;
-        case Channel::Type::TwitchMentions: {
-            obj.insert("type", "mentions");
-        }
-        break;
-        case Channel::Type::TwitchWatching: {
-            obj.insert("type", "watching");
-        }
-        break;
-        case Channel::Type::TwitchWhispers: {
-            obj.insert("type", "whispers");
-        }
-        break;
-        case Channel::Type::TwitchLive: {
-            obj.insert("type", "live");
-        }
-        break;
-        case Channel::Type::Misc: {
-            obj.insert("type", "misc");
-            obj.insert("name", channel.get()->getName());
-        }
-        break;
+            break;
+
+        case Channel::Type::TwitchWhispers:
+        case Channel::Type::TwitchWatching:
+        case Channel::Type::TwitchMentions:
+        case Channel::Type::TwitchLive:
+        case Channel::Type::TwitchAutomod:
+            break;
+
         case Channel::Type::Kick: {
-            obj.insert("type", "kick");
             obj.insert("name", channel.get()->getName());
             auto *kc = dynamic_cast<KickChannel *>(channel.get().get());
             if (kc)
@@ -1163,7 +1154,6 @@ void WindowManager::encodeChannel(IndirectChannel channel, QJsonObject &obj)
         }
         break;
         case Channel::Type::Multi: {
-            obj.insert("type", "multi");
             auto *mc = dynamic_cast<MultiChannel *>(channel.get().get());
             if (mc)
             {
@@ -1181,7 +1171,10 @@ void WindowManager::encodeChannel(IndirectChannel channel, QJsonObject &obj)
         }
         break;
 
-        default:
+        // FIXME: Remove these (#5703)
+        case Channel::Type::None:
+        case Channel::Type::Direct:
+        case Channel::Type::TwitchEnd:
             break;
     }
 }

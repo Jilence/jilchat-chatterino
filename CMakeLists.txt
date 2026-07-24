@@ -62,6 +62,13 @@ if(BUILD_BENCHMARKS)
     list(APPEND VCPKG_MANIFEST_FEATURES "benchmarks")
 endif()
 
+# Chocolatey ccache on Windows may export CMAKE_RC_COMPILER_LAUNCHER. Launchers break
+# llvm-rc (`cmake -E cmake_llvm_rc` + @response files). Clear before project() enables RC.
+if(WIN32)
+    unset(ENV{CMAKE_RC_COMPILER_LAUNCHER})
+    set(CMAKE_RC_COMPILER_LAUNCHER "" CACHE STRING "RC compiler launcher" FORCE)
+endif()
+
 project(chatterino
     VERSION 2.5.5
     DESCRIPTION "Chat client for twitch.tv"
@@ -98,12 +105,14 @@ else()
     set(MAJOR_QT_VERSION "5")
 endif()
 
-find_program(CCACHE_PROGRAM ccache)
 find_program(SCCACHE_PROGRAM sccache)
 if(SCCACHE_PROGRAM)
     set(_compiler_launcher ${SCCACHE_PROGRAM})
-elseif(CCACHE_PROGRAM)
-    set(_compiler_launcher ${CCACHE_PROGRAM})
+else()
+    find_program(CCACHE_PROGRAM ccache)
+    if(CCACHE_PROGRAM)
+        set(_compiler_launcher ${CCACHE_PROGRAM})
+    endif()
 endif()
 
 if(USE_ALTERNATE_LINKER)
@@ -117,7 +126,9 @@ if(USE_ALTERNATE_LINKER)
 endif()
 
 if(_compiler_launcher)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${_compiler_launcher}" CACHE STRING "CXX compiler launcher")
+    # FORCE so env CMAKE_*_COMPILER_LAUNCHER=ccache (e.g. chocolatey) cannot win over sccache
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${_compiler_launcher}" CACHE STRING "CXX compiler launcher" FORCE)
+    set(CMAKE_C_COMPILER_LAUNCHER "${_compiler_launcher}" CACHE STRING "C compiler launcher" FORCE)
     message(STATUS "Using ${_compiler_launcher} for speeding up build")
 
     if(MSVC)
@@ -144,6 +155,7 @@ find_package(Qt${MAJOR_QT_VERSION} REQUIRED
     Svg
     SvgWidgets
     Concurrent
+    Charts
 )
 find_package(Qt${MAJOR_QT_VERSION} COMPONENTS Multimedia)
 

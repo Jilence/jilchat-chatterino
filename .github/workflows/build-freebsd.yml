@@ -28,7 +28,7 @@ jobs:
       C2_ENABLE_LTO: false
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0 # allows for tags access
@@ -40,14 +40,14 @@ jobs:
           echo "mem_mb=$MEM_MB" >> $GITHUB_OUTPUT
 
       - name: Build using FreeBSD
-        uses: vmactions/freebsd-vm@v1.4.5
+        uses: vmactions/freebsd-vm@v1.5.0
         with:
           envs: "C2_ENABLE_LTO"
           release: "14.4"
           arch: x86_64
           mem: ${{ steps.mem.outputs.mem_mb }}
           prepare: |
-            pkg install -y boost-libs git libnotify qt6-base qt6-svg qt6-5compat qt6-imageformats qtkeychain-qt6 cmake pkgconf
+            pkg install -y boost-libs git libnotify qt6-base qt6-svg qt6-5compat qt6-charts qt6-imageformats qtkeychain-qt6 cmake pkgconf
           run: |
             git config --global --add safe.directory "$GITHUB_WORKSPACE"
             git submodule init

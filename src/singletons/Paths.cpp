@@ -4,6 +4,7 @@
 
 #include "singletons/Paths.hpp"
 
+#include "common/Args.hpp"
 #include "common/Modes.hpp"
 #include "singletons/Settings.hpp"
 #include "util/CombinePath.hpp"
@@ -114,23 +115,17 @@ void tryMigrateLinuxSettingsInto(const QString &destinationPath)
 
 }  // namespace
 
-Paths::Paths()
+Paths::Paths(const Args &args, const Modes &modes)
 {
     this->initAppFilePathHash();
 
-    this->initCheckPortable();
-    this->initRootDirectory();
+    this->initRootDirectory(args, modes);
     this->initSubDirectories();
 }
 
 bool Paths::createFolder(const QString &folderPath)
 {
     return QDir().mkpath(folderPath);
-}
-
-bool Paths::isPortable() const
-{
-    return Modes::instance().isPortable;
 }
 
 QString Paths::cacheDirectory() const
@@ -175,19 +170,17 @@ void Paths::initAppFilePathHash()
             .replace("/", "x");
 }
 
-void Paths::initCheckPortable()
+void Paths::initRootDirectory(const Args &args, const Modes &modes)
 {
-    this->portable_ = QFileInfo::exists(
-        combinePath(QCoreApplication::applicationDirPath(), "portable"));
-}
-
-void Paths::initRootDirectory()
-{
-    assert(this->portable_.has_value());
-
     this->rootAppDataDirectory = [&]() -> QString {
-        if (Modes::instance().isPortable)
+        if (modes.isPortable)
         {
+            // override
+            if (args.portableDirectory.has_value())
+            {
+                return args.portableDirectory.value();
+            }
+
             return QCoreApplication::applicationDirPath();
         }
 

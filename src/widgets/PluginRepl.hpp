@@ -9,6 +9,7 @@
 #    include "widgets/BaseWindow.hpp"
 
 #    include <boost/signals2/connection.hpp>
+#    include <pajlada/signals/scoped-connection.hpp>
 #    include <QString>
 #    include <QTextBlockFormat>
 #    include <QTextCharFormat>
@@ -58,7 +59,7 @@ private:
 
     boost::signals2::scoped_connection pluginDestroyConn;
     boost::signals2::scoped_connection pluginLogConn;
-    boost::signals2::scoped_connection pluginLoadedConn;
+    pajlada::Signals::ScopedConnection pluginLoadedConn;
 
     bool isPinned = false;
 

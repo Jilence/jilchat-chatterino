@@ -233,39 +233,19 @@ Split::Split(QWidget *parent)
             }
         });
 
-    // this connection can be ignored since the SplitInput is owned by this Split
+    // These connections can be ignored since the SplitInput is owned by this Split.
     std::ignore =
         this->input_->textChanged.connect([this](const QString &newText) {
-            if (getSettings()->showEmptyInput)
-            {
-                // We always show the input regardless of the text, so we can early out here
-                return;
-            }
-
-            if (newText.isEmpty())
-            {
-                this->input_->hide();
-            }
-            else if (this->input_->isHidden())
-            {
-                // Text updated and the input was previously hidden, show it
-                this->input_->show();
-            }
+            this->refreshInputState(newText);
         });
 
+    std::ignore = this->input_->historySearchStateChanged.connect([this] {
+        this->refreshInputState(this->input_->getInputText());
+    });
+
     getSettings()->showEmptyInput.connect(
-        [this](const bool &showEmptyInput) {
-            if (showEmptyInput)
-            {
-                this->input_->show();
-            }
-            else
-            {
-                if (this->input_->getInputText().isEmpty())
-                {
-                    this->input_->hide();
-                }
-            }
+        [this] {
+            this->refreshInputState(this->input_->getInputText());
         },
         this->signalHolder_);
 
@@ -1627,6 +1607,29 @@ void Split::updateBannerVisibility()
     setVisibility(selectedId == 0, selectedId == 1, selectedId == 2, true);
 }
 
+void Split::refreshInputState(const QString &inputText)
+{
+    if (getSettings()->showEmptyInput)
+    {
+        // We always show the input regardless of the text, so we can early out here
+        if (this->input_->isHidden())
+        {
+            this->input_->show();
+        }
+        return;
+    }
+
+    if (inputText.isEmpty() && !this->input_->isInHistorySearch())
+    {
+        this->input_->hide();
+    }
+    else
+    {
+        // Text updated and the input was previously hidden, show it
+        this->input_->show();
+    }
+}
+
 void Split::openChannelInBrowserPlayer(ChannelPtr channel)
 {
     if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
@@ -1695,20 +1698,18 @@ void Split::setChannel(IndirectChannel newChannel)
     this->predictionBanner_->setPrediction(std::nullopt, nullptr);
     this->pollBanner_->setPoll(std::nullopt, nullptr);
 
-    this->usermodeChangedConnection_.disconnect();
-    this->roomModeChangedConnection_.disconnect();
     this->indirectChannelChangedConnection_.disconnect();
     this->channelSignalHolder_.clear();
 
-    TwitchChannel *tc = dynamic_cast<TwitchChannel *>(newChannel.get().get());
-    auto *kc = dynamic_cast<KickChannel *>(newChannel.get().get());
     auto *mc = dynamic_cast<MultiChannel *>(newChannel.get().get());
+    auto *tc = dynamic_cast<TwitchChannel *>(newChannel.get().get());
 
     if (mc)
     {
         this->channelSignalHolder_.managedConnect(
             mc->activeChannelChanged, [this] {
                 this->updateInputPlaceholder();
+                this->updateChannelConnections();
                 this->scheduleDeferredTwitchRefresh(true);
             });
 
@@ -1720,15 +1721,6 @@ void Split::setChannel(IndirectChannel newChannel)
     }
     else if (tc != nullptr)
     {
-        this->usermodeChangedConnection_ = tc->userStateChanged.connect([this] {
-            this->header_->updateIcons();
-            this->header_->updateRoomModes();
-        });
-
-        this->roomModeChangedConnection_ = tc->roomModesChanged.connect([this] {
-            this->header_->updateRoomModes();
-        });
-
         auto updatePin = [this, tc] {
             this->noteBannerStateChanged(tc, 0);
             this->pinnedBanner_->setPinnedMessage(*tc->accessPinnedMessage(),
@@ -1993,28 +1985,9 @@ void Split::setChannel(IndirectChannel newChannel)
                 this->updateBannerVisibility();
             },
             this->channelSignalHolder_);
-
-        this->channelSignalHolder_.managedConnect(
-            tc->sendWaitUpdate, [this](const QString &text) {
-                this->getInput().setSendWaitStatus(text);
-            });
     }
-    else if (kc != nullptr)
-    {
-        this->usermodeChangedConnection_ = kc->userStateChanged.connect([this] {
-            this->header_->updateIcons();
-            this->header_->updateRoomModes();
-        });
 
-        this->roomModeChangedConnection_ = kc->roomModesChanged.connect([this] {
-            this->header_->updateRoomModes();
-        });
-
-        this->channelSignalHolder_.managedConnect(
-            kc->sendWaitUpdate, [this](const QString &text) {
-                this->getInput().setSendWaitStatus(text);
-            });
-    }
+    this->updateChannelConnections();
 
     this->primingBannerState_ = false;
 
@@ -2041,6 +2014,62 @@ void Split::setChannel(IndirectChannel newChannel)
     getApp()->getWindows()->queueSave();
 }
 
+void Split::updateChannelConnections()
+{
+    this->usermodeChangedConnection_.disconnect();
+    this->roomModeChangedConnection_.disconnect();
+    this->sendWaitConnection_ = pajlada::Signals::ScopedConnection{};
+    this->sharedChatConnection_ = pajlada::Signals::ScopedConnection{};
+    this->getInput().setSendWaitStatus({});
+
+    auto *channel = this->channel_.get().get();
+    auto *mc = dynamic_cast<MultiChannel *>(channel);
+    if (mc)
+    {
+        channel = mc->activeChannel()->channel.get();
+    }
+
+    auto *tc = dynamic_cast<TwitchChannel *>(channel);
+    auto *kc = dynamic_cast<KickChannel *>(channel);
+    if (tc)
+    {
+        this->usermodeChangedConnection_ = tc->userStateChanged.connect([this] {
+            this->header_->updateIcons();
+            this->header_->updateRoomModes();
+        });
+
+        this->roomModeChangedConnection_ = tc->roomModesChanged.connect([this] {
+            this->header_->updateRoomModes();
+        });
+
+        this->sendWaitConnection_ =
+            tc->sendWaitUpdate.connect([this](const QString &text) {
+                this->getInput().setSendWaitStatus(text);
+            });
+
+        this->sharedChatConnection_ = tc->sharedChatStatusChanged.connect(
+            [this](const std::vector<HelixMinimalUser> &) {
+                this->header_->updateChannelText();
+            });
+    }
+    else if (kc != nullptr)
+    {
+        this->usermodeChangedConnection_ = kc->userStateChanged.connect([this] {
+            this->header_->updateIcons();
+            this->header_->updateRoomModes();
+        });
+
+        this->roomModeChangedConnection_ = kc->roomModesChanged.connect([this] {
+            this->header_->updateRoomModes();
+        });
+
+        this->sendWaitConnection_ =
+            kc->sendWaitUpdate.connect([this](const QString &text) {
+                this->getInput().setSendWaitStatus(text);
+            });
+    }
+}
+
 void Split::setModerationMode(bool value)
 {
     this->moderationMode_ = value;
@@ -2062,7 +2091,7 @@ void Split::setCheckSpellingOverride(std::optional<bool> override)
     this->input_->setCheckSpellingOverride(override);
 }
 
-void Split::syncPerSplitPanelHidesToPanels()
+void Split::syncPerSplitBannerHidesToBanners()
 {
     this->updateBannerVisibility();
 }
@@ -2115,7 +2144,7 @@ void Split::setPerSplitHidePoll(bool hide)
     getApp()->getWindows()->queueSave();
 }
 
-void Split::setPerSplitHideAllPanels(bool hide)
+void Split::setPerSplitHideAllBanners(bool hide)
 {
     if (this->perSplitHidePinnedMessage_ == hide &&
         this->perSplitHidePrediction_ == hide &&
@@ -2126,12 +2155,12 @@ void Split::setPerSplitHideAllPanels(bool hide)
     this->perSplitHidePinnedMessage_ = hide;
     this->perSplitHidePrediction_ = hide;
     this->perSplitHidePoll_ = hide;
-    this->syncPerSplitPanelHidesToPanels();
+    this->syncPerSplitBannerHidesToBanners();
     getApp()->getWindows()->queueSave();
 }
 
-void Split::loadPerSplitPanelHides(bool hidePinned, bool hidePrediction,
-                                   bool hidePoll)
+void Split::loadPerSplitBannerHides(bool hidePinned, bool hidePrediction,
+                                    bool hidePoll)
 {
     if (this->perSplitHidePinnedMessage_ == hidePinned &&
         this->perSplitHidePrediction_ == hidePrediction &&
@@ -2142,7 +2171,7 @@ void Split::loadPerSplitPanelHides(bool hidePinned, bool hidePrediction,
     this->perSplitHidePinnedMessage_ = hidePinned;
     this->perSplitHidePrediction_ = hidePrediction;
     this->perSplitHidePoll_ = hidePoll;
-    this->syncPerSplitPanelHidesToPanels();
+    this->syncPerSplitBannerHidesToBanners();
 }
 
 void Split::insertTextToInput(const QString &text)
@@ -2190,10 +2219,23 @@ void Split::updateGifEmotes()
     this->view_->queueUpdate();
 }
 
-void Split::recoverDismissedPanels()
+void Split::recoverDismissedBanners()
 {
     this->bannerToggleOverride_ = -1;
     this->clearBannerAttention();
+
+    this->pinnedBanner_->clearDismissState();
+    this->predictionBanner_->clearDismissState();
+    this->pollBanner_->clearDismissState();
+
+    auto *tc = dynamic_cast<TwitchChannel *>(this->getSelectedChannel().get());
+    if (tc != nullptr)
+    {
+        this->pinnedBanner_->setPinnedMessage(*tc->accessPinnedMessage(), tc);
+        this->predictionBanner_->setPrediction(*tc->accessPrediction(), tc);
+        this->pollBanner_->setPoll(*tc->accessPoll(), tc);
+    }
+
     this->scheduleDeferredTwitchRefresh(true);
     this->updateBannerVisibility();
 }

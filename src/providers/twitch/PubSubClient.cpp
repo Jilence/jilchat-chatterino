@@ -165,39 +165,7 @@ void PubSubClient::handleResponse(const PubSubMessage &message)
 
 void PubSubClient::handleMessageResponse(const PubSubMessageMessage &message)
 {
-    if (message.topic.startsWith("community-points-channel-v1."))
-    {
-        auto oInnerMessage =
-            message.toInner<PubSubCommunityPointsChannelV1Message>();
-        if (!oInnerMessage)
-        {
-            qCDebug(chatterinoPubSub)
-                << "Malformed community-points-channel-v1 message";
-            return;
-        }
-
-        const auto &innerMessage = *oInnerMessage;
-
-        switch (innerMessage.type)
-        {
-            case PubSubCommunityPointsChannelV1Message::Type::
-                AutomaticRewardRedeemed:
-            case PubSubCommunityPointsChannelV1Message::Type::RewardRedeemed: {
-                auto redemption =
-                    innerMessage.data.value("redemption").toObject();
-                this->manager_.pointReward.redeemed.invoke(redemption);
-            }
-            break;
-
-            case PubSubCommunityPointsChannelV1Message::Type::INVALID:
-            default: {
-                qCDebug(chatterinoPubSub)
-                    << "Invalid point event type:" << innerMessage.typeString;
-            }
-            break;
-        }
-    }
-    else if (message.topic.startsWith("pinned-chat-updates-v1."))
+    if (message.topic.startsWith("pinned-chat-updates-v1."))
     {
         auto oInnerMessage =
             message.toInner<PubSubPinnedChatUpdatesV1Message>();
@@ -229,6 +197,38 @@ void PubSubClient::handleMessageResponse(const PubSubMessageMessage &message)
             default: {
                 qCDebug(chatterinoPubSub) << "Invalid pinned chat event type:"
                                           << innerMessage.typeString;
+            }
+            break;
+        }
+    }
+    else if (message.topic.startsWith("community-points-channel-v1."))
+    {
+        auto oInnerMessage =
+            message.toInner<PubSubCommunityPointsChannelV1Message>();
+        if (!oInnerMessage)
+        {
+            qCDebug(chatterinoPubSub)
+                << "Malformed community-points-channel-v1 message";
+            return;
+        }
+
+        const auto &innerMessage = *oInnerMessage;
+
+        switch (innerMessage.type)
+        {
+            case PubSubCommunityPointsChannelV1Message::Type::
+                AutomaticRewardRedeemed:
+            case PubSubCommunityPointsChannelV1Message::Type::RewardRedeemed: {
+                auto redemption =
+                    innerMessage.data.value("redemption").toObject();
+                this->manager_.pointReward.redeemed.invoke(redemption);
+            }
+            break;
+
+            case PubSubCommunityPointsChannelV1Message::Type::INVALID:
+            default: {
+                qCDebug(chatterinoPubSub)
+                    << "Invalid point event type:" << innerMessage.typeString;
             }
             break;
         }

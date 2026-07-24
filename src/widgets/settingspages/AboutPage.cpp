@@ -4,9 +4,11 @@
 
 #include "widgets/settingspages/AboutPage.hpp"
 
+#include "Application.hpp"
 #include "common/Common.hpp"
 #include "common/QLogging.hpp"
 #include "common/Version.hpp"
+#include "singletons/Paths.hpp"
 #include "util/Expected.hpp"
 #include "util/LayoutCreator.hpp"
 #include "util/RemoveScrollAreaBackground.hpp"
@@ -65,6 +67,15 @@ AboutPage::AboutPage()
                 string += " " % version.extraString();
             }
 
+            string +=
+                "<br><br>Your settings directory is located at <a href=\"";
+            string +=
+                QUrl::fromLocalFile(getApp()->getPaths().settingsDirectory)
+                    .toString(QUrl::FullyEncoded);
+            string += "\">";
+            string += getApp()->getPaths().settingsDirectory.toHtmlEscaped();
+            string += "</a>.";
+
             auto label = vbox.emplace<QLabel>(string);
             label->setWordWrap(true);
             label->setOpenExternalLinks(true);
@@ -114,11 +125,6 @@ AboutPage::AboutPage()
             addLicense(form.getElement(), "Pajlada/Serialize",
                        "https://github.com/pajlada/serialize",
                        ":/licenses/pajlada_serialize.txt");
-#ifndef NO_QTKEYCHAIN
-            addLicense(form.getElement(), "QtKeychain",
-                       "https://github.com/frankosterfeld/qtkeychain",
-                       ":/licenses/qtkeychain.txt");
-#endif
             addLicense(form.getElement(), "lrucache",
                        "https://github.com/lamerman/cpp-lru-cache",
                        ":/licenses/lrucache.txt");

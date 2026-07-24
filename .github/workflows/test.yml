@@ -16,25 +16,18 @@ env:
   QT_QPA_PLATFORM: minimal
 
 concurrency:
-  group: test-${{ github.ref }}
+  group: test-ubuntu-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
     if: false # Disabled
-    name: "Test ${{ matrix.os }}, Qt ${{ matrix.qt-version }}"
+    name: "Test Ubuntu"
     runs-on: ubuntu-latest
-    container: ${{ matrix.container }}
-    strategy:
-      matrix:
-        include:
-          - os: "ubuntu-22.04"
-            container: ghcr.io/chatterino/chatterino2-build-ubuntu-22.04:latest
-            qt-version: 6.7.1
-      fail-fast: false
+    container: ghcr.io/chatterino/chatterino2-build-ubuntu-26.04:latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -45,7 +38,18 @@ jobs:
         run: |
           sudo apt update
           sudo DEBIAN_FRONTEND=noninteractive apt -y --no-install-recommends install \
+            cmake g++ git pkg-config \
+            libboost-dev libnotify-dev libssl-dev libsecret-1-dev \
+            hunspell libhunspell-dev \
             libbenchmark-dev gcovr gnupg
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          cache: true
+          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
+          modules: qtimageformats qtcharts
+          version: ${{ matrix.qt-version }}
 
       - name: Install httpbox
         run: |
@@ -60,8 +64,6 @@ jobs:
             -DBUILD_TESTS=On \
             -DBUILD_BENCHMARKS=On \
             -DBUILD_APP=OFF \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR/lib/cmake" \
-            -DCHATTERINO_STATIC_QT_BUILD=On \
             -DCHATTERINO_GENERATE_COVERAGE=On \
             -DCMAKE_BUILD_TYPE=Debug \
             ..
@@ -95,7 +97,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: github.repository_owner == 'Chatterino'
-        uses: codecov/codecov-action@v6.0.0
+        uses: codecov/codecov-action@v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           plugins: gcov

@@ -413,6 +413,15 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                 blendColors(backgroundColor, *this->message_->highlightColor);
         }
     }
+    else if (this->message_->flags.has(MessageFlag::Announcement) &&
+             ctx.preferences.enableAnnouncementHighlight)
+    {
+        backgroundColor = blendColors(
+            backgroundColor,
+            *ctx.colorProvider.color(colorTypeFromHelixAnnouncementColor(
+                this->message_->announcementColor,
+                ctx.preferences.enableColoredAnnouncementHighlight)));
+    }
     else if (this->message_->flags.has(MessageFlag::Subscription) &&
              ctx.preferences.enableSubHighlight)
     {
@@ -483,6 +492,12 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             case Message::ClientDetectionStatus::Abnormal:
                 break;
         }
+    }
+    else if (this->message_->flags.has(MessageFlag::UncategorizedNotification))
+    {
+        // TODO: Give this a better/its own color :-)
+        backgroundColor = blendColors(
+            backgroundColor, *ctx.colorProvider.color(ColorType::Subscription));
     }
 
     painter.fillRect(buffer->rect(), backgroundColor);

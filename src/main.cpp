@@ -13,6 +13,7 @@
 #include "providers/twitch/api/Helix.hpp"
 #include "RunGui.hpp"
 #include "singletons/CrashHandler.hpp"
+#include "singletons/FileLogger.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Updates.hpp"
@@ -158,24 +159,34 @@ int main(int argc, char **argv)
 
     QApplication a(argc, argv);
 
+    // Keep "chatterino" so config/data stay under the existing chatterino paths
+    // (Flatpak also mounts xdg-data/chatterino).
     QCoreApplication::setApplicationName("chatterino");
     QCoreApplication::setApplicationVersion(CHATTERINO_VERSION);
     QCoreApplication::setOrganizationDomain("chatterino.com");
+    // Must match the installed .desktop / Flatpak app-id so the shell
+    // associates this window with Leafyrino's icon (not Chatterino's).
+    QGuiApplication::setDesktopFileName("com.leafyzito.leafyrino");
 #ifdef Q_OS_WIN
     SetCurrentProcessExplicitAppUserModelID(
         Version::instance().appUserModelID().c_str());
 #endif
 
+    const Args args(a);
+    const Modes modes(args);
     std::unique_ptr<Paths> paths;
+
+    // Optional logger override that logs to a file
+    FileLogger logger;
 
     try
     {
-        paths = std::make_unique<Paths>();
+        paths = std::make_unique<Paths>(args, modes);
     }
     catch (std::runtime_error &error)
     {
         QMessageBox box;
-        if (Modes::instance().isPortable)
+        if (modes.isPortable)
         {
             auto errorMessage =
                 error.what() +
@@ -196,8 +207,6 @@ int main(int argc, char **argv)
         return 1;
     }
     ipc::initPaths(paths.get());
-
-    const Args args(a, *paths);
 
 #ifdef CHATTERINO_WITH_CRASHPAD
     const auto crashpadHandler = installCrashHandler(args, *paths);
@@ -248,7 +257,7 @@ int main(int argc, char **argv)
                               << QSslSocket::supportedProtocols();
 #endif
 
-        Settings settings(args, paths->settingsDirectory);
+        Settings settings(modes, args, paths->settingsDirectory);
 #ifndef Q_OS_MACOS
         if (!args.remoteRestart && !args.isFramelessEmbed &&
             settings.trayHideOnClose.getValue() &&
@@ -258,14 +267,14 @@ int main(int argc, char **argv)
         }
 #endif
 
-        Updates updates(*paths, settings);
+        Updates updates(modes, *paths, settings);
 
         NetworkConfigurationProvider::applyFromEnv(Env::get());
 
         IvrApi::initialize();
         Helix::initialize();
 
-        runGui(a, *paths, settings, args, updates);
+        runGui(a, modes, *paths, settings, args, updates);
     }
     return 0;
 }

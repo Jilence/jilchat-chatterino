@@ -44,6 +44,7 @@ public:
     } pointReward;
 
     struct {
+        /// leafyrino: full pin payload for system messages / GQL pin state
         Signal<const QJsonObject &> updated;
     } pinnedChat;
 
@@ -68,8 +69,20 @@ public:
         Signal<const QJsonObject &> updated;
     } raid;
 
+    /**
+     * Listen to incoming channel point redemptions in the given channel.
+     * This topic is relevant for everyone.
+     *
+     * PubSub topic: community-points-channel-v1.{channelID}
+     */
     void listenToChannelPointRewards(const QString &channelID);
 
+    /**
+     * Listen to real time pin/unpin events in the given channel.
+     * This topic is relevant for everyone.
+     *
+     * PubSub topic: pinned-chat-updates-v1.{channelID}
+     */
     void listenToPinnedChatUpdates(const QString &channelID);
 
     void listenToPredictions(const QString &channelID);
