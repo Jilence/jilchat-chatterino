@@ -32,7 +32,7 @@ jobs:
             qt-version: 6.11.1
       fail-fast: false
     env:
-      QT_MODULES: qtimageformats qtcharts
+      QT_MODULES: qtimageformats qtcharts qtmultimedia
 
     steps:
       - uses: actions/checkout@v7
@@ -44,7 +44,7 @@ jobs:
         uses: jurplel/install-qt-action@v4.3.1
         with:
           cache: true
-          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
+          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v3
           modules: ${{ env.QT_MODULES }}
           version: ${{ matrix.qt-version }}
 

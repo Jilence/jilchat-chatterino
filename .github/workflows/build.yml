@@ -108,8 +108,8 @@ jobs:
         uses: jurplel/install-qt-action@v4.3.1
         with:
           cache: true
-          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
-          modules: qtimageformats qtcharts
+          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v3
+          modules: qtimageformats qtcharts qtmultimedia
           version: ${{ matrix.qt-version }}
 
       - name: Determine build type
@@ -262,8 +262,8 @@ jobs:
         uses: jurplel/install-qt-action@v4.3.1
         with:
           cache: true
-          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v2
-          modules: qtimageformats qtcharts
+          cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v3
+          modules: qtimageformats qtcharts qtmultimedia
           version: ${{ matrix.qt-version }}
 
       # WINDOWS

@@ -837,11 +837,16 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
         painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
     }
 
-    painter.setPen(messageColors.systemText);
-    painter.setFont(getApp()->getFonts()->getFont(FontStyle::ChatMediumBold,
-                                                  this->scale_));
     const auto volumeText =
         QStringLiteral("%1%").arg(jilchat::getVoiceVolume(this->voiceId_));
+    auto volumeFont = getApp()->getFonts()->getFont(
+        FontStyle::ChatMediumBold, this->scale_);
+    if (volumeText.size() >= 4)
+    {
+        volumeFont.setPointSizeF(volumeFont.pointSizeF() * 0.82);
+    }
+    painter.setPen(messageColors.systemText);
+    painter.setFont(volumeFont);
     painter.drawText(QRectF(rect.right() - 52 * this->scale_, rect.top(),
                             43 * this->scale_, rect.height()),
                      Qt::AlignVCenter | Qt::AlignRight,
