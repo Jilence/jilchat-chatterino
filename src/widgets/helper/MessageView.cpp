@@ -376,11 +376,19 @@ void MessageView::updateHoverTooltip(QMouseEvent *event)
             else if (badgeElement)
             {
                 const auto scale = getSettings()->emoteTooltipScale.getEnum();
+                auto tooltipScale = getTooltipScale(scale);
+                if (badgeElement->getFlags().hasAny(
+                        MessageElementFlag::BadgeJilChat))
+                {
+                    // JilChat supplies a single 18 px badge image, while
+                    // regular badge previews use their 72 px (3x) asset.
+                    tooltipScale *= 4.0F;
+                }
                 this->tooltipWidget_->setOne(TooltipEntry::scaled(
                     showThumbnail
                         ? badgeElement->getEmote()->images.getImage(3.0)
                         : nullptr,
-                    element->getTooltip(), getTooltipScale(scale)));
+                    element->getTooltip(), tooltipScale));
             }
         }
         else if (auto *linkElement = dynamic_cast<LinkElement *>(element))
