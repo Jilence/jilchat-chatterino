@@ -440,6 +440,9 @@ set(SOURCE_FILES
         providers/chatsen/ChatsenBadges.cpp
         providers/chatsen/ChatsenBadges.hpp
 
+        providers/bluzyrino/BluzyrinoBadges.cpp
+        providers/bluzyrino/BluzyrinoBadges.hpp
+
         providers/jilchat/JilChatBadges.cpp
         providers/jilchat/JilChatBadges.hpp
         providers/jilchat/JilChatVoice.cpp
@@ -834,6 +837,8 @@ set(SOURCE_FILES
 
         widgets/dialogs/BadgePickerDialog.cpp
         widgets/dialogs/BadgePickerDialog.hpp
+        widgets/dialogs/BluzyrinoBadgesDialog.cpp
+        widgets/dialogs/BluzyrinoBadgesDialog.hpp
         widgets/dialogs/TwitchBadgePickerDialog.cpp
         widgets/dialogs/TwitchBadgePickerDialog.hpp
         widgets/dialogs/UserBadgesDialog.cpp

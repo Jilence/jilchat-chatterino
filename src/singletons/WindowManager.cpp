@@ -347,6 +347,7 @@ void WindowManager::updateWordTypeMask()
     flags.set(settings->showBadgesDankChat ? MEF::BadgeDankChat : MEF::None);
     flags.set(settings->showBadgesChatsen ? MEF::BadgeChatsen : MEF::None);
     flags.set(settings->showBadgesJilChat ? MEF::BadgeJilChat : MEF::None);
+    flags.set(settings->showBadgesBluzyrino ? MEF::BadgeBluzyrino : MEF::None);
 
     // username
     flags.set(MEF::Username);

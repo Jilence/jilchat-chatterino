@@ -34,6 +34,7 @@
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
@@ -2082,6 +2083,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendFfzApBadges(userID);
         builder.appendBttvBadges(userID);
         builder.appendMoltorinoBadges(userID);
+        builder.appendBluzyrinoBadges(userID);
         builder.appendSeventvBadges(userID);
         builder.appendDankChatBadges(userID);
         builder.appendChatsenBadges(userID);
@@ -3561,6 +3563,32 @@ void MessageBuilder::appendJilChatBadges(const QString &userID)
         this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeJilChat);
 
         /// e.g. "jilchat:founder"
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
+void MessageBuilder::appendBluzyrinoBadges(const QString &userID)
+{
+    if (!getSettings()->showBadgesBluzyrino)
+    {
+        return;
+    }
+
+    auto *provider = getApp()->getBluzyrinoBadges();
+    if (provider == nullptr)
+    {
+        return;
+    }
+
+    for (const auto &badge : provider->getBadges({userID}))
+    {
+        if (!badge)
+        {
+            continue;
+        }
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeBluzyrino);
+
+        /// e.g. "bluzyrino:founder"
         this->message().externalBadges.emplace_back(badge->name.string);
     }
 }

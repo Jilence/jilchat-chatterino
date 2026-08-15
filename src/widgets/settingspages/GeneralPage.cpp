@@ -9,6 +9,7 @@
 #include "common/Version.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/CrashHandler.hpp"
@@ -21,6 +22,7 @@
 #include "util/Helpers.hpp"
 #include "util/IncognitoBrowser.hpp"
 #include "widgets/BaseWindow.hpp"
+#include "widgets/dialogs/BluzyrinoBadgesDialog.hpp"
 #include "widgets/helper/FontSettingWidget.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
@@ -1201,6 +1203,23 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->setTooltip(
             "Badges for Moltorino supporters, top donors, and developers")
         ->addTo(layout);
+    SettingWidget::checkbox("Bluzyrino", s.showBadgesBluzyrino)
+        ->addKeywords({"bluzyrino", "founder", "donor", "supporter"})
+        ->setTooltip(
+            "Badges for Bluzyrino founders, donors, and special badges")
+        ->addTo(layout);
+    SettingWidget::customCheckbox(
+        "Show my Founder badge to other Bluzyrino users",
+        s.bluzyrinoFounderVisible.getValue(),
+        [](bool value) {
+            getSettings()->bluzyrinoFounderVisible.setValue(value);
+            getApp()->getBluzyrinoBadges()->setFounderVisible(value);
+        })
+        ->addKeywords({"bluzyrino", "founder"})
+        ->addTo(layout);
+    layout.addButton("Manage my Bluzyrino badges...", [this] {
+        BluzyrinoBadgesDialog::showDialog(this->window());
+    });
     layout.addSeparator();
     SettingWidget::checkbox("Use custom FrankerFaceZ moderator badges",
                             s.useCustomFfzModeratorBadges)

@@ -223,6 +223,12 @@ public:
         return nullptr;
     }
 
+    BluzyrinoBadges *getBluzyrinoBadges() override
+    {
+        assert(!"getBluzyrinoBadges was called without being initialized");
+        return nullptr;
+    }
+
     IUserDataController *getUserData() override
     {
         assert(false && "EmptyApplication::getUserData was called without "
