@@ -133,23 +133,40 @@ void BluzyrinoBadges::applyJson(const QJsonObject &root)
         catalog.push_back(std::move(badge));
     }
 
-    // badge id -> list of user ids that own it
+    // user id -> badge ids they may display.
     std::unordered_map<QString, std::vector<QString>> userBadges;
+    auto grantBadge = [&](const QString &userId, const QString &badgeId) {
+        if (userId.isEmpty() || !catalogIndex.contains(badgeId))
+        {
+            return;
+        }
+        auto &ids = userBadges[userId];
+        if (std::find(ids.begin(), ids.end(), badgeId) == ids.end())
+        {
+            ids.push_back(badgeId);
+        }
+    };
+
+    // `available` is the authoritative per-user entitlement list (includes every
+    // donor tier the user may pick), so it drives the "manage" dialog.
+    const auto available = root.value("available").toObject();
+    for (auto it = available.begin(); it != available.end(); ++it)
+    {
+        for (const auto &badgeValue : it.value().toArray())
+        {
+            grantBadge(it.key(), badgeValue.toString());
+        }
+    }
+
+    // `badges` maps each badge to the users assigned it; merge it in so nobody
+    // is missed if the two lists disagree.
     for (const auto &value : root.value("badges").toArray())
     {
         const auto obj = value.toObject();
         const auto badgeId = obj.value("id").toString();
-        if (!catalogIndex.contains(badgeId))
-        {
-            continue;
-        }
         for (const auto &userValue : obj.value("users").toArray())
         {
-            const auto userId = userValue.toString();
-            if (!userId.isEmpty())
-            {
-                userBadges[userId].push_back(badgeId);
-            }
+            grantBadge(userValue.toString(), badgeId);
         }
     }
 

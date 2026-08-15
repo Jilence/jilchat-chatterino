@@ -3853,6 +3853,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendFfzApBadges(userId);
     builder.appendBttvBadges(userId);
     builder.appendMoltorinoBadges(userId);
+    builder.appendBluzyrinoBadges(userId);
     builder.appendSeventvBadges(userId);
     builder.appendDankChatBadges(userId);
     builder.appendChatsenBadges(userId);
