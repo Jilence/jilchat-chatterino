@@ -426,6 +426,16 @@ void BluzyrinoBadges::setFounderVisible(bool visible,
         }
         return;
     }
+    // The registry only accepts this for founders; skip the doomed request for
+    // everyone else (the checkbox still persists locally).
+    if (!this->ownsFounder(account->getUserId()))
+    {
+        if (callback)
+        {
+            callback(true);
+        }
+        return;
+    }
     const QString url = QString(BLUZYRINO_BADGE_URL) % u"/founder/users/"_s %
                         account->getUserId() % u"/visibility"_s;
     sendAuthorizedPut(url, QJsonObject{{u"visible"_s, visible}},
