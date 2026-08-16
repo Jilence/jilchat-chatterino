@@ -6,6 +6,7 @@
 
 #include "controllers/accounts/Account.hpp"
 #include "controllers/accounts/AccountModel.hpp"
+#include "controllers/notifications/DesktopPresenceController.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "util/SharedPtrElementLess.hpp"
@@ -14,7 +15,15 @@ namespace chatterino {
 
 AccountController::AccountController()
     : accounts_(SharedPtrElementLess<Account>{})
+    , desktopPresence_(new DesktopPresenceController)
 {
+    std::ignore =
+        this->twitch.accounts.itemRemoved.connect([this](const auto &args) {
+            this->desktopPresence_->accountRemoved(args.item);
+        });
+    this->twitch.currentUserChanged.connect(
+        [this] { this->desktopPresence_->start(); });
+
     std::ignore =
         this->twitch.accounts.itemInserted.connect([this](const auto &args) {
             this->accounts_.insert(args.item);
@@ -78,10 +87,18 @@ AccountController::AccountController()
     });
 }
 
+AccountController::~AccountController() = default;
+
 void AccountController::load()
 {
     this->twitch.load();
     this->kick.load();
+    this->desktopPresence_->start();
+}
+
+DesktopPresenceController &AccountController::desktopPresence()
+{
+    return *this->desktopPresence_;
 }
 
 AccountModel *AccountController::createModel(QObject *parent)

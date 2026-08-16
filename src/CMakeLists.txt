@@ -263,6 +263,8 @@ set(SOURCE_FILES
 
         controllers/notifications/NotificationController.cpp
         controllers/notifications/NotificationController.hpp
+        controllers/notifications/DesktopPresenceController.cpp
+        controllers/notifications/DesktopPresenceController.hpp
         controllers/notifications/NotificationModel.cpp
         controllers/notifications/NotificationModel.hpp
 

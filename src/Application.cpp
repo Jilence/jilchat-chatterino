@@ -11,6 +11,7 @@
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/ignores/IgnoreController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
+#include "controllers/notifications/DesktopPresenceController.hpp"
 #include "controllers/sound/ISoundController.hpp"
 #include "controllers/spellcheck/SpellChecker.hpp"
 #include "providers/bttv/BttvBadges.hpp"
@@ -808,6 +809,8 @@ YouTubeChatServer *Application::getYouTubeChatServer()
 void Application::aboutToQuit()
 {
     ABOUT_TO_QUIT.store(true);
+
+    this->accounts->desktopPresence().shutdown();
 
     this->eventSub->setQuitting();
 

@@ -7,6 +7,7 @@
 #include "widgets/settingspages/SettingsPage.hpp"
 
 class QComboBox;
+class QVBoxLayout;
 
 namespace chatterino {
 
@@ -17,6 +18,7 @@ public:
 
 private:
     QComboBox *createToastReactionComboBox();
+    void rebuildDesktopPresenceAccounts(QVBoxLayout *layout);
 };
 
 }  // namespace chatterino
