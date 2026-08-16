@@ -105,6 +105,11 @@ enum class EmoteTooltipScale : std::uint8_t {
     Huge,
 };
 
+enum class BrowserManifestFormat {
+    Chrome,
+    Firefox,
+};
+
 enum class SplitMpsCorner : std::uint8_t {
     TopLeft,
     TopRight,
@@ -203,6 +208,7 @@ constexpr int splitMpsWindowSeconds(SplitMpsWindow window) noexcept
 
 struct SettingsArgs {
     bool isTest = false;
+    bool runMigrations = true;
 };
 
 /// Settings which are available for reading and writing on the gui thread.
@@ -241,6 +247,22 @@ public:
     /// Match pre–high-DPI-default scaling (Qt::AA_Use96Dpi). Restart to apply.
     BoolSetting useLegacyScaling = {"/appearance/useLegacyScaling", false};
     BoolSetting windowTopMost = {"/appearance/windowAlwaysOnTop", false};
+
+    // YouTube
+    BoolSetting highlightYouTubeSuperChats = {
+        "/appearance/youtube/highlightSuperChats", true};
+    BoolSetting youtubeSuperChatWhiteName = {
+        "/appearance/youtube/superChatWhiteName", true};
+    BoolSetting highlightYouTubeMemberships = {
+        "/appearance/youtube/highlightMemberships", true};
+    BoolSetting colorYouTubeUsernamesByRole = {
+        "/appearance/youtube/colorUsernamesByRole", true};
+    BoolSetting youtubeColorizeUsernames = {
+        "/appearance/youtube/colorizeUsernames", false};
+    BoolSetting youtubeStripAtPrefix = {"/appearance/youtube/stripAtPrefix",
+                                        false};
+    BoolSetting youtubeSplitHeaderUseHandle = {
+        "/appearance/youtube/splitHeaderUseHandle", false};
 
     float getClampedUiScale() const;
     void setClampedUiScale(float value);
@@ -1059,6 +1081,18 @@ public:
 
     QStringSetting additionalExtensionIDs{"/misc/additionalExtensionIDs", ""};
 
+#ifndef Q_OS_WIN
+    QStringSetting customNativeMessagingManifestPath{
+        "/misc/extension/customManifestPath",
+        "",
+    };
+    EnumStringSetting<BrowserManifestFormat>
+        customNativeMessagingManifestFormat = {
+            "/misc/extension/customManifestFormat",
+            BrowserManifestFormat::Chrome,
+    };
+#endif
+
     BoolSetting xChatterino7NoHttp2{"/x-chatterino7/no-http2", false};
 
     /// Moltorino Settings
@@ -1280,6 +1314,13 @@ private:
         "/logging/channels"};
     SignalVector<QString> mutedChannels;
     SignalVector<QString> autoTranslateChannels;
+
+    IntSetting settingsVersion = {
+        "/misc/settingsVersion",
+        0,
+    };
+
+    void migrate(bool isTest);
 
 public:
     SignalVector<HighlightPhrase> highlightedMessages;

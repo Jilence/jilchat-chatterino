@@ -59,6 +59,7 @@ public:
         /// TwitchEnd
         TwitchEnd,
         Kick,
+        YouTube,
         /// Misc
         Misc,
         Multi,
@@ -86,6 +87,7 @@ public:
     bool isTwitchChannel() const;
     bool isWatching() const;
     bool isKickChannel() const;
+    bool isYouTubeChannel() const;
     bool isTwitchOrKickChannel() const;
     virtual bool isEmpty() const;
 
@@ -175,10 +177,21 @@ protected:
     QString platform_;
 
 private:
+    bool canRecurse() const noexcept;
+
     const QString name_;
     LimitedQueue<MessagePtr> messages_;
     Type type_;
     bool anythingLogged_ = false;
+
+    /// Recursion count for message signals.
+    ///
+    /// This is intended to prevent _trivial_ infinite recursion of signals
+    /// (e.g. unconditionally adding a message in `messageAppended`). It is not
+    /// intended to prevent all infinite recursion. That will still crash the
+    /// program.
+    uint8_t recursionCount_ = 0;
+
     QTimer clearCompletionModelTimer_;
     bool watching_;
     MessagePlatform messagePlatform_;
@@ -239,6 +252,8 @@ constexpr magic_enum::customize::customize_t
             return "misc";
         case Type::Kick:
             return "kick";
+        case Type::YouTube:
+            return "youtube";
         case Type::Multi:
             return "multi";
 

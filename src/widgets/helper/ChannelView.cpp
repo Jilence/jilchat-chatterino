@@ -35,6 +35,8 @@
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
+#include "providers/youtube/YouTubeChannel.hpp"
+#include "providers/youtube/YouTubeChatServer.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
@@ -695,52 +697,6 @@ std::optional<QString> chatVaultEmoteUrl(const Emote &emote)
     }
 
     return std::nullopt;
-}
-
-std::optional<QString> chatVaultBadgeUrl(const QString &setID,
-                                         const QString &version,
-                                         const TwitchChannel *twitchChannel)
-{
-    const auto trimmedSetID = setID.trimmed();
-    if (trimmedSetID.isEmpty())
-    {
-        return std::nullopt;
-    }
-
-    QString path = trimmedSetID;
-
-    const auto trimmedVersion = version.trimmed();
-    if (!trimmedVersion.isEmpty())
-    {
-        path += QLatin1Char('/') + trimmedVersion;
-    }
-
-    if (twitchChannel != nullptr)
-    {
-        static const QSet<QString> globalBadges = {
-            "lead_moderator", "moderator", "vip", "broadcaster", "founder",
-        };
-        static const QSet<QString> channelBadges = {
-            "subscriber",
-            "bits",
-        };
-
-        if (!globalBadges.contains(trimmedSetID))
-        {
-            const bool needsChannel =
-                channelBadges.contains(trimmedSetID) ||
-                twitchChannel->twitchBadge(trimmedSetID, trimmedVersion)
-                    .has_value();
-
-            const auto roomId = twitchChannel->roomId();
-            if (!roomId.isEmpty() && needsChannel)
-            {
-                path += QLatin1Char('/') + roomId;
-            }
-        }
-    }
-
-    return QStringLiteral("https://chatvau.lt/badge/twitch/%1").arg(path);
 }
 
 ScrollbarHighlight scrollbarHighlightForMessage(
@@ -2204,6 +2160,13 @@ void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
                     this->liveStatusChanged.invoke();
                 });
         }
+        else if (auto *youtubeChannel = dynamic_cast<YouTubeChannel *>(chan))
+        {
+            this->channelConnections_.managedConnect(
+                youtubeChannel->liveStatusChanged, [this] {
+                    this->liveStatusChanged.invoke();
+                });
+        }
     };
 
     if (mc)
@@ -2789,6 +2752,12 @@ void ChannelView::drawMessages(QPainter &painter, const QRect &area)
         messagePreferences.separateMessages = *this->overrideSeparateMessages_;
     }
 
+    bool tintByPlatform = false;
+    if (auto *mc = dynamic_cast<MultiChannel *>(this->underlyingChannel_.get()))
+    {
+        tintByPlatform = mc->tintByPlatform();
+    }
+
     MessagePaintContext ctx = {
         .painter = painter,
         .selection = this->selection_,
@@ -2808,6 +2777,7 @@ void ChannelView::drawMessages(QPainter &painter, const QRect &area)
         .messageIndex = start,
         .isLastReadMessage = false,
         .isCollapsed = this->collapseMessages_,
+        .tintByPlatform = tintByPlatform,
     };
     bool showLastMessageIndicator = getSettings()->showLastMessageIndicator;
 
@@ -3470,8 +3440,9 @@ void ChannelView::mousePressEvent(QMouseEvent *event)
                     this->disableScrolling();
                 }
                 else if (hoverLayoutElement != nullptr &&
-                         hoverLayoutElement->getFlags().has(
-                             MessageElementFlag::Username))
+                         hoverLayoutElement->getFlags().hasAny(
+                             {MessageElementFlag::Username,
+                              MessageElementFlag::Mention}))
                 {
                     break;
                 }
@@ -3597,8 +3568,9 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
             {
                 return;
             }
-            if (hoverLayoutElement->getFlags().has(
-                    MessageElementFlag::Username))
+            if (hoverLayoutElement->getFlags().hasAny(
+                    {MessageElementFlag::Username,
+                     MessageElementFlag::Mention}))
             {
                 const auto userName = hoverLayoutElement->getLink().value;
                 const auto type = this->effectiveSourceChannel()->getType();
@@ -3613,9 +3585,24 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
                         openTwitchUsercard(layout->getMessage()->channelName,
                                            userName);
                         break;
-                    default:
-                        openTwitchUsercard(this->channel_->getName(), userName);
+                    default: {
+                        auto source = this->inferChannel(*layout->getMessage());
+                        MessagePlatform platform = MessagePlatform::AnyOrTwitch;
+                        QString channelId;
+                        if (dynamic_cast<YouTubeChannel *>(source.get()))
+                        {
+                            platform = MessagePlatform::YouTube;
+                            channelId = YouTubeChannel::channelIdForDisplayName(
+                                source, userName);
+                        }
+                        else if (dynamic_cast<KickChannel *>(source.get()))
+                        {
+                            platform = MessagePlatform::Kick;
+                        }
+                        UserInfoPopup::openUserChannelAction(
+                            userName, platform, source->getName(), channelId);
                         break;
+                    }
                 }
 
                 return;
@@ -4402,7 +4389,8 @@ void ChannelView::hideEvent(QHideEvent * /*event*/)
 }
 
 void ChannelView::showUserInfoPopup(const QString &userName,
-                                    QString alternativePopoutChannel)
+                                    MessagePlatform platform,
+                                    const QString &alternativePopoutChannel)
 {
     if (!this->split_)
     {
@@ -4417,7 +4405,17 @@ void ChannelView::showUserInfoPopup(const QString &userName,
 
     auto openingChannel = this->effectiveSourceChannel();
     ChannelPtr contextChannel;
-    if (openingChannel && openingChannel->isKickChannel())
+    if (platform == MessagePlatform::YouTube)
+    {
+        userPopup->setYouTubeContext();
+        contextChannel = getApp()->getYouTubeChatServer()->findByName(
+            alternativePopoutChannel);
+        if (!contextChannel)
+        {
+            contextChannel = Channel::getEmpty();
+        }
+    }
+    else if (openingChannel && platform == MessagePlatform::Kick)
     {
         contextChannel =
             getApp()->getKickChatServer()->findBySlug(alternativePopoutChannel);
@@ -4482,7 +4480,9 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
         case Link::UserWhisper:
         case Link::UserInfo: {
             auto user = link.value;
-            this->showUserInfoPopup(user, layout->getMessage()->channelName);
+            const auto *message = layout->getMessage();
+            this->showUserInfoPopup(user, message->platform,
+                                    message->channelName);
         }
         break;
 
@@ -4626,6 +4626,12 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
                 openPages.push_back(
                     static_cast<SplitContainer *>(nb.getPageAt(i)));
             }
+            QStringView searchName = link.value;
+            bool searchKickChannel = link.value.startsWith(u":kick:");
+            if (searchKickChannel)
+            {
+                searchName = searchName.sliced(sizeof(":kick:") - 1);
+            }
 
             for (auto *page : openPages)
             {
@@ -4633,9 +4639,11 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
 
                 // Search for channel matching link in page/split container
                 // TODO(zneix): Consider opening a channel if it's closed (?)
-                auto it = std::find_if(
-                    splits.begin(), splits.end(), [link](Split *split) {
-                        return split->getChannel()->getName() == link.value;
+                auto it = std::ranges::find_if(
+                    splits, [searchName, searchKickChannel](Split *split) {
+                        return split->getChannel()->getName() == searchName &&
+                               split->getChannel()->isKickChannel() ==
+                                   searchKickChannel;
                     });
 
                 if (it != splits.end())

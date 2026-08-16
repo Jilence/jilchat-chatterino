@@ -36,6 +36,21 @@ QColor blendColors(const QColor &base, const QColor &apply)
                    base.blueF() * (1 - alpha) + apply.blueF() * alpha);
     return result;
 }
+
+QColor platformTint(MessagePlatform platform)
+{
+    constexpr int a = 22;
+    switch (platform)
+    {
+        case MessagePlatform::AnyOrTwitch:
+            return {145, 70, 255, a};
+        case MessagePlatform::YouTube:
+            return {255, 0, 0, a};
+        case MessagePlatform::Kick:
+            return {83, 252, 24, a};
+    }
+    return Qt::transparent;
+}
 }  // namespace
 
 MessageLayout::MessageLayout(MessagePtr message)
@@ -381,16 +396,8 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         return ctx.messageColors.regularBg;
     }();
 
-    if (this->message_->flags.has(MessageFlag::ElevatedMessage) &&
-        ctx.preferences.enableElevatedMessageHighlight)
-    {
-        backgroundColor = blendColors(
-            backgroundColor,
-            *ctx.colorProvider.color(ColorType::ElevatedMessageHighlight));
-    }
-
-    else if (this->message_->flags.has(MessageFlag::FirstMessage) &&
-             ctx.preferences.enableFirstMessageHighlight)
+    if (this->message_->flags.has(MessageFlag::FirstMessage) &&
+        ctx.preferences.enableFirstMessageHighlight)
     {
         backgroundColor = blendColors(
             backgroundColor,
@@ -498,6 +505,12 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         // TODO: Give this a better/its own color :-)
         backgroundColor = blendColors(
             backgroundColor, *ctx.colorProvider.color(ColorType::Subscription));
+    }
+
+    if (ctx.tintByPlatform)
+    {
+        backgroundColor = blendColors(backgroundColor,
+                                      platformTint(this->message_->platform));
     }
 
     painter.fillRect(buffer->rect(), backgroundColor);

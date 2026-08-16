@@ -76,6 +76,8 @@ class SpellChecker;
 
 class KickChatServer;
 
+class YouTubeChatServer;
+
 class IApplication
 {
 public:
@@ -142,6 +144,7 @@ public:
     virtual eventsub::IController *getEventSub() = 0;
     virtual SpellChecker *getSpellChecker() = 0;
     virtual KickChatServer *getKickChatServer() = 0;
+    virtual YouTubeChatServer *getYouTubeChatServer() = 0;
 
     int monoFontId;
 };
@@ -224,6 +227,7 @@ private:
     std::unique_ptr<pronouns::Pronouns> pronouns;
     std::unique_ptr<SpellChecker> spellChecker;
     std::unique_ptr<KickChatServer> kickChatServer;
+    std::unique_ptr<YouTubeChatServer> youTubeChatServer;
 #ifdef CHATTERINO_HAVE_PLUGINS
     std::unique_ptr<PluginController> plugins;
 #endif
@@ -290,6 +294,7 @@ public:
     ITwitchUsers *getTwitchUsers() override;
     SpellChecker *getSpellChecker() override;
     KickChatServer *getKickChatServer() override;
+    YouTubeChatServer *getYouTubeChatServer() override;
 
 private:
     void initNm(const Modes &modes, const Paths &paths);

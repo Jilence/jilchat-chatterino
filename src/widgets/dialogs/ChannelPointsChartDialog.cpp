@@ -152,7 +152,9 @@ void ChannelPointsChartDialog::showDialog(TwitchChannel *channel,
         return;
     }
 
-    DraggablePopup::pinParentIfNeeded(parent);
+    const bool wasAutoPinned = DraggablePopup::pinParentIfNeeded(parent);
+
+    ChannelPointsChartDialog *dialog = nullptr;
 
     for (auto it = activeDialogs_.begin(); it != activeDialogs_.end();)
     {
@@ -163,30 +165,67 @@ void ChannelPointsChartDialog::showDialog(TwitchChannel *channel,
         }
         if ((*it)->channel_ == channel)
         {
-            (*it)->raise();
-            (*it)->activateWindow();
-            (*it)->reloadChart();
-            return;
+            dialog = *it;
+            dialog->raise();
+            dialog->activateWindow();
+            dialog->reloadChart();
+            break;
         }
         ++it;
     }
 
-    auto *dialog = new ChannelPointsChartDialog(channel, parent);
-    activeDialogs_.push_back(dialog);
-
-    QPoint center = QCursor::pos();
-    if (parent != nullptr && parent->window() != nullptr)
+    if (dialog == nullptr)
     {
-        center = parent->window()->geometry().center();
+        // Keep using `parent` for auto-pin and placement, but do not make
+        // another DraggablePopup the QObject owner. Otherwise closing that
+        // popup (e.g. channel rewards) destroys a pinned chart with it.
+        QWidget *ownershipParent = parent;
+        if (qobject_cast<DraggablePopup *>(parent) != nullptr)
+        {
+            ownershipParent = nullptr;
+        }
+
+        dialog = new ChannelPointsChartDialog(channel, ownershipParent);
+        activeDialogs_.push_back(dialog);
+
+        QPoint center = QCursor::pos();
+        if (parent != nullptr && parent->window() != nullptr)
+        {
+            center = parent->window()->geometry().center();
+        }
+
+        dialog->show();
+        const auto size = dialog->size();
+        dialog->showAndMoveTo(
+            center - QPoint(size.width() / 2, size.height() / 2),
+            widgets::BoundsChecking::DesiredPosition);
+        dialog->raise();
+        dialog->activateWindow();
+        dialog->reloadChart();
     }
 
-    dialog->show();
-    const auto size = dialog->size();
-    dialog->showAndMoveTo(center - QPoint(size.width() / 2, size.height() / 2),
-                          widgets::BoundsChecking::DesiredPosition);
-    dialog->raise();
-    dialog->activateWindow();
-    dialog->reloadChart();
+    if (wasAutoPinned)
+    {
+        dialog->scheduleUnpinParentOnClose(parent);
+    }
+}
+
+void ChannelPointsChartDialog::scheduleUnpinParentOnClose(QWidget *parent)
+{
+    if (this->parentUnpinScheduled_ || parent == nullptr)
+    {
+        return;
+    }
+
+    this->parentUnpinScheduled_ = true;
+
+    QPointer<QWidget> parentPtr(parent);
+    QObject::connect(this, &QObject::destroyed, parent, [parentPtr] {
+        if (parentPtr)
+        {
+            DraggablePopup::unpinParentIfNeeded(parentPtr);
+        }
+    });
 }
 
 void ChannelPointsChartDialog::themeChangedEvent()

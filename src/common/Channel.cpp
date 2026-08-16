@@ -65,6 +65,10 @@ Channel::Channel(const QString &name, Type type, bool watching)
     {
         this->messagePlatform_ = MessagePlatform::Kick;
     }
+    else if (this->isYouTubeChannel())
+    {
+        this->messagePlatform_ = MessagePlatform::YouTube;
+    }
     else
     {
         this->messagePlatform_ = MessagePlatform::AnyOrTwitch;
@@ -113,6 +117,11 @@ bool Channel::isWatching() const
 bool Channel::isKickChannel() const
 {
     return this->type_ == Type::Kick;
+}
+
+bool Channel::isYouTubeChannel() const
+{
+    return this->type_ == Type::YouTube;
 }
 
 bool Channel::isTwitchOrKickChannel() const
@@ -547,6 +556,11 @@ void Channel::messageRemovedFromStart(const MessagePtr &msg)
 {
 }
 
+bool Channel::canRecurse() const noexcept
+{
+    return this->recursionCount_ < MAX_RECURSION;
+}
+
 void Channel::upsertPersonalSeventvEmotes(
     const QString &userLogin, const std::shared_ptr<const EmoteMap> &emoteMap)
 {
@@ -602,8 +616,8 @@ void Channel::upsertPersonalSeventvEmotes(
         /// @pre @a words must not be empty
         const auto flush = [&]() {
             elements.emplace_back(std::make_unique<TextElement>(
-                std::move(words), textElement->getFlags(), textElement->color(),
-                textElement->fontStyle()));
+                TextElement::CLONE, std::move(words), textElement->getFlags(),
+                textElement->color(), textElement->fontStyle()));
             words.clear();
         };
 

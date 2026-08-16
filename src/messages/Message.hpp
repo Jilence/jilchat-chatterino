@@ -26,6 +26,7 @@ class ScrollbarHighlight;
 enum class MessagePlatform : uint8_t {
     AnyOrTwitch,
     Kick,
+    YouTube,
 };
 
 struct Message;
@@ -112,6 +113,11 @@ struct Message {
 
     HelixAnnouncementColor announcementColor{HelixAnnouncementColor::Primary};
 
+    /**
+     * Clones this message.
+     *
+     * @return An identical message, independent from this one.
+     */
     std::shared_ptr<Message> clone() const;
 
     QJsonObject toJson() const;

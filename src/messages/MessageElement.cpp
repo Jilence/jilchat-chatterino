@@ -153,6 +153,22 @@ EmotePtr getTwitchBadge()
     return ptr;
 }
 
+EmotePtr getYouTubeBadge()
+{
+    static EmotePtr ptr = std::make_shared<const Emote>(Emote{
+        .name = {u"YouTube"_s},
+        .images =
+            ImageSet{
+                Image::fromUrl({u":/badges/platform-youtube-18.webp"_s}, 1.0,
+                               {18, 18}),
+                Image::fromUrl({u":/badges/platform-youtube-36.webp"_s}, .5,
+                               {36, 36}),
+            },
+        .tooltip = Tooltip{},
+    });
+    return ptr;
+}
+
 }  // namespace
 
 MessageElement::MessageElement(MessageElementFlags flags)
@@ -596,15 +612,6 @@ const MessageColor &LayeredEmoteElement::textElementColor() const
     return this->textElementColor_;
 }
 
-std::unique_ptr<MessageElement> LayeredEmoteElement::clone() const
-{
-    auto emotes = this->getEmotes();
-    auto el = std::make_unique<LayeredEmoteElement>(
-        std::move(emotes), this->getFlags(), this->textElementColor());
-    el->cloneFrom(*this);
-    return el;
-}
-
 QJsonObject LayeredEmoteElement::toJson() const
 {
     auto base = MessageElement::toJson();
@@ -640,6 +647,15 @@ QJsonObject LayeredEmoteElement::toJson() const
 std::string_view LayeredEmoteElement::type() const
 {
     return std::remove_pointer_t<decltype(this)>::TYPE;
+}
+
+std::unique_ptr<MessageElement> LayeredEmoteElement::clone() const
+{
+    std::vector<Emote> emotesCopy = this->emotes_;
+    auto elem = std::make_unique<LayeredEmoteElement>(
+        std::move(emotesCopy), this->getFlags(), this->textElementColor_);
+    elem->cloneFrom(*this);
+    return elem;
 }
 
 // BADGE
@@ -887,8 +903,9 @@ TextElement::TextElement(const QString &text, MessageElementFlags flags,
     // fourtf: add logic to store multiple spaces after message
 }
 
-TextElement::TextElement(QStringList &&words, MessageElementFlags flags,
-                         const MessageColor &color, FontStyle style)
+TextElement::TextElement(TextElement::CloneTag /*hack*/, QStringList words,
+                         MessageElementFlags flags, const MessageColor &color,
+                         FontStyle style)
     : MessageElement(flags)
     , words_(std::move(words))
     , color_(color)
@@ -917,6 +934,9 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
                     break;
                 case MessagePlatform::Kick:
                     emote = getKickBadge();
+                    break;
+                case MessagePlatform::YouTube:
+                    emote = getYouTubeBadge();
                     break;
             }
         }
@@ -1168,15 +1188,6 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
     }
 }
 
-std::unique_ptr<MessageElement> TextElement::clone() const
-{
-    auto el = std::make_unique<TextElement>(QString(), this->getFlags(),
-                                            this->color_, this->style_);
-    el->words_ = this->words_;
-    el->cloneFrom(*this);
-    return el;
-}
-
 const MessageColor &TextElement::color() const noexcept
 {
     return this->color_;
@@ -1234,6 +1245,16 @@ QJsonObject TextElement::toJson() const
 std::string_view TextElement::type() const
 {
     return std::remove_pointer_t<decltype(this)>::TYPE;
+}
+
+std::unique_ptr<MessageElement> TextElement::clone() const
+{
+    auto elem = std::make_unique<TextElement>(TextElement::CLONE, this->words_,
+                                              this->getFlags(), this->color_,
+                                              this->style_);
+
+    elem->cloneFrom(*this);
+    return elem;
 }
 
 SingleLineTextElement::SingleLineTextElement(const QString &text,
@@ -1389,12 +1410,27 @@ std::string_view SingleLineTextElement::type() const
 LinkElement::LinkElement(const Parsed &parsed, const QString &fullUrl,
                          MessageElementFlags flags, const MessageColor &color,
                          FontStyle style)
-    : TextElement(QStringList(), flags, color, style)
+    : TextElement({}, flags, color, style)
     , linkInfo_(fullUrl)
     , lowercase_({parsed.lowercase})
     , original_({parsed.original})
 {
     this->setTooltip(parsed.original);
+}
+
+LinkElement::LinkElement(TextElement::CloneTag /*hack*/, QStringList lowercase,
+                         QStringList original, const QString &fullUrl,
+                         MessageElementFlags flags, const MessageColor &color,
+                         FontStyle style)
+    : TextElement({}, flags, color, style)
+    , linkInfo_(fullUrl)
+    , lowercase_(std::move(lowercase))
+    , original_(std::move(original))
+{
+    if (!this->original_.isEmpty())
+    {
+        this->setTooltip(this->original_.at(0));
+    }
 }
 
 void LinkElement::addToContainer(MessageLayoutContainer &container,
@@ -1480,12 +1516,9 @@ Link LinkElement::getLink() const
 std::unique_ptr<MessageElement> LinkElement::clone() const
 {
     auto el = std::make_unique<LinkElement>(
-        Parsed{
-            .lowercase = this->lowercase_.at(0),
-            .original = this->original_.at(0),
-        },
-        this->linkInfo_.originalUrl(), this->getFlags(), this->color(),
-        this->fontStyle());
+        LinkElement::CLONE, this->lowercase_, this->original_,
+        this->linkInfo_.originalUrl(), this->getFlags(), this->color_,
+        this->style_);
     el->cloneFrom(*this);
     return el;
 }
@@ -1608,8 +1641,8 @@ const QString &VoiceMessageElement::originalUrl() const
 }
 
 MentionElement::MentionElement(const QString &displayName, QString loginName_,
-                               MessageColor fallbackColor_,
-                               MessageColor userColor_)
+                               const MessageColor &fallbackColor_,
+                               const MessageColor &userColor_)
     : TextElement(displayName,
                   {MessageElementFlag::Text, MessageElementFlag::Mention})
     , fallbackColor_(fallbackColor_)
@@ -1618,18 +1651,22 @@ MentionElement::MentionElement(const QString &displayName, QString loginName_,
 {
 }
 
-MentionElement::MentionElement(QStringList &&words, MessageColor fallbackColor_,
-                               MessageColor userColor_)
-    : TextElement(std::move(words),
+MentionElement::MentionElement(TextElement::CloneTag /* hack */,
+                               QStringList words, QString loginName_,
+                               const MessageColor &fallbackColor_,
+                               const MessageColor &userColor_)
+    : TextElement(MentionElement::CLONE, std::move(words),
                   {MessageElementFlag::Text, MessageElementFlag::Mention})
     , fallbackColor_(fallbackColor_)
     , userColor_(userColor_)
+    , userLoginName_(std::move(loginName_))
 {
 }
 
 template <typename>
 MentionElement::MentionElement(const QString &displayName, QString loginName_,
-                               MessageColor fallbackColor_, QColor userColor_)
+                               const MessageColor &fallbackColor_,
+                               QColor userColor_)
     : TextElement(displayName,
                   {MessageElementFlag::Text, MessageElementFlag::Mention})
     , fallbackColor_(fallbackColor_)
@@ -1640,7 +1677,7 @@ MentionElement::MentionElement(const QString &displayName, QString loginName_,
 
 template MentionElement::MentionElement(const QString &displayName,
                                         QString loginName_,
-                                        MessageColor fallbackColor_,
+                                        const MessageColor &fallbackColor_,
                                         QColor userColor_);
 
 void MentionElement::addToContainer(MessageLayoutContainer &container,
@@ -1665,15 +1702,6 @@ void MentionElement::addToContainer(MessageLayoutContainer &container,
     }
 
     TextElement::addToContainer(container, ctx);
-}
-
-std::unique_ptr<MessageElement> MentionElement::clone() const
-{
-    std::unique_ptr<MentionElement> el{new MentionElement(
-        this->words(), this->fallbackColor_, this->userColor_)};
-    el->userLoginName_ = this->userLoginName_;
-    el->cloneFrom(*this);
-    return el;
 }
 
 MessageElement *MentionElement::setLink(const Link &link)
@@ -1710,6 +1738,15 @@ QJsonObject MentionElement::toJson() const
 std::string_view MentionElement::type() const
 {
     return std::remove_pointer_t<decltype(this)>::TYPE;
+}
+
+std::unique_ptr<MessageElement> MentionElement::clone() const
+{
+    auto elem = std::make_unique<MentionElement>(
+        TextElement::CLONE, this->words_, this->userLoginName_,
+        this->fallbackColor_, this->userColor_);
+    elem->cloneFrom(*this);
+    return elem;
 }
 
 // TIMESTAMP

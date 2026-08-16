@@ -53,7 +53,6 @@ struct MessagePreferences {
     Qt::BrushStyle lastMessagePattern{};
 
     bool enableRedeemedHighlight{};
-    bool enableElevatedMessageHighlight{};
     bool enableFirstMessageHighlight{};
     bool enableSubHighlight{};
     bool enableFollowHighlight{};
@@ -99,6 +98,8 @@ struct MessagePaintContext {
 
     bool isLastReadMessage{};
     bool isCollapsed{};
+
+    bool tintByPlatform{};
 };
 
 struct MessageLayoutContext {

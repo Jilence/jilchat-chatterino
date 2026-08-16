@@ -38,6 +38,8 @@ class SelectChannelDialog;
 class OverlayWindow;
 class TwitchChannel;
 
+struct SplitDescriptor;
+
 // Each ChatWidget consists of three sub-elements that handle their own part of
 // the chat widget: ChatWidgetHeader
 //   - Responsible for rendering which channel the ChatWidget is in, and the
@@ -114,6 +116,8 @@ public:
 
     void setInputReply(const MessagePtr &reply, std::weak_ptr<Channel> channel);
 
+    SplitDescriptor buildDescriptor() const;
+
     // This is called on window focus lost
     void unpause();
 
@@ -189,6 +193,9 @@ private:
     void updateBannerVisibility();
     void updateMpsOverlayAnchor();
     void noteBannerStateChanged(TwitchChannel *channel, int bannerId);
+
+    TwitchChannel *twitchOverlayChannel() const;
+    void wireTwitchBanners(TwitchChannel *tc);
     void clearBannerAttention();
     void runDeferredTwitchRefresh();
     void refreshInputState(const QString &inputText);
@@ -239,6 +246,7 @@ private:
 
     // This signal-holder is cleared whenever this split changes the underlying channel
     pajlada::Signals::SignalHolder channelSignalHolder_;
+    pajlada::Signals::SignalHolder twitchBannerSignalHolder_;
 
     pajlada::Signals::SignalHolder signalHolder_;
     std::vector<boost::signals2::scoped_connection> bSignals_;

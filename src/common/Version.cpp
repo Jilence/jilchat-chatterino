@@ -13,7 +13,7 @@
 
 namespace chatterino {
 
-using namespace Qt::Literals::StringLiterals;
+using namespace Qt::Literals;
 
 Version::Version()
     : version_(CHATTERINO_VERSION)

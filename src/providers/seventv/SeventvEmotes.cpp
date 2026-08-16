@@ -321,9 +321,8 @@ void SeventvEmotes::loadGlobalEmotes()
 
     getApp()->getSeventvAPI()->getEmoteSet(
         u"global"_s,
-        [this](const auto &json) {
-            writeProviderEmotesCache("global", "seventv",
-                                     QJsonDocument(json).toJson());
+        [this](const auto &json, const auto &raw) {
+            writeProviderEmotesCache("global", "seventv", raw);
             QJsonArray parsedEmotes = json["emotes"].toArray();
 
             auto emoteMap =
@@ -359,13 +358,12 @@ void SeventvEmotes::loadChannelEmotes(
 
         getApp()->getSeventvAPI()->getUserByTwitchID(
             channelId,
-            [callback, channel, channelId, manualRefresh,
-             loadAttempt](const auto &json) {
+            [callback, channel, channelId, manualRefresh, loadAttempt](
+                const auto &json, const auto &raw) {
                 auto cleanup = qScopeGuard([loadAttempt] {
                     *loadAttempt = {};
                 });
-                writeProviderEmotesCache(channelId, "seventv",
-                                         QJsonDocument(json).toJson());
+                writeProviderEmotesCache(channelId, "seventv", raw);
                 const auto emoteSet = json["emote_set"].toObject();
                 const auto parsedEmotes = emoteSet["emotes"].toArray();
 
@@ -493,14 +491,13 @@ void SeventvEmotes::loadKickChannelEmotes(
 
         getApp()->getSeventvAPI()->getUserByKickID(
             userID,
-            [callback, channel, manualRefresh, userID,
-             loadAttempt](const auto &json) {
+            [callback, channel, manualRefresh, userID, loadAttempt](
+                const auto &json, const auto &raw) {
                 auto cleanup = qScopeGuard([loadAttempt] {
                     *loadAttempt = {};
                 });
                 writeProviderEmotesCache(u"kick." % QString::number(userID),
-                                         "seventv",
-                                         QJsonDocument(json).toJson());
+                                         "seventv", raw);
                 const auto emoteSet = json["emote_set"].toObject();
                 const auto parsedEmotes = emoteSet["emotes"].toArray();
 
@@ -690,7 +687,8 @@ void SeventvEmotes::getEmoteSet(
 
     getApp()->getSeventvAPI()->getEmoteSet(
         emoteSetId,
-        [callback = std::move(successCallback), emoteSetId](const auto &json) {
+        [callback = std::move(successCallback), emoteSetId](
+            const auto &json, const auto & /*raw*/) {
             assert(!isAppAboutToQuit());
 
             auto parsedEmotes = json["emotes"].toArray();

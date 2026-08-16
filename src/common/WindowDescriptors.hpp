@@ -78,8 +78,13 @@ struct SplitDescriptor {
 
     MultiChannelIndicatorMode mcIndicator = MultiChannelIndicatorMode::None;
     uint32_t mcIndex = 0;
+    bool mcTintByPlatform = false;
+    bool mcShowTwitchOverlays = false;
+    bool mcCombinedViewerCount = false;
 
     static SplitDescriptor loadFromJSON(const QJsonObject &root);
+
+    QJsonObject toJson() const;
 
     IndirectChannel decodeChannel() const;
 };
@@ -92,6 +97,8 @@ struct SplitNodeDescriptor : SplitDescriptor {
     qreal flexV_ = 1;
 
     static SplitNodeDescriptor loadFromJSON(const QJsonObject &root);
+
+    QJsonObject toJson() const;
 };
 
 struct ContainerNodeDescriptor;
@@ -108,6 +115,8 @@ struct ContainerNodeDescriptor {
     std::vector<NodeDescriptor> items_;
 
     static ContainerNodeDescriptor loadFromJSON(const QJsonObject &root);
+
+    QJsonObject toJson() const;
 };
 
 struct TabDescriptor {
@@ -132,6 +141,7 @@ struct WindowDescriptor {
     State state_ = State::None;
 
     QRect geometry_;
+    std::optional<size_t> popupID;
 
     std::vector<TabDescriptor> tabs_;
 };

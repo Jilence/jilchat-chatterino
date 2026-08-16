@@ -19,6 +19,7 @@
 #include "messages/MessageElement.hpp"
 #include "providers/IvrApi.hpp"
 #include "providers/kick/KickChannel.hpp"
+#include "providers/kick/KickChatServer.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/translation/Translator.hpp"
 #include "providers/twitch/api/Helix.hpp"
@@ -29,6 +30,7 @@
 #include "providers/twitch/TwitchCommon.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/twitch/TwitchNameHistory.hpp"
+#include "providers/youtube/YouTubeChannel.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
@@ -1812,6 +1814,7 @@ QString streamlink(const CommandContext &ctx)
     }
 
     QString target(ctx.words.value(1));
+    auto *youtubeChannel = dynamic_cast<YouTubeChannel *>(ctx.channel.get());
 
     if (target.isEmpty())
     {
@@ -1824,12 +1827,25 @@ QString streamlink(const CommandContext &ctx)
         {
             target = ctx.kickChannel->slug();
         }
+        else if (youtubeChannel)
+        {
+            if (!youtubeChannel->videoId().isEmpty())
+            {
+                openStreamlinkForChannel(youtubeChannel->videoId(),
+                                         u"youtube.com/watch?v=");
+            }
+            else
+            {
+                openStreamlinkForChannel(youtubeChannel->streamUrl(), u"");
+            }
+            return "";
+        }
         else
         {
             ctx.channel->addSystemMessage(
                 "/streamlink [channel]. Open specified Twitch channel in "
                 "streamlink. If no channel argument is specified, open the "
-                "current Twitch channel instead.");
+                "current channel's stream instead.");
             return "";
         }
     }
@@ -2193,8 +2209,13 @@ QString openUsercard(const CommandContext &ctx)
         QString channelName = ctx.words[2];
         stripChannelName(channelName);
 
-        ChannelPtr channelTemp =
-            getApp()->getTwitch()->getChannelOrEmpty(channelName);
+        auto channelTemp = [&]() -> ChannelPtr {
+            if (channel->isKickChannel())
+            {
+                return getApp()->getKickChatServer()->findBySlug(channelName);
+            }
+            return getApp()->getTwitch()->getChannelOrEmpty(channelName);
+        }();
 
         if (channelTemp->isEmpty())
         {

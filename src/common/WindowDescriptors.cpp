@@ -9,6 +9,7 @@
 #include "debug/AssertInGuiThread.hpp"
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
+#include "providers/youtube/YouTubeChatServer.hpp"
 #include "util/Backup.hpp"
 #include "util/Expected.hpp"
 #include "util/MultiChannel.hpp"
@@ -20,6 +21,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
+
+using namespace Qt::Literals;
 
 namespace chatterino {
 
@@ -87,6 +90,16 @@ QList<QUuid> loadFilters(const QJsonValue &val)
     }
 
     return filterIds;
+}
+
+QJsonArray encodeFilters(std::span<const QUuid> filters)
+{
+    QJsonArray arr;
+    for (const auto &f : filters)
+    {
+        arr.append(f.toString(QUuid::WithoutBraces));
+    }
+    return arr;
 }
 
 }  // namespace
@@ -157,9 +170,74 @@ SplitDescriptor SplitDescriptor::loadFromJSON(const QJsonObject &root)
             qmagicenum::enumCast<MultiChannelIndicatorMode>(modeStr).value_or(
                 MultiChannelIndicatorMode::PlatformBadgeIfUnselected);
         descriptor.mcIndex = static_cast<uint32_t>(data["activeIndex"].toInt());
+        descriptor.mcTintByPlatform = data["tintByPlatform"].toBool();
+        descriptor.mcShowTwitchOverlays = data["showTwitchOverlays"].toBool();
+        descriptor.mcCombinedViewerCount = data["combinedViewerCount"].toBool();
     }
 
     return descriptor;
+}
+
+QJsonObject SplitDescriptor::toJson() const
+{
+    QJsonObject obj;
+
+    obj.insert("type", "split");
+    obj.insert("moderationMode", this->moderationMode_);
+
+    QJsonObject data{{"type"_L1, this->type_}};
+    if (!this->channelName_.isEmpty())
+    {
+        data.insert("name"_L1, this->channelName_);
+    }
+    if (this->anonymous_)
+    {
+        data.insert("anonymous"_L1, true);
+    }
+    if (this->type_ == u"kick")
+    {
+        data.insert("roomID", static_cast<qint64>(this->kickRoomID));
+        data.insert("userID", static_cast<qint64>(this->kickUserID));
+        data.insert("channelID", static_cast<qint64>(this->kickChannelID));
+    }
+    else if (this->type_ == u"multi")
+    {
+        QJsonArray children;
+        for (const auto &child : this->children)
+        {
+            children.append(child.toJson());
+        }
+        data.insert("children", children);
+        data.insert("indicatorMode",
+                    qmagicenum::enumNameString(this->mcIndicator));
+        data.insert("activeIndex", static_cast<int32_t>(this->mcIndex));
+        data.insert("tintByPlatform", this->mcTintByPlatform);
+        data.insert("showTwitchOverlays", this->mcShowTwitchOverlays);
+        data.insert("combinedViewerCount", this->mcCombinedViewerCount);
+    }
+    obj.insert("data", data);
+
+    obj.insert("filters", encodeFilters(this->filters_));
+
+    if (this->spellCheckOverride.has_value())
+    {
+        obj["checkSpelling"] = *this->spellCheckOverride;
+    }
+
+    if (this->perSplitHidePinnedMessage_)
+    {
+        obj.insert(QStringLiteral("splitHidePinnedMessage"), true);
+    }
+    if (this->perSplitHidePrediction_)
+    {
+        obj.insert(QStringLiteral("splitHidePrediction"), true);
+    }
+    if (this->perSplitHidePoll_)
+    {
+        obj.insert(QStringLiteral("splitHidePoll"), true);
+    }
+
+    return obj;
 }
 
 IndirectChannel SplitDescriptor::decodeChannel() const
@@ -201,6 +279,9 @@ IndirectChannel SplitDescriptor::decodeChannel() const
                                         .userID = this->kickUserID,
                                         .channelID = this->kickChannelID,
                                     });
+        case Channel::Type::YouTube:
+            return getApp()->getYouTubeChatServer()->getOrCreate(
+                this->channelName_);
         case Channel::Type::Multi: {
             QVarLengthArray<MultiChannel::Spec, 4> specs;
             for (const auto &child : this->children)
@@ -211,7 +292,9 @@ IndirectChannel SplitDescriptor::decodeChannel() const
                     specs.emplace_back(*std::move(spec));
                 }
             }
-            auto ptr = std::make_shared<MultiChannel>(specs, this->mcIndicator);
+            auto ptr = std::make_shared<MultiChannel>(
+                specs, this->mcIndicator, this->mcTintByPlatform,
+                this->mcShowTwitchOverlays, this->mcCombinedViewerCount);
             ptr->setActiveChannelIndex(this->mcIndex);
             return {std::move(ptr)};
         }
@@ -235,6 +318,14 @@ SplitNodeDescriptor SplitNodeDescriptor::loadFromJSON(const QJsonObject &root)
     descriptor.flexH_ = root["flexh"].toDouble(1.0);
     descriptor.flexV_ = root["flexv"].toDouble(1.0);
     return descriptor;
+}
+
+QJsonObject SplitNodeDescriptor::toJson() const
+{
+    QJsonObject obj = SplitDescriptor::toJson();
+    obj.insert("flexh", this->flexH_);
+    obj.insert("flexv", this->flexV_);
+    return obj;
 }
 
 ContainerNodeDescriptor ContainerNodeDescriptor::loadFromJSON(
@@ -265,6 +356,26 @@ ContainerNodeDescriptor ContainerNodeDescriptor::loadFromJSON(
     }
 
     return descriptor;
+}
+
+QJsonObject ContainerNodeDescriptor::toJson() const
+{
+    QJsonObject obj;
+    obj.insert("type", this->vertical_ ? "vertical" : "horizontal");
+    obj.insert("flexh", this->flexH_);
+    obj.insert("flexv", this->flexV_);
+
+    QJsonArray itemsArr;
+    for (const auto &n : this->items_)
+    {
+        itemsArr.append(std::visit(
+            [](auto &&it) {
+                return it.toJson();
+            },
+            n));
+    }
+    obj.insert("items", itemsArr);
+    return obj;
 }
 
 TabDescriptor TabDescriptor::loadFromJSON(const QJsonObject &tabObj)
@@ -348,7 +459,7 @@ WindowLayout WindowLayout::loadFromFile(const QString &path)
     // "deserialize"
     for (const QJsonValue &windowVal : windowsArr)
     {
-        QJsonObject windowObj = windowVal.toObject();
+        const QJsonObject windowObj = windowVal.toObject();
 
         WindowDescriptor window;
 
@@ -388,6 +499,13 @@ WindowLayout WindowLayout::loadFromFile(const QString &path)
             int height = windowObj.value("height").toInt(-1);
 
             window.geometry_ = QRect(x, y, width, height);
+        }
+
+        // Load popup ID
+        auto idVal = windowObj["popupID"];
+        if (idVal.isDouble())
+        {
+            window.popupID = idVal.toInt(1);
         }
 
         bool hasSetASelectedTab = false;
