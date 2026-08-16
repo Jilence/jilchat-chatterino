@@ -59,16 +59,16 @@ NotificationPage::NotificationPage()
                 auto *presenceLayout = new QVBoxLayout;
                 presenceBox->setLayout(presenceLayout);
                 this->rebuildDesktopPresenceAccounts(presenceLayout);
-                getApp()->getAccounts()->twitch.userListUpdated.connect(
+                this->managedConnections_.managedConnect(
+                    getApp()->getAccounts()->twitch.userListUpdated,
                     [this, presenceLayout] {
                         this->rebuildDesktopPresenceAccounts(presenceLayout);
-                    },
-                    this->managedConnections_);
-                getApp()->getAccounts()->desktopPresence().changed.connect(
+                    });
+                this->managedConnections_.managedConnect(
+                    getApp()->getAccounts()->desktopPresence().changed,
                     [this, presenceLayout] {
                         this->rebuildDesktopPresenceAccounts(presenceLayout);
-                    },
-                    this->managedConnections_);
+                    });
 #if defined(Q_OS_WIN) || defined(CHATTERINO_WITH_LIBNOTIFY)
                 settings.append(this->createCheckBox(
                     "Show notification", getSettings()->notificationToast));
