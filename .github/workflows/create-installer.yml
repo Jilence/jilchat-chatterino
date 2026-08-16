@@ -29,17 +29,20 @@ jobs:
     permissions:
       # FIXME: this only needed for the nightly upload step (should split to another job)
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # allows for tags access
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Download artifact
         uses: dawidd6/action-download-artifact@v20
         with:
+          run_id: ${{ github.event.workflow_run.id }}
           workflow: build.yml
           name: chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.zip
-          commit: ${{ github.sha }}
+          commit: ${{ github.event.workflow_run.head_sha || github.sha }}
           path: build/
 
       - name: Unzip
@@ -118,6 +121,7 @@ jobs:
     permissions:
       # FIXME: this only needed for the last step (should split to another job)
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,7 +135,9 @@ jobs:
       - name: Download artifact
         uses: dawidd6/action-download-artifact@v19
         with:
+          run_id: ${{ github.event.workflow_run.id }}
           workflow: build.yml
+          commit: ${{ github.event.workflow_run.head_sha || github.sha }}
           name_is_regexp: true
           name: '((^[Cc]hatterino)-[^wW].+$)|(^Leafyrino.+$)|(^.+\.7z$)'
           path: build/
