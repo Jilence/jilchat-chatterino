@@ -29,14 +29,15 @@ constexpr int HEARTBEAT_TTL_SECONDS = 90;
 
 std::string accountPath(const QString &id, const char *name)
 {
-    return (u"/accounts/uid" % id % u"/" % QString::fromLatin1(name))
+    return QString(u"/accounts/uid" % id % u"/" %
+                   QString::fromLatin1(name))
         .toStdString();
 }
 
 bool enabledFor(const QString &id)
 {
     return pajlada::Settings::Setting<bool>::get(
-        accountPath(id, "jilchatDesktopPresenceEnabled"), false);
+        accountPath(id, "jilchatDesktopPresenceEnabled"));
 }
 
 void setAccountValue(const QString &id, const char *name, const QString &value)
@@ -170,7 +171,7 @@ void DesktopPresenceController::accountRemoved(
     const auto id = account->getUserId();
     this->remove(account, true);
     pajlada::Settings::SettingManager::gRemoveSetting(
-        (u"/accounts/uid" % id).toStdString());
+        QString(u"/accounts/uid" % id).toStdString());
     getSettings()->requestSave();
     this->changed.invoke();
 }
