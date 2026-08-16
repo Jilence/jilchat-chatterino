@@ -55,19 +55,25 @@ NotificationPage::NotificationPage()
                     getSettings()->suppressInitialLiveNotification));
 
                 auto presenceBox = settings.emplace<QGroupBox>(
-                    "JilChat Desktop-Präsenz");
+                    "JilChat Desktop Presence");
                 auto *presenceLayout = new QVBoxLayout;
                 presenceBox->setLayout(presenceLayout);
                 this->rebuildDesktopPresenceAccounts(presenceLayout);
                 this->managedConnections_.managedConnect(
                     getApp()->getAccounts()->twitch.userListUpdated,
                     [this, presenceLayout] {
-                        this->rebuildDesktopPresenceAccounts(presenceLayout);
+                        QTimer::singleShot(0, this, [this, presenceLayout] {
+                            this->rebuildDesktopPresenceAccounts(
+                                presenceLayout);
+                        });
                     });
                 this->managedConnections_.managedConnect(
                     getApp()->getAccounts()->desktopPresence().changed,
                     [this, presenceLayout] {
-                        this->rebuildDesktopPresenceAccounts(presenceLayout);
+                        QTimer::singleShot(0, this, [this, presenceLayout] {
+                            this->rebuildDesktopPresenceAccounts(
+                                presenceLayout);
+                        });
                     });
 #if defined(Q_OS_WIN) || defined(CHATTERINO_WITH_LIBNOTIFY)
                 settings.append(this->createCheckBox(
@@ -166,13 +172,13 @@ void NotificationPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
     const auto accounts = getApp()->getAccounts()->twitch.accounts.readOnly();
     if (accounts->empty())
     {
-        layout->addWidget(new QLabel("Kein Twitch-Konto angemeldet."));
+        layout->addWidget(new QLabel("No Twitch account is logged in."));
     }
     for (const auto &account : *accounts)
     {
         auto *checkBox = new QCheckBox(
             account->getUserName() +
-            " — Handy-Benachrichtigungen pausieren, solange JilChat Desktop läuft");
+            " — Pause mobile notifications while JilChat Desktop is running");
         checkBox->setChecked(controller.isEnabled(account->getUserId()));
         QObject::connect(checkBox, &QCheckBox::toggled, this,
                          [account, &controller](bool enabled) {
@@ -191,8 +197,8 @@ void NotificationPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
     }
 
     auto *hint = new QLabel(
-        "Wird das Programm geschlossen oder stürzt es ab, kommen "
-        "Benachrichtigungen nach spätestens 90 Sekunden von selbst wieder an.");
+        "When the program is closed or crashes, notifications resume "
+        "automatically within 90 seconds.");
     hint->setWordWrap(true);
     layout->addWidget(hint);
 }

@@ -204,7 +204,7 @@ void DesktopPresenceController::authenticate(
             if (!account || p.jwt.isEmpty() || expiresIn <= 0 || p.stopped)
             {
                 p.failedTwitchToken = account ? account->getOAuthToken() : QString{};
-                p.status = "Desktop-Präsenz konnte nicht aktiviert werden.";
+                p.status = "Desktop presence could not be enabled.";
                 this->changed.invoke();
                 return;
             }
@@ -233,7 +233,7 @@ void DesktopPresenceController::authenticate(
                 result.getData().contains(
                     "No JilChat account for this Twitch login"))
             {
-                p.status = "Melde dich einmal in der JilChat-App an.";
+                p.status = "Please sign in to the JilChat app once.";
                 p.failedTwitchToken =
                     account ? account->getOAuthToken() : QString{};
             }
@@ -241,13 +241,13 @@ void DesktopPresenceController::authenticate(
             {
                 qCCritical(chatterinoApp)
                     << "JilChat desktop authentication was rejected with 403; stopping presence";
-                p.status = "Desktop-Präsenz ist wegen eines Konfigurationsfehlers nicht verfügbar.";
+                p.status = "Desktop presence is unavailable due to a configuration error.";
                 p.failedTwitchToken =
                     account ? account->getOAuthToken() : QString{};
             }
             else
             {
-                p.status = "Desktop-Präsenz konnte nicht aktiviert werden.";
+                p.status = "Desktop presence could not be enabled.";
                 if (p.refreshing)
                 {
                     p.failedTwitchToken =
