@@ -193,9 +193,20 @@ jobs:
           fetch-depth: 0 # tag access
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: chatterino.flatpak
+          bundle: leafyrino.flatpak
           manifest-path: .CI/com.chatterino.chatterino.yml
           cache-key: flatpak-builder-${{ github.sha }}
+
+      # A .flatpak is a from-empty OSTree static delta. Importing it exercises
+      # the same decompression path as an end-user installation and prevents a
+      # bundle with an oversized delta part from reaching a release.
+      - name: Verify Flatpak bundle is installable
+        run: |
+          test "$(stat -c %s leafyrino.flatpak)" -lt 536870912
+          verify_repo="$(mktemp -d)"
+          ostree init --repo="$verify_repo" --mode=archive
+          flatpak build-import-bundle "$verify_repo" leafyrino.flatpak
+          ostree --repo="$verify_repo" fsck
 
   build:
     name: "Build ${{ matrix.os }}, Qt ${{ matrix.qt-version }} (LTO:${{ matrix.force-lto }}, crashpad:${{ case(matrix.skip-crashpad, 'off', 'on') }})"

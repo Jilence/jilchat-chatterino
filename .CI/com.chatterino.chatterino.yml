@@ -14,9 +14,20 @@ finish-args:
   - --filesystem=xdg-data/chatterino:create
   - --filesystem=~/.var/app/com.chatterino.chatterino/data/chatterino:ro
 build-options:
+  # The release binary contains a large amount of ELF debug information even
+  # with CMAKE_BUILD_TYPE=Release.  Keeping it in the application commit can
+  # make the from-empty static delta exceed libostree's 512 MiB decompression
+  # limit, which makes the resulting single-file .flatpak uninstallable.
+  strip: true
   no-debuginfo: true
 cleanup:
   - /include
+  - /lib/*.a
+  - /lib/*.la
+  - /lib/pkgconfig
+  - /share/aclocal
+  - /share/doc
+  - /share/man
 modules:
   - name: boost
     buildsystem: simple
