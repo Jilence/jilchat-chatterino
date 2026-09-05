@@ -176,6 +176,8 @@ public:
     void aboutToQuit();
     void stop();
 
+    void connect();
+
     int run();
 
     friend void test();

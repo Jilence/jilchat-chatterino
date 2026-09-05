@@ -58,6 +58,8 @@ set(SOURCE_FILES
         common/network/NetworkResult.hpp
         common/network/NetworkTask.cpp
         common/network/NetworkTask.hpp
+        common/network/RetryingGet.cpp
+        common/network/RetryingGet.hpp
 
         common/websockets/WebSocketPool.cpp
         common/websockets/WebSocketPool.hpp
@@ -298,6 +300,8 @@ set(SOURCE_FILES
         controllers/plugins/api/JSONParse.hpp
         controllers/plugins/api/JSONStringify.cpp
         controllers/plugins/api/JSONStringify.hpp
+        controllers/plugins/api/Menu.cpp
+        controllers/plugins/api/Menu.hpp
         controllers/plugins/api/Message.cpp
         controllers/plugins/api/Message.hpp
         controllers/plugins/api/WebSocket.cpp
@@ -343,6 +347,8 @@ set(SOURCE_FILES
         debug/Benchmark.cpp
         debug/Benchmark.hpp
 
+        messages/AsciiArt.cpp
+        messages/AsciiArt.hpp
         messages/Emote.cpp
         messages/Emote.hpp
         messages/Image.cpp
@@ -360,6 +366,7 @@ set(SOURCE_FILES
         messages/MessageElement.cpp
         messages/MessageElement.hpp
         messages/MessageFlag.hpp
+        messages/MessageParseArgs.hpp
         messages/MessageSimilarity.cpp
         messages/MessageSimilarity.hpp
         messages/MessageSink.hpp
@@ -597,6 +604,8 @@ set(SOURCE_FILES
         providers/twitch/TwitchIrcServer.hpp
         providers/twitch/TwitchNameHistory.cpp
         providers/twitch/TwitchNameHistory.hpp
+        providers/twitch/TwitchReadConnectionPool.cpp
+        providers/twitch/TwitchReadConnectionPool.hpp
         providers/twitch/TwitchUser.cpp
         providers/twitch/TwitchUser.hpp
         providers/twitch/TwitchUsers.cpp
@@ -937,6 +946,8 @@ set(SOURCE_FILES
         widgets/helper/InvisibleSizeGrip.hpp
         widgets/helper/KickAccountSwitchWidget.cpp
         widgets/helper/KickAccountSwitchWidget.hpp
+        widgets/helper/LiveIndicator.cpp
+        widgets/helper/LiveIndicator.hpp
         widgets/helper/MessageView.cpp
         widgets/helper/MessageView.hpp
         widgets/helper/MicroNotebook.cpp
@@ -963,10 +974,10 @@ set(SOURCE_FILES
         widgets/helper/SearchPopup.hpp
         widgets/helper/SettingsDialogTab.cpp
         widgets/helper/SettingsDialogTab.hpp
-        widgets/helper/LiveIndicator.cpp
-        widgets/helper/LiveIndicator.hpp
         widgets/helper/ColorSwatch.cpp
         widgets/helper/ColorSwatch.hpp
+        widgets/helper/SvgWidget.cpp
+        widgets/helper/SvgWidget.hpp
         widgets/helper/TableStyles.cpp
         widgets/helper/TableStyles.hpp
         widgets/helper/TrimRegExpValidator.cpp
@@ -1139,7 +1150,6 @@ target_link_libraries(${LIBRARY_PROJECT}
         Qt${MAJOR_QT_VERSION}::Network
         Qt${MAJOR_QT_VERSION}::NetworkPrivate # for DELETE with a body (Kick)
         Qt${MAJOR_QT_VERSION}::Svg
-        Qt${MAJOR_QT_VERSION}::SvgWidgets
         Qt${MAJOR_QT_VERSION}::Concurrent
         Qt${MAJOR_QT_VERSION}::Charts
 

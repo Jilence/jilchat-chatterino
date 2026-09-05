@@ -1654,7 +1654,7 @@ void Split::openChannelInStreamlink(const QString channelName)
 {
     try
     {
-        openStreamlinkForChannel(channelName);
+        openStreamlinkForChannelOrUrl(channelName);
     }
     catch (const Exception &ex)
     {
@@ -1668,7 +1668,7 @@ void Split::openChannelInCustomPlayer(const QString channelName)
     openInCustomPlayer(channelName);
 }
 
-IndirectChannel Split::getIndirectChannel()
+IndirectChannel Split::getIndirectChannel() const
 {
     return this->channel_;
 }
@@ -2514,7 +2514,7 @@ void Split::openInStreamlink()
     auto *kc = dynamic_cast<KickChannel *>(chan.get());
     if (kc)
     {
-        openStreamlinkForChannel(kc->slug(), u"kick.com/");
+        openStreamlinkForChannelOrUrl(kc->slug(), u"kick.com/");
         return;
     }
     if (auto *yt = dynamic_cast<YouTubeChannel *>(chan.get()))
@@ -2732,19 +2732,19 @@ SplitDescriptor Split::buildDescriptor() const
     descriptor.filters_ = this->getFilters();
     descriptor.spellCheckOverride = this->checkSpellingOverride();
 
-    auto chan = this->getChannel();
-    descriptor.type_ = qmagicenum::enumNameString(chan->getType());
-    switch (this->channel_.getType())
+    auto chan = this->getIndirectChannel();
+    descriptor.type_ = qmagicenum::enumNameString(chan.getType());
+    switch (chan.getType())
     {
         case Channel::Type::Twitch:
         case Channel::Type::Misc:
         case Channel::Type::YouTube:
-            descriptor.channelName_ = chan->getName();
+            descriptor.channelName_ = chan.get()->getName();
             break;
 
         case Channel::Type::Kick: {
-            descriptor.channelName_ = chan->getName();
-            auto *kc = dynamic_cast<KickChannel *>(chan.get());
+            descriptor.channelName_ = chan.get()->getName();
+            auto *kc = dynamic_cast<KickChannel *>(chan.get().get());
             if (kc)
             {
                 descriptor.kickChannelID = kc->channelID();
@@ -2755,8 +2755,8 @@ SplitDescriptor Split::buildDescriptor() const
         break;
 
         case Channel::Type::Multi: {
-            descriptor.channelName_ = chan->getName();
-            auto *mc = dynamic_cast<MultiChannel *>(chan.get());
+            descriptor.channelName_ = chan.get()->getName();
+            auto *mc = dynamic_cast<MultiChannel *>(chan.get().get());
             if (mc)
             {
                 for (const auto &child : mc->channels())
@@ -2785,7 +2785,7 @@ SplitDescriptor Split::buildDescriptor() const
             break;
     }
 
-    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(chan.get()))
+    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(chan.get().get()))
     {
         descriptor.anonymous_ = twitchChannel->isAnonymous();
     }
