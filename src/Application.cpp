@@ -46,6 +46,7 @@
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
@@ -212,6 +213,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , moltorinoSupporterBadges(new MoltorinoSupporterBadges)
     , repeatedMessageDetector(new RepeatedMessageDetector)
     , jilChatBadges(new JilChatBadges)
+    , bluzyrinoBadges(new BluzyrinoBadges)
     , seventvPaints(new SeventvPaints)
     , seventvPersonalEmotes(new SeventvPersonalEmotes)
     , userData(new UserDataController(paths))
@@ -590,6 +592,14 @@ JilChatBadges *Application::getJilChatBadges()
     return this->jilChatBadges.get();
 }
 
+BluzyrinoBadges *Application::getBluzyrinoBadges()
+{
+    // BluzyrinoBadges handles its own locks, so we don't need to assert that this is called in the GUI thread
+    assert(this->bluzyrinoBadges);
+
+    return this->bluzyrinoBadges.get();
+}
+
 IUserDataController *Application::getUserData()
 {
     assertInGuiThread();
@@ -828,6 +838,7 @@ void Application::stop()
     this->sound.reset();
     this->userData.reset();
     this->jilChatBadges.reset();
+    this->bluzyrinoBadges.reset();
     this->folhinhaBadges.reset();
     this->homiesBadges.reset();
     this->seventvBadges.reset();

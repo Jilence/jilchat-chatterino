@@ -483,6 +483,9 @@ public:
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
     BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
+    BoolSetting showBadgesBluzyrino = {"/appearance/badges/bluzyrino", true};
+    BoolSetting bluzyrinoFounderVisible = {"/bluzyrino/badges/founder/visible",
+                                           true};
     IntSetting jilChatVoiceVolume = {"/jilchat/voice/volume", 80};
     QStringSetting jilChatVoiceVolumeOverrides = {
         "/jilchat/voice/volumeOverrides", "{}"};
