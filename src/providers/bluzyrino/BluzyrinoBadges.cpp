@@ -86,6 +86,13 @@ void BluzyrinoBadges::startLoading()
     }
 
     this->loadBluzyrinoBadges();
+
+    // Periodically re-fetch so badge changes appear without a manual F5.
+    this->refreshTimer_.setInterval(30000);
+    QObject::connect(&this->refreshTimer_, &QTimer::timeout, [this] {
+        this->loadBluzyrinoBadges();
+    });
+    this->refreshTimer_.start();
 }
 
 void BluzyrinoBadges::loadBluzyrinoBadges()

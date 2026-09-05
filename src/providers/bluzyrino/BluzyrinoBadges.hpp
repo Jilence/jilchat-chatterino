@@ -8,6 +8,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QTimer>
 
 #include <atomic>
 #include <functional>
@@ -76,6 +77,10 @@ private:
 
     std::atomic_bool loadStarted_{false};
     std::atomic_bool hasLoaded_{false};
+
+    /// Periodically re-fetches the registry so badge changes appear without a
+    /// manual reload. Started once from startLoading().
+    QTimer refreshTimer_;
 
     mutable std::shared_mutex mutex_;
 
