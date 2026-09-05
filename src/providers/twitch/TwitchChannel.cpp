@@ -22,6 +22,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/bttv/BttvLiveUpdates.hpp"
 #include "providers/bttv/liveupdates/BttvLiveUpdateMessages.hpp"
@@ -1184,6 +1185,8 @@ void TwitchChannel::refreshBadgesProviders()
     }
     getApp()->getJilChatBadges()->loadJilChatBadges();
     this->addSystemMessage("JilChat badges reloaded.");
+    getApp()->getBluzyrinoBadges()->loadBluzyrinoBadges();
+    this->addSystemMessage("Bluzyrino badges reloaded.");
 }
 
 void TwitchChannel::refreshSevenTVChannelEmotes(bool manualRefresh)
