@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QSize>
+#include <QTimer>
 #include <QUrl>
 
 #include <mutex>
@@ -69,6 +70,13 @@ EmotePtr makeJilChatBadge(const QJsonObject &badgeJson)
 JilChatBadges::JilChatBadges()
 {
     this->loadJilChatBadges();
+
+    // Periodically re-fetch so badge changes appear without a manual F5.
+    this->refreshTimer_.setInterval(30000);
+    QObject::connect(&this->refreshTimer_, &QTimer::timeout, [this] {
+        this->loadJilChatBadges();
+    });
+    this->refreshTimer_.start();
 }
 
 void JilChatBadges::loadJilChatBadges()

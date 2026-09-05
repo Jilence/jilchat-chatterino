@@ -7,6 +7,7 @@
 #include "common/Aliases.hpp"
 
 #include <QJsonArray>
+#include <QTimer>
 
 #include <memory>
 #include <shared_mutex>
@@ -29,6 +30,10 @@ public:
 
 private:
     void applyBadgeJson(const QJsonArray &jsonRoot);
+
+    /// Periodically re-fetches the registry so badge changes appear without a
+    /// manual reload. Started once from the constructor.
+    QTimer refreshTimer_;
 
     mutable std::shared_mutex mutex_;
 
