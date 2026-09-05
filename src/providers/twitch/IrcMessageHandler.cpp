@@ -31,6 +31,7 @@
 #include "util/Helpers.hpp"
 #include "util/IrcHelpers.hpp"
 
+#include <IrcConnection>
 #include <IrcMessage>
 #include <QLocale>
 #include <QStringBuilder>
@@ -334,6 +335,29 @@ bool isRaidCanceledNoticeText(const QString &text)
 bool isRaidCanceledNotice(Communi::IrcNoticeMessage *message)
 {
     return message != nullptr && isRaidCanceledNoticeText(message->content());
+}
+
+/// Checks whether a JOIN/PART was sent for the connection it arrived on.
+///
+/// The connection's nickname is the only reliable identity here: anonymous
+/// read connections use `justinfan64537`, while parallel anonymous read
+/// connections each use a randomly numbered `justinfan` account.
+bool isOwnUser(Communi::IrcMessage *message)
+{
+    const auto *connection = message->connection();
+    if (connection != nullptr && !connection->nickName().isEmpty())
+    {
+        return message->nick().compare(connection->nickName(),
+                                       Qt::CaseInsensitive) == 0;
+    }
+
+    if (getSettings()->twitchReadConnectionMode ==
+        TwitchReadConnectionMode::Authenticated)
+    {
+        return message->nick() ==
+               getApp()->getAccounts()->twitch.getCurrent()->getUserName();
+    }
+    return message->nick() == ANONYMOUS_USERNAME;
 }
 
 }  // namespace
@@ -1153,15 +1177,7 @@ void IrcMessageHandler::handleJoinMessage(Communi::IrcMessage *message)
         return;
     }
 
-    bool ownUser = [&] {
-        if (getSettings()->twitchReadConnectionMode ==
-            TwitchReadConnectionMode::Authenticated)
-        {
-            return message->nick() ==
-                   getApp()->getAccounts()->twitch.getCurrent()->getUserName();
-        }
-        return message->nick() == ANONYMOUS_USERNAME;
-    }();
+    bool ownUser = isOwnUser(message);
     if (ownUser)
     {
         twitchChannel->addSystemMessage("joined channel");
@@ -1185,16 +1201,8 @@ void IrcMessageHandler::handlePartMessage(Communi::IrcMessage *message)
         return;
     }
 
-    bool ownUser = [&] {
-        if (getSettings()->twitchReadConnectionMode ==
-            TwitchReadConnectionMode::Authenticated)
-        {
-            return message->nick() ==
-                   getApp()->getAccounts()->twitch.getCurrent()->getUserName();
-        }
-        return message->nick() == ANONYMOUS_USERNAME;
-    }();
-    if (ownUser && getSettings()->showParts.getValue())
+    bool ownUser = isOwnUser(message);
+    if (!ownUser && getSettings()->showParts.getValue())
     {
         twitchChannel->addPartedUser(message->nick(), twitchChannel->isMod(),
                                      twitchChannel->isBroadcaster());
