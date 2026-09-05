@@ -3320,7 +3320,13 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
                 if (badgeElement->getFlags().has(
                         MessageElementFlag::BadgeJilChat))
                 {
-                    tooltipScale *= 4.0F;
+                    // JilChat badges are autoscaled down to 18px for chat while
+                    // their source asset is 128px, so the preview may be shown
+                    // much larger than the badge itself. Cap it at the asset's
+                    // native resolution - scaling past that only produces a
+                    // blurry, pixelated preview.
+                    tooltipScale = std::min(tooltipScale * 4.0F,
+                                            std::max(tooltipScale, 1.0F));
                 }
                 this->tooltipWidget_->setOne(TooltipEntry::scaled(
                     showThumbnail

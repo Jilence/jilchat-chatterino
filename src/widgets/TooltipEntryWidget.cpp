@@ -92,8 +92,10 @@ bool TooltipEntryWidget::refreshPixmap()
 
     if (!this->customSize.isEmpty())
     {
-        this->displayImage_->setPixmap(
-            pixmap->scaled(this->customSize, Qt::KeepAspectRatio));
+        // Qt::FastTransformation (the default) uses nearest-neighbour, which
+        // makes scaled previews - badges especially - look pixelated.
+        this->displayImage_->setPixmap(pixmap->scaled(
+            this->customSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
         if (this->displayImage_->pixmap().size() != this->customSize)
         {

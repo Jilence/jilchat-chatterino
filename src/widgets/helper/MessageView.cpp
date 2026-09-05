@@ -40,6 +40,7 @@
 #include <QShortcut>
 #include <QUrl>
 
+#include <algorithm>
 #include <climits>
 
 namespace {
@@ -375,14 +376,18 @@ void MessageView::updateHoverTooltip(QMouseEvent *event)
             }
             else if (badgeElement)
             {
-                const auto scale = getSettings()->emoteTooltipScale.getEnum();
+                auto scale = getSettings()->emoteTooltipScale.getEnum();
                 auto tooltipScale = getTooltipScale(scale);
-                if (badgeElement->getFlags().hasAny(
+                if (badgeElement->getFlags().has(
                         MessageElementFlag::BadgeJilChat))
                 {
-                    // JilChat supplies a single 18 px badge image, while
-                    // regular badge previews use their 72 px (3x) asset.
-                    tooltipScale *= 4.0F;
+                    // JilChat badges are autoscaled down to 18px for chat while
+                    // their source asset is 128px, so the preview may be shown
+                    // much larger than the badge itself. Cap it at the asset's
+                    // native resolution - scaling past that only produces a
+                    // blurry, pixelated preview.
+                    tooltipScale = std::min(tooltipScale * 4.0F,
+                                            std::max(tooltipScale, 1.0F));
                 }
                 this->tooltipWidget_->setOne(TooltipEntry::scaled(
                     showThumbnail
