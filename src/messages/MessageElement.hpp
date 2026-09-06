@@ -98,7 +98,7 @@ enum class MessageElementFlag : int64_t {
     BadgeFolhinha = (1LL << 62),
 
     BadgeFfzAp = (1LL << 38),
-    BadgeDankChat = (1LL << 39),
+    BadgeDankChat = (1LL << 42),
     BadgeChatsen = (1LL << 41),
     BadgeJilChat = (1LL << 40),
     BadgeBluzyrino = (1LL << 42),
