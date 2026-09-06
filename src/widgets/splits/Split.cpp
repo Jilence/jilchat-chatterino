@@ -12,6 +12,7 @@
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
@@ -622,6 +623,7 @@ void Split::addShortcuts()
                  getApp()->getHomiesBadges()->loadHomiesBadges();
                  getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
                  getApp()->getJilChatBadges()->loadJilChatBadges();
+                 getApp()->getBluzyrinoBadges()->loadBluzyrinoBadges();
              }
 
              return "";
