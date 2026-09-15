@@ -68,6 +68,13 @@ protected:
         return this->subscriptions_.contains(subscription);
     }
 
+    void subscribeImpl(const Subscription &subscription)
+    {
+        QByteArray encoded =
+            static_cast<Derived *>(this)->encodeSubscription(subscription);
+        this->ws_.sendText(encoded);
+    }
+
     /**
      * @return true if this client subscribed to this subscription
      *         and the current subscriptions don't exceed the maximum
@@ -94,13 +101,22 @@ protected:
         qCDebug(chatterinoLiveupdates) << "Subscribing to" << subscription;
         DebugCount::increase(DebugObject::LiveUpdatesSubscription);
 
-        QByteArray encoded =
-            static_cast<Derived *>(this)->encodeSubscription(subscription);
-        this->ws_.sendText(encoded);
+        static_cast<Derived *>(this)->subscribeImpl(subscription);
 
         return true;
     }
 
+    void unsubscribeImpl(const Subscription &subscription)
+    {
+        QByteArray encoded =
+            static_cast<Derived *>(this)->encodeUnsubscription(subscription);
+        this->ws_.sendText(encoded);
+    }
+
+    /**
+     * @return true if this client previously subscribed
+     *         and now unsubscribed from this subscription.
+     */
     bool unsubscribe(const Subscription &subscription)
     {
         if (this->subscriptions_.erase(subscription) <= 0)
@@ -111,9 +127,7 @@ protected:
         qCDebug(chatterinoLiveupdates) << "Unsubscribing from" << subscription;
         DebugCount::decrease(DebugObject::LiveUpdatesSubscription);
 
-        QByteArray encoded =
-            static_cast<Derived *>(this)->encodeUnsubscription(subscription);
-        this->ws_.sendText(encoded);
+        static_cast<Derived *>(this)->unsubscribeImpl(subscription);
 
         return true;
     }

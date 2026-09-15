@@ -3118,12 +3118,14 @@ void UserInfoPopup::updateUserData()
             user.displayName, this->underlyingChannel_->getName()));
         if (getSettings()->showUsercardCreatedDate)
         {
-            this->ui_.createdDateLabel->setText(
-                TEXT_CREATED.arg(user.createdAt.section("T", 0, 0)));
+            auto createdAt =
+                QDateTime::fromString(user.createdAt, Qt::ISODateWithMs);
+            auto createdStr =
+                createdAt.toLocalTime().date().toString(Qt::ISODate);
+            this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(createdStr));
             this->ui_.createdDateLabel->setToolTip(
-                formatLongFriendlyDuration(
-                    QDateTime::fromString(user.createdAt, Qt::ISODateWithMs),
-                    QDateTime::currentDateTimeUtc()) +
+                formatLongFriendlyDuration(createdAt,
+                                           QDateTime::currentDateTimeUtc()) +
                 u" ago"_s);
             this->ui_.createdDateLabel->setMouseTracking(true);
             this->ui_.createdDateLabel->setVisible(true);
@@ -3148,7 +3150,7 @@ void UserInfoPopup::updateUserData()
         if (getSettings()->showUsercardFollowerCount)
         {
             getHelix()->getChannelFollowers(
-                user.id,
+                user.id, {},
                 [this, isCurrentRequest](const auto &followers) {
                     if (!isCurrentRequest() ||
                         !getSettings()->showUsercardFollowerCount)

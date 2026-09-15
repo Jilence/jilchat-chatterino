@@ -15,6 +15,12 @@ class QSvgRenderer;
 
 namespace chatterino {
 
+/// @brief A button displaying SVGs.
+///
+/// The source can be specified per theme (dark/light)
+/// and will get automatically updated when the theme changes.
+///
+/// The button has #padding() around the SVG, which will scale with the UI.
 class SvgButton : public Button
 {
     Q_OBJECT

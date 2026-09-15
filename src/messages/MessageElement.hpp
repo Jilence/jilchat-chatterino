@@ -51,11 +51,11 @@ enum class MessageElementFlag : int64_t {
     Emote = EmoteImage | EmoteText,
 
     BadgeHomiesSupporter = (1LL << 7),
+    TwitchGif = (1LL << 9),
 
     ChannelPointReward = (1LL << 8),
     ChannelPointRewardImage = ChannelPointReward | EmoteImage,
 
-    // unused: (1LL << 9),
     // unused: (1LL << 10),
 
     BitsStatic = (1LL << 11),

@@ -398,8 +398,12 @@ void Button::paintButton(QPainter &painter)
 
             this->pixmapValid_ = true;
         }
+        // Disable smooth transformation, as we know the drawn pixmap has the
+        // same size as the target area (in pixels).
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
         painter.drawPixmap(this->rect(), this->cachedPixmap_,
                            {{}, this->cachedPixmap_.size()});
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
     }
     else
     {
