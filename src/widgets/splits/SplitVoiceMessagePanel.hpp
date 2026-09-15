@@ -6,6 +6,7 @@
 
 #include "widgets/BaseWidget.hpp"
 
+#include <QElapsedTimer>
 #include <QPaintEvent>
 #include <QString>
 #include <QTimer>
@@ -38,6 +39,8 @@ private:
     Split *const split_;
     QTimer refreshTimer_;
     QString activeVoiceId_;
+    /// Tracks how long the active voice has been paused, to auto-hide after 3s.
+    QElapsedTimer pausedSince_;
 
     QLabel *label_{};
     QProgressBar *progress_{};

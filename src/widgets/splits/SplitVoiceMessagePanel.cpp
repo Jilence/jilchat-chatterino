@@ -78,8 +78,38 @@ void SplitVoiceMessagePanel::refresh()
     this->activeVoiceId_ = jilchat::getActiveVoiceId();
     if (this->activeVoiceId_.isEmpty())
     {
+        this->pausedSince_.invalidate();
         this->hide();
         return;
+    }
+
+    if (jilchat::isVoicePlaying(this->activeVoiceId_))
+    {
+        // Actively playing: keep the panel visible, even across tab switches.
+        this->pausedSince_.invalidate();
+    }
+    else
+    {
+        // Paused: only the owning channel's visible tab shows it, and only for
+        // 3 seconds. Switching to another tab therefore hides it right away.
+        const auto channel = this->split_->getChannel();
+        const bool owns = channel != nullptr &&
+                          channel->getName() == jilchat::activeVoiceOwner();
+        if (!owns || !this->split_->isVisible())
+        {
+            this->hide();
+            return;
+        }
+
+        if (!this->pausedSince_.isValid())
+        {
+            this->pausedSince_.start();
+        }
+        else if (this->pausedSince_.hasExpired(3000))
+        {
+            this->hide();
+            return;
+        }
     }
 
     const auto progress = jilchat::getVoiceProgress(this->activeVoiceId_);
