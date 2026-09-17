@@ -43,6 +43,10 @@ namespace {
 
 QString jilChatJwt;
 
+// Channel name of the split that started the active voice message. Used so the
+// "voice message playing" panel only appears on the owning channel's tab.
+QString activeVoiceOwnerName;
+
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
 QHash<QString, QList<QPointer<QAudioOutput>>> activeAudioOutputs;
 QHash<QString, QPointer<QMediaPlayer>> activePlayers;
@@ -133,10 +137,20 @@ void playVoiceFile(const QString &path, const QString &voiceId,
 {
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
     runInGuiThread([path, voiceId, startProgress] {
-        if (auto existing = activePlayers.value(voiceId); existing != nullptr)
+        // Only one voice message plays at a time. Stop and drop every existing
+        // player (including paused ones) so a lingering paused player can't
+        // shadow the new playback in getActiveVoiceId().
+        for (auto it = activePlayers.cbegin(); it != activePlayers.cend(); ++it)
         {
-            existing->deleteLater();
+            if (QMediaPlayer *existing = it.value())
+            {
+                existing->stop();
+                existing->deleteLater();
+            }
         }
+        activePlayers.clear();
+        activePositions.clear();
+        activeDurations.clear();
 
         auto *player = new QMediaPlayer;
         auto *audioOutput = new QAudioOutput(player);
@@ -146,6 +160,14 @@ void playVoiceFile(const QString &path, const QString &voiceId,
         player->setSource(QUrl::fromLocalFile(path));
         activePlayers[voiceId] = QPointer<QMediaPlayer>(player);
         activeAudioOutputs[voiceId].append(QPointer<QAudioOutput>(audioOutput));
+
+        // Rebuild the message buffer on every play/pause/resume/stop so the
+        // play and pause icons stay in sync with the actual playback state.
+        QObject::connect(
+            player, &QMediaPlayer::playbackStateChanged, player,
+            [](QMediaPlayer::PlaybackState) {
+                getApp()->getWindows()->invalidateChannelViewBuffers();
+            });
 
         QObject::connect(player, &QMediaPlayer::mediaStatusChanged, player,
                          [player, voiceId,
@@ -192,6 +214,13 @@ void playVoiceFile(const QString &path, const QString &voiceId,
                                  activePlayers.remove(voiceId);
                                  activePositions.remove(voiceId);
                                  activeDurations.remove(voiceId);
+                                 if (activePlayers.isEmpty())
+                                 {
+                                     activeVoiceOwnerName.clear();
+                                 }
+                                 // Rebuild the buffer so the pause icon reverts
+                                 // to the play icon when playback ends/stops.
+                                 getApp()->getWindows()->invalidateChannelViewBuffers();
                              }
                              auto it = activeAudioOutputs.find(voiceId);
                              if (it == activeAudioOutputs.end())
@@ -469,6 +498,65 @@ void playVoiceMessage(const QString &voiceId)
     }
 
     fetchVoiceMeta(voiceId, {});
+}
+
+void setActiveVoiceOwner(const QString &channelName)
+{
+    activeVoiceOwnerName = channelName;
+}
+
+QString activeVoiceOwner()
+{
+    return activeVoiceOwnerName;
+}
+
+bool isVoicePlaying(const QString &voiceId)
+{
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+    auto player = activePlayers.value(voiceId);
+    return player != nullptr &&
+           player->playbackState() == QMediaPlayer::PlayingState;
+#else
+    (void)voiceId;
+    return false;
+#endif
+}
+
+void toggleVoiceMessage(const QString &voiceId)
+{
+    if (voiceId.isEmpty())
+    {
+        return;
+    }
+
+#ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
+    if (activePlayers.value(voiceId) != nullptr)
+    {
+        runInGuiThread([voiceId] {
+            auto player = activePlayers.value(voiceId);
+            if (player == nullptr)
+            {
+                // Player vanished between the check and here: start fresh.
+                playVoiceMessage(voiceId);
+                return;
+            }
+            // Pause when playing, resume when paused/stopped. The
+            // playbackStateChanged handler repaints the icon.
+            if (player->playbackState() == QMediaPlayer::PlayingState)
+            {
+                player->pause();
+            }
+            else
+            {
+                player->play();
+            }
+        });
+        return;
+    }
+#endif
+
+    // Nothing loaded yet: fetch + start from the beginning.
+    playVoiceMessage(voiceId);
 }
 
 void seekVoiceMessage(const QString &voiceId, double progress)

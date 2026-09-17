@@ -812,15 +812,30 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     painter.setBrush(bg);
     painter.drawRoundedRect(rect, radius, radius);
 
-    QPainterPath triangle;
     const qreal iconX = rect.left() + 10 * this->scale_;
     const qreal iconY = rect.center().y();
-    triangle.moveTo(iconX, iconY - 5 * this->scale_);
-    triangle.lineTo(iconX, iconY + 5 * this->scale_);
-    triangle.lineTo(iconX + 8 * this->scale_, iconY);
-    triangle.closeSubpath();
     painter.setBrush(accent);
-    painter.drawPath(triangle);
+    if (jilchat::isVoicePlaying(this->voiceId_))
+    {
+        // Playing: show a pause icon (two bars) in the same filled accent style.
+        const qreal barW = 2.5 * this->scale_;
+        const qreal barH = 10 * this->scale_;
+        const qreal gap = 3 * this->scale_;
+        const qreal top = iconY - barH / 2.0;
+        painter.drawRoundedRect(QRectF(iconX, top, barW, barH), barW / 2.0,
+                                barW / 2.0);
+        painter.drawRoundedRect(QRectF(iconX + barW + gap, top, barW, barH),
+                                barW / 2.0, barW / 2.0);
+    }
+    else
+    {
+        QPainterPath triangle;
+        triangle.moveTo(iconX, iconY - 5 * this->scale_);
+        triangle.lineTo(iconX, iconY + 5 * this->scale_);
+        triangle.lineTo(iconX + 8 * this->scale_, iconY);
+        triangle.closeSubpath();
+        painter.drawPath(triangle);
+    }
 
     const qreal barWidth = 2 * this->scale_;
     const qreal gap = 2 * this->scale_;

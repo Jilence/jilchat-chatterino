@@ -4552,7 +4552,14 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
                 }
             }
 
-            jilchat::playVoiceMessage(link.value);
+            if (this->split_ != nullptr)
+            {
+                if (auto chan = this->split_->getChannel())
+                {
+                    jilchat::setActiveVoiceOwner(chan->getName());
+                }
+            }
+            jilchat::toggleVoiceMessage(link.value);
         }
         break;
 
