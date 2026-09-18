@@ -41,6 +41,10 @@ public:
 
     void refreshLayout();
 
+    /// Rebuilds the pinned message's third-party badges from the providers'
+    /// current state.
+    void refreshPinnedBadges();
+
 protected:
     void scaleChangedEvent(float scale) override;
     void themeChangedEvent() override;

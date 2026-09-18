@@ -192,6 +192,27 @@ PinnedMessageBanner::PinnedMessageBanner(Split *split, QWidget *parent)
         this->update();
     }));
 
+    // Badges are baked into a message when it is built, and a restored pin is
+    // built before the badge providers finish loading (7TV even only assigns
+    // a badge once the user is seen in chat). Rebuild the pin's badges
+    // whenever a provider reports new data for everyone or for its author.
+    if (auto *windows = getApp()->getWindows())
+    {
+        this->managedConnections_.emplace_back(windows->badgesUpdated.connect(
+            [this](const QString &userID) {
+                if (!this->hasPin_)
+                {
+                    return;
+                }
+                const auto snapshot = this->channel_->getMessageSnapshot();
+                if (!snapshot.empty() &&
+                    (userID.isEmpty() || snapshot.front()->userID == userID))
+                {
+                    this->refreshPinnedBadges();
+                }
+            }));
+    }
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, BASE_TOP_MARGIN, BASE_RIGHT_MARGIN,
                                BASE_BOTTOM_MARGIN);
@@ -532,6 +553,10 @@ void PinnedMessageBanner::setPinnedMessage(
                            });
         message->elements.erase(it, message->elements.end());
 
+        // The source message may have been built before the badge providers
+        // finished loading (e.g. at startup), so rebuild its badges now.
+        MessageBuilder::refreshThirdPartyBadges(*message, channel);
+
         this->channel_->addMessage(message, MessageContext::Original);
     }
 
@@ -855,6 +880,22 @@ void PinnedMessageBanner::refreshLayout()
     }
     this->messageView_->performLayout();
     this->messageView_->update();
+}
+
+void PinnedMessageBanner::refreshPinnedBadges()
+{
+    const auto snapshot = this->channel_->getMessageSnapshot();
+    if (snapshot.empty())
+    {
+        return;
+    }
+
+    auto message = snapshot.front()->clone();
+    MessageBuilder::refreshThirdPartyBadges(*message, this->twitchChannel_);
+
+    this->channel_->clearMessages();
+    this->channel_->addMessage(message, MessageContext::Original);
+    this->refreshLayout();
 }
 
 void PinnedMessageBanner::updateScaling()

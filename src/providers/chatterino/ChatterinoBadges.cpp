@@ -4,6 +4,7 @@
 #include "common/network/NetworkResult.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -96,6 +97,8 @@ void ChatterinoBadges::loadChatterinoBadges()
                 }
                 ++index;
             }
+
+            WindowManager::notifyBadgesUpdated();
         })
         .execute();
 }

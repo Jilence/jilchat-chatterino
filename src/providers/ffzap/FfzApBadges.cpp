@@ -6,6 +6,7 @@
 #include "common/QLogging.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -101,6 +102,7 @@ void FfzApBadges::load()
                 std::unique_lock lock(this->mutex_);
                 this->badgeMap_ = std::move(map);
             }
+            WindowManager::notifyBadgesUpdated();
 
             qCDebug(chatterinoApp)
                 << "[FFZ:AP] Loaded" << this->badgeMap_.size() << "badges";

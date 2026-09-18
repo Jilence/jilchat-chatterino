@@ -88,6 +88,12 @@ public:
 
     void invalidateChannelViewBuffers(Channel *channel = nullptr);
 
+    /// Tells listeners that a badge provider updated its data. Pass the user
+    /// whose badges changed, or leave it empty when a provider reloaded its
+    /// whole list. Safe to call from any thread and while holding a
+    /// provider's lock: badgesUpdated is always queued on the GUI thread.
+    static void notifyBadgesUpdated(const QString &userID = {});
+
     void repaintVisibleChatWidgets(Channel *channel = nullptr);
     void repaintGifEmotes();
 
@@ -145,6 +151,10 @@ public:
     pajlada::Signals::Signal<Channel *> layoutRequested;
 
     pajlada::Signals::Signal<Channel *> invalidateBuffersRequested;
+
+    /// Fired on the GUI thread after a badge provider updated its data. The
+    /// argument is the affected user ID, or empty for "any user".
+    pajlada::Signals::Signal<QString> badgesUpdated;
 
     pajlada::Signals::NoArgSignal wordFlagsChanged;
 

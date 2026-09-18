@@ -75,6 +75,7 @@
 #include <QTimeZone>
 
 #include <algorithm>
+#include <iterator>
 #include <chrono>
 #include <unordered_set>
 #include <variant>
@@ -1314,6 +1315,84 @@ MessagePtrMut MessageBuilder::release()
 std::weak_ptr<const Message> MessageBuilder::weakOf()
 {
     return this->message_;
+}
+
+void MessageBuilder::refreshThirdPartyBadges(Message &message,
+                                             TwitchChannel *twitchChannel)
+{
+    if (message.userID.isEmpty())
+    {
+        return;
+    }
+
+    const MessageElementFlags thirdPartyBadges{
+        MessageElementFlag::BadgeChatterino,
+        MessageElementFlag::BadgeFfz,
+        MessageElementFlag::BadgeFfzAp,
+        MessageElementFlag::BadgeBttv,
+        MessageElementFlag::BadgeMoltorino,
+        MessageElementFlag::BadgeBluzyrino,
+        MessageElementFlag::BadgeSevenTV,
+        MessageElementFlag::BadgeDankChat,
+        MessageElementFlag::BadgeChatsen,
+        MessageElementFlag::BadgeHomiesSupporter,
+        MessageElementFlag::BadgeHomiesCustom,
+        MessageElementFlag::BadgeFolhinha,
+        MessageElementFlag::BadgeJilChat,
+    };
+
+    // Same order as makeIrcMessage.
+    MessageBuilder builder;
+    builder.appendChatterinoBadges(message.userID);
+    builder.appendFfzBadges(twitchChannel, message.userID);
+    builder.appendFfzApBadges(message.userID);
+    builder.appendBttvBadges(message.userID);
+    builder.appendMoltorinoBadges(message.userID);
+    builder.appendBluzyrinoBadges(message.userID);
+    builder.appendSeventvBadges(message.userID);
+    builder.appendDankChatBadges(message.userID);
+    builder.appendChatsenBadges(message.userID);
+    builder.appendHomiesBadges(message.userID);
+    builder.appendFolhinhaBadges(message.userID);
+    builder.appendJilChatBadges(message.userID);
+
+    auto &elements = message.elements;
+    const auto isThirdParty = [&](const std::unique_ptr<MessageElement> &el) {
+        return el->getFlags().hasAny(thirdPartyBadges);
+    };
+
+    // Insert where the old third-party badges were, otherwise before the
+    // username (badges always precede it).
+    auto insertAt = std::find_if(elements.begin(), elements.end(),
+                                 isThirdParty) -
+                    elements.begin();
+    if (insertAt == static_cast<std::ptrdiff_t>(elements.size()))
+    {
+        insertAt = std::find_if(elements.begin(), elements.end(),
+                                [](const std::unique_ptr<MessageElement> &el) {
+                                    return el->getFlags().has(
+                                        MessageElementFlag::Username);
+                                }) -
+                   elements.begin();
+    }
+
+    elements.erase(
+        std::remove_if(elements.begin(), elements.end(), isThirdParty),
+        elements.end());
+    insertAt = std::min(insertAt, static_cast<std::ptrdiff_t>(elements.size()));
+
+    auto &fresh = builder.message().elements;
+    elements.insert(elements.begin() + insertAt,
+                    std::make_move_iterator(fresh.begin()),
+                    std::make_move_iterator(fresh.end()));
+
+    for (const auto &badge : builder.message().externalBadges)
+    {
+        if (!message.externalBadges.contains(badge))
+        {
+            message.externalBadges.push_back(badge);
+        }
+    }
 }
 
 void MessageBuilder::append(std::unique_ptr<MessageElement> element)
