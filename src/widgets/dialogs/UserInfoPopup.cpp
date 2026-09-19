@@ -5518,7 +5518,7 @@ void UserInfoPopup::loadCurrentAvatar()
     auto uid = this->userId_;
     if (uid.startsWith(u"kick:"))
     {
-        uid.slice(5);
+        uid = uid.mid(5);
     }
 
     if (getApp()->getStreamerMode()->isEnabled() &&
