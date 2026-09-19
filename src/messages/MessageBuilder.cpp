@@ -23,6 +23,7 @@
 #include "messages/MessageColor.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
@@ -34,7 +35,6 @@
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
-#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
@@ -75,8 +75,8 @@
 #include <QTimeZone>
 
 #include <algorithm>
-#include <iterator>
 #include <chrono>
+#include <iterator>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -1368,13 +1368,13 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         std::ranges::find_if(elements, isThirdParty) - elements.begin();
     if (std::cmp_equal(insertAt, elements.size()))
     {
-        insertAt = std::ranges::find_if(
-                       elements,
-                       [](const std::unique_ptr<MessageElement> &el) {
-                           return el->getFlags().has(
-                               MessageElementFlag::Username);
-                       }) -
-                   elements.begin();
+        insertAt =
+            std::ranges::find_if(
+                elements,
+                [](const std::unique_ptr<MessageElement> &el) {
+                    return el->getFlags().has(MessageElementFlag::Username);
+                }) -
+            elements.begin();
     }
 
     std::erase_if(elements, isThirdParty);

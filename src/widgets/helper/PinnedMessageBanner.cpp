@@ -198,8 +198,8 @@ PinnedMessageBanner::PinnedMessageBanner(Split *split, QWidget *parent)
     // whenever a provider reports new data for everyone or for its author.
     if (auto *windows = getApp()->getWindows())
     {
-        this->managedConnections_.emplace_back(windows->badgesUpdated.connect(
-            [this](const QString &userID) {
+        this->managedConnections_.emplace_back(
+            windows->badgesUpdated.connect([this](const QString &userID) {
                 if (!this->hasPin_)
                 {
                     return;
