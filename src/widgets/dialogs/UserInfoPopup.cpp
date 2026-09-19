@@ -3224,9 +3224,8 @@ void UserInfoPopup::updateUserData()
 
         if (type == Channel::Type::Twitch)
         {
-            // get followage and subage
-            if (getSettings()->showUsercardFollowage ||
-                getSettings()->showUsercardSubage ||
+            // get subage
+            if (getSettings()->showUsercardSubage ||
                 getSettings()->showUsercardSubGiftGifter)
             {
                 getIvr()->getSubage(
@@ -3235,61 +3234,6 @@ void UserInfoPopup::updateUserData()
                         if (!isCurrentRequest())
                         {
                             return;
-                        }
-
-                        if (getSettings()->showUsercardFollowage &&
-                            !subageInfo.followingSince.isEmpty())
-                        {
-                            const auto followedAt =
-                                parseIvrTimestamp(subageInfo.followingSince);
-
-                            if (followedAt.isValid())
-                            {
-                                if (this->isFollowing() &&
-                                    (!this->followedAt_ ||
-                                     !this->followedAt_->isValid()))
-                                {
-                                    this->followedAt_ = followedAt;
-                                    this->updateUsercardFollowButton();
-                                }
-
-                                const auto followedDate = followedAt.date();
-                                const auto followingSince =
-                                    followedDate.toString(Qt::ISODate);
-                                auto relativeTime = QString();
-                                if (getSettings()
-                                        ->showUsercardFollowageRelativeTime)
-                                {
-                                    relativeTime =
-                                        formatUsercardFollowRelativeTime(
-                                            followedDate);
-                                }
-                                this->ui_.followageLabel->setText(
-                                    "Following since " + followingSince +
-                                    relativeTime);
-                                this->ui_.followageLabel->setToolTip(
-                                    formatLongFriendlyDuration(
-                                        followedAt,
-                                        QDateTime::currentDateTimeUtc()) +
-                                    u" ago"_s);
-                                this->ui_.followageLabel->setMouseTracking(
-                                    true);
-                                this->updateUsercardStatusIcons();
-                                this->ui_.followageRow->setVisible(true);
-                                this->ui_.followageIcon->setVisible(true);
-                            }
-                            else
-                            {
-                                this->ui_.followageLabel->setText({});
-                                this->ui_.followageRow->setVisible(true);
-                                this->ui_.followageIcon->setVisible(false);
-                            }
-                        }
-                        else if (getSettings()->showUsercardFollowage)
-                        {
-                            this->ui_.followageLabel->setText({});
-                            this->ui_.followageRow->setVisible(true);
-                            this->ui_.followageIcon->setVisible(false);
                         }
 
                         if (!getSettings()->showUsercardSubage)
@@ -3355,12 +3299,6 @@ void UserInfoPopup::updateUserData()
                             return;
                         }
 
-                        if (getSettings()->showUsercardFollowage)
-                        {
-                            this->ui_.followageLabel->setText({});
-                            this->ui_.followageRow->setVisible(true);
-                            this->ui_.followageIcon->setVisible(false);
-                        }
                         if (getSettings()->showUsercardSubage)
                         {
                             this->ui_.subageLabel->setText({});
@@ -3372,6 +3310,49 @@ void UserInfoPopup::updateUserData()
                             this->hideUsercardSubGiftRow();
                         }
                     });
+            }
+
+            // get followage
+            if (getSettings()->showUsercardFollowage)
+            {
+                auto *twitchChannel = dynamic_cast<TwitchChannel *>(
+                    this->underlyingChannel_.get());
+                if (twitchChannel &&
+                    (twitchChannel->isBroadcaster() ||
+                     twitchChannel->isMod()) &&
+                    !twitchChannel->roomId().isEmpty())
+                {
+                    getHelix()->getChannelFollowers(
+                        twitchChannel->roomId(), user.id,
+                        [this, isCurrentRequest](const auto &response) {
+                            if (!isCurrentRequest() ||
+                                !getSettings()->showUsercardFollowage)
+                            {
+                                return;
+                            }
+
+                            if (response.specifiedFollower)
+                            {
+                                this->setUsercardFollowage(
+                                    response.specifiedFollower->followedAt);
+                            }
+                            else
+                            {
+                                this->setUsercardFollowage(std::nullopt);
+                            }
+                        },
+                        [this, isCurrentRequest](const auto &errorMessage) {
+                            qCWarning(chatterinoTwitch)
+                                << "Error getting follow age:" << errorMessage;
+                            if (!isCurrentRequest() ||
+                                !getSettings()->showUsercardFollowage)
+                            {
+                                return;
+                            }
+
+                            this->setUsercardFollowage(std::nullopt);
+                        });
+                }
             }
 
             getIvr()->getUser(
@@ -3989,34 +3970,7 @@ void UserInfoPopup::updateKickUserData()
                     return;
                 }
 
-                if (getSettings()->showUsercardFollowage && res->followingSince)
-                {
-                    const auto followedDate = res->followingSince->date();
-                    auto relativeTime = QString();
-                    if (getSettings()->showUsercardFollowageRelativeTime)
-                    {
-                        relativeTime =
-                            formatUsercardFollowRelativeTime(followedDate);
-                    }
-                    QString followingSince = followedDate.toString(Qt::ISODate);
-                    self->ui_.followageLabel->setText(
-                        "Following since " + followingSince + relativeTime);
-                    self->ui_.followageLabel->setToolTip(
-                        formatLongFriendlyDuration(
-                            *res->followingSince,
-                            QDateTime::currentDateTimeUtc()) +
-                        u" ago"_s);
-                    self->ui_.followageLabel->setMouseTracking(true);
-                    self->updateUsercardStatusIcons();
-                    self->ui_.followageRow->setVisible(true);
-                    self->ui_.followageIcon->setVisible(true);
-                }
-                else if (getSettings()->showUsercardFollowage)
-                {
-                    self->ui_.followageLabel->setText({});
-                    self->ui_.followageRow->setVisible(true);
-                    self->ui_.followageIcon->setVisible(false);
-                }
+                self->setUsercardFollowage(res->followingSince);
 
                 if (getSettings()->showUsercardSubage &&
                     res->subscriptionMonths)
@@ -4371,6 +4325,45 @@ void UserInfoPopup::updateUsercardStatusIcons()
                        : ":/buttons/usercardGift-darkMode.svg",
                iconSize);
     updateColorSwatch();
+}
+
+void UserInfoPopup::setUsercardFollowage(
+    const std::optional<QDateTime> &followedAt)
+{
+    if (!getSettings()->showUsercardFollowage)
+    {
+        this->ui_.followageLabel->setText({});
+        this->ui_.followageLabel->setToolTip({});
+        this->ui_.followageRow->setVisible(false);
+        this->ui_.followageIcon->setVisible(false);
+        return;
+    }
+
+    if (!followedAt || !followedAt->isValid())
+    {
+        this->ui_.followageLabel->setText({});
+        this->ui_.followageLabel->setToolTip({});
+        this->ui_.followageRow->setVisible(true);
+        this->ui_.followageIcon->setVisible(false);
+        return;
+    }
+
+    const auto followedDate = followedAt->toLocalTime().date();
+    auto relativeTime = QString();
+    if (getSettings()->showUsercardFollowageRelativeTime)
+    {
+        relativeTime = formatUsercardFollowRelativeTime(followedDate);
+    }
+    this->ui_.followageLabel->setText(
+        "Following since " + followedDate.toString(Qt::ISODate) + relativeTime);
+    this->ui_.followageLabel->setToolTip(
+        formatLongFriendlyDuration(*followedAt,
+                                   QDateTime::currentDateTimeUtc()) +
+        u" ago"_s);
+    this->ui_.followageLabel->setMouseTracking(true);
+    this->updateUsercardStatusIcons();
+    this->ui_.followageRow->setVisible(true);
+    this->ui_.followageIcon->setVisible(true);
 }
 
 void UserInfoPopup::updateUsercardSubGiftRow(const IvrSubage &subageInfo)

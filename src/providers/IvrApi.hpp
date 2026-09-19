@@ -25,7 +25,6 @@ struct IvrSubage {
     const bool isSubbed;
     const QString subTier;
     const int totalSubMonths;
-    const QString followingSince;
     const QString endsAt;
     const QString subType;
     const QString giftGifterDisplayName;
@@ -37,7 +36,6 @@ struct IvrSubage {
         , subTier(root.value("meta").toObject().value("tier").toString())
         , totalSubMonths(
               root.value("cumulative").toObject().value("months").toInt())
-        , followingSince(root.value("followedAt").toString())
         , endsAt(root.value("meta").toObject().value("endsAt").toString())
         , subType(root.value("meta").toObject().value("type").toString())
         , giftGifterDisplayName(root.value("meta")
