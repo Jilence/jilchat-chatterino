@@ -943,21 +943,21 @@ void addLinkContextMenuItems(QMenu *menu,
 
             voiceMenu->addSeparator();
             voiceMenu->addAction(
-                "Quieter", [voiceId = link.value, current, view] {
+                "Quieter", voiceMenu, [voiceId = link.value, current, view] {
                     jilchat::setVoiceVolume(voiceId, current - 10);
                     view->queueUpdate();
                 });
             voiceMenu->addAction(
-                "Louder", [voiceId = link.value, current, view] {
+                "Louder", voiceMenu, [voiceId = link.value, current, view] {
                     jilchat::setVoiceVolume(voiceId, current + 10);
                     view->queueUpdate();
                 });
-            voiceMenu->addAction("Use default volume",
+            voiceMenu->addAction("Use default volume", voiceMenu,
                                  [voiceId = link.value, view] {
                                      jilchat::resetVoiceVolume(voiceId);
                                      view->queueUpdate();
                                  });
-            voiceMenu->addAction("Play", [voiceId = link.value] {
+            voiceMenu->addAction("Play", voiceMenu, [voiceId = link.value] {
                 jilchat::playVoiceMessage(voiceId);
             });
             menu->addAction("&Copy link", [voiceUrl] {
@@ -3666,7 +3666,8 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
 
 void ChannelView::handleMouseClick(QMouseEvent *event,
                                    const MessageLayoutElement *hoveredElement,
-                                   MessageLayoutPtr layout, QPointF relativePos)
+                                   const MessageLayoutPtr &layout,
+                                   QPointF relativePos)
 {
     switch (event->button())
     {

@@ -475,9 +475,9 @@ double getVoiceProgress(const QString &voiceId)
         return 0.0;
     }
 
-    return std::clamp(
-        activePositions.value(voiceId, 0) / static_cast<double>(duration), 0.0,
-        1.0);
+    return std::clamp(static_cast<double>(activePositions.value(voiceId, 0)) /
+                          static_cast<double>(duration),
+                      0.0, 1.0);
 #else
     (void)voiceId;
     return 0.0;

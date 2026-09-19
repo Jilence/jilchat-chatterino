@@ -758,8 +758,8 @@ QRectF VoiceMessageLayoutElement::waveformRect() const
     const auto rect = this->getRect();
     const qreal barsLeft = rect.left() + 30 * this->scale_;
     const qreal barsRight = rect.right() - 54 * this->scale_;
-    return QRectF(barsLeft, rect.top(),
-                  std::max<qreal>(0, barsRight - barsLeft), rect.height());
+    return {barsLeft, rect.top(), std::max<qreal>(0, barsRight - barsLeft),
+            rect.height()};
 }
 
 bool VoiceMessageLayoutElement::isOverPlayButton(QPointF point) const
@@ -848,7 +848,7 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     {
         const qreal height = this->barHeight(i, count) * this->scale_;
         const QRectF bar(barsLeft + i * (barWidth + gap),
-                         rect.center().y() - height / 2.0, barWidth, height);
+                         rect.center().y() - (height / 2.0), barWidth, height);
         painter.setBrush(muted);
         painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
     }
@@ -902,7 +902,8 @@ bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
         }
 
         const qreal height = this->barHeight(i, count) * this->scale_;
-        const QRectF bar(x, rect.center().y() - height / 2.0, barWidth, height);
+        const QRectF bar(x, rect.center().y() - (height / 2.0), barWidth,
+                         height);
         painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
     }
 
