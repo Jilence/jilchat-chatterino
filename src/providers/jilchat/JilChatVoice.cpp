@@ -19,8 +19,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonObject>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QJsonValue>
 #include <QStandardPaths>
 #include <QUuid>
@@ -67,9 +67,8 @@ QJsonObject volumeOverrides()
 
 void saveVolumeOverrides(const QJsonObject &overrides)
 {
-    getSettings()->jilChatVoiceVolumeOverrides =
-        QString::fromUtf8(QJsonDocument(overrides).toJson(
-            QJsonDocument::Compact));
+    getSettings()->jilChatVoiceVolumeOverrides = QString::fromUtf8(
+        QJsonDocument(overrides).toJson(QJsonDocument::Compact));
 }
 
 #ifdef CHATTERINO_HAVE_QT_MULTIMEDIA
@@ -169,20 +168,20 @@ void playVoiceFile(const QString &path, const QString &voiceId,
                 getApp()->getWindows()->invalidateChannelViewBuffers();
             });
 
-        QObject::connect(player, &QMediaPlayer::mediaStatusChanged, player,
-                         [player, voiceId,
-                          startProgress](QMediaPlayer::MediaStatus status) {
-                             if (status == QMediaPlayer::LoadedMedia ||
-                                 status == QMediaPlayer::BufferedMedia)
-                             {
-                                 applyStartPosition(player, startProgress);
-                             }
-                             if (status == QMediaPlayer::EndOfMedia ||
-                                 status == QMediaPlayer::InvalidMedia)
-                             {
-                                 player->deleteLater();
-                             }
-                         });
+        QObject::connect(
+            player, &QMediaPlayer::mediaStatusChanged, player,
+            [player, voiceId, startProgress](QMediaPlayer::MediaStatus status) {
+                if (status == QMediaPlayer::LoadedMedia ||
+                    status == QMediaPlayer::BufferedMedia)
+                {
+                    applyStartPosition(player, startProgress);
+                }
+                if (status == QMediaPlayer::EndOfMedia ||
+                    status == QMediaPlayer::InvalidMedia)
+                {
+                    player->deleteLater();
+                }
+            });
         QObject::connect(player, &QMediaPlayer::positionChanged, player,
                          [voiceId](qint64 position) {
                              activePositions[voiceId] = position;
@@ -193,47 +192,46 @@ void playVoiceFile(const QString &path, const QString &voiceId,
                              activeDurations[voiceId] = duration;
                              requestVoiceRepaint();
                          });
-        QObject::connect(player, &QMediaPlayer::errorOccurred, player,
-                         [player, voiceId](QMediaPlayer::Error /*error*/,
-                                  const QString & /*errorString*/) {
-                             QDesktopServices::openUrl(QUrl(
-                                 QStringLiteral("https://jil.chat/v/%1")
-                                     .arg(voiceId)));
-                             player->deleteLater();
-                         });
-        QObject::connect(player, &QObject::destroyed,
-                         [voiceId, playerPtr = QPointer<QMediaPlayer>(player),
-                          output = QPointer<QAudioOutput>(audioOutput)] {
-                             const auto activePlayer =
-                                 activePlayers.value(voiceId);
-                             const bool destroyedActivePlayer =
-                                 activePlayer == playerPtr ||
-                                 activePlayer == nullptr;
-                             if (destroyedActivePlayer)
-                             {
-                                 activePlayers.remove(voiceId);
-                                 activePositions.remove(voiceId);
-                                 activeDurations.remove(voiceId);
-                                 if (activePlayers.isEmpty())
-                                 {
-                                     activeVoiceOwnerName.clear();
-                                 }
-                                 // Rebuild the buffer so the pause icon reverts
-                                 // to the play icon when playback ends/stops.
-                                 getApp()->getWindows()->invalidateChannelViewBuffers();
-                             }
-                             auto it = activeAudioOutputs.find(voiceId);
-                             if (it == activeAudioOutputs.end())
-                             {
-                                 return;
-                             }
-                             it->removeAll(output);
-                             if (it->isEmpty())
-                             {
-                                 activeAudioOutputs.erase(it);
-                             }
-                             requestVoiceRepaint();
-                         });
+        QObject::connect(
+            player, &QMediaPlayer::errorOccurred, player,
+            [player, voiceId](QMediaPlayer::Error /*error*/,
+                              const QString & /*errorString*/) {
+                QDesktopServices::openUrl(
+                    QUrl(QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
+                player->deleteLater();
+            });
+        QObject::connect(
+            player, &QObject::destroyed,
+            [voiceId, playerPtr = QPointer<QMediaPlayer>(player),
+             output = QPointer<QAudioOutput>(audioOutput)] {
+                const auto activePlayer = activePlayers.value(voiceId);
+                const bool destroyedActivePlayer =
+                    activePlayer == playerPtr || activePlayer == nullptr;
+                if (destroyedActivePlayer)
+                {
+                    activePlayers.remove(voiceId);
+                    activePositions.remove(voiceId);
+                    activeDurations.remove(voiceId);
+                    if (activePlayers.isEmpty())
+                    {
+                        activeVoiceOwnerName.clear();
+                    }
+                    // Rebuild the buffer so the pause icon reverts
+                    // to the play icon when playback ends/stops.
+                    getApp()->getWindows()->invalidateChannelViewBuffers();
+                }
+                auto it = activeAudioOutputs.find(voiceId);
+                if (it == activeAudioOutputs.end())
+                {
+                    return;
+                }
+                it->removeAll(output);
+                if (it->isEmpty())
+                {
+                    activeAudioOutputs.erase(it);
+                }
+                requestVoiceRepaint();
+            });
 
         player->play();
     });
@@ -247,8 +245,8 @@ void playVoiceFile(const QString &path, const QString &voiceId,
 
 QString cachePathFor(const QString &voiceId, const QUrl &audioUrl)
 {
-    auto cacheRoot = QStandardPaths::writableLocation(
-        QStandardPaths::CacheLocation);
+    auto cacheRoot =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     if (cacheRoot.isEmpty())
     {
         cacheRoot = QDir::tempPath();
@@ -264,10 +262,9 @@ QString cachePathFor(const QString &voiceId, const QUrl &audioUrl)
         suffix = QStringLiteral("mp4");
     }
 
-    const auto safeId =
-        QString::fromLatin1(QCryptographicHash::hash(voiceId.toUtf8(),
-                                                     QCryptographicHash::Sha1)
-                                .toHex());
+    const auto safeId = QString::fromLatin1(
+        QCryptographicHash::hash(voiceId.toUtf8(), QCryptographicHash::Sha1)
+            .toHex());
     return dir.filePath(safeId + QStringLiteral(".") + suffix);
 }
 
@@ -286,10 +283,9 @@ void playDownloadedVoice(const QString &voiceId, const QUrl &audioUrl,
         .followRedirects(true)
         .onSuccess([path, voiceId,
                     startProgress](const NetworkResult &result) -> Outcome {
-            const auto tempPath =
-                path + QStringLiteral(".") +
-                QUuid::createUuid().toString(QUuid::Id128) +
-                QStringLiteral(".tmp");
+            const auto tempPath = path + QStringLiteral(".") +
+                                  QUuid::createUuid().toString(QUuid::Id128) +
+                                  QStringLiteral(".tmp");
             QFile file(tempPath);
             if (!file.open(QIODevice::WriteOnly))
             {
@@ -354,12 +350,11 @@ void authenticateJilChat(const std::function<void(QString)> &onSuccess,
 void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
                     bool retriedAuth = false, double startProgress = -1.0)
 {
-    const QUrl metaUrl(QStringLiteral("https://api.jil.chat/v1/voice/%1")
-                           .arg(voiceId));
-    auto request = NetworkRequest(metaUrl)
-                       .timeout(10 * 1000)
-                       .followRedirects(true)
-                       .header("Accept", "application/json");
+    const QUrl metaUrl(
+        QStringLiteral("https://api.jil.chat/v1/voice/%1").arg(voiceId));
+    auto request =
+        NetworkRequest(metaUrl).timeout(10 * 1000).followRedirects(true).header(
+            "Accept", "application/json");
     if (!jwt.isEmpty())
     {
         request = std::move(request).header(
@@ -374,8 +369,8 @@ void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
             const QUrl audioUrl(audioUrlString);
             if (!audioUrl.isValid() || audioUrl.isEmpty())
             {
-                QDesktopServices::openUrl(QUrl(
-                    QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
+                QDesktopServices::openUrl(
+                    QUrl(QStringLiteral("https://jil.chat/v/%1").arg(voiceId)));
                 return Failure;
             }
 
@@ -390,13 +385,12 @@ void fetchVoiceMeta(const QString &voiceId, const QString &jwt,
                 jilChatJwt.clear();
                 authenticateJilChat(
                     [voiceId, startProgress](const QString &freshJwt) {
-                        fetchVoiceMeta(voiceId, freshJwt, true,
-                                       startProgress);
+                        fetchVoiceMeta(voiceId, freshJwt, true, startProgress);
                     },
                     [voiceId] {
-                        QDesktopServices::openUrl(QUrl(
-                            QStringLiteral("https://jil.chat/v/%1")
-                                .arg(voiceId)));
+                        QDesktopServices::openUrl(
+                            QUrl(QStringLiteral("https://jil.chat/v/%1")
+                                     .arg(voiceId)));
                     });
                 return;
             }
@@ -481,9 +475,9 @@ double getVoiceProgress(const QString &voiceId)
         return 0.0;
     }
 
-    return std::clamp(activePositions.value(voiceId, 0) /
-                          static_cast<double>(duration),
-                      0.0, 1.0);
+    return std::clamp(
+        activePositions.value(voiceId, 0) / static_cast<double>(duration), 0.0,
+        1.0);
 #else
     (void)voiceId;
     return 0.0;

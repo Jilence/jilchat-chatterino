@@ -131,8 +131,8 @@ void SplitVoiceMessagePanel::updateStyleSheets()
 
     const auto text = this->theme->splits.header.text.name(QColor::HexArgb);
     const auto accent = QColor(145, 66, 255).name(QColor::HexArgb);
-    const auto bg = this->theme->splits.background.darker(145).name(
-        QColor::HexArgb);
+    const auto bg =
+        this->theme->splits.background.darker(145).name(QColor::HexArgb);
 
     if (this->label_ != nullptr)
     {
@@ -143,9 +143,8 @@ void SplitVoiceMessagePanel::updateStyleSheets()
     if (this->progress_ != nullptr)
     {
         this->progress_->setStyleSheet(
-            QStringLiteral(
-                "QProgressBar { border: none; background: %1; }"
-                "QProgressBar::chunk { background: %2; }")
+            QStringLiteral("QProgressBar { border: none; background: %1; }"
+                           "QProgressBar::chunk { background: %2; }")
                 .arg(bg, accent));
     }
 

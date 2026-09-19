@@ -23,6 +23,7 @@
 #include "messages/MessageColor.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
@@ -34,7 +35,6 @@
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
-#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
@@ -1386,9 +1386,9 @@ void MessageBuilder::addLink(const linkparser::Parsed &parsedLink,
             if (parsedLink.hasSuffix(source))
             {
                 el->setTrailingSpace(false);
-                this->emplace<TextElement>(
-                    parsedLink.suffix(source).toString(),
-                    MessageElementFlag::Text, this->textColor_);
+                this->emplace<TextElement>(parsedLink.suffix(source).toString(),
+                                           MessageElementFlag::Text,
+                                           this->textColor_);
             }
             return;
         }

@@ -21,8 +21,9 @@ AccountController::AccountController()
         this->twitch.accounts.itemRemoved.connect([this](const auto &args) {
             this->desktopPresence_->accountRemoved(args.item);
         });
-    this->twitch.currentUserChanged.connect(
-        [this] { this->desktopPresence_->start(); });
+    this->twitch.currentUserChanged.connect([this] {
+        this->desktopPresence_->start();
+    });
 
     std::ignore =
         this->twitch.accounts.itemInserted.connect([this](const auto &args) {

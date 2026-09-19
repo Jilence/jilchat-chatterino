@@ -140,9 +140,9 @@ void exportSettingsProfile(QWidget *parent)
         auto document = readJsonFile(path, &error);
         if (document.isNull())
         {
-            QMessageBox::critical(parent, "Export failed",
-                                  "Could not read " + relativeFile + ": " +
-                                      error);
+            QMessageBox::critical(
+                parent, "Export failed",
+                "Could not read " + relativeFile + ": " + error);
             return;
         }
 

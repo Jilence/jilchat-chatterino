@@ -102,7 +102,8 @@ QString formatOutgoingTranslationChannelSettings(
 }
 
 constexpr auto SETTINGS_IMPORT_FORMAT = "leafyrino-settings-export";
-constexpr auto PENDING_SETTINGS_IMPORT_FILENAME = "pending-settings-import.json";
+constexpr auto PENDING_SETTINGS_IMPORT_FILENAME =
+    "pending-settings-import.json";
 const QStringList SETTINGS_IMPORT_FILES = {
     u"settings.json"_s,
     u"commands.json"_s,

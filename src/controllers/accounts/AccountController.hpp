@@ -9,6 +9,7 @@
 #include "providers/twitch/TwitchAccountManager.hpp"
 
 #include <QObject>
+
 #include <memory>
 
 namespace chatterino {

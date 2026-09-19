@@ -9,9 +9,9 @@
 #include "messages/Image.hpp"
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/MessageElement.hpp"
+#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
-#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/twitch/TwitchEmotes.hpp"
 #include "singletons/Settings.hpp"
 #include "util/DebugCount.hpp"
@@ -758,8 +758,8 @@ QRectF VoiceMessageLayoutElement::waveformRect() const
     const auto rect = this->getRect();
     const qreal barsLeft = rect.left() + 30 * this->scale_;
     const qreal barsRight = rect.right() - 54 * this->scale_;
-    return QRectF(barsLeft, rect.top(), std::max<qreal>(0, barsRight - barsLeft),
-                  rect.height());
+    return QRectF(barsLeft, rect.top(),
+                  std::max<qreal>(0, barsRight - barsLeft), rect.height());
 }
 
 bool VoiceMessageLayoutElement::isOverPlayButton(QPointF point) const
@@ -855,8 +855,8 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
 
     const auto volumeText =
         QStringLiteral("%1%").arg(jilchat::getVoiceVolume(this->voiceId_));
-    auto volumeFont = getApp()->getFonts()->getFont(
-        FontStyle::ChatMediumBold, this->scale_);
+    auto volumeFont =
+        getApp()->getFonts()->getFont(FontStyle::ChatMediumBold, this->scale_);
     if (volumeText.size() >= 4)
     {
         volumeFont.setPointSizeF(volumeFont.pointSizeF() * 0.82);
@@ -865,13 +865,11 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     painter.setFont(volumeFont);
     painter.drawText(QRectF(rect.right() - 52 * this->scale_, rect.top(),
                             43 * this->scale_, rect.height()),
-                     Qt::AlignVCenter | Qt::AlignRight,
-                     volumeText);
+                     Qt::AlignVCenter | Qt::AlignRight, volumeText);
     painter.restore();
 }
 
-bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
-                                              qreal yOffset)
+bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
 {
     const auto progress = jilchat::getVoiceProgress(this->voiceId_);
     if (progress <= 0.0)
@@ -904,8 +902,7 @@ bool VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
         }
 
         const qreal height = this->barHeight(i, count) * this->scale_;
-        const QRectF bar(x, rect.center().y() - height / 2.0, barWidth,
-                         height);
+        const QRectF bar(x, rect.center().y() - height / 2.0, barWidth, height);
         painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
     }
 

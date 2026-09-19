@@ -22,7 +22,8 @@ public:
 
     bool isEnabled(const QString &twitchID) const;
     QString statusText(const QString &twitchID) const;
-    void setEnabled(const std::shared_ptr<TwitchAccount> &account, bool enabled);
+    void setEnabled(const std::shared_ptr<TwitchAccount> &account,
+                    bool enabled);
     void accountRemoved(const std::shared_ptr<TwitchAccount> &account);
     void start();
     void shutdown();

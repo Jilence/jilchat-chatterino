@@ -5,10 +5,10 @@
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 
 #include "Application.hpp"
+#include "common/network/NetworkCommon.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
-#include "common/network/NetworkCommon.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
@@ -272,8 +272,8 @@ void BluzyrinoBadges::applyJson(const QJsonObject &root)
         this->queueRefresh();
     }
 
-    qCDebug(chatterinoApp)
-        << "[Bluzyrino] Loaded" << this->catalog_.size() << "catalog badges";
+    qCDebug(chatterinoApp) << "[Bluzyrino] Loaded" << this->catalog_.size()
+                           << "catalog badges";
 }
 
 void BluzyrinoBadges::queueRefresh()
