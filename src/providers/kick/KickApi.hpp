@@ -52,6 +52,14 @@ struct KickPrivateChannelInfo {
     std::vector<KickPrivateChannelSubBadge> subBadges;
 };
 
+struct KickPrivateChannelInfoSmall {
+    KickPrivateChannelInfoSmall(BoostJsonObject obj);
+
+    /// This doesn't include the user-id but usually includes the default
+    /// profile picture URL (unlike `KickPrivateChannelInfo`).
+    KickPrivateUserInfo user;
+};
+
 struct KickPrivateUserInChannelInfo {
     KickPrivateUserInChannelInfo(BoostJsonObject obj);
 
@@ -113,6 +121,9 @@ public:
 
     static void privateChannelInfo(const QString &username,
                                    Callback<KickPrivateChannelInfo> cb);
+
+    static void privateChannelInfoSmall(
+        const QString &slug, Callback<KickPrivateChannelInfoSmall> cb);
 
     static void privateUserInChannelInfo(
         const QString &userUsername, const QString &channelUsername,
