@@ -78,6 +78,7 @@
 #include <iterator>
 #include <chrono>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 
 using namespace chatterino::literals;
@@ -1363,22 +1364,20 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
 
     // Insert where the old third-party badges were, otherwise before the
     // username (badges always precede it).
-    auto insertAt = std::find_if(elements.begin(), elements.end(),
-                                 isThirdParty) -
-                    elements.begin();
-    if (insertAt == static_cast<std::ptrdiff_t>(elements.size()))
+    auto insertAt =
+        std::ranges::find_if(elements, isThirdParty) - elements.begin();
+    if (std::cmp_equal(insertAt, elements.size()))
     {
-        insertAt = std::find_if(elements.begin(), elements.end(),
-                                [](const std::unique_ptr<MessageElement> &el) {
-                                    return el->getFlags().has(
-                                        MessageElementFlag::Username);
-                                }) -
+        insertAt = std::ranges::find_if(
+                       elements,
+                       [](const std::unique_ptr<MessageElement> &el) {
+                           return el->getFlags().has(
+                               MessageElementFlag::Username);
+                       }) -
                    elements.begin();
     }
 
-    elements.erase(
-        std::remove_if(elements.begin(), elements.end(), isThirdParty),
-        elements.end());
+    std::erase_if(elements, isThirdParty);
     insertAt = std::min(insertAt, static_cast<std::ptrdiff_t>(elements.size()));
 
     auto &fresh = builder.message().elements;
@@ -1386,7 +1385,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
                     std::make_move_iterator(fresh.begin()),
                     std::make_move_iterator(fresh.end()));
 
-    for (const auto &badge : builder.message().externalBadges)
+    for (const auto &badge : std::as_const(builder.message().externalBadges))
     {
         if (!message.externalBadges.contains(badge))
         {
