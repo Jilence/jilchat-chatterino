@@ -9,6 +9,7 @@
 #include "common/Outcome.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonObject>
 #include <QJsonValue>
@@ -139,6 +140,7 @@ void JilChatBadges::applyBadgeJson(const QJsonArray &jsonRoot)
 
     std::unique_lock lock(this->mutex_);
     this->badgeMap_ = std::move(badgeMap);
+    WindowManager::notifyBadgesUpdated();
 }
 
 }  // namespace chatterino

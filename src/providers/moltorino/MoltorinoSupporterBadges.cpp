@@ -8,6 +8,7 @@
 #include "debug/AssertInGuiThread.hpp"
 #include "messages/Image.hpp"
 #include "singletons/Paths.hpp"
+#include "singletons/WindowManager.hpp"
 #include "util/PostToThread.hpp"
 
 #include <QFile>
@@ -489,6 +490,7 @@ bool MoltorinoSupporterBadges::applyPayload(const QByteArray &payload,
         this->version_ = parsed.version;
         this->userBadges_ = std::move(parsed.userBadges);
     }
+    WindowManager::notifyBadgesUpdated();
 
     qCDebug(chatterinoApp) << "[Moltorino] Loaded supporter badges:"
                            << parsed.userBadges.size() << "users across"

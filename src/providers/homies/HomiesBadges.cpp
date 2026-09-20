@@ -196,6 +196,7 @@ void HomiesBadges::queueRefresh()
 
     QTimer::singleShot(250, [this] {
         this->refreshQueued_.store(false);
+        WindowManager::notifyBadgesUpdated();
         if (auto *windows = getApp()->getWindows())
         {
             windows->invalidateChannelViewBuffers();

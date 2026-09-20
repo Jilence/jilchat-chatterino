@@ -10,6 +10,7 @@
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
 #include "providers/ffz/FfzUtil.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -118,6 +119,8 @@ void FfzBadges::load()
                     }
                 }
             }
+
+            WindowManager::notifyBadgesUpdated();
         })
         .execute();
 }

@@ -38,11 +38,13 @@
 #include <pajlada/settings/backup.hpp>
 #include <QApplication>
 #include <QColor>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
+#include <QMetaObject>
 #include <QPointer>
 #include <QSaveFile>
 #include <QScreen>
@@ -392,6 +394,21 @@ void WindowManager::forceLayoutChannelViews()
 void WindowManager::invalidateChannelViewBuffers(Channel *channel)
 {
     this->invalidateBuffersRequested.invoke(channel);
+}
+
+void WindowManager::notifyBadgesUpdated(const QString &userID)
+{
+    // Always queue (never run inline): callers may hold a provider's lock,
+    // and listeners read badges back from that same provider.
+    QMetaObject::invokeMethod(
+        QCoreApplication::instance(),
+        [userID] {
+            if (auto *windows = getApp()->getWindows())
+            {
+                windows->badgesUpdated.invoke(userID);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void WindowManager::repaintVisibleChatWidgets(Channel *channel)

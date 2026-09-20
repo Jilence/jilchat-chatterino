@@ -151,6 +151,13 @@ public:
     MessagePtrMut release();
     std::weak_ptr<const Message> weakOf();
 
+    /// Rebuilds the third-party (non-Twitch) badges of an already built
+    /// message from the providers' current state. Used for messages that were
+    /// built before the badge providers finished loading (e.g. a pinned
+    /// message restored at startup).
+    static void refreshThirdPartyBadges(Message &message,
+                                        TwitchChannel *twitchChannel);
+
     void append(std::unique_ptr<MessageElement> element);
     void addLink(const linkparser::Parsed &parsedLink, QStringView source,
                  const QString &textOverride = QString());

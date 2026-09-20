@@ -278,6 +278,7 @@ void BluzyrinoBadges::applyJson(const QJsonObject &root)
 
 void BluzyrinoBadges::queueRefresh()
 {
+    WindowManager::notifyBadgesUpdated();
     QTimer::singleShot(0, [] {
         if (auto *windows = getApp()->getWindows())
         {

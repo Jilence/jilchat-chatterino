@@ -10,6 +10,7 @@
 #include "common/QLogging.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -302,6 +303,8 @@ void FolhinhaBadges::applyBadgeJson(const QJsonObject &jsonRoot)
         this->badgeMap.emplace(userId, badge.emote);
         this->badgePriority.emplace(userId, badge.priority);
     }
+
+    WindowManager::notifyBadgesUpdated();
 }
 
 }  // namespace chatterino

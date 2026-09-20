@@ -11,6 +11,7 @@
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
 #include "messages/ImageSet.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -168,6 +169,7 @@ void ChatsenBadges::load()
                 std::unique_lock lock(this->mutex_);
                 this->badgeMap_ = std::move(map);
             }
+            WindowManager::notifyBadgesUpdated();
 
             qCDebug(chatterinoApp)
                 << "[Chatsen] Loaded badges for" << count << "users";
