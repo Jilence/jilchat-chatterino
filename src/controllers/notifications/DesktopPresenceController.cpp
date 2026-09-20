@@ -4,10 +4,10 @@
 
 #include "Application.hpp"
 #include "common/Literals.hpp"
-#include "common/QLogging.hpp"
-#include "common/Version.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
+#include "common/QLogging.hpp"
+#include "common/Version.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
@@ -29,8 +29,7 @@ constexpr int HEARTBEAT_TTL_SECONDS = 90;
 
 std::string accountPath(const QString &id, const char *name)
 {
-    return QString(u"/accounts/uid" % id % u"/" %
-                   QString::fromLatin1(name))
+    return QString(u"/accounts/uid" % id % u"/" % QString::fromLatin1(name))
         .toStdString();
 }
 
@@ -62,9 +61,8 @@ QString DesktopPresenceController::statusText(const QString &twitchID) const
     return it == this->presences_.end() ? QString{} : it->second->status;
 }
 
-DesktopPresenceController::Presence &
-    DesktopPresenceController::ensurePresence(
-        const std::shared_ptr<TwitchAccount> &account)
+DesktopPresenceController::Presence &DesktopPresenceController::ensurePresence(
+    const std::shared_ptr<TwitchAccount> &account)
 {
     const auto &id = account->getUserId();
     auto [it, inserted] = this->presences_.try_emplace(id);
@@ -75,25 +73,23 @@ DesktopPresenceController::Presence &
         presence.account = account;
         presence.jwt = pajlada::Settings::Setting<QString>::get(
             accountPath(id, "jilchatDesktopPresenceJwt"));
-        presence.expiresAt = pajlada::Settings::Setting<QString>::get(
-                                 accountPath(
-                                     id,
-                                     "jilchatDesktopPresenceJwtExpiresAt"))
-                                 .toLongLong();
+        presence.expiresAt =
+            pajlada::Settings::Setting<QString>::get(
+                accountPath(id, "jilchatDesktopPresenceJwtExpiresAt"))
+                .toLongLong();
         presence.timer.setInterval(HEARTBEAT_INTERVAL_MS);
-        QObject::connect(&presence.timer, &QTimer::timeout, this,
-                         [this, id] {
-                             auto found = this->presences_.find(id);
-                             if (found == this->presences_.end())
-                             {
-                                 return;
-                             }
-                             auto account = found->second->account.lock();
-                             if (account)
-                             {
-                                 this->heartbeat(account, *found->second);
-                             }
-                         });
+        QObject::connect(&presence.timer, &QTimer::timeout, this, [this, id] {
+            auto found = this->presences_.find(id);
+            if (found == this->presences_.end())
+            {
+                return;
+            }
+            auto account = found->second->account.lock();
+            if (account)
+            {
+                this->heartbeat(account, *found->second);
+            }
+        });
     }
     else
     {
@@ -121,8 +117,7 @@ void DesktopPresenceController::setEnabled(
         return;
     }
     pajlada::Settings::Setting<bool>::set(
-        accountPath(account->getUserId(),
-                    "jilchatDesktopPresenceEnabled"),
+        accountPath(account->getUserId(), "jilchatDesktopPresenceEnabled"),
         enabled);
     getSettings()->requestSave();
     if (enabled)
@@ -203,7 +198,8 @@ void DesktopPresenceController::authenticate(
             const auto expiresIn = json["expires_in"_L1].toInteger();
             if (!account || p.jwt.isEmpty() || expiresIn <= 0 || p.stopped)
             {
-                p.failedTwitchToken = account ? account->getOAuthToken() : QString{};
+                p.failedTwitchToken =
+                    account ? account->getOAuthToken() : QString{};
                 p.status = "Desktop presence could not be enabled.";
                 this->changed.invoke();
                 return;
@@ -240,8 +236,10 @@ void DesktopPresenceController::authenticate(
             else if (result.status() == 403)
             {
                 qCCritical(chatterinoApp)
-                    << "JilChat desktop authentication was rejected with 403; stopping presence";
-                p.status = "Desktop presence is unavailable due to a configuration error.";
+                    << "JilChat desktop authentication was rejected with 403; "
+                       "stopping presence";
+                p.status = "Desktop presence is unavailable due to a "
+                           "configuration error.";
                 p.failedTwitchToken =
                     account ? account->getOAuthToken() : QString{};
             }
@@ -306,8 +304,7 @@ void DesktopPresenceController::heartbeat(
                 p.expiresAt = 0;
                 setAccountValue(id, "jilchatDesktopPresenceJwt", {});
                 pajlada::Settings::Setting<QString>::set(
-                    accountPath(id, "jilchatDesktopPresenceJwtExpiresAt"),
-                    {});
+                    accountPath(id, "jilchatDesktopPresenceJwtExpiresAt"), {});
                 getSettings()->requestSave();
                 if (auto account = p.account.lock())
                 {
@@ -317,7 +314,8 @@ void DesktopPresenceController::heartbeat(
             else if (result.status() == 403)
             {
                 qCCritical(chatterinoApp)
-                    << "JilChat presence JWT was rejected with 403; stopping presence";
+                    << "JilChat presence JWT was rejected with 403; stopping "
+                       "presence";
                 p.timer.stop();
                 p.stopped = true;
             }

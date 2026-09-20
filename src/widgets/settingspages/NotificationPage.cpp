@@ -5,10 +5,10 @@
 #include "widgets/settingspages/NotificationPage.hpp"
 
 #include "Application.hpp"
+#include "controllers/accounts/AccountController.hpp"
+#include "controllers/notifications/DesktopPresenceController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
 #include "controllers/notifications/NotificationModel.hpp"
-#include "controllers/notifications/DesktopPresenceController.hpp"
-#include "controllers/accounts/AccountController.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Toasts.hpp"
@@ -55,8 +55,8 @@ NotificationPage::NotificationPage()
                     "Suppress live notifications on startup",
                     getSettings()->suppressInitialLiveNotification));
 
-                auto presenceBox = settings.emplace<QGroupBox>(
-                    "JilChat Desktop Presence");
+                auto presenceBox =
+                    settings.emplace<QGroupBox>("JilChat Desktop Presence");
                 auto *presenceLayout = new QVBoxLayout;
                 presenceBox->setLayout(presenceLayout);
                 this->rebuildDesktopPresenceAccounts(presenceLayout);

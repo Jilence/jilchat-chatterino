@@ -23,21 +23,21 @@ namespace chatterino {
 
 namespace {
 
-    QPointer<BluzyrinoBadgesDialog> &activeDialog()
-    {
-        static QPointer<BluzyrinoBadgesDialog> instance;
-        return instance;
-    }
+QPointer<BluzyrinoBadgesDialog> &activeDialog()
+{
+    static QPointer<BluzyrinoBadgesDialog> instance;
+    return instance;
+}
 
-    QString currentUserId()
+QString currentUserId()
+{
+    auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (!account || account->isAnon())
     {
-        auto account = getApp()->getAccounts()->twitch.getCurrent();
-        if (!account || account->isAnon())
-        {
-            return {};
-        }
-        return account->getUserId();
+        return {};
     }
+    return account->getUserId();
+}
 
 }  // namespace
 
@@ -52,8 +52,9 @@ BluzyrinoBadgesDialog::BluzyrinoBadgesDialog(QWidget *parent)
     root->setContentsMargins(16, 16, 16, 16);
     root->setSpacing(8);
 
-    auto *intro = new QLabel("Choose one donor badge to display. Special badges "
-                             "can be shown or hidden individually.");
+    auto *intro =
+        new QLabel("Choose one donor badge to display. Special badges "
+                   "can be shown or hidden individually.");
     intro->setWordWrap(true);
     root->addWidget(intro);
 
@@ -155,21 +156,21 @@ void BluzyrinoBadgesDialog::rebuild()
             this->contentLayout_->addWidget(radio);
             group->addButton(radio);
 
-            QObject::connect(radio, &QRadioButton::clicked, this,
-                             [id, radio](bool checked) {
-                                 if (!checked)
-                                 {
-                                     return;
-                                 }
-                                 radio->setEnabled(false);
-                                 getApp()->getBluzyrinoBadges()->setDonorSelection(
-                                     id, [radio](bool) {
-                                         if (radio)
-                                         {
-                                             radio->setEnabled(true);
-                                         }
-                                     });
-                             });
+            QObject::connect(
+                radio, &QRadioButton::clicked, this, [id, radio](bool checked) {
+                    if (!checked)
+                    {
+                        return;
+                    }
+                    radio->setEnabled(false);
+                    getApp()->getBluzyrinoBadges()->setDonorSelection(
+                        id, [radio](bool) {
+                            if (radio)
+                            {
+                                radio->setEnabled(true);
+                            }
+                        });
+                });
         }
     }
 

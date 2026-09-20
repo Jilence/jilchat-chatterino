@@ -25,10 +25,10 @@
 #include "messages/MessageThread.hpp"
 #include "providers/colors/ColorProvider.hpp"
 #include "providers/emoji/Emojis.hpp"
+#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/kick/KickChatServer.hpp"
-#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/links/LinkInfo.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/translation/Translator.hpp"
@@ -74,8 +74,8 @@
 #include <QGestureEvent>
 #include <QGraphicsBlurEffect>
 #include <QHash>
-#include <QJsonDocument>
 #include <QHBoxLayout>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPainter>
@@ -908,22 +908,21 @@ void addLinkContextMenuItems(QMenu *menu,
             slider->setValue(current);
             slider->setMinimumWidth(120);
 
-            auto *sliderLabel = new QLabel(
-                QStringLiteral("%1%").arg(current), sliderWidget);
+            auto *sliderLabel =
+                new QLabel(QStringLiteral("%1%").arg(current), sliderWidget);
             sliderLabel->setMinimumWidth(36);
             sliderLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
             sliderLayout->addWidget(slider);
             sliderLayout->addWidget(sliderLabel);
 
-            QObject::connect(slider, &QSlider::valueChanged, voiceMenu,
-                             [voiceId = link.value, view, sliderLabel](
-                                 int value) {
-                                 sliderLabel->setText(
-                                     QStringLiteral("%1%").arg(value));
-                                 jilchat::setVoiceVolume(voiceId, value);
-                                 view->queueUpdate();
-                             });
+            QObject::connect(
+                slider, &QSlider::valueChanged, voiceMenu,
+                [voiceId = link.value, view, sliderLabel](int value) {
+                    sliderLabel->setText(QStringLiteral("%1%").arg(value));
+                    jilchat::setVoiceVolume(voiceId, value);
+                    view->queueUpdate();
+                });
 
             auto *sliderAction = new QWidgetAction(voiceMenu);
             sliderAction->setDefaultWidget(sliderWidget);
@@ -943,22 +942,22 @@ void addLinkContextMenuItems(QMenu *menu,
             }
 
             voiceMenu->addSeparator();
-            voiceMenu->addAction("Quieter", [voiceId = link.value, current,
-                                             view] {
-                jilchat::setVoiceVolume(voiceId, current - 10);
-                view->queueUpdate();
-            });
-            voiceMenu->addAction("Louder", [voiceId = link.value, current,
-                                            view] {
-                jilchat::setVoiceVolume(voiceId, current + 10);
-                view->queueUpdate();
-            });
-            voiceMenu->addAction("Use default volume",
+            voiceMenu->addAction(
+                "Quieter", voiceMenu, [voiceId = link.value, current, view] {
+                    jilchat::setVoiceVolume(voiceId, current - 10);
+                    view->queueUpdate();
+                });
+            voiceMenu->addAction(
+                "Louder", voiceMenu, [voiceId = link.value, current, view] {
+                    jilchat::setVoiceVolume(voiceId, current + 10);
+                    view->queueUpdate();
+                });
+            voiceMenu->addAction("Use default volume", voiceMenu,
                                  [voiceId = link.value, view] {
                                      jilchat::resetVoiceVolume(voiceId);
                                      view->queueUpdate();
                                  });
-            voiceMenu->addAction("Play", [voiceId = link.value] {
+            voiceMenu->addAction("Play", voiceMenu, [voiceId = link.value] {
                 jilchat::playVoiceMessage(voiceId);
             });
             menu->addAction("&Copy link", [voiceUrl] {
@@ -3668,7 +3667,7 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
 
 void ChannelView::handleMouseClick(QMouseEvent *event,
                                    const MessageLayoutElement *hoveredElement,
-                                   MessageLayoutPtr layout,
+                                   const MessageLayoutPtr &layout,
                                    QPointF relativePos)
 {
     switch (event->button())
@@ -3684,8 +3683,8 @@ void ChannelView::handleMouseClick(QMouseEvent *event,
             const auto &link = hoveredElement->getLink();
             if (!getSettings()->linksDoubleClickOnly)
             {
-                this->handleLinkClick(event, link, layout.get(),
-                                      hoveredElement, relativePos);
+                this->handleLinkClick(event, link, layout.get(), hoveredElement,
+                                      relativePos);
             }
 
             // Invoke to signal from EmotePopup.
@@ -3822,8 +3821,8 @@ void ChannelView::handleMouseClick(QMouseEvent *event,
             const auto &link = hoveredElement->getLink();
             if (!getSettings()->linksDoubleClickOnly)
             {
-                this->handleLinkClick(event, link, layout.get(),
-                                      hoveredElement, relativePos);
+                this->handleLinkClick(event, link, layout.get(), hoveredElement,
+                                      relativePos);
             }
         }
         break;

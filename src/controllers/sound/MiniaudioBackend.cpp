@@ -300,8 +300,7 @@ void MiniaudioBackend::play(const QUrl &sound, float volume)
 
             result = ma_sound_init_from_file(this->engine.get(),
                                              qPrintable(soundPath), soundFlags,
-                                             nullptr, nullptr,
-                                             fileSound.get());
+                                             nullptr, nullptr, fileSound.get());
             if (result != MA_SUCCESS)
             {
                 qCWarning(chatterinoSound) << "Failed to load sound" << sound
@@ -309,8 +308,7 @@ void MiniaudioBackend::play(const QUrl &sound, float volume)
                 return;
             }
 
-            ma_sound_set_volume(fileSound.get(),
-                                std::clamp(volume, 0.F, 1.F));
+            ma_sound_set_volume(fileSound.get(), std::clamp(volume, 0.F, 1.F));
             result = ma_sound_start(fileSound.get());
             if (result != MA_SUCCESS)
             {
@@ -331,8 +329,8 @@ void MiniaudioBackend::play(const QUrl &sound, float volume)
         result = ma_sound_start(snd.get());
         if (result != MA_SUCCESS)
         {
-            qCWarning(chatterinoSound) << "Failed to play default ping"
-                                       << result;
+            qCWarning(chatterinoSound)
+                << "Failed to play default ping" << result;
         }
 
         if (!this->keepEngineAlive)

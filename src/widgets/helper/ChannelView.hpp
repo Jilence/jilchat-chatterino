@@ -359,7 +359,7 @@ private:
 
     void handleMouseClick(QMouseEvent *event,
                           const MessageLayoutElement *hoveredElement,
-                          MessageLayoutPtr layout, QPointF relativePos);
+                          const MessageLayoutPtr &layout, QPointF relativePos);
     void addContextMenuItems(const MessageLayoutElement *hoveredElement,
                              MessageLayoutPtr layout, QMouseEvent *event);
     void addMessageContextMenuItems(QMenu *menu,
