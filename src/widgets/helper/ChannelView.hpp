@@ -160,7 +160,7 @@ public:
     void setVerticalOffset(int offset);
 
     void performLayout(bool causedByScrollbar = false,
-                       bool causedByShow = false);
+                       bool disableAnimation = false);
     void layoutVisibleMessages(const std::vector<MessageLayoutPtr> &messages);
 
     void setOverrideEmoteScale(std::optional<float> value);
@@ -235,7 +235,7 @@ public:
 
     std::vector<MessageLayoutPtr> &getMessagesSnapshot();
 
-    void queueLayout();
+    void queueLayout(bool disableAnimation = false);
     void invalidateBuffers();
 
     void clearMessages();
@@ -349,7 +349,7 @@ private:
     void messagesUpdated();
 
     void updateScrollbar(const std::vector<MessageLayoutPtr> &messages,
-                         bool causedByScrollbar, bool causedByShow);
+                         bool causedByScrollbar, bool disableAnimation);
     void updateScrollWidgetGeometries();
 
     void drawMessages(QPainter &painter, const QRect &area);

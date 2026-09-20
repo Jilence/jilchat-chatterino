@@ -3118,12 +3118,14 @@ void UserInfoPopup::updateUserData()
             user.displayName, this->underlyingChannel_->getName()));
         if (getSettings()->showUsercardCreatedDate)
         {
-            this->ui_.createdDateLabel->setText(
-                TEXT_CREATED.arg(user.createdAt.section("T", 0, 0)));
+            auto createdAt =
+                QDateTime::fromString(user.createdAt, Qt::ISODateWithMs);
+            auto createdStr =
+                createdAt.toLocalTime().date().toString(Qt::ISODate);
+            this->ui_.createdDateLabel->setText(TEXT_CREATED.arg(createdStr));
             this->ui_.createdDateLabel->setToolTip(
-                formatLongFriendlyDuration(
-                    QDateTime::fromString(user.createdAt, Qt::ISODateWithMs),
-                    QDateTime::currentDateTimeUtc()) +
+                formatLongFriendlyDuration(createdAt,
+                                           QDateTime::currentDateTimeUtc()) +
                 u" ago"_s);
             this->ui_.createdDateLabel->setMouseTracking(true);
             this->ui_.createdDateLabel->setVisible(true);
@@ -3131,24 +3133,12 @@ void UserInfoPopup::updateUserData()
         this->ui_.userIDLabel->setText(TEXT_USER_ID % user.id);
         this->ui_.userIDLabel->setProperty("copy-text", user.id);
 
-        if (getApp()->getStreamerMode()->isEnabled() &&
-            getSettings()->streamerModeHideUsercardAvatars)
-        {
-            this->ui_.avatarButton->setPixmap(getResources().streamerMode);
-            if (getSettings()->showSevenTVUsercardButton)
-            {
-                this->loadSevenTVAvatar(user.id, false, false);
-            }
-        }
-        else
-        {
-            this->loadAvatar(user.id, user.profileImageUrl, false);
-        }
+        this->loadCurrentAvatar();
 
         if (getSettings()->showUsercardFollowerCount)
         {
             getHelix()->getChannelFollowers(
-                user.id,
+                user.id, {},
                 [this, isCurrentRequest](const auto &followers) {
                     if (!isCurrentRequest() ||
                         !getSettings()->showUsercardFollowerCount)
@@ -3222,9 +3212,8 @@ void UserInfoPopup::updateUserData()
 
         if (type == Channel::Type::Twitch)
         {
-            // get followage and subage
-            if (getSettings()->showUsercardFollowage ||
-                getSettings()->showUsercardSubage ||
+            // get subage
+            if (getSettings()->showUsercardSubage ||
                 getSettings()->showUsercardSubGiftGifter)
             {
                 getIvr()->getSubage(
@@ -3233,61 +3222,6 @@ void UserInfoPopup::updateUserData()
                         if (!isCurrentRequest())
                         {
                             return;
-                        }
-
-                        if (getSettings()->showUsercardFollowage &&
-                            !subageInfo.followingSince.isEmpty())
-                        {
-                            const auto followedAt =
-                                parseIvrTimestamp(subageInfo.followingSince);
-
-                            if (followedAt.isValid())
-                            {
-                                if (this->isFollowing() &&
-                                    (!this->followedAt_ ||
-                                     !this->followedAt_->isValid()))
-                                {
-                                    this->followedAt_ = followedAt;
-                                    this->updateUsercardFollowButton();
-                                }
-
-                                const auto followedDate = followedAt.date();
-                                const auto followingSince =
-                                    followedDate.toString(Qt::ISODate);
-                                auto relativeTime = QString();
-                                if (getSettings()
-                                        ->showUsercardFollowageRelativeTime)
-                                {
-                                    relativeTime =
-                                        formatUsercardFollowRelativeTime(
-                                            followedDate);
-                                }
-                                this->ui_.followageLabel->setText(
-                                    "Following since " + followingSince +
-                                    relativeTime);
-                                this->ui_.followageLabel->setToolTip(
-                                    formatLongFriendlyDuration(
-                                        followedAt,
-                                        QDateTime::currentDateTimeUtc()) +
-                                    u" ago"_s);
-                                this->ui_.followageLabel->setMouseTracking(
-                                    true);
-                                this->updateUsercardStatusIcons();
-                                this->ui_.followageRow->setVisible(true);
-                                this->ui_.followageIcon->setVisible(true);
-                            }
-                            else
-                            {
-                                this->ui_.followageLabel->setText({});
-                                this->ui_.followageRow->setVisible(true);
-                                this->ui_.followageIcon->setVisible(false);
-                            }
-                        }
-                        else if (getSettings()->showUsercardFollowage)
-                        {
-                            this->ui_.followageLabel->setText({});
-                            this->ui_.followageRow->setVisible(true);
-                            this->ui_.followageIcon->setVisible(false);
                         }
 
                         if (!getSettings()->showUsercardSubage)
@@ -3353,12 +3287,6 @@ void UserInfoPopup::updateUserData()
                             return;
                         }
 
-                        if (getSettings()->showUsercardFollowage)
-                        {
-                            this->ui_.followageLabel->setText({});
-                            this->ui_.followageRow->setVisible(true);
-                            this->ui_.followageIcon->setVisible(false);
-                        }
                         if (getSettings()->showUsercardSubage)
                         {
                             this->ui_.subageLabel->setText({});
@@ -3370,6 +3298,49 @@ void UserInfoPopup::updateUserData()
                             this->hideUsercardSubGiftRow();
                         }
                     });
+            }
+
+            // get followage
+            if (getSettings()->showUsercardFollowage)
+            {
+                auto *twitchChannel = dynamic_cast<TwitchChannel *>(
+                    this->underlyingChannel_.get());
+                if (twitchChannel &&
+                    (twitchChannel->isBroadcaster() ||
+                     twitchChannel->isMod()) &&
+                    !twitchChannel->roomId().isEmpty())
+                {
+                    getHelix()->getChannelFollowers(
+                        twitchChannel->roomId(), user.id,
+                        [this, isCurrentRequest](const auto &response) {
+                            if (!isCurrentRequest() ||
+                                !getSettings()->showUsercardFollowage)
+                            {
+                                return;
+                            }
+
+                            if (response.specifiedFollower)
+                            {
+                                this->setUsercardFollowage(
+                                    response.specifiedFollower->followedAt);
+                            }
+                            else
+                            {
+                                this->setUsercardFollowage(std::nullopt);
+                            }
+                        },
+                        [this, isCurrentRequest](const auto &errorMessage) {
+                            qCWarning(chatterinoTwitch)
+                                << "Error getting follow age:" << errorMessage;
+                            if (!isCurrentRequest() ||
+                                !getSettings()->showUsercardFollowage)
+                            {
+                                return;
+                            }
+
+                            this->setUsercardFollowage(std::nullopt);
+                        });
+                }
             }
 
             getIvr()->getUser(
@@ -3868,18 +3839,44 @@ void UserInfoPopup::updateKickUserData()
         self->seventvUserLookupFinished_ = true;
         self->refreshSevenTVUserButtonVisibility();
     };
-    auto onChannelFetched = [](UserInfoPopup *self,
-                               const KickPrivateChannelInfo &channel) {
-        // Correct for when being opened with ID
-        if (self->userName_.isEmpty())
+    auto fetchDefaultAvatar = [](UserInfoPopup *self) {
+        // The "full" channel info doesn't include the profile picture.
+        KickApi::privateChannelInfoSmall(
+            self->userName_, [self = QPointer(self)](const auto &res) {
+                if (!self || !res)
+                {
+                    return;
+                }
+                const auto &url = res->user.profilePictureURL;
+                if (!url || *url == self->helixAvatarUrl_ ||
+                    !self->helixAvatarUrl_.startsWith(u"https://kick.com"))
+                {
+                    return;
+                }
+                self->helixAvatarUrl_ = *url;
+                self->updateAvatarUrl();
+                self->loadCurrentAvatar();
+            });
+    };
+    auto onChannelFetched = [fetchDefaultAvatar](
+                                UserInfoPopup *self,
+                                const KickPrivateChannelInfo &channel) {
+        // Correct for when being opened with ID or slug/username mismatch.
+        self->kickUserSlug_ = channel.slug;
+        self->userName_ = channel.user.username;
+        self->ui_.nameLabel->setText(channel.user.username);
+        if (self->userName_.compare(self->kickUserSlug_, Qt::CaseInsensitive) !=
+            0)
         {
-            self->userName_ = channel.user.username;
-            self->kickUserSlug_ = channel.slug;
-            self->ui_.nameLabel->setText(channel.user.username);
-
-            // Ensure recent messages are shown
-            self->updateLatestMessages();
+            self->ui_.localizedNameLabel->setText(self->kickUserSlug_);
+            self->ui_.localizedNameLabel->setProperty("copy-text",
+                                                      self->kickUserSlug_);
+            self->ui_.localizedNameLabel->setVisible(true);
+            self->ui_.localizedNameCopyButton->setVisible(true);
         }
+
+        // Ensure recent messages are shown
+        self->updateLatestMessages();
 
         self->kickUserID_ = channel.user.userID;
         auto userIDStr = QString::number(self->kickUserID_);
@@ -3887,7 +3884,13 @@ void UserInfoPopup::updateKickUserData()
         self->helixAvatarUrl_ = channel.user.profilePictureURL.value_or(
             u"https://kick.com/img/default-profile-pictures/default-avatar-2.webp"_s);
         self->updateAvatarUrl();
+        self->loadCurrentAvatar();
         self->updateNotes();
+
+        if (!channel.user.profilePictureURL.has_value())
+        {
+            fetchDefaultAvatar(self);
+        }
 
         self->ui_.nameLabel->setText(channel.user.username);
         self->ui_.nameLabel->setProperty("copy-text", channel.user.username);
@@ -3907,20 +3910,6 @@ void UserInfoPopup::updateKickUserData()
         }
         self->ui_.userIDLabel->setText(TEXT_USER_ID % userIDStr);
         self->ui_.userIDLabel->setProperty("copy-text", userIDStr);
-
-        if (getApp()->getStreamerMode()->isEnabled() &&
-            getSettings()->streamerModeHideUsercardAvatars)
-        {
-            self->ui_.avatarButton->setPixmap(getResources().streamerMode);
-            if (getSettings()->showSevenTVUsercardButton)
-            {
-                self->loadSevenTVAvatar(userIDStr, true, false);
-            }
-        }
-        else
-        {
-            self->loadAvatar(userIDStr, self->helixAvatarUrl_, true);
-        }
 
         if (getSettings()->showUsercardFollowerCount)
         {
@@ -3987,34 +3976,7 @@ void UserInfoPopup::updateKickUserData()
                     return;
                 }
 
-                if (getSettings()->showUsercardFollowage && res->followingSince)
-                {
-                    const auto followedDate = res->followingSince->date();
-                    auto relativeTime = QString();
-                    if (getSettings()->showUsercardFollowageRelativeTime)
-                    {
-                        relativeTime =
-                            formatUsercardFollowRelativeTime(followedDate);
-                    }
-                    QString followingSince = followedDate.toString(Qt::ISODate);
-                    self->ui_.followageLabel->setText(
-                        "Following since " + followingSince + relativeTime);
-                    self->ui_.followageLabel->setToolTip(
-                        formatLongFriendlyDuration(
-                            *res->followingSince,
-                            QDateTime::currentDateTimeUtc()) +
-                        u" ago"_s);
-                    self->ui_.followageLabel->setMouseTracking(true);
-                    self->updateUsercardStatusIcons();
-                    self->ui_.followageRow->setVisible(true);
-                    self->ui_.followageIcon->setVisible(true);
-                }
-                else if (getSettings()->showUsercardFollowage)
-                {
-                    self->ui_.followageLabel->setText({});
-                    self->ui_.followageRow->setVisible(true);
-                    self->ui_.followageIcon->setVisible(false);
-                }
+                self->setUsercardFollowage(res->followingSince);
 
                 if (getSettings()->showUsercardSubage &&
                     res->subscriptionMonths)
@@ -4369,6 +4331,45 @@ void UserInfoPopup::updateUsercardStatusIcons()
                        : ":/buttons/usercardGift-darkMode.svg",
                iconSize);
     updateColorSwatch();
+}
+
+void UserInfoPopup::setUsercardFollowage(
+    const std::optional<QDateTime> &followedAt)
+{
+    if (!getSettings()->showUsercardFollowage)
+    {
+        this->ui_.followageLabel->setText({});
+        this->ui_.followageLabel->setToolTip({});
+        this->ui_.followageRow->setVisible(false);
+        this->ui_.followageIcon->setVisible(false);
+        return;
+    }
+
+    if (!followedAt || !followedAt->isValid())
+    {
+        this->ui_.followageLabel->setText({});
+        this->ui_.followageLabel->setToolTip({});
+        this->ui_.followageRow->setVisible(true);
+        this->ui_.followageIcon->setVisible(false);
+        return;
+    }
+
+    const auto followedDate = followedAt->toLocalTime().date();
+    auto relativeTime = QString();
+    if (getSettings()->showUsercardFollowageRelativeTime)
+    {
+        relativeTime = formatUsercardFollowRelativeTime(followedDate);
+    }
+    this->ui_.followageLabel->setText(
+        "Following since " + followedDate.toString(Qt::ISODate) + relativeTime);
+    this->ui_.followageLabel->setToolTip(
+        formatLongFriendlyDuration(*followedAt,
+                                   QDateTime::currentDateTimeUtc()) +
+        u" ago"_s);
+    this->ui_.followageLabel->setMouseTracking(true);
+    this->updateUsercardStatusIcons();
+    this->ui_.followageRow->setVisible(true);
+    this->ui_.followageIcon->setVisible(true);
 }
 
 void UserInfoPopup::updateUsercardSubGiftRow(const IvrSubage &subageInfo)
@@ -5509,6 +5510,29 @@ void UserInfoPopup::toggleUsercardFollow()
     if (!text.isEmpty())
     {
         this->channel_->sendMessage(text);
+    }
+}
+
+void UserInfoPopup::loadCurrentAvatar()
+{
+    auto uid = this->userId_;
+    if (uid.startsWith(u"kick:"))
+    {
+        uid = uid.mid(5);
+    }
+
+    if (getApp()->getStreamerMode()->isEnabled() &&
+        getSettings()->streamerModeHideUsercardAvatars)
+    {
+        this->ui_.avatarButton->setPixmap(getResources().streamerMode);
+        if (getSettings()->showSevenTVUsercardButton)
+        {
+            this->loadSevenTVAvatar(uid, this->isKick_, false);
+        }
+    }
+    else
+    {
+        this->loadAvatar(uid, this->helixAvatarUrl_, this->isKick_);
     }
 }
 

@@ -40,40 +40,33 @@ ExpectedStr<QJsonArray> loadWindowArray(const QString &settingsPath)
 
     if (!file.open(QIODevice::ReadOnly))
     {
-        return makeUnexpected(
-            QStringLiteral("Failed to open '%1'").arg(settingsPath));
+        return makeUnexpected(u"Failed to open file: " % file.errorString());
     }
 
     QByteArray data = file.readAll();
-    QJsonParseError error;
-    QJsonDocument document = QJsonDocument::fromJson(data, &error);
-    if (error.error != QJsonParseError::NoError)
+    QJsonParseError err;
+    QJsonDocument document = QJsonDocument::fromJson(data, &err);
+    if (err.error != QJsonParseError::NoError)
     {
-        return makeUnexpected(QStringLiteral("Malformed JSON at offset %1: %2")
-                                  .arg(error.offset)
-                                  .arg(error.errorString()));
+        return makeUnexpected(u"Failed to parse JSON: " % err.errorString());
     }
-
     if (!document.isObject())
     {
-        return makeUnexpected(
-            QStringLiteral("Window layout root is not a JSON object"));
+        return makeUnexpected(u"Root element is not an object"_s);
     }
-
-    const auto windowsValue = document.object().value("windows");
-    if (!windowsValue.isArray())
+    const auto rootObj = document.object();
+    const auto windowsEl = rootObj["windows"_L1];
+    if (!windowsEl.isArray())
     {
         return makeUnexpected(
-            QStringLiteral("Window layout is missing the windows array"));
+            u"Root object does not contain a 'windows' array"_s);
     }
-
-    auto windows = windowsValue.toArray();
+    auto windows = windowsEl.toArray();
     if (windows.isEmpty())
     {
         return makeUnexpected(
             QStringLiteral("Window layout does not contain any windows"));
     }
-
     return windows;
 }
 
@@ -427,7 +420,7 @@ TabDescriptor TabDescriptor::loadFromJSON(const QJsonObject &tabObj)
     return tab;
 }
 
-WindowLayout WindowLayout::loadFromFile(const QString &path)
+ExpectedStr<WindowLayout> WindowLayout::loadFromFile(const QString &path)
 {
     WindowLayout layout;
     QJsonArray windowsArr;

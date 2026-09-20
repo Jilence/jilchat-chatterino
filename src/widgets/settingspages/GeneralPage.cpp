@@ -253,6 +253,10 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         false, "Choose which tabs are visible in the notebook");
 
     SettingWidget::dropdown("Tab style", s.tabStyle)->addTo(layout);
+    SettingWidget::checkbox("Extend wrapped tabs", s.growWrappedNotebookLines)
+        ->setTooltip("When horizontal tabs are wrapped, extend the line for "
+                     "the whole width of the window.")
+        ->addTo(layout);
 
     layout.addWidget(new FontSettingWidget(s.chatFontFamily, s.chatFontSize,
                                            s.chatFontWeight),
@@ -574,7 +578,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::checkbox("Show Twitch GIFs", s.showTwitchGifs)
         ->setTooltip("Twitch GIFs will be shown inline. When disabled, they're "
-                     "shown as text.")
+                     "shown as links.")
         ->addTo(layout);
 
     layout.addDropdown<int>(
@@ -1620,6 +1624,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             "CHATTERINO2_RECENT_MESSAGES_URL overrides this when set.")
         ->addTo(layout);
 
+    // TODO: Change phrasing to use better english once we can tag settings, right now it's kept as history instead of historical so that the setting shows up when the user searches for history
     SettingWidget::intInput("Max number of history messages to load on connect",
                             s.twitchMessageHistoryLimit,
                             {
@@ -1719,7 +1724,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             "shared chat badge")
         ->addTo(layout);
 
-    SettingWidget::dropdown("Twitch read connection mode",
+    SettingWidget::dropdown("Twitch read connection mode (requires restart)",
                             s.twitchReadConnectionMode)
         ->setTooltip("The read connection is the one where Chatterino joins a "
                      "channel and listens to the messages.\n"
@@ -1730,6 +1735,18 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                      "multiple connections at once. This speeds up the "
                      "connection phase when joining many channels. The other "
                      "modes will join in delayed batches.")
+        ->addTo(layout);
+
+    SettingWidget::dropdown("Kick connection preference (requires restart)",
+                            s.kickConnectionPreference)
+        ->setTooltip("The transport to use for receiving Kick messages.\n"
+                     "- Default: Use Pusher.\n"
+                     "- Pusher: Use Kick's Pusher app. This was historically "
+                     "the default, but the web app has moved on.\n"
+                     "- Centrifugo: Use Kick's centrifugo instance. This is "
+                     "usually used by default on the web.\n"
+                     "- Any: Advertise support for both Pusher and Centrifugo. "
+                     "This matches the behaviour on the web.\n")
         ->addTo(layout);
 
     layout.addStretch();

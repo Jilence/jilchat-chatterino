@@ -186,7 +186,6 @@ declare namespace c2 {
     interface Message {
         flags: MessageFlag;
         id: string;
-        parse_time: number;
         search_text: string;
         message_text: string;
         login_name: string;
@@ -211,7 +210,6 @@ declare namespace c2 {
     interface MessageInit {
         flags?: MessageFlag;
         id?: string;
-        parse_time?: number;
         search_text?: string;
         message_text?: string;
         login_name?: string;
@@ -506,6 +504,7 @@ declare namespace c2 {
         LowercaseLinks = 0,
         RepliedMessage = 0,
         ReplyButton = 0,
+        TwitchGif = 0,
         Default = 0,
     }
 

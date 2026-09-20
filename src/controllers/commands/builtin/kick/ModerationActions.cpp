@@ -36,11 +36,11 @@ void withUser(KickChannel *channel, const QString &userSpec,
         return;
     }
 
-    getKickApi()->getChannelByName(
+    KickApi::privateChannelInfo(
         userSpec,
         [weakChan = channel->weakFromThis(), onAction = std::move(onAction),
          userSpec, fn, ... args = std::forward<decltype(args)>(args)](
-            const auto &res) mutable {
+            const ExpectedStr<KickPrivateChannelInfo> &res) mutable {
             auto chan = weakChan.lock();
             if (!chan)
             {
@@ -52,7 +52,7 @@ void withUser(KickChannel *channel, const QString &userSpec,
                                        u": " % res.error());
                 return;
             }
-            (getKickApi()->*fn)(chan->userID(), res->userID,
+            (getKickApi()->*fn)(chan->userID(), res->user.userID,
                                 std::forward<decltype(args)>(args)...,
                                 std::move(onAction));
         });

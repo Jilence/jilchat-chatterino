@@ -73,6 +73,7 @@ QString getPrivateSwitch(const QString &browserExecutable)
         {"librewolf", "-private-window"},
         {"waterfox", "-private-window"},
         {"icecat", "-private-window"},
+        {"zen", "-private-window"},
         {"chrome", "-incognito"},
         {"google chrome", "-incognito"},
         {"google chrome beta", "-incognito"},

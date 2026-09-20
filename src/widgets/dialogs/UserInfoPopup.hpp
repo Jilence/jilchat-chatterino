@@ -119,6 +119,7 @@ private:
     void openNameHistoryMenu(const QString &statusText = {});
     void requestNameHistory();
     void updateUsercardStatusIcons();
+    void setUsercardFollowage(const std::optional<QDateTime> &followedAt);
     void updateUsercardSubGiftRow(const IvrSubage &subageInfo);
     void hideUsercardSubGiftRow();
     void resetUsercardInfoRows();
@@ -136,6 +137,7 @@ private:
 
     void loadAvatar(const QString &userID, const QString &pictureURL,
                     bool isKick);
+    void loadCurrentAvatar();
 
     void loadSevenTVAvatar(const QString &userID, bool isKick,
                            bool allowAvatarDownload = true);

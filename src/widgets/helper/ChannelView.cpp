@@ -1519,11 +1519,11 @@ void ChannelView::invalidateBuffers()
     this->update();
 }
 
-void ChannelView::queueLayout()
+void ChannelView::queueLayout(bool disableAnimation)
 {
     if (this->isVisible())
     {
-        this->performLayout();
+        this->performLayout(/*causedByScrollbar=*/false, disableAnimation);
     }
     else
     {
@@ -1535,11 +1535,12 @@ void ChannelView::showEvent(QShowEvent * /*event*/)
 {
     if (this->layoutQueued_)
     {
-        this->performLayout(false, true);
+        this->performLayout(/*causedByScrollbar=*/false,
+                            /*disableAnimation=*/true);
     }
 }
 
-void ChannelView::performLayout(bool causedByScrollbar, bool causedByShow)
+void ChannelView::performLayout(bool causedByScrollbar, bool disableAnimation)
 {
     // BenchmarkGuard benchmark("layout");
 
@@ -1556,7 +1557,7 @@ void ChannelView::performLayout(bool causedByScrollbar, bool causedByShow)
     this->layoutVisibleMessages(messages);
 
     /// Update scrollbar
-    this->updateScrollbar(messages, causedByScrollbar, causedByShow);
+    this->updateScrollbar(messages, causedByScrollbar, disableAnimation);
 
     this->goToBottom_->setVisible(this->enableScrollingToBottom_ &&
                                   this->scrollBar_->isVisible() &&
@@ -1620,7 +1621,7 @@ void ChannelView::layoutVisibleMessages(
 }
 
 void ChannelView::updateScrollbar(const std::vector<MessageLayoutPtr> &messages,
-                                  bool causedByScrollbar, bool causedByShow)
+                                  bool causedByScrollbar, bool disableAnimation)
 {
     if (messages.size() == 0)
     {
@@ -1686,7 +1687,7 @@ void ChannelView::updateScrollbar(const std::vector<MessageLayoutPtr> &messages,
         showScrollbar && !causedByScrollbar)
     {
         this->scrollBar_->scrollToBottom(
-            !causedByShow &&
+            !disableAnimation &&
             getSettings()->enableSmoothScrollingNewMessages.getValue());
     }
 }
@@ -2487,7 +2488,7 @@ void ChannelView::resizeEvent(QResizeEvent * /*event*/)
 
     this->scrollBar_->raise();
 
-    this->queueLayout();
+    this->queueLayout(/*disableAnimation=*/true);
 
     this->update();
 }
@@ -2779,9 +2780,9 @@ void ChannelView::drawMessages(QPainter &painter, const QRect &area)
                       getApp()->getTwitch()->getMentionsChannel(),
 
         .y = this->verticalOffset_ -
-             static_cast<int>(
+             static_cast<int>(std::round(
                  messagesSnapshot[start]->getHeight() *
-                 (fmod(this->scrollBar_->getRelativeCurrentValue(), 1))),
+                 (fmod(this->scrollBar_->getRelativeCurrentValue(), 1)))),
         .messageIndex = start,
         .isLastReadMessage = false,
         .isCollapsed = this->collapseMessages_,

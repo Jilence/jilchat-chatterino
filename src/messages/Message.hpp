@@ -7,6 +7,7 @@
 #include "util/QStringHash.hpp"
 
 #include <QColor>
+#include <QDateTime>
 #include <QTime>
 
 #include <cinttypes>

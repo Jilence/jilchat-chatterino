@@ -11,7 +11,7 @@
 namespace chatterino {
 
 class IgnorePhrase;
-struct TwitchEmoteOccurrence;
+struct TwitchSpecialOccurrence;
 
 enum class ShowIgnoredUsersMessages {
     Never,
@@ -31,8 +31,17 @@ struct IgnoredMessageParameters {
 
 bool isIgnoredMessage(IgnoredMessageParameters &&params);
 
+/// @brief Processes replacement ignore-phrases for a message
+///
+/// @param phrases A list of IgnorePhrases to process. Block phrases as well as
+/// 	           invalid phrases are ignored.
+/// @param content The message text. This gets altered by replacements.
+/// @param twitchSpecials A list of special items present in the message. Occurrences
+///                     that have been removed from the message will also be
+///                     removed in this list. Similarly, if new emotes are added
+///                     from a replacement, this list gets updated as well.
 void processIgnorePhrases(const std::vector<IgnorePhrase> &phrases,
                           QString &content,
-                          std::vector<TwitchEmoteOccurrence> &twitchEmotes);
+                          std::vector<TwitchSpecialOccurrence> &twitchSpecials);
 
 }  // namespace chatterino

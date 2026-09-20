@@ -18,7 +18,8 @@ namespace chatterino {
 
 class NetworkData;
 
-class NetworkRequest final
+class [[nodiscard("NetworkRequests don't do anything unless sent. Call "
+                  "execute() to send the request.")]] NetworkRequest final
 {
     std::shared_ptr<NetworkData> data;
 

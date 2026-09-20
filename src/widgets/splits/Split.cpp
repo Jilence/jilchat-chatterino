@@ -29,6 +29,7 @@
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/CustomPlayer.hpp"
+#include "util/IncognitoBrowser.hpp"
 #include "util/MultiChannel.hpp"
 #include "util/StreamLink.hpp"
 #include "widgets/ChatterListWidget.hpp"
@@ -1647,8 +1648,15 @@ void Split::openChannelInBrowserPlayer(ChannelPtr channel)
 {
     if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
     {
-        QDesktopServices::openUrl(
-            QUrl(TWITCH_PLAYER_URL.arg(twitchChannel->getName())));
+        const auto playerUrl = TWITCH_PLAYER_URL.arg(twitchChannel->getName());
+        if (getSettings()->openLinksIncognito && supportsIncognitoLinks())
+        {
+            openLinkIncognito(playerUrl);
+        }
+        else
+        {
+            QDesktopServices::openUrl(QUrl(playerUrl));
+        }
     }
 }
 
