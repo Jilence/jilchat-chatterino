@@ -141,6 +141,16 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "the display name. Hovering always shows the handle.")
         ->addTo(layout);
 
+    layout.addTitle("Public logs");
+    layout.addDescription("Older messages from logs.zonian.dev, the logs "
+                          "behind tv.supa.sh.");
+    SettingWidget::checkbox("Use public logs",
+                            s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("Load older messages from logs.zonian.dev. This sends "
+                     "channel names and usernames to that service.")
+        ->addKeywords({"logs", "zonian", "supa", "history", "older", "public"})
+        ->addTo(layout);
+
     layout.addTitle("Usercard");
     layout.addDescription("Choose which extra details appear on usercards.");
 

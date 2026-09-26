@@ -1068,10 +1068,19 @@ public:
     BoolSetting showModActionsOnModUsercardsAsLeadMod = {
         "/usercard/showModActionsOnModUsercardsAsLeadMod", false};
     BoolSetting hideEmojiButton = {"/misc/hideEmojiButton", false};
+    /// Use the public logs from logs.zonian.dev for older messages.
+    BoolSetting loadOlderMessagesFromPublicLogs = {
+        "/misc/publicLogs/loadOlderMessages", true};
     BoolSetting showTitleInLiveMessage = {
         "/extraChannels/live/showTitle",
         false,
     };
+    /// Whether the search popup also searches the public logs (remembered
+    /// from the checkbox in the popup).
+    BoolSetting searchPublicLogs = {"/misc/publicLogs/searchPopup", false};
+    /// The same for "Search in all open channels".
+    BoolSetting searchPublicLogsAllChannels = {
+        "/misc/publicLogs/searchPopupAllChannels", false};
 
     /// UI
 
