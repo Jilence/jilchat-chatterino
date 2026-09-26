@@ -109,6 +109,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <ranges>
 #include <utility>
 
 namespace {
@@ -650,8 +651,7 @@ bool messageHasTwitchBadge(const Message &message, QStringView badge)
 }
 
 /// Prefix of the ids of day separators shown between usercard messages.
-const QString USERCARD_DAY_SEPARATOR_ID =
-    QStringLiteral("usercard-day-separator:");
+constexpr QStringView USERCARD_DAY_SEPARATOR_ID = u"usercard-day-separator:";
 
 /// The local day a usercard message was sent on, or an invalid date for day
 /// separators and messages without a timestamp.
@@ -665,7 +665,7 @@ QDate usercardMessageDay(const MessagePtr &message)
     return message->serverReceivedTime.toLocalTime().date();
 }
 
-MessagePtr makeUsercardDaySeparator(const QDate &day)
+MessagePtr makeUsercardDaySeparator(QDate day)
 {
     const auto text = QLocale().toString(day, QLocale::LongFormat);
 
@@ -712,19 +712,14 @@ QDate usercardEdgeDay(const ChannelPtr &channel, bool fromEnd)
         return {};
     }
     const auto snapshot = channel->getMessageSnapshot();
-    const auto find = [](auto begin, auto end) -> QDate {
-        for (auto it = begin; it != end; ++it)
-        {
-            const auto day = usercardMessageDay(*it);
-            if (day.isValid())
-            {
-                return day;
-            }
-        }
-        return {};
+    const auto find = [](const auto &messages) -> QDate {
+        const auto it = std::ranges::find_if(messages, [](const auto &m) {
+            return usercardMessageDay(m).isValid();
+        });
+        return it != std::ranges::end(messages) ? usercardMessageDay(*it)
+                                                : QDate();
     };
-    return fromEnd ? find(snapshot.rbegin(), snapshot.rend())
-                   : find(snapshot.begin(), snapshot.end());
+    return fromEnd ? find(std::views::reverse(snapshot)) : find(snapshot);
 }
 
 /// Adds a new message at the end, with a day separator if the day changed.
@@ -748,9 +743,9 @@ void prependUsercardMessages(const ChannelPtr &channel,
     auto withSeparators = withUsercardDaySeparators(messages);
 
     QDate lastNewDay;
-    for (auto it = messages.rbegin(); it != messages.rend(); ++it)
+    for (const auto &message : std::views::reverse(messages))
     {
-        lastNewDay = usercardMessageDay(*it);
+        lastNewDay = usercardMessageDay(message);
         if (lastNewDay.isValid())
         {
             break;
