@@ -565,6 +565,12 @@ public:
 
     bool isLoadingRecentMessages() const;
 
+    /// Loads a page of messages (see Settings::publicLogsPageSize) older than
+    /// the oldest shown one from the public logs and adds them at the start,
+    /// raising the message limit if they wouldn't fit.
+    /// @return true if a request was started
+    bool loadOlderMessagesFromLogs();
+
     const std::vector<HelixMinimalUser> &getSharedChatSessionParticipants()
         const;
 
@@ -596,6 +602,9 @@ private:
     void refreshCheerEmotes();
     void loadRecentMessages();
     void loadRecentMessagesReconnect();
+    /// Fetches the page before the cursor and keeps going to older days until
+    /// `wanted` messages were added or `pagesLeft` requests were used.
+    void fetchOlderLogPage(int pagesLeft, int wanted);
     void cleanUpReplyThreads();
     void showLoginMessage();
     void showAnonymousReadOnlyMessage();
@@ -734,6 +743,21 @@ private:
     std::optional<std::chrono::time_point<std::chrono::system_clock>>
         lastConnectedAt_{};
     std::atomic_flag loadingRecentMessages_ = ATOMIC_FLAG_INIT;
+
+    /// State of loadOlderMessagesFromLogs
+    struct OlderLogs {
+        bool loading = false;
+        bool exhausted = false;
+        bool daysLoaded = false;
+        /// UTC days that have logs, newest first.
+        std::vector<QDate> days;
+        /// Days from this one on (and newer) are fully loaded.
+        QDate doneFrom;
+        /// Where the next page ends, valid while `anchorId` is still the
+        /// oldest shown message.
+        QDateTime cursor;
+        QString anchorId;
+    } olderLogs_;
     std::unordered_map<QString, std::weak_ptr<MessageThread>> threads_;
 
 protected:
