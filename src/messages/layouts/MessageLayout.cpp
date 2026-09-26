@@ -23,6 +23,10 @@
 #include <QtGlobal>
 #include <QThread>
 
+#include <algorithm>
+#include <optional>
+#include <vector>
+
 namespace chatterino {
 
 namespace {
@@ -396,115 +400,125 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         return ctx.messageColors.regularBg;
     }();
 
-    if (this->message_->flags.has(MessageFlag::FirstMessage) &&
-        ctx.preferences.enableFirstMessageHighlight)
+    // Every highlight that applies, most important first. The first one
+    // colors the background, the next ones can be shown as bands.
+    std::vector<QColor> highlights;
+    const auto addHighlight = [&](const QColor &color) {
+        if (std::ranges::find(highlights, color) == highlights.end())
+        {
+            highlights.push_back(color);
+        }
+    };
+    const auto &flags = this->message_->flags;
+    const auto &prefs = ctx.preferences;
+    // Replaces the background when no highlight applies.
+    std::optional<QColor> replacement;
+
+    if (flags.has(MessageFlag::FirstMessage) &&
+        prefs.enableFirstMessageHighlight)
     {
-        backgroundColor = blendColors(
-            backgroundColor,
+        addHighlight(
             *ctx.colorProvider.color(ColorType::FirstMessageHighlight));
     }
-    else if (this->message_->flags.has(MessageFlag::WatchStreak) &&
-             ctx.preferences.enableWatchStreakHighlight)
+    if (flags.has(MessageFlag::WatchStreak) && prefs.enableWatchStreakHighlight)
     {
-        backgroundColor = blendColors(
-            backgroundColor, *ctx.colorProvider.color(ColorType::WatchStreak));
+        addHighlight(*ctx.colorProvider.color(ColorType::WatchStreak));
     }
-    else if ((this->message_->flags.has(MessageFlag::Highlighted) ||
-              this->message_->flags.has(MessageFlag::HighlightedWhisper)) &&
-             !this->flags.has(MessageLayoutFlag::IgnoreHighlights))
+    if ((flags.has(MessageFlag::Highlighted) ||
+         flags.has(MessageFlag::HighlightedWhisper)) &&
+        !this->flags.has(MessageLayoutFlag::IgnoreHighlights))
     {
         assert(this->message_->highlightColor);
         if (this->message_->highlightColor)
         {
-            backgroundColor =
-                blendColors(backgroundColor, *this->message_->highlightColor);
+            addHighlight(*this->message_->highlightColor);
+        }
+        for (const auto &color : this->message_->extraHighlightColors)
+        {
+            if (color)
+            {
+                addHighlight(*color);
+            }
         }
     }
-    else if (this->message_->flags.has(MessageFlag::Announcement) &&
-             ctx.preferences.enableAnnouncementHighlight)
+    if (flags.has(MessageFlag::Announcement) &&
+        prefs.enableAnnouncementHighlight)
     {
-        backgroundColor = blendColors(
-            backgroundColor,
+        addHighlight(
             *ctx.colorProvider.color(colorTypeFromHelixAnnouncementColor(
                 this->message_->announcementColor,
-                ctx.preferences.enableColoredAnnouncementHighlight)));
+                prefs.enableColoredAnnouncementHighlight)));
     }
-    else if (this->message_->flags.has(MessageFlag::Subscription) &&
-             ctx.preferences.enableSubHighlight)
+    if (flags.has(MessageFlag::Subscription) && prefs.enableSubHighlight)
     {
-        backgroundColor = blendColors(
-            backgroundColor, *ctx.colorProvider.color(ColorType::Subscription));
+        addHighlight(*ctx.colorProvider.color(ColorType::Subscription));
     }
-    else if (this->message_->flags.has(MessageFlag::Follow) &&
-             ctx.preferences.enableFollowHighlight)
+    if (flags.has(MessageFlag::Follow) && prefs.enableFollowHighlight)
     {
-        backgroundColor = blendColors(
-            backgroundColor, *ctx.colorProvider.color(ColorType::Follow));
+        addHighlight(*ctx.colorProvider.color(ColorType::Follow));
     }
-    else if ((this->message_->flags.has(MessageFlag::RedeemedHighlight) ||
-              this->message_->flags.has(
-                  MessageFlag::RedeemedChannelPointReward)) &&
-             ctx.preferences.enableRedeemedHighlight)
+    if ((flags.has(MessageFlag::RedeemedHighlight) ||
+         flags.has(MessageFlag::RedeemedChannelPointReward)) &&
+        prefs.enableRedeemedHighlight)
     {
-        backgroundColor =
-            blendColors(backgroundColor,
-                        *ctx.colorProvider.color(ColorType::RedeemedHighlight));
+        addHighlight(*ctx.colorProvider.color(ColorType::RedeemedHighlight));
     }
-    else if (this->message_->flags.has(MessageFlag::ChatWarning) &&
-             ctx.preferences.enableAutomodHighlight)
+    if (flags.has(MessageFlag::ChatWarning) && prefs.enableAutomodHighlight)
     {
-        backgroundColor =
-            blendColors(backgroundColor,
-                        *ctx.colorProvider.color(ColorType::AutomodHighlight));
+        addHighlight(*ctx.colorProvider.color(ColorType::AutomodHighlight));
     }
-    else if (this->message_->flags.has(MessageFlag::AutoMod) ||
-             this->message_->flags.has(MessageFlag::LowTrustUsers))
+    if (flags.has(MessageFlag::AutoMod) ||
+        flags.has(MessageFlag::LowTrustUsers))
     {
-        if (ctx.preferences.enableAutomodHighlight &&
-            (this->message_->flags.has(MessageFlag::AutoModOffendingMessage) ||
-             this->message_->flags.has(
-                 MessageFlag::AutoModOffendingMessageHeader)))
+        if (prefs.enableAutomodHighlight &&
+            (flags.has(MessageFlag::AutoModOffendingMessage) ||
+             flags.has(MessageFlag::AutoModOffendingMessageHeader)))
         {
-            backgroundColor = blendColors(
-                backgroundColor,
-                *ctx.colorProvider.color(ColorType::AutomodHighlight));
+            addHighlight(*ctx.colorProvider.color(ColorType::AutomodHighlight));
         }
         else
         {
-            backgroundColor = QColor("#404040");
+            replacement = QColor("#404040");
         }
     }
-    else if (this->message_->flags.has(MessageFlag::Debug))
+    else if (flags.has(MessageFlag::Debug))
     {
-        backgroundColor = QColor("#4A273D");
+        replacement = QColor("#4A273D");
     }
-    else if (ctx.preferences.enableClientDetectionHighlight)
+    else
     {
-        switch (this->message_->clientDetection)
+        if (prefs.enableClientDetectionHighlight)
         {
-            case Message::ClientDetectionStatus::Web:
-                backgroundColor = blendColors(
-                    backgroundColor, ctx.preferences.clientDetectionWebColor);
-                break;
-            case Message::ClientDetectionStatus::Android:
-                backgroundColor =
-                    blendColors(backgroundColor,
-                                ctx.preferences.clientDetectionAndroidColor);
-                break;
-            case Message::ClientDetectionStatus::IOS:
-                backgroundColor = blendColors(
-                    backgroundColor, ctx.preferences.clientDetectionIosColor);
-                break;
-            case Message::ClientDetectionStatus::Unknown:
-            case Message::ClientDetectionStatus::Abnormal:
-                break;
+            switch (this->message_->clientDetection)
+            {
+                case Message::ClientDetectionStatus::Web:
+                    addHighlight(prefs.clientDetectionWebColor);
+                    break;
+                case Message::ClientDetectionStatus::Android:
+                    addHighlight(prefs.clientDetectionAndroidColor);
+                    break;
+                case Message::ClientDetectionStatus::IOS:
+                    addHighlight(prefs.clientDetectionIosColor);
+                    break;
+                case Message::ClientDetectionStatus::Unknown:
+                case Message::ClientDetectionStatus::Abnormal:
+                    break;
+            }
+        }
+        if (flags.has(MessageFlag::UncategorizedNotification))
+        {
+            // TODO: Give this a better/its own color :-)
+            addHighlight(*ctx.colorProvider.color(ColorType::Subscription));
         }
     }
-    else if (this->message_->flags.has(MessageFlag::UncategorizedNotification))
+
+    if (!highlights.empty())
     {
-        // TODO: Give this a better/its own color :-)
-        backgroundColor = blendColors(
-            backgroundColor, *ctx.colorProvider.color(ColorType::Subscription));
+        backgroundColor = blendColors(backgroundColor, highlights.front());
+    }
+    else if (replacement)
+    {
+        backgroundColor = *replacement;
     }
 
     if (ctx.tintByPlatform)
@@ -514,6 +528,23 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     }
 
     painter.fillRect(buffer->rect(), backgroundColor);
+
+    if (prefs.multipleHighlightBands && highlights.size() > 1)
+    {
+        // The other highlights as full-color bands at the left edge.
+        constexpr qreal BAND_WIDTH = 3;
+        constexpr qreal BAND_GAP = 1;
+        const auto bands = std::min<size_t>(highlights.size() - 1, 2);
+        for (size_t i = 0; i < bands; ++i)
+        {
+            auto color = highlights[i + 1];
+            color.setAlpha(255);
+            painter.fillRect(
+                QRectF(static_cast<qreal>(i) * (BAND_WIDTH + BAND_GAP), 0,
+                       BAND_WIDTH, this->container_.getHeight()),
+                color);
+        }
+    }
 
     this->container_.paintElements(painter, ctx);
 

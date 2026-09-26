@@ -394,6 +394,9 @@ public:
     BoolSetting alternateMessages = {
         "/appearance/messages/alternateMessageBackground", false};
     BoolSetting channelLinks = {"/appearance/messages/channelLinks", false};
+    /// Show further matching highlights as bands at the left of a message.
+    BoolSetting multipleHighlightBands = {
+        "/appearance/messages/multipleHighlightBands", false};
     BoolSetting wrapLinksAtBreaks = {"/appearance/messages/wrapLinksAtBreaks",
                                      false};
     BoolSetting showTimestampDateTooltip = {
@@ -405,8 +408,9 @@ public:
         "/appearance/tabs/colorHighlightsByMessage",
         false,
     };
-    BoolSetting tabHighlightsUseThemeColor = {
-        "/appearance/tabHighlightsUseThemeColor", false};
+    /// Show a color for each unseen highlight in the tab line (up to five).
+    BoolSetting multiColorTabHighlights = {
+        "/appearance/tabs/multiColorHighlights", false};
     EnumStringSetting<TabStyle> tabStyle = {
         "/appearance/tabStyle",
         TabStyle::Normal,

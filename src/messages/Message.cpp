@@ -139,6 +139,7 @@ std::shared_ptr<Message> Message::clone() const
     cloned->twitchBadgeInfos = this->twitchBadgeInfos;
     cloned->externalBadges = this->externalBadges;
     cloned->highlightColor = this->highlightColor;
+    cloned->extraHighlightColors = this->extraHighlightColors;
     cloned->replyThread = this->replyThread;
     cloned->replyParent = this->replyParent;
     cloned->translatedFrom = this->translatedFrom;

@@ -61,6 +61,7 @@ struct MessagePreferences {
     bool enableAnnouncementHighlight{};
     bool enableColoredAnnouncementHighlight{};
     bool enableClientDetectionHighlight{};
+    bool multipleHighlightBands{};
 
     bool alternateMessages{};
     bool separateMessages{};

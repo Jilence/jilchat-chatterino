@@ -141,11 +141,8 @@ QColor tabColorFill(QColor color, bool selected, bool windowFocused)
     return color;
 }
 
-QColor tabHighlightLineColor(QColor color, bool windowFocused)
-{
-    color.setAlpha(windowFocused ? 230 : 150);
-    return color;
-}
+/// Most colors shown in the tab line.
+constexpr size_t MAX_HIGHLIGHT_LINE_COLORS = 5;
 
 QIcon tabColorIcon(QColor color)
 {
@@ -202,7 +199,7 @@ NotebookTab::NotebookTab(Notebook *notebook)
             this->update();
         },
         this->managedConnections_);
-    getSettings()->tabHighlightsUseThemeColor.connect(
+    getSettings()->multiColorTabHighlights.connect(
         [this](auto, auto) {
             this->update();
         },
@@ -740,6 +737,9 @@ void NotebookTab::removeHighlightSource(
     const ChannelView::ChannelViewID &source)
 {
     this->highlightSources_.erase(source);
+    std::erase_if(this->highlightLineColors_, [&](const auto &entry) {
+        return entry.source == source;
+    });
 }
 
 void NotebookTab::newHighlightSourceAdded(const ChannelView &channelViewSource)
@@ -795,6 +795,7 @@ void NotebookTab::updateHighlightStateDueSourcesChange()
     if (newState != HighlightState::Highlighted)
     {
         newColor.reset();
+        this->highlightLineColors_.clear();
     }
 
     if (this->highlightState_ != newState ||
@@ -817,6 +818,7 @@ void NotebookTab::copyHighlightStateAndSourcesFrom(const NotebookTab *sourceTab)
 
     this->highlightSources_ = sourceTab->highlightSources_;
     this->highlightColor_ = sourceTab->highlightColor_;
+    this->highlightLineColors_ = sourceTab->highlightLineColors_;
     this->lastHighlightSequence_ = sourceTab->lastHighlightSequence_;
 
     if (!this->highlightEnabled_ &&
@@ -866,6 +868,7 @@ void NotebookTab::setSelected(bool value)
     }
 
     this->highlightSources_.clear();
+    this->highlightLineColors_.clear();
     this->highlightColor_.reset();
     this->highlightState_ = HighlightState::None;
     this->highlightColor_.reset();
@@ -936,6 +939,7 @@ void NotebookTab::setHighlightState(HighlightState newHighlightStyle)
 
     bool hadHighlightColor = this->highlightColor_ != nullptr;
     this->highlightSources_.clear();
+    this->highlightLineColors_.clear();
     this->highlightColor_.reset();
 
     if (!this->highlightEnabled_ &&
@@ -991,6 +995,21 @@ void NotebookTab::updateHighlightState(const TabHighlight &highlight,
     switch (newHighlightStyle)
     {
         case HighlightState::Highlighted:
+            if (highlight.color)
+            {
+                // Oldest first. When full, the oldest one makes room so the
+                // newest is always at the end.
+                if (this->highlightLineColors_.size() >=
+                    MAX_HIGHLIGHT_LINE_COLORS)
+                {
+                    this->highlightLineColors_.erase(
+                        this->highlightLineColors_.begin());
+                }
+                this->highlightLineColors_.push_back({
+                    .source = channelViewId,
+                    .color = highlight.color,
+                });
+            }
             // override lower states
             this->highlightSources_.insert_or_assign(
                 channelViewId, HighlightSource{
@@ -1175,15 +1194,7 @@ void NotebookTab::paintEvent(QPaintEvent *)
     auto lineColor = this->mouseOver_ ? colors.line.hover
                                       : (windowFocused ? colors.line.regular
                                                        : colors.line.unfocused);
-    if (!getSettings()->tabHighlightsUseThemeColor &&
-        this->highlightState_ == HighlightState::Highlighted &&
-        getSettings()->colorTabHighlightsByMessage && this->highlightColor_)
-    {
-        lineColor = tabHighlightLineColor(*this->highlightColor_,
-                                          windowFocused || this->mouseOver_);
-    }
-
-    if (!getSettings()->tabHighlightsUseThemeColor &&
+    if (getSettings()->colorTabHighlightsByMessage &&
         this->highlightState_ == HighlightState::Highlighted &&
         this->highlightColor_ != nullptr && this->highlightColor_->isValid())
     {
@@ -1212,7 +1223,51 @@ void NotebookTab::paintEvent(QPaintEvent *)
             break;
     }
 
-    painter.fillRect(lineRect, lineColor);
+    std::vector<QColor> lineColors;
+    if (getSettings()->colorTabHighlightsByMessage &&
+        getSettings()->multiColorTabHighlights &&
+        this->highlightState_ == HighlightState::Highlighted)
+    {
+        for (const auto &entry : this->highlightLineColors_)
+        {
+            if (entry.color && entry.color->isValid())
+            {
+                lineColors.push_back(
+                    makeTabHighlightLineColor(*entry.color, windowFocused));
+            }
+        }
+    }
+
+    if (lineColors.size() > 1)
+    {
+        // One part per highlight, oldest at the start.
+        const bool horizontal =
+            this->tabLocation_ == NotebookTabLocation::Top ||
+            this->tabLocation_ == NotebookTabLocation::Bottom;
+        const auto length = horizontal ? lineRect.width() : lineRect.height();
+        const auto count = static_cast<int>(lineColors.size());
+        for (int i = 0; i < count; ++i)
+        {
+            const auto start = length * i / count;
+            const auto end = length * (i + 1) / count;
+            auto part = lineRect;
+            if (horizontal)
+            {
+                part.setLeft(lineRect.left() + start);
+                part.setWidth(end - start);
+            }
+            else
+            {
+                part.setTop(lineRect.top() + start);
+                part.setHeight(end - start);
+            }
+            painter.fillRect(part, lineColors[static_cast<size_t>(i)]);
+        }
+    }
+    else
+    {
+        painter.fillRect(lineRect, lineColor);
+    }
 
     // draw live indicator
     if ((this->isLive_ || this->isRerun_) && getSettings()->showTabLive)

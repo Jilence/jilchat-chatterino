@@ -19,6 +19,8 @@
 #include "providers/twitch/TwitchBadge.hpp"
 #include "singletons/Settings.hpp"
 
+#include <algorithm>
+
 namespace {
 
 using namespace chatterino;
@@ -589,6 +591,17 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 {
                     result.color = checkResult->color;
                 }
+                // Colors can change later, so same colors are only skipped
+                // when painting.
+                else if (result.extraColors.size() <
+                             HighlightResult::MAX_EXTRA_COLORS &&
+                         checkResult->color != result.color &&
+                         std::ranges::find(result.extraColors,
+                                           checkResult->color) ==
+                             result.extraColors.end())
+                {
+                    result.extraColors.push_back(checkResult->color);
+                }
             }
 
             if (checkResult->showInMentions)
@@ -599,7 +612,8 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 }
             }
 
-            if (result.full())
+            if (result.full() &&
+                result.extraColors.size() >= HighlightResult::MAX_EXTRA_COLORS)
             {
                 break;
             }

@@ -226,6 +226,7 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
         settings.showTimestampDateTooltip);
     this->forceLayoutChannelViewsListener.add(settings.collpseMessagesMinLines);
     this->forceLayoutChannelViewsListener.add(settings.enableRedeemedHighlight);
+    this->forceLayoutChannelViewsListener.add(settings.multipleHighlightBands);
     this->forceLayoutChannelViewsListener.add(
         settings.showPinButtonOnModeratorsMode);
     this->forceLayoutChannelViewsListener.add(settings.showSelfDeleteButton);

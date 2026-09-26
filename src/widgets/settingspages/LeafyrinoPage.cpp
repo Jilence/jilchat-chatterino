@@ -227,7 +227,28 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                             s.colorTabHighlightsByMessage)
         ->setTooltip("When a message highlights a tab, use that highlight "
                      "color for the tab alert line.")
-        ->addKeywords({"tab", "alert", "highlight", "color"})
+        // Also found when searching for the option below it.
+        ->addKeywords({"tab", "alert", "highlight", "color",
+                       "Show a color for each unseen highlight"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show a color for each unseen highlight",
+                            s.multiColorTabHighlights)
+        ->conditionallyEnabledBy(s.colorTabHighlightsByMessage)
+        ->setTooltip("With several unseen highlights in a tab, split the tab "
+                     "alert line into their colors, up to five, oldest on the "
+                     "left. When disabled, the line shows the newest "
+                     "highlight's color.")
+        ->addKeywords({"tab", "alert", "highlight", "color", "multiple",
+                       "Use message colors for tab alerts"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show a band for each matching highlight",
+                            s.multipleHighlightBands)
+        ->setTooltip("When a message matches more than one highlight, keep "
+                     "the first one as the background and show up to two "
+                     "more as full-color bands at the left edge. This "
+                     "includes highlights like channel point redemptions, "
+                     "first messages and subscriptions.")
+        ->addKeywords({"highlight", "multiple", "band", "color", "stripe"})
         ->addTo(layout);
     SettingWidget::checkbox("Wrap links at breaks", s.wrapLinksAtBreaks)
         ->setTooltip("Let URLs wrap at /, ?, &, #, and = instead of staying "
