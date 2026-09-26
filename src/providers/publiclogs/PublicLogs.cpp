@@ -140,7 +140,7 @@ private:
         this->pump();
     }
 
-    void send(std::shared_ptr<Request> request)
+    void send(const std::shared_ptr<Request> &request)
     {
         const QPointer<RequestQueue> self(this);
         NetworkRequest(request->url)
@@ -209,8 +209,8 @@ QUrl listUrl(const QString &channel, const QString &user)
     return makeUrl(u"/list"_s, {{u"channel"_s, channel}, {u"user"_s, user}});
 }
 
-QUrl userMonthUrl(const QString &channel, const QString &user,
-                  const LogDate &month, int limit, int offset)
+QUrl userMonthUrl(const QString &channel, const QString &user, LogDate month,
+                  int limit, int offset)
 {
     const auto path = u"/channel/%1/user/%2/%3/%4"_s.arg(
         encode(channel), encode(user), QString::number(month.year),
@@ -227,7 +227,7 @@ QUrl userMonthUrl(const QString &channel, const QString &user,
                          });
 }
 
-QUrl channelDayUrl(const QString &channel, const LogDate &day)
+QUrl channelDayUrl(const QString &channel, LogDate day)
 {
     return makeUrl(u"/channel/%1/%2/%3/%4"_s.arg(
                        encode(channel), QString::number(day.year),
@@ -250,9 +250,10 @@ QUrl channelRangeUrl(const QString &channel, const QDateTime &from,
 
 std::vector<LogDate> parseLogDates(const NetworkResult &result)
 {
+    const auto logs = result.parseJson().value("availableLogs").toArray();
     std::vector<LogDate> dates;
-    for (const auto &value :
-         result.parseJson().value("availableLogs").toArray())
+    dates.reserve(logs.size());
+    for (const auto &value : logs)
     {
         const auto obj = value.toObject();
         const LogDate date{
@@ -313,7 +314,7 @@ std::vector<MessagePtr> buildMessages(
     return std::move(sink).takeMessages();
 }
 
-MessagePtr makeDaySeparator(const QDate &day)
+MessagePtr makeDaySeparator(QDate day)
 {
     return makeSystemMessage(QLocale().toString(day, QLocale::LongFormat),
                              QTime(0, 0));

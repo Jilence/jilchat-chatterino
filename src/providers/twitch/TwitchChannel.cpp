@@ -3397,7 +3397,7 @@ bool TwitchChannel::loadOlderMessagesFromLogs()
 void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
 {
     auto &state = this->olderLogs_;
-    const auto notDone = [&](const QDate &day) {
+    const auto notDone = [&](QDate day) {
         return !state.doneFrom.isValid() || day < state.doneFrom;
     };
 
@@ -3413,7 +3413,7 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
     }
     else if (const auto it = std::ranges::find_if(
                  state.days,
-                 [&](const QDate &listed) {
+                 [&](QDate listed) {
                      return listed <= cursorDay && notDone(listed);
                  });
              it != state.days.end())

@@ -44,10 +44,10 @@ struct LogDate {
 QUrl listUrl(const QString &channel, const QString &user = {});
 /// The messages of a user in a channel in one month. With a `limit`, one page
 /// of them, newest first, starting `offset` messages from the newest.
-QUrl userMonthUrl(const QString &channel, const QString &user,
-                  const LogDate &month, int limit = 0, int offset = 0);
+QUrl userMonthUrl(const QString &channel, const QString &user, LogDate month,
+                  int limit = 0, int offset = 0);
 /// All messages in a channel on one day.
-QUrl channelDayUrl(const QString &channel, const LogDate &day);
+QUrl channelDayUrl(const QString &channel, LogDate day);
 /// Up to `limit` messages in a channel between `from` and `to`, newest first.
 QUrl channelRangeUrl(const QString &channel, const QDateTime &from,
                      const QDateTime &to, int limit);
@@ -65,7 +65,7 @@ std::vector<MessagePtr> buildMessages(
     const std::function<bool(const QJsonObject &)> &accept = {});
 
 /// A day separator like the ones between the recent messages.
-MessagePtr makeDaySeparator(const QDate &day);
+MessagePtr makeDaySeparator(QDate day);
 
 /// Sends a request to logs.zonian.dev. The requests of the whole app share a
 /// client-side rate limit matching the service (which answers HTTP 429 when
