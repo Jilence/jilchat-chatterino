@@ -986,8 +986,9 @@ MoltorinoPage::MoltorinoPage()
         ->addTo(*view);
     SettingWidget::checkbox("Show load more messages button",
                             s.showUsercardLoadMoreMessagesButton)
-        ->setTooltip("Show a usercard button for loading older messages when "
-                     "your saved Leafyrino login can moderate the channel.")
+        ->setTooltip("Show a usercard button for loading older messages: from "
+                     "the Twitch mod history in channels your saved Leafyrino "
+                     "login can moderate, otherwise from the public logs.")
         ->addTo(*view);
     SettingWidget::checkbox("Always load more messages when possible",
                             s.alwaysLoadMoreUsercardMessages)

@@ -83,6 +83,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QList>
+#include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMetaEnum>
@@ -108,6 +109,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <ranges>
 #include <utility>
 
 namespace {
@@ -648,6 +650,118 @@ bool messageHasTwitchBadge(const Message &message, QStringView badge)
     return false;
 }
 
+/// Prefix of the ids of day separators shown between usercard messages.
+constexpr QStringView USERCARD_DAY_SEPARATOR_ID = u"usercard-day-separator:";
+
+/// The local day a usercard message was sent on, or an invalid date for day
+/// separators and messages without a timestamp.
+QDate usercardMessageDay(const MessagePtr &message)
+{
+    if (message == nullptr || !message->serverReceivedTime.isValid() ||
+        message->id.startsWith(USERCARD_DAY_SEPARATOR_ID))
+    {
+        return {};
+    }
+    return message->serverReceivedTime.toLocalTime().date();
+}
+
+MessagePtr makeUsercardDaySeparator(QDate day)
+{
+    const auto text = QLocale().toString(day, QLocale::LongFormat);
+
+    MessageBuilder builder;
+    builder->id =
+        USERCARD_DAY_SEPARATOR_ID.toString() + day.toString(Qt::ISODate);
+    builder->flags.set(MessageFlag::System, MessageFlag::DoNotLog,
+                       MessageFlag::DoNotTriggerNotification);
+    builder->messageText = text;
+    builder->searchText = text;
+    builder.emplace<TextElement>(text, MessageElementFlag::Text,
+                                 MessageColor::System);
+    return builder.release();
+}
+
+/// Returns `messages` (oldest first) with a day separator in front of every
+/// message that starts a new day. `previousDay` is the day of the message
+/// shown right before them, if any.
+std::vector<MessagePtr> withUsercardDaySeparators(
+    const std::vector<MessagePtr> &messages, QDate previousDay = {})
+{
+    std::vector<MessagePtr> result;
+    result.reserve(messages.size());
+    for (const auto &message : messages)
+    {
+        const auto day = usercardMessageDay(message);
+        if (day.isValid())
+        {
+            if (previousDay.isValid() && day != previousDay)
+            {
+                result.push_back(makeUsercardDaySeparator(day));
+            }
+            previousDay = day;
+        }
+        result.push_back(message);
+    }
+    return result;
+}
+
+/// The day of the first (`fromEnd == false`) or last message in `channel`.
+QDate usercardEdgeDay(const ChannelPtr &channel, bool fromEnd)
+{
+    if (!channel)
+    {
+        return {};
+    }
+    const auto snapshot = channel->getMessageSnapshot();
+    const auto find = [](const auto &messages) -> QDate {
+        const auto it = std::ranges::find_if(messages, [](const auto &m) {
+            return usercardMessageDay(m).isValid();
+        });
+        return it != std::ranges::end(messages) ? usercardMessageDay(*it)
+                                                : QDate();
+    };
+    return fromEnd ? find(std::views::reverse(snapshot)) : find(snapshot);
+}
+
+/// Adds a new message at the end, with a day separator if the day changed.
+void appendUsercardMessage(const ChannelPtr &channel, const MessagePtr &message)
+{
+    const auto day = usercardMessageDay(message);
+    const auto lastDay = usercardEdgeDay(channel, true);
+    if (day.isValid() && lastDay.isValid() && day != lastDay)
+    {
+        channel->addMessage(makeUsercardDaySeparator(day),
+                            MessageContext::Repost);
+    }
+    channel->addMessage(message, MessageContext::Repost);
+}
+
+/// Adds older messages (oldest first) in front of the existing ones, with day
+/// separators between days, including towards the first existing message.
+void prependUsercardMessages(const ChannelPtr &channel,
+                             const std::vector<MessagePtr> &messages)
+{
+    auto withSeparators = withUsercardDaySeparators(messages);
+
+    QDate lastNewDay;
+    for (const auto &message : std::views::reverse(messages))
+    {
+        lastNewDay = usercardMessageDay(message);
+        if (lastNewDay.isValid())
+        {
+            break;
+        }
+    }
+    const auto firstExistingDay = usercardEdgeDay(channel, false);
+    if (lastNewDay.isValid() && firstExistingDay.isValid() &&
+        lastNewDay != firstExistingDay)
+    {
+        withSeparators.push_back(makeUsercardDaySeparator(firstExistingDay));
+    }
+
+    channel->addMessagesAtStart(withSeparators);
+}
+
 ChannelPtr filterMessages(const QString &userName, ChannelPtr channel)
 {
     std::vector<MessagePtr> snapshot = channel->getMessageSnapshot();
@@ -663,12 +777,17 @@ ChannelPtr filterMessages(const QString &userName, ChannelPtr channel)
             std::make_shared<Channel>(channel->getName(), Channel::Type::None);
     }
 
+    std::vector<MessagePtr> matching;
     for (const auto &message : snapshot)
     {
         if (checkMessageUserName(userName, message))
         {
-            channelPtr->addMessage(message, MessageContext::Repost);
+            matching.push_back(message);
         }
+    }
+    for (const auto &message : withUsercardDaySeparators(matching))
+    {
+        channelPtr->addMessage(message, MessageContext::Repost);
     }
 
     return channelPtr;
@@ -1788,7 +1907,8 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         auto loadMore =
             new LabelButton("Load more messages", this, QSize{8, 2});
         loadMore->setVisible(false);
-        loadMore->setToolTip("Load older messages from Twitch mod logs");
+        loadMore->setToolTip(
+            "Load older messages (Twitch mod logs or public logs)");
         this->ui_.loadMoreMessages = loadMore;
 
         QObject::connect(loadMore, &Button::leftClicked, this, [this] {
@@ -2700,8 +2820,8 @@ void UserInfoPopup::updateLatestMessages()
                     if (this->usercardMessagesChannel_ &&
                         this->usercardMessagesChannel_->hasMessages())
                     {
-                        this->usercardMessagesChannel_->addMessage(
-                            message, MessageContext::Repost);
+                        appendUsercardMessage(this->usercardMessagesChannel_,
+                                              message);
                         this->updateUsercardMessagesVisibility();
                     }
                     else
@@ -2751,12 +2871,18 @@ void UserInfoPopup::resetUsercardMessageLoader()
     this->usercardMessagesLazyLoadEnabled_ =
         getSettings()->alwaysLoadMoreUsercardMessages;
     this->usercardMessagesChannel_.reset();
+    this->usercardLogMonths_.clear();
+    this->usercardLogMonthIndex_ = 0;
+    this->usercardLogOffset_ = 0;
+    this->usercardLogMonthsLoaded_ = false;
+    this->usercardLogNoticeShown_ = false;
     this->updateLoadMoreMessagesButton();
 }
 
 bool UserInfoPopup::canLoadMoreUsercardMessages() const
 {
-    if (this->isKick_ || this->userName_.isEmpty() || this->userId_.isEmpty() ||
+    if (!getSettings()->loadOlderUsercardMessages || this->isKick_ ||
+        this->userName_.isEmpty() || this->userId_.isEmpty() ||
         !this->underlyingChannel_)
     {
         return false;
@@ -2771,12 +2897,13 @@ bool UserInfoPopup::canLoadMoreUsercardMessages() const
 
     const auto auth = MoltorinoAuth::resolveModerationToken(
         twitchChannel->roomId(), twitchChannel->getName());
-    if (!auth.hasToken())
+    if (auth.hasToken() && (!auth.legacy || twitchChannel->hasModRights()))
     {
-        return false;
+        return true;
     }
 
-    return !auth.legacy || twitchChannel->hasModRights();
+    // Without moderator access we can fall back to the public logs.
+    return getSettings()->loadOlderMessagesFromPublicLogs;
 }
 
 void UserInfoPopup::updateLoadMoreMessagesButton()
@@ -2797,14 +2924,15 @@ void UserInfoPopup::updateLoadMoreMessagesButton()
     if (this->usercardMessagesLoading_)
     {
         button->setText("Loading messages...");
-        button->setToolTip("Loading older messages from Twitch mod logs");
+        button->setToolTip("Loading older messages");
     }
     else
     {
         button->setText("Load more messages");
-        button->setToolTip(this->usercardMessagesError_.isEmpty()
-                               ? "Load older messages from Twitch mod logs"
-                               : "Couldn't load messages. Try again.");
+        button->setToolTip(
+            this->usercardMessagesError_.isEmpty()
+                ? "Load older messages (Twitch mod logs or public logs)"
+                : "Couldn't load messages. Try again.");
     }
 }
 
@@ -2877,15 +3005,17 @@ void UserInfoPopup::fetchMoreUsercardMessages(int emptyPageSkipsLeft,
         return;
     }
 
-    QString authError;
     const auto auth = MoltorinoAuth::resolveModerationToken(
-        twitchChannel->roomId(), twitchChannel->getName(), &authError);
+        twitchChannel->roomId(), twitchChannel->getName());
     if (!auth.hasToken() || (auth.legacy && !twitchChannel->hasModRights()))
     {
-        this->usercardMessagesError_ =
-            authError.isEmpty()
-                ? QStringLiteral("No saved Leafyrino moderator login found.")
-                : authError;
+        // The Twitch mod logs need moderator access; use the public logs.
+        if (getSettings()->loadOlderMessagesFromPublicLogs)
+        {
+            this->fetchMoreUsercardLogMessages(emptyPageSkipsLeft,
+                                               enableLazyLoadOnSuccess);
+            return;
+        }
         this->usercardMessagesLazyLoadEnabled_ = false;
         this->usercardMessagesLoading_ = false;
         this->updateUsercardMessagesVisibility();
@@ -2917,15 +3047,7 @@ void UserInfoPopup::fetchMoreUsercardMessages(int emptyPageSkipsLeft,
             self->usercardMessagesHasNextPage_ =
                 page.hasNextPage && !page.nextCursor.isEmpty();
 
-            if (!self->usercardMessagesChannel_)
-            {
-                self->usercardMessagesChannel_ =
-                    std::make_shared<TwitchChannel>(channelName);
-                self->ui_.latestMessages->setChannel(
-                    self->usercardMessagesChannel_);
-                self->ui_.latestMessages->setSourceChannel(
-                    self->underlyingChannel_);
-            }
+            self->ensureUsercardMessagesChannel(channelName);
 
             std::vector<MessagePtr> messages;
             messages.reserve(static_cast<size_t>(page.messages.size()));
@@ -2952,7 +3074,8 @@ void UserInfoPopup::fetchMoreUsercardMessages(int emptyPageSkipsLeft,
 
             if (!messages.empty())
             {
-                self->usercardMessagesChannel_->addMessagesAtStart(messages);
+                prependUsercardMessages(self->usercardMessagesChannel_,
+                                        messages);
                 if (enableLazyLoadOnSuccess)
                 {
                     self->usercardMessagesLazyLoadEnabled_ = true;
@@ -2992,6 +3115,212 @@ void UserInfoPopup::fetchMoreUsercardMessages(int emptyPageSkipsLeft,
             self->usercardMessagesLoading_ = false;
             self->updateUsercardMessagesVisibility();
         });
+}
+
+void UserInfoPopup::ensureUsercardMessagesChannel(const QString &channelName)
+{
+    if (this->usercardMessagesChannel_)
+    {
+        return;
+    }
+
+    this->usercardMessagesChannel_ =
+        std::make_shared<TwitchChannel>(channelName);
+    this->ui_.latestMessages->setChannel(this->usercardMessagesChannel_);
+    this->ui_.latestMessages->setSourceChannel(this->underlyingChannel_);
+}
+
+void UserInfoPopup::showUsercardLogNotice(const QString &channelName,
+                                          const QString &text)
+{
+    if (this->usercardLogNoticeShown_)
+    {
+        return;
+    }
+    this->usercardLogNoticeShown_ = true;
+    this->ensureUsercardMessagesChannel(channelName);
+
+    // No timestamp: it's about the logs, not a message from some point in time.
+    MessageBuilder builder;
+    builder->flags.set(MessageFlag::System, MessageFlag::DoNotLog,
+                       MessageFlag::DoNotTriggerNotification);
+    builder->messageText = text;
+    builder->searchText = text;
+    builder.emplace<TextElement>(text, MessageElementFlag::Text,
+                                 MessageColor::System);
+    this->usercardMessagesChannel_->addMessagesAtStart(
+        std::vector<MessagePtr>{builder.release()});
+}
+
+void UserInfoPopup::fetchMoreUsercardLogMessages(int emptyPageSkipsLeft,
+                                                 bool enableLazyLoadOnSuccess)
+{
+    auto *twitchChannel =
+        dynamic_cast<TwitchChannel *>(this->underlyingChannel_.get());
+    if (twitchChannel == nullptr)
+    {
+        this->usercardMessagesLazyLoadEnabled_ = false;
+        this->usercardMessagesLoading_ = false;
+        this->updateUsercardMessagesVisibility();
+        return;
+    }
+
+    const auto generation = this->usercardMessagesRequestGeneration_;
+    const auto channelName = twitchChannel->getName();
+    const auto userName = this->userName_.toLower();
+    const QPointer<UserInfoPopup> self(this);
+
+    // publiclogs::get only calls back while this is still the current load.
+    const auto isCurrent = [self, generation] {
+        return self && generation == self->usercardMessagesRequestGeneration_;
+    };
+    const auto noLogsNotice =
+        u"No public logs for this user in this channel (not logged or opted "
+        u"out)."_s;
+    const auto finish = [self, channelName](const QString &error) {
+        if (!error.isEmpty())
+        {
+            qCWarning(chatterinoWidget)
+                << "Failed to load usercard logs:" << error;
+            self->usercardMessagesLazyLoadEnabled_ = false;
+            self->showUsercardLogNotice(
+                channelName, u"Couldn't load the public logs: %1"_s.arg(error));
+        }
+        self->usercardMessagesError_ = error;
+        self->usercardMessagesLoading_ = false;
+        self->updateUsercardMessagesVisibility();
+    };
+
+    // Step 1: ask which months have logs for this user in this channel.
+    if (!this->usercardLogMonthsLoaded_)
+    {
+        publiclogs::get(
+            publiclogs::listUrl(channelName, userName), 15000,
+            [self, finish, channelName, noLogsNotice, emptyPageSkipsLeft,
+             enableLazyLoadOnSuccess](const NetworkResult &result) {
+                self->usercardLogMonths_ = publiclogs::parseLogDates(result);
+                self->usercardLogMonthIndex_ = 0;
+                self->usercardLogOffset_ = 0;
+                self->usercardLogMonthsLoaded_ = true;
+                self->usercardMessagesHasNextPage_ =
+                    !self->usercardLogMonths_.empty();
+                if (self->usercardLogMonths_.empty())
+                {
+                    self->showUsercardLogNotice(channelName, noLogsNotice);
+                    finish({});
+                    return;
+                }
+                self->fetchMoreUsercardLogMessages(emptyPageSkipsLeft,
+                                                   enableLazyLoadOnSuccess);
+            },
+            [self, finish, channelName,
+             noLogsNotice](const NetworkResult &result) {
+                // 404: nobody logged this user in this channel, or the user
+                // opted out of logging.
+                if (result.status() == 404)
+                {
+                    self->usercardLogMonthsLoaded_ = true;
+                    self->usercardMessagesHasNextPage_ = false;
+                    self->showUsercardLogNotice(channelName, noLogsNotice);
+                    finish({});
+                    return;
+                }
+                finish(result.formatError());
+            },
+            isCurrent);
+        return;
+    }
+
+    if (this->usercardLogMonthIndex_ >= this->usercardLogMonths_.size())
+    {
+        this->usercardMessagesHasNextPage_ = false;
+        finish({});
+        return;
+    }
+
+    // Step 2: load the next (older) page of the current month. The logs are
+    // paged newest first so a click only waits for one small request.
+    const int pageSize = std::clamp(
+        getSettings()->usercardOlderMessagesPageSize.getValue(), 10, 100);
+    const auto url = publiclogs::userMonthUrl(
+        channelName, userName,
+        this->usercardLogMonths_[this->usercardLogMonthIndex_], pageSize,
+        this->usercardLogOffset_);
+    const auto oldestLoadedMessage =
+        oldestUsercardMessageTime(this->usercardMessagesChannel_);
+
+    publiclogs::get(
+        url, 20000,
+        [self, finish, channelName, emptyPageSkipsLeft, enableLazyLoadOnSuccess,
+         oldestLoadedMessage, pageSize](const NetworkResult &result) {
+            const auto logs = publiclogs::parseLogLines(result);
+
+            // A short page means this month is exhausted.
+            if (logs.size() < pageSize)
+            {
+                ++self->usercardLogMonthIndex_;
+                self->usercardLogOffset_ = 0;
+            }
+            else
+            {
+                self->usercardLogOffset_ += static_cast<int>(logs.size());
+            }
+            self->usercardMessagesHasNextPage_ =
+                self->usercardLogMonthIndex_ < self->usercardLogMonths_.size();
+            self->ensureUsercardMessagesChannel(channelName);
+
+            // Built like chat messages, so ignored/blocked users stay hidden.
+            // Skips what the usercard already shows.
+            std::vector<MessagePtr> messages;
+            if (auto *renderChannel = dynamic_cast<TwitchChannel *>(
+                    self->underlyingChannel_.get()))
+            {
+                messages = publiclogs::buildMessages(
+                    logs, renderChannel, true, [&](const QJsonObject &line) {
+                        const auto sentAt = parseIvrTimestamp(
+                            line.value("timestamp").toString());
+                        return !(oldestLoadedMessage.isValid() &&
+                                 sentAt.isValid() &&
+                                 sentAt >= oldestLoadedMessage) &&
+                               !self->usercardMessagesChannel_->findMessageByID(
+                                   line.value("id").toString());
+                    });
+            }
+
+            if (!messages.empty())
+            {
+                prependUsercardMessages(self->usercardMessagesChannel_,
+                                        messages);
+                if (enableLazyLoadOnSuccess)
+                {
+                    self->usercardMessagesLazyLoadEnabled_ = true;
+                }
+                finish({});
+                QTimer::singleShot(0, self.data(), [self] {
+                    if (self)
+                    {
+                        self->maybeLoadMoreUsercardMessagesFromScroll();
+                    }
+                });
+                return;
+            }
+
+            // Pages that only held already shown messages don't count as
+            // empty, so we don't give up while catching up with the chat.
+            const auto skipsLeft =
+                logs.isEmpty() ? emptyPageSkipsLeft - 1 : emptyPageSkipsLeft;
+            if (self->usercardMessagesHasNextPage_ && skipsLeft >= 0)
+            {
+                self->fetchMoreUsercardLogMessages(skipsLeft,
+                                                   enableLazyLoadOnSuccess);
+                return;
+            }
+            finish({});
+        },
+        [finish](const NetworkResult &result) {
+            finish(result.formatError());
+        },
+        isCurrent);
 }
 
 void UserInfoPopup::updateUserData()
