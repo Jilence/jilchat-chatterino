@@ -670,7 +670,8 @@ MessagePtr makeUsercardDaySeparator(QDate day)
     const auto text = QLocale().toString(day, QLocale::LongFormat);
 
     MessageBuilder builder;
-    builder->id = USERCARD_DAY_SEPARATOR_ID + day.toString(Qt::ISODate);
+    builder->id =
+        USERCARD_DAY_SEPARATOR_ID.toString() + day.toString(Qt::ISODate);
     builder->flags.set(MessageFlag::System, MessageFlag::DoNotLog,
                        MessageFlag::DoNotTriggerNotification);
     builder->messageText = text;
