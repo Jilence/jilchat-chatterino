@@ -28,6 +28,11 @@ public:
     void addHighlight(ScrollbarHighlight highlight);
     void addHighlightsAtStart(
         const std::vector<ScrollbarHighlight> &highlights_);
+
+    /// Changes how many highlights are kept. When shrinking, the oldest
+    /// highlights are removed, matching the messages removed from the start.
+    void setHighlightCapacity(size_t capacity);
+    size_t highlightCapacity() const;
     void replaceHighlight(size_t index, ScrollbarHighlight replacement);
 
     void clearHighlights();

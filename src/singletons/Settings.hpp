@@ -1067,7 +1067,12 @@ public:
         "/misc/hideModActionsOnModUsercards", true};
     BoolSetting showModActionsOnModUsercardsAsLeadMod = {
         "/usercard/showModActionsOnModUsercardsAsLeadMod", false};
+    /// Messages loaded per request at the top of the chat (10-100).
+    IntSetting publicLogsPageSize = {"/misc/publicLogs/pageSize", 100};
     BoolSetting hideEmojiButton = {"/misc/hideEmojiButton", false};
+    /// Use the public logs from logs.zonian.dev for older messages.
+    BoolSetting loadOlderMessagesFromPublicLogs = {
+        "/misc/publicLogs/loadOlderMessages", true};
     BoolSetting showTitleInLiveMessage = {
         "/extraChannels/live/showTitle",
         false,

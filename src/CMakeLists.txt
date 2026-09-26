@@ -535,6 +535,9 @@ set(SOURCE_FILES
         providers/pronouns/alejo/PronounsAlejoApi.cpp
         providers/pronouns/alejo/PronounsAlejoApi.hpp
 
+        providers/publiclogs/PublicLogs.cpp
+        providers/publiclogs/PublicLogs.hpp
+
         providers/recentmessages/Api.cpp
         providers/recentmessages/Api.hpp
         providers/recentmessages/Impl.cpp

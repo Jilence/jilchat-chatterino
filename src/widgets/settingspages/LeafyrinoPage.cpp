@@ -141,6 +141,16 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "the display name. Hovering always shows the handle.")
         ->addTo(layout);
 
+    layout.addTitle("Public logs");
+    layout.addDescription("Older messages from logs.zonian.dev, the logs "
+                          "behind tv.supa.sh.");
+    SettingWidget::checkbox("Use public logs",
+                            s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("Load older messages from logs.zonian.dev. This sends "
+                     "channel names and usernames to that service.")
+        ->addKeywords({"logs", "zonian", "supa", "history", "older", "public"})
+        ->addTo(layout);
+
     layout.addTitle("Usercard");
     layout.addDescription("Choose which extra details appear on usercards.");
 
@@ -220,6 +230,20 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::checkbox("Show 0 mps", s.showSplitMpsWhenZero)
         ->conditionallyEnabledBy(s.showSplitMps)
+        ->addTo(layout);
+
+    layout.addTitle("Chat history");
+    SettingWidget::intInput("Messages per load", s.publicLogsPageSize,
+                            {
+                                .min = 10,
+                                .max = 100,
+                                .singleStep = 10,
+                            })
+        ->conditionallyEnabledBy(s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("How many older messages are loaded from the public "
+                     "logs each time you scroll to the top of a chat.")
+        ->addKeywords({"logs", "zonian", "scroll", "page", "count", "messages",
+                       "chat", "history", "older", "public"})
         ->addTo(layout);
 
     layout.addTitle("Miscellaneous");

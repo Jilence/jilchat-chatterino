@@ -34,6 +34,7 @@
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
+#include "providers/publiclogs/PublicLogs.hpp"
 #include "providers/recentmessages/Api.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
@@ -66,6 +67,7 @@
 #include <QStringBuilder>
 #include <QThread>
 #include <QTimer>
+#include <QTimeZone>
 #include <rapidjson/document.h>
 
 #include <algorithm>
@@ -3303,6 +3305,284 @@ void TwitchChannel::loadRecentMessages()
         },
         getSettings()->twitchMessageHistoryLimit.getValue(), std::nullopt,
         std::nullopt, false);
+}
+
+bool TwitchChannel::loadOlderMessagesFromLogs()
+{
+    auto &state = this->olderLogs_;
+    // Wait for the recent messages so both don't add at the start at once.
+    if (!getSettings()->loadOlderMessagesFromPublicLogs || state.loading ||
+        this->isLoadingRecentMessages())
+    {
+        return false;
+    }
+
+    // Page back from the oldest shown message, or from now if there is none.
+    // When it isn't the one we stopped at (the loaded history was dropped
+    // again, e.g. after scrolling back down), start over from there.
+    MessagePtr oldestShown;
+    for (const auto &message : this->getMessageSnapshot())
+    {
+        if (message->serverReceivedTime.isValid() && !message->id.isEmpty())
+        {
+            oldestShown = message;
+            break;
+        }
+    }
+    const auto anchorId = oldestShown ? oldestShown->id : QString();
+    if (anchorId != state.anchorId || !state.cursor.isValid())
+    {
+        state.anchorId = anchorId;
+        state.cursor = oldestShown ? oldestShown->serverReceivedTime.toUTC()
+                                   : QDateTime::currentDateTimeUtc();
+        state.doneFrom = {};
+        state.exhausted = false;
+    }
+    if (state.exhausted)
+    {
+        return false;
+    }
+
+    state.loading = true;
+    const auto pageSize =
+        std::clamp(getSettings()->publicLogsPageSize.getValue(), 10, 100);
+    if (state.daysLoaded)
+    {
+        this->fetchOlderLogPage(10, pageSize);
+        return true;
+    }
+
+    const auto weak = this->weak_from_this();
+    publiclogs::get(
+        publiclogs::listUrl(this->getName()), 15000,
+        [weak, pageSize](const NetworkResult &result) {
+            auto shared = std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+            if (!shared)
+            {
+                return;
+            }
+            shared->olderLogs_.days.clear();
+            for (const auto &date : publiclogs::parseLogDates(result))
+            {
+                shared->olderLogs_.days.push_back(date.firstDay());
+            }
+            shared->olderLogs_.daysLoaded = true;
+            shared->fetchOlderLogPage(10, pageSize);
+        },
+        [weak](const NetworkResult &result) {
+            auto shared = std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+            if (!shared)
+            {
+                return;
+            }
+            // 404: this channel isn't logged.
+            if (result.status() == 404)
+            {
+                shared->olderLogs_.daysLoaded = true;
+                shared->olderLogs_.exhausted = true;
+            }
+            else
+            {
+                qCWarning(chatterinoTwitch)
+                    << "Failed to list logs:" << result.formatError();
+            }
+            shared->olderLogs_.loading = false;
+        },
+        [weak] {
+            return !weak.expired();
+        });
+    return true;
+}
+
+void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
+{
+    auto &state = this->olderLogs_;
+    const auto notDone = [&](const QDate &day) {
+        return !state.doneFrom.isValid() || day < state.doneFrom;
+    };
+
+    // The newest day with logs up to the cursor that isn't done yet. The list
+    // of days is only loaded once, so a newer day (e.g. after midnight) isn't
+    // in it; try the cursor's day then as well.
+    const auto cursorDay = state.cursor.date();
+    QDate day;
+    if (notDone(cursorDay) &&
+        (state.days.empty() || cursorDay > state.days.front()))
+    {
+        day = cursorDay;
+    }
+    else if (const auto it = std::ranges::find_if(
+                 state.days,
+                 [&](const QDate &listed) {
+                     return listed <= cursorDay && notDone(listed);
+                 });
+             it != state.days.end())
+    {
+        day = *it;
+    }
+    else
+    {
+        state.exhausted = true;
+        state.loading = false;
+        return;
+    }
+
+    const QDateTime from(day, QTime(0, 0), QTimeZone::UTC);
+    const auto to = day == cursorDay ? state.cursor
+                                     : QDateTime(day.addDays(1), QTime(0, 0),
+                                                 QTimeZone::UTC);
+
+    const auto weak = this->weak_from_this();
+    publiclogs::get(
+        publiclogs::channelRangeUrl(this->getName(), from, to, wanted), 20000,
+        [weak, day, pagesLeft, wanted](const NetworkResult &result) {
+            auto shared = std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+            if (!shared)
+            {
+                return;
+            }
+            auto &state = shared->olderLogs_;
+
+            // Newest first.
+            const auto lines = publiclogs::parseLogLines(result);
+            if (lines.size() < wanted)
+            {
+                // Everything of this day before the cursor is loaded.
+                state.doneFrom = day;
+                state.cursor = QDateTime(day, QTime(0, 0), QTimeZone::UTC);
+            }
+            else if (const auto oldest = QDateTime::fromString(
+                         lines.last().toObject().value("timestamp").toString(),
+                         Qt::ISODateWithMs);
+                     oldest.isValid())
+            {
+                state.cursor = oldest.toUTC();
+            }
+
+            auto built = publiclogs::buildMessages(
+                lines, shared.get(), true, [&](const QJsonObject &line) {
+                    return !shared->findMessageByID(
+                        line.value("id").toString());
+                });
+            if (built.empty())
+            {
+                if (pagesLeft > 1)
+                {
+                    shared->fetchOlderLogPage(pagesLeft - 1, wanted);
+                    return;
+                }
+                state.loading = false;
+                return;
+            }
+            const auto builtCount = static_cast<int>(built.size());
+
+            // Day separators between days, like the recent messages have...
+            const auto localDay = [](const MessagePtr &message) {
+                return message->serverReceivedTime.isValid()
+                           ? message->serverReceivedTime.toLocalTime().date()
+                           : QDate();
+            };
+            std::vector<MessagePtr> messages;
+            messages.reserve(built.size() + 2);
+            QDate previousDay;
+            for (auto &message : built)
+            {
+                const auto messageDay = localDay(message);
+                if (messageDay.isValid())
+                {
+                    if (previousDay.isValid() && messageDay != previousDay)
+                    {
+                        messages.push_back(
+                            publiclogs::makeDaySeparator(messageDay));
+                    }
+                    previousDay = messageDay;
+                }
+                messages.push_back(std::move(message));
+            }
+
+            // ...and towards the messages already shown, unless they already
+            // start with a separator.
+            const auto snapshot = shared->getMessageSnapshot();
+            if (!snapshot.empty() && previousDay.isValid())
+            {
+                const auto &first = snapshot.front();
+                QDate shownDay;
+                for (const auto &message : snapshot)
+                {
+                    shownDay = localDay(message);
+                    if (shownDay.isValid())
+                    {
+                        break;
+                    }
+                }
+                const bool startsWithSeparator =
+                    first->flags.has(MessageFlag::System) &&
+                    !first->serverReceivedTime.isValid();
+                if (shownDay.isValid() && shownDay != previousDay &&
+                    !startsWithSeparator)
+                {
+                    messages.push_back(publiclogs::makeDaySeparator(shownDay));
+                }
+            }
+
+            // Only raise the limit when the messages wouldn't fit otherwise.
+            const auto used = shared->countMessages();
+            const auto limit = shared->messageLimit();
+            const auto free = limit > used ? limit - used : 0;
+            if (messages.size() > free)
+            {
+                shared->growMessageLimit(messages.size() - free);
+            }
+            shared->addMessagesAtStart(messages);
+
+            // The oldest shown message changed; keep paging from the cursor.
+            for (const auto &message : messages)
+            {
+                if (message->serverReceivedTime.isValid() &&
+                    !message->id.isEmpty())
+                {
+                    state.anchorId = message->id;
+                    break;
+                }
+            }
+
+            // A short day may not have had enough; continue with older days.
+            if (builtCount < wanted && pagesLeft > 1)
+            {
+                shared->fetchOlderLogPage(pagesLeft - 1, wanted - builtCount);
+                return;
+            }
+            state.loading = false;
+        },
+        [weak, day, pagesLeft, wanted](const NetworkResult &result) {
+            auto shared = std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+            if (!shared)
+            {
+                return;
+            }
+            auto &state = shared->olderLogs_;
+            // 404: no logs on this day (e.g. today, before anything was
+            // logged). Treat it like an empty day and go on with older ones.
+            if (result.status() == 404)
+            {
+                state.doneFrom = day;
+                state.cursor = QDateTime(day, QTime(0, 0), QTimeZone::UTC);
+                if (pagesLeft > 1)
+                {
+                    shared->fetchOlderLogPage(pagesLeft - 1, wanted);
+                    return;
+                }
+            }
+            else
+            {
+                qCWarning(chatterinoTwitch)
+                    << "Failed to load older logs:" << result.formatError();
+            }
+            state.loading = false;
+        },
+        [weak] {
+            return !weak.expired();
+        });
 }
 
 void TwitchChannel::loadRecentMessagesReconnect()
