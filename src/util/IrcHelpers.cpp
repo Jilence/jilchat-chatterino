@@ -70,4 +70,13 @@ QDateTime calculateMessageTime(const Communi::IrcMessage *message)
     return dt;
 }
 
+QString markIrcLineHistorical(const QString &line)
+{
+    if (line.startsWith(u'@'))
+    {
+        return u"@historical=1;" + line.mid(1);
+    }
+    return u"@historical=1 " + line;
+}
+
 }  // namespace chatterino

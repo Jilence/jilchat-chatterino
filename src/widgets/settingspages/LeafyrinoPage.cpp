@@ -141,6 +141,16 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "the display name. Hovering always shows the handle.")
         ->addTo(layout);
 
+    layout.addTitle("Public logs");
+    layout.addDescription("Older messages from logs.zonian.dev, the logs "
+                          "behind tv.supa.sh.");
+    SettingWidget::checkbox("Use public logs",
+                            s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("Load older messages from logs.zonian.dev. This sends "
+                     "channel names and usernames to that service.")
+        ->addKeywords({"logs", "zonian", "supa", "history", "older", "public"})
+        ->addTo(layout);
+
     layout.addTitle("Usercard");
     layout.addDescription("Choose which extra details appear on usercards.");
 
@@ -198,6 +208,25 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->setTooltip("When the user has an active gifted subscription in a "
                      "channel, show who gifted it on the usercard.")
         ->addKeywords({"usercard", "gift", "gifter", "subscription", "sub"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Load older messages", s.loadOlderUsercardMessages)
+        ->setTooltip("Load older messages of a user on the usercard, beyond "
+                     "what is in the chat. When disabled, the usercard only "
+                     "shows messages from the chat.")
+        ->addKeywords({"usercard", "messages", "history", "logs"})
+        ->addTo(layout);
+    SettingWidget::intInput("Messages per load",
+                            s.usercardOlderMessagesPageSize,
+                            {
+                                .min = 10,
+                                .max = 100,
+                                .singleStep = 10,
+                            })
+        ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
+        ->setTooltip("How many older messages the usercard loads from the "
+                     "public logs at a time. The Twitch moderator history "
+                     "loads in pages set by Twitch.")
+        ->addKeywords({"usercard", "messages", "logs", "page", "count"})
         ->addTo(layout);
 
     layout.addTitle("Messages per second");
