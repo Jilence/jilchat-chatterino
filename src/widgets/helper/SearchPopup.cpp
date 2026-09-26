@@ -51,12 +51,14 @@
 #include <QToolTip>
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <unordered_set>
 
 namespace chatterino {
 
 using namespace literals;
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -259,7 +261,8 @@ void SearchPopup::rebuildChannelsMenu()
 {
     this->channelsMenu_->clear();
     QStringList names;
-    for (const auto &view : this->searchChannels_)
+    names.reserve(this->searchChannels_.size());
+    for (const auto &view : std::as_const(this->searchChannels_))
     {
         const auto name = view.get().underlyingChannel()->getName();
         if (!name.isEmpty() && !names.contains(name, Qt::CaseInsensitive))
@@ -299,9 +302,10 @@ void SearchPopup::rebuildChannelsMenu()
 
 void SearchPopup::updateChannelsButtonText()
 {
-    const auto total = this->channelsMenu_->actions().size();
+    const auto actions = this->channelsMenu_->actions();
+    const auto total = actions.size();
     qsizetype included = 0;
-    for (const auto *action : this->channelsMenu_->actions())
+    for (const auto *action : actions)
     {
         included += action->isChecked() ? 1 : 0;
     }
@@ -634,7 +638,7 @@ void SearchPopup::updateLogSearchStatus()
     const QLocale locale;
     const auto byDay = state.user.isEmpty();
     const auto unitWord = byDay ? u"days"_s : u"months"_s;
-    const auto unitName = [&](const LogUnit &unit) {
+    const auto unitName = [&](LogUnit unit) {
         if (unit.day > 0)
         {
             return locale.toString(QDate(unit.year, unit.month, unit.day),
@@ -644,7 +648,7 @@ void SearchPopup::updateLogSearchStatus()
             locale.standaloneMonthName(unit.month, QLocale::ShortFormat),
             QString::number(unit.year));
     };
-    const auto span = [&](const LogUnit &oldest, const LogUnit &newest) {
+    const auto span = [&](LogUnit oldest, LogUnit newest) {
         return oldest == newest
                    ? unitName(newest)
                    : u"%1 – %2"_s.arg(unitName(oldest), unitName(newest));
@@ -678,10 +682,16 @@ void SearchPopup::updateLogSearchStatus()
     const auto until = this->rangeEnd();
     if (since.isValid() || until.isValid())
     {
-        const auto from = since.isValid()
-                              ? locale.toString(since.toLocalTime().date(),
-                                                QLocale::ShortFormat)
-                              : (oldest ? unitName(*oldest) : QString());
+        QString from;
+        if (since.isValid())
+        {
+            from = locale.toString(since.toLocalTime().date(),
+                                   QLocale::ShortFormat);
+        }
+        else if (oldest)
+        {
+            from = unitName(*oldest);
+        }
         const auto to = locale.toString(
             until.isValid() ? until.toLocalTime().date() : QDate::currentDate(),
             QLocale::ShortFormat);
@@ -752,11 +762,11 @@ void SearchPopup::updateLogSearchStatus()
         }
         else
         {
-            details = u"%1/%2 %3 · %4 messages · %5"_s.arg(logs->nextUnit)
-                          .arg(logs->units.size())
-                          .arg(unitWord)
-                          .arg(locale.toString(qulonglong(logs->messageCount)))
-                          .arg(span(logs->units.back(), logs->units.front()));
+            details = u"%1/%2 %3 · %4 messages · %5"_s.arg(
+                QString::number(logs->nextUnit),
+                QString::number(logs->units.size()), unitWord,
+                locale.toString(qulonglong(logs->messageCount)),
+                span(logs->units.back(), logs->units.front()));
         }
         tooltip += u"<tr><td><b>%1</b></td><td>&nbsp;&nbsp;%2</td></tr>"_s.arg(
             logs->channel->getName().toHtmlEscaped(), details);
@@ -854,7 +864,7 @@ void SearchPopup::updateLogSearch()
                 const auto last = state.until.isValid()
                                       ? state.until.toUTC().date()
                                       : QDate();
-                std::erase_if(logs.units, [&](const LogUnit &unit) {
+                std::erase_if(logs.units, [&](LogUnit unit) {
                     return (first.isValid() && unit.lastDay() < first) ||
                            (last.isValid() && unit.firstDay() > last);
                 });
@@ -956,7 +966,7 @@ QString SearchPopup::query() const
     {
         user.remove(0, 1);
     }
-    const auto text = this->searchInput_->text();
+    auto text = this->searchInput_->text();
     if (user.isEmpty())
     {
         return text;
@@ -1151,12 +1161,15 @@ void SearchPopup::initLayout()
 
             options->addWidget(new QLabel(u"Time:"_s, this));
             this->timeRangeCombo_ = new QComboBox(this);
-            const std::pair<const char *, int> ranges[] = {
-                {"Any time", 0},       {"Last 24 hours", 1},
-                {"Last 7 days", 7},    {"Last 30 days", 30},
-                {"Last 3 months", 91}, {"Last 6 months", 182},
+            const std::array<std::pair<const char *, int>, 7> ranges{{
+                {"Any time", 0},
+                {"Last 24 hours", 1},
+                {"Last 7 days", 7},
+                {"Last 30 days", 30},
+                {"Last 3 months", 91},
+                {"Last 6 months", 182},
                 {"Last year", 365},
-            };
+            }};
             for (const auto &[name, days] : ranges)
             {
                 this->timeRangeCombo_->addItem(QString::fromUtf8(name), days);
@@ -1213,12 +1226,12 @@ void SearchPopup::initLayout()
             layout1->addWidget(this->logStatusLabel_);
 
             this->searchRefreshTimer_.setSingleShot(true);
-            this->searchRefreshTimer_.setInterval(250);
+            this->searchRefreshTimer_.setInterval(250ms);
             QObject::connect(&this->searchRefreshTimer_, &QTimer::timeout, this,
                              &SearchPopup::refreshSearchKeepingScroll);
 
             this->logSearchTimer_.setSingleShot(true);
-            this->logSearchTimer_.setInterval(500);
+            this->logSearchTimer_.setInterval(500ms);
             QObject::connect(&this->logSearchTimer_, &QTimer::timeout, this,
                              &SearchPopup::updateLogSearch);
             QObject::connect(this->searchInput_, &QLineEdit::textChanged,
