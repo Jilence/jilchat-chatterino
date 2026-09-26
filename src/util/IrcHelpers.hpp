@@ -65,6 +65,11 @@ inline QString parseTagString(const QString &input)
 
 QDateTime calculateMessageTime(const Communi::IrcMessage *message);
 
+/// Adds the `historical` tag to a raw IRC line, like the recent-messages
+/// services do, so old messages (e.g. from public logs) don't ping or play a
+/// sound when they're parsed.
+QString markIrcLineHistorical(const QString &line);
+
 inline std::pair<QString, QString> slashKeyValue(const QString &kvStr)
 {
     return {
