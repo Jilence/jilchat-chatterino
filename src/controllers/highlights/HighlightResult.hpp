@@ -37,7 +37,7 @@ struct HighlightResult {
 
     /// Colors of further matching highlights, shown as bands when "multiple
     /// highlight bands" is enabled.
-    std::vector<std::shared_ptr<QColor>> extraColors{};
+    std::vector<std::shared_ptr<QColor>> extraColors;
 
     bool operator==(const HighlightResult &other) const;
     bool operator!=(const HighlightResult &other) const;

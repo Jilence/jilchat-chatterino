@@ -478,12 +478,12 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         }
         else
         {
-            replacement = QColor("#404040");
+            replacement = QColor(0x404040);
         }
     }
     else if (flags.has(MessageFlag::Debug))
     {
-        replacement = QColor("#4A273D");
+        replacement = QColor(0x4A273D);
     }
     else
     {
@@ -532,16 +532,16 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     if (prefs.multipleHighlightBands && highlights.size() > 1)
     {
         // The other highlights as full-color bands at the left edge.
-        constexpr qreal BAND_WIDTH = 3;
-        constexpr qreal BAND_GAP = 1;
+        constexpr qreal bandWidth = 3;
+        constexpr qreal bandGap = 1;
         const auto bands = std::min<size_t>(highlights.size() - 1, 2);
         for (size_t i = 0; i < bands; ++i)
         {
             auto color = highlights[i + 1];
             color.setAlpha(255);
             painter.fillRect(
-                QRectF(static_cast<qreal>(i) * (BAND_WIDTH + BAND_GAP), 0,
-                       BAND_WIDTH, this->container_.getHeight()),
+                QRectF(static_cast<qreal>(i) * (bandWidth + bandGap), 0,
+                       bandWidth, this->container_.getHeight()),
                 color);
         }
     }
