@@ -113,6 +113,17 @@ std::vector<EmotePtr> JilChatBadges::getBadges(const UserId &id) const
 
 void JilChatBadges::applyBadgeJson(const QJsonArray &jsonRoot)
 {
+    {
+        // The periodic refresh usually returns the same list; skip the rebuild
+        // and the badgesUpdated notification when nothing changed.
+        std::unique_lock lock(this->mutex_);
+        if (jsonRoot == this->lastPayload_)
+        {
+            return;
+        }
+        this->lastPayload_ = jsonRoot;
+    }
+
     std::unordered_map<QString, std::vector<EmotePtr>> badgeMap;
 
     for (const auto &jsonBadgeValue : jsonRoot)

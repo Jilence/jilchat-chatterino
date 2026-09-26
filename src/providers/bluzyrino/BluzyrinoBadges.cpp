@@ -120,6 +120,17 @@ void BluzyrinoBadges::loadBluzyrinoBadges()
 
 void BluzyrinoBadges::applyJson(const QJsonObject &root)
 {
+    {
+        // The periodic refresh usually returns the same registry; skip the
+        // rebuild and the refresh when nothing changed.
+        std::unique_lock lock(this->mutex_);
+        if (root == this->lastPayload_)
+        {
+            return;
+        }
+        this->lastPayload_ = root;
+    }
+
     std::vector<BluzyrinoBadge> catalog;
     std::unordered_map<QString, size_t> catalogIndex;
 
