@@ -463,6 +463,7 @@ HighlightAlert processHighlights(KickMessageBuilder &builder,
 
     builder->flags.set(MessageFlag::Highlighted);
     builder->highlightColor = highlightResult.color;
+    builder->extraHighlightColors = highlightResult.extraColors;
 
     if (highlightResult.showInMentions)
     {
