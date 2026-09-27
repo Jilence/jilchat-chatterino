@@ -26,6 +26,7 @@
 #include <QStringBuilder>
 
 #include <iostream>
+#include <tuple>
 
 #ifdef Q_OS_WIN
 #    include "widgets/AttachedWindow.hpp"
@@ -78,31 +79,42 @@ const Config CHROME{
 #endif
 };
 
-void registerNmManifest([[maybe_unused]] const Paths &paths,
-                        const Config &config, const QJsonDocument &document)
+ExpectedStr<void> registerNmManifest([[maybe_unused]] const Paths &paths,
+                                     const Config &config,
+                                     const QJsonDocument &document)
 {
 #ifdef Q_OS_WIN
-    std::ignore =
+    auto result =
         writeManifestTo(paths.miscDirectory, u"."_s, config.fileName, document);
+    if (!result)
+    {
+        return makeUnexpected(result.error());
+    }
 
     QSettings registry(config.registryKey, QSettings::NativeFormat);
     registry.setValue("Default",
                       QString(paths.miscDirectory % u'/' % config.fileName));
+    registry.sync();
+    if (registry.status() != QSettings::NoError)
+    {
+        return makeUnexpected(
+            QString(u"Failed to register native messaging host in "_s %
+                    config.registryKey));
+    }
 #else
-    std::ignore =
-        writeManifestTo(config.browserDirectory, config.nmDirectory,
-                        u"com.chatterino.chatterino.json"_s, document);
+    return writeManifestTo(config.browserDirectory, config.nmDirectory,
+                           u"com.chatterino.chatterino.json"_s, document);
 #endif
+    return {};
 }
 
 }  // namespace
 
 namespace chatterino::nm::detail {
 
-Expected<void, WriteManifestError> writeManifestTo(QString directory,
-                                                   const QString &nmDirectory,
-                                                   const QString &filename,
-                                                   const QJsonDocument &json)
+ExpectedStr<void> writeManifestTo(QString directory, const QString &nmDirectory,
+                                  const QString &filename,
+                                  const QJsonDocument &json)
 {
     if (directory.startsWith('~'))
     {
@@ -112,20 +124,23 @@ Expected<void, WriteManifestError> writeManifestTo(QString directory,
     QDir dir(directory);
     if (!dir.exists(nmDirectory) && !dir.mkdir(nmDirectory))
     {
-        qCWarning(chatterinoNativeMessage)
-            << "Failed to create" << nmDirectory << "in" << directory;
-        return makeUnexpected(WriteManifestError::FailedToCreateDirectory);
+        return makeUnexpected(
+            QString(u"Failed to create " % nmDirectory % u" in " % directory));
     }
     dir.cd(nmDirectory);
 
     QFile file(dir.filePath(filename));
     if (!file.open(QFile::WriteOnly | QFile::Truncate))
     {
-        qCWarning(chatterinoNativeMessage)
-            << "Failed to open" << filename << "in" << directory;
-        return makeUnexpected(WriteManifestError::FailedToCreateFile);
+        return makeUnexpected(
+            QString(u"Failed to open " % filename % u" in " % directory));
     }
-    file.write(json.toJson());
+    const auto data = json.toJson();
+    if (file.write(data) != data.size() || !file.flush())
+    {
+        return makeUnexpected(
+            QString(u"Failed to write " % filename % u" in " % directory));
+    }
 
     return {};
 }
@@ -137,13 +152,8 @@ namespace chatterino {
 using namespace chatterino::nm::detail;
 using namespace literals;
 
-void registerNmHost(const Modes &modes, const Paths &paths)
+bool registerNmHost(const Paths &paths)
 {
-    if (modes.isPortable)
-    {
-        return;
-    }
-
     auto getBaseDocument = [] {
         return QJsonObject{
             {u"name"_s, "com.chatterino.chatterino"_L1},
@@ -157,7 +167,7 @@ void registerNmHost(const Modes &modes, const Paths &paths)
         getSettings()->additionalExtensionIDs.getValue().split(
             ';', Qt::SkipEmptyParts);
 
-    {
+    const auto chromeRegistered = [&] {
         auto obj = getBaseDocument();
         QJsonArray allowedOriginsArr = {
             u"chrome-extension://%1/"_s.arg(EXTENSION_ID)};
@@ -174,10 +184,16 @@ void registerNmHost(const Modes &modes, const Paths &paths)
 
         obj.insert("allowed_origins", allowedOriginsArr);
 
-        registerNmManifest(paths, CHROME, QJsonDocument{obj});
+        return registerNmManifest(paths, CHROME, QJsonDocument{obj});
+    }();
+    if (!chromeRegistered)
+    {
+        qCDebug(chatterinoNativeMessage)
+            << "Chrome native messaging registration:"
+            << chromeRegistered.error();
     }
 
-    {
+    const auto firefoxRegistered = [&] {
         auto obj = getBaseDocument();
         QJsonArray allowedExtensions = {"chatterino_native@chatterino.com"};
 
@@ -192,8 +208,26 @@ void registerNmHost(const Modes &modes, const Paths &paths)
 
         obj.insert("allowed_extensions", allowedExtensions);
 
-        registerNmManifest(paths, FIREFOX, QJsonDocument{obj});
+        return registerNmManifest(paths, FIREFOX, QJsonDocument{obj});
+    }();
+    if (!firefoxRegistered)
+    {
+        qCDebug(chatterinoNativeMessage)
+            << "Firefox native messaging registration:"
+            << firefoxRegistered.error();
     }
+
+    return bool(chromeRegistered) && bool(firefoxRegistered);
+}
+
+void registerNmHost(Modes modes, const Paths &paths)
+{
+    if (modes.isPortable)
+    {
+        return;
+    }
+
+    std::ignore = registerNmHost(paths);
 }
 
 std::string &getNmQueueName(const Paths &paths)
