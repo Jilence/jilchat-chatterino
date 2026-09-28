@@ -18,13 +18,13 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
-#include <QTimer>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QSettings>
 #include <QStringBuilder>
+#include <QTimer>
 
 #include <iostream>
 #include <tuple>
@@ -315,8 +315,7 @@ void NativeMessagingServer::start()
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch())
                 .count();
-        const auto last =
-            this->lastActivityMs_.load(std::memory_order_relaxed);
+        const auto last = this->lastActivityMs_.load(std::memory_order_relaxed);
         if (now - last < 10 * 1000)
         {
             return;

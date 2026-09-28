@@ -168,8 +168,7 @@ void NotificationController::notifyTwitchChannelLive(
     if (showNotification && !playedSound &&
         getSettings()->notificationOnAnyChannel)
     {
-        const auto watching =
-            getApp()->getTwitch()->getWatchingChannel().get();
+        const auto watching = getApp()->getTwitch()->getWatchingChannel().get();
         const bool suppressForWatchingTab =
             watching && !watching->isEmpty() &&
             watching->getName().compare(payload.channelName,
