@@ -168,7 +168,17 @@ void NotificationController::notifyTwitchChannelLive(
     if (showNotification && !playedSound &&
         getSettings()->notificationOnAnyChannel)
     {
-        this->playSound();
+        const auto watching =
+            getApp()->getTwitch()->getWatchingChannel().get();
+        const bool suppressForWatchingTab =
+            watching && !watching->isEmpty() &&
+            watching->getName().compare(payload.channelName,
+                                        Qt::CaseInsensitive) == 0 &&
+            !getSettings()->watchingTabLiveSound;
+        if (!suppressForWatchingTab)
+        {
+            this->playSound();
+        }
     }
 }
 

@@ -10,8 +10,13 @@
 #include <QString>
 #include <QThread>
 
+#include <atomic>
+#include <chrono>
+#include <memory>
 #include <optional>
 #include <vector>
+
+class QTimer;
 
 namespace chatterino::nm::detail {
 
@@ -73,8 +78,14 @@ private:
     };
 
     void syncChannels(const QJsonArray &twitchChannels);
+    void noteActivity();
 
     ReceiverThread *thread;
+    /// Steady-clock milliseconds of the last browser message that means the
+    /// watching tab is still open. The receiver thread writes it; the detach
+    /// timer reads it.
+    std::atomic<std::chrono::milliseconds::rep> lastActivityMs_{0};
+    std::unique_ptr<QTimer> detachTimer_;
 
     std::vector<ChannelPtr> channelWarmer_;
 

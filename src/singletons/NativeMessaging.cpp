@@ -18,6 +18,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QTimer>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -264,6 +265,12 @@ NativeMessagingServer::NativeMessagingServer()
 
 NativeMessagingServer::~NativeMessagingServer()
 {
+    if (this->detachTimer_)
+    {
+        this->detachTimer_->stop();
+        this->detachTimer_.reset();
+    }
+
     if (!ipc::IpcQueue::remove("chatterino_gui"))
     {
         qCWarning(chatterinoNativeMessage) << "Failed to remove message queue";
@@ -283,9 +290,49 @@ NativeMessagingServer::~NativeMessagingServer()
     }
 }
 
+void NativeMessagingServer::noteActivity()
+{
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+    this->lastActivityMs_.store(now, std::memory_order_relaxed);
+}
+
 void NativeMessagingServer::start()
 {
+    this->noteActivity();
     this->thread->start();
+
+    this->detachTimer_ = std::make_unique<QTimer>();
+    this->detachTimer_->setInterval(5 * 1000);
+    QObject::connect(this->detachTimer_.get(), &QTimer::timeout, [this] {
+        if (!getSettings()->autoDetachLiveTab)
+        {
+            return;
+        }
+
+        const auto now =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        const auto last =
+            this->lastActivityMs_.load(std::memory_order_relaxed);
+        if (now - last < 10 * 1000)
+        {
+            return;
+        }
+
+        auto watching = getApp()->getTwitch()->getWatchingChannel().get();
+        if (!watching || watching->isEmpty())
+        {
+            return;
+        }
+
+        // Avoid clearing again on every tick until the browser speaks.
+        this->noteActivity();
+        getApp()->getTwitch()->setWatchingChannel(Channel::getEmpty());
+    });
+    this->detachTimer_->start();
 }
 
 NativeMessagingServer::ReceiverThread::ReceiverThread(
@@ -325,6 +372,13 @@ void NativeMessagingServer::ReceiverThread::handleMessage(
     const QJsonObject &root)
 {
     QString action = root["action"_L1].toString();
+
+    // select/sync/ping mean a Twitch tab is still open. detach does not:
+    // that is the browser leaving the channel.
+    if (action == "select" || action == "sync" || action == "ping")
+    {
+        this->parent_.noteActivity();
+    }
 
     if (action == "select")
     {
@@ -416,12 +470,23 @@ void NativeMessagingServer::ReceiverThread::handleDetach(
         return;
     }
 
+    const bool autoDetach = getSettings()->autoDetachLiveTab;
+    postToThread([winId, autoDetach] {
 #ifdef USEWINSDK
-    postToThread([winId] {
         qCDebug(chatterinoNativeMessage) << "NW detach";
         AttachedWindow::detach(winId);
-    });
 #endif
+        if (!autoDetach)
+        {
+            return;
+        }
+
+        auto watching = getApp()->getTwitch()->getWatchingChannel().get();
+        if (watching && !watching->isEmpty())
+        {
+            getApp()->getTwitch()->setWatchingChannel(Channel::getEmpty());
+        }
+    });
 }
 
 void NativeMessagingServer::ReceiverThread::handleSync(const QJsonObject &root)
