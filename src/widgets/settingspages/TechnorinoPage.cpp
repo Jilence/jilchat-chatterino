@@ -150,6 +150,9 @@ void TechnorinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::colorButton("iOS color", getSettings()->iosColor)
         ->addTo(layout);
+    SettingWidget::checkbox("Client detection icons. ", s.clientDetectionIcon)
+        ->setTooltip("Displays client icons beside messages")
+        ->addTo(layout);
 
     SettingWidget::checkbox("Watching tab live sound", s.watchingTabLiveSound)
         ->setTooltip("Watching tab live sound")

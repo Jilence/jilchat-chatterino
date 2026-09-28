@@ -12,6 +12,7 @@
 #include "messages/MessageElement.hpp"
 #include "messages/Selection.hpp"
 #include "providers/colors/ColorProvider.hpp"
+#include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
 #include "singletons/WindowManager.hpp"
@@ -28,6 +29,8 @@
 namespace chatterino {
 
 namespace {
+
+constexpr int SCROLLBAR_PADDING = 20;
 
 std::optional<QColor> clientDetectionHighlightColor(
     Message::ClientDetectionStatus status,
@@ -523,7 +526,47 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                                       platformTint(this->message_->platform));
     }
 
+    std::optional<QPixmap> clientDetectionIcon = {};
+
+    if (getSettings()->clientDetectionIcon)
+    {
+        auto resources = getResources();
+
+        switch (this->message_->clientDetection)
+        {
+            using enum Message::ClientDetectionStatus;
+            case Webchat: {
+                clientDetectionIcon = resources.chat.twitch;
+                break;
+            }
+            case Android: {
+                clientDetectionIcon = resources.chat.android;
+                break;
+            }
+            case IOS: {
+                clientDetectionIcon = resources.chat.ios;
+                break;
+            }
+
+            case Unknown:
+            case Abnormal:
+                break;
+        }
+    }
+
     painter.fillRect(buffer->rect(), backgroundColor);
+
+    if (getSettings()->clientDetectionIcon && clientDetectionIcon.has_value())
+    {
+        float size = 16 * this->scale_;
+        float right =
+            float(buffer->rect().right()) - (SCROLLBAR_PADDING * this->scale_);
+        int left = int(right - size);
+        int top = int((float(buffer->height()) - size * this->scale_) / 2);
+
+        painter.drawPixmap(QRect(left, top, int(size), int(size)),
+                           clientDetectionIcon.value());
+    }
 
     this->container_.paintElements(painter, ctx);
 
