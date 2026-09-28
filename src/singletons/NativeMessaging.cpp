@@ -372,9 +372,11 @@ void NativeMessagingServer::ReceiverThread::handleMessage(
 {
     QString action = root["action"_L1].toString();
 
-    // select/sync/ping mean a Twitch tab is still open. detach does not:
-    // that is the browser leaving the channel.
-    if (action == "select" || action == "sync" || action == "ping")
+    // Any of these reset the auto-detach timer. detach is the browser
+    // leaving the channel, so the ~10s timeout starts from that message
+    // instead of clearing /watching immediately.
+    if (action == "select" || action == "sync" || action == "ping" ||
+        action == "detach")
     {
         this->parent_.noteActivity();
     }
@@ -469,23 +471,12 @@ void NativeMessagingServer::ReceiverThread::handleDetach(
         return;
     }
 
-    const bool autoDetach = getSettings()->autoDetachLiveTab;
-    postToThread([winId, autoDetach] {
 #ifdef USEWINSDK
+    postToThread([winId] {
         qCDebug(chatterinoNativeMessage) << "NW detach";
         AttachedWindow::detach(winId);
-#endif
-        if (!autoDetach)
-        {
-            return;
-        }
-
-        auto watching = getApp()->getTwitch()->getWatchingChannel().get();
-        if (watching && !watching->isEmpty())
-        {
-            getApp()->getTwitch()->setWatchingChannel(Channel::getEmpty());
-        }
     });
+#endif
 }
 
 void NativeMessagingServer::ReceiverThread::handleSync(const QJsonObject &root)
