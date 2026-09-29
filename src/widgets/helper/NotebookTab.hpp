@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace chatterino {
 
@@ -157,6 +158,14 @@ private:
         std::unordered_map<ChannelView::ChannelViewID, HighlightSource>;
     HighlightSources highlightSources_;
     std::shared_ptr<QColor> highlightColor_;
+
+    /// Colors of the unseen highlights, oldest first, drawn as parts of the
+    /// tab line.
+    struct HighlightLineColor {
+        ChannelView::ChannelViewID source;
+        std::shared_ptr<QColor> color;
+    };
+    std::vector<HighlightLineColor> highlightLineColors_;
     std::size_t lastHighlightSequence_ = 0;
 
     void removeHighlightStateChangeSources(const HighlightSources &toRemove);

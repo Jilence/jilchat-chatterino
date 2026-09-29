@@ -687,17 +687,9 @@ Settings::Settings(const Modes &modes, const Args &args,
         settingsInstance->removeSetting(OLD_PIN_MODERATOR_BUTTON_SETTING);
     }
 
-    if (settingsInstance->get(this->tabHighlightsUseThemeColor.getPath()) ==
-        nullptr)
-    {
-        if (auto *colorByMessage = settingsInstance->get(
-                this->colorTabHighlightsByMessage.getPath());
-            colorByMessage != nullptr && colorByMessage->IsBool())
-        {
-            this->tabHighlightsUseThemeColor.setValue(
-                !colorByMessage->GetBool());
-        }
-    }
+    // `/appearance/tabHighlightsUseThemeColor` came from Moltorino and did
+    // the same as `/appearance/tabs/colorHighlightsByMessage`.
+    settingsInstance->removeSetting("/appearance/tabHighlightsUseThemeColor");
 
     auto migrateBoolSetting = [&](const char *oldPath,
                                   BoolSetting &newSetting) {

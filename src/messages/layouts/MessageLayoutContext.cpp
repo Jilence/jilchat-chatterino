@@ -97,6 +97,12 @@ void MessagePreferences::connectSettings(Settings *settings,
         },
         holder);
 
+    settings->multipleHighlightBands.connect(
+        [this](const auto &newValue) {
+            this->multipleHighlightBands = newValue;
+        },
+        holder);
+
     settings->normalNonceDetection.connect(
         [this](const auto &newValue) {
             this->enableClientDetectionHighlight = newValue;

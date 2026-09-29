@@ -65,6 +65,8 @@ struct Message {
     QStringList externalBadges;
 
     std::shared_ptr<QColor> highlightColor;
+    /// Colors of further matching highlights, see HighlightResult.
+    std::vector<std::shared_ptr<QColor>> extraHighlightColors;
 
     std::shared_ptr<MessageThread> replyThread;
     MessagePtr replyParent;
