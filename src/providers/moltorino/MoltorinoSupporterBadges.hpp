@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 #include <optional>
 #include <shared_mutex>
@@ -50,6 +51,7 @@ private:
     bool pendingForce_ = false;
     std::optional<int> pendingMinimumVersion_;
     QDateTime lastFetchAttempt_;
+    QTimer refreshTimer_;
 };
 
 }  // namespace chatterino
