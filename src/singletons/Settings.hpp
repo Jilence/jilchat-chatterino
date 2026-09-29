@@ -1082,6 +1082,12 @@ public:
         "/extraChannels/live/showTitle",
         false,
     };
+    /// Whether the search popup also searches the public logs (remembered
+    /// from the checkbox in the popup).
+    BoolSetting searchPublicLogs = {"/misc/publicLogs/searchPopup", false};
+    /// The same for "Search in all open channels".
+    BoolSetting searchPublicLogsAllChannels = {
+        "/misc/publicLogs/searchPopupAllChannels", false};
 
     /// UI
 
