@@ -5,6 +5,7 @@
 #include "widgets/dialogs/TwitchBadgePickerDialog.hpp"
 
 #include "Application.hpp"
+#include "common/Credentials.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "controllers/accounts/AccountController.hpp"
@@ -16,6 +17,8 @@
 #include "messages/MessageBuilder.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
+#include "providers/seventv/paints/Paint.hpp"
+#include "providers/seventv/SeventvPaints.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/TwitchGql.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -26,6 +29,7 @@
 #include "singletons/helper/GifTimer.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/Clipboard.hpp"
 #include "util/Twitch.hpp"
 #include "widgets/buttons/Button.hpp"
 #include "widgets/buttons/SvgButton.hpp"
@@ -39,6 +43,8 @@
 #include <QCursor>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QGraphicsOpacityEffect>
 #include <QGridLayout>
 #include <QGuiApplication>
@@ -80,6 +86,40 @@ constexpr float BADGE_IMAGE_SCALE =
     float(BADGE_ICON_SIZE.width()) / float(BADGE_ICON_SIZE.width() / 2);
 constexpr char BADGE_SELECTED_COLOR[] = "#9146ff";
 constexpr auto MOLTORINO_BADGES_URL = "https://api.moltorino.com/v2/badges";
+constexpr auto SEVENTV_GQL_URL = "https://api.7tv.app/v4/gql";
+/// Has the paint definitions in the format SeventvPaints reads.
+constexpr auto SEVENTV_V3_GQL_URL = "https://7tv.io/v3/gql";
+constexpr auto SEVENTV_PAINTS_QUERY =
+    "query($list: [ObjectID!]) { cosmetics(list: $list) { paints { id name "
+    "function color angle shape image_url repeat stops { at color } "
+    "shadows { x_offset y_offset radius color } } } }";
+constexpr int PAINT_TILE_HEIGHT = 50;
+constexpr auto SEVENTV_CREDENTIAL_PROVIDER = "7tv";
+/// Run in the browser console on 7tv.app: copies the user's own 7TV token.
+constexpr auto SEVENTV_TOKEN_COMMAND =
+    "(()=>{copy(localStorage.getItem('7tv-token'));"
+    "return '7TV token copied.'})()";
+constexpr auto SEVENTV_INVENTORY_QUERY = R"(query LeafyrinoVanityInventory {
+  users {
+    me {
+      id
+      connections { platform platformId platformDisplayName }
+      style { activeBadgeId activePaintId }
+      inventory(includeInaccessible: false) {
+        badges { accessible to { badge { id name images { url width height scale } } } }
+        paints { accessible to { paint { id name } } }
+      }
+    }
+  }
+})";
+constexpr auto SEVENTV_SET_BADGE_MUTATION =
+    R"(mutation SetActiveBadge($id: Id!, $badgeId: Id) {
+  users { user(id: $id) { activeBadge(badgeId: $badgeId) { id } } }
+})";
+constexpr auto SEVENTV_SET_PAINT_MUTATION =
+    R"(mutation SetActivePaint($id: Id!, $paintId: Id) {
+  users { user(id: $id) { activePaint(paintId: $paintId) { id } } }
+})";
 constexpr auto MOLTORINO_PROFILE_URL = "https://api.moltorino.com/v2/badges/me";
 
 int scaledSeparatorHeight(float scale)
@@ -509,6 +549,126 @@ private:
     ImageSet images_;
     bool selected_ = false;
     bool attemptRefresh_ = false;
+    pajlada::Signals::SignalHolder connections_;
+};
+
+/// The user's name in a 7TV paint with the paint's name below, like in
+/// Moltorino.
+class PaintTileButton final : public QPushButton
+{
+public:
+    PaintTileButton(QString paintId, QString paintName, QString userName,
+                    QColor userColor, QWidget *parent)
+        : QPushButton(parent)
+        , paintId_(std::move(paintId))
+        , paintName_(std::move(paintName))
+        , userName_(std::move(userName))
+        , userColor_(std::move(userColor))
+    {
+        this->setCursor(Qt::PointingHandCursor);
+        this->setAttribute(Qt::WA_Hover, true);
+        this->setFlat(true);
+        this->setFixedHeight(PAINT_TILE_HEIGHT);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        this->setToolTip(this->paintName_);
+
+        // Animated paints only move when the tile is painted again.
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                const auto paint =
+                    getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+                if (paint && paint->animated() && this->isVisible())
+                {
+                    this->update();
+                }
+            });
+    }
+
+    void setSelected(bool selected)
+    {
+        this->selected_ = selected;
+        this->update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+        const auto rect = this->rect().adjusted(0, 0, -1, -1);
+        if (this->selected_)
+        {
+            const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
+            painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(selectionRect, 3, 3);
+            paintBadgeTileBackground(painter,
+                                     selectionRect.adjusted(2, 2, -2, -2),
+                                     this->underMouse(), this->isDown());
+        }
+        else
+        {
+            paintBadgeTileBackground(painter, rect, this->underMouse(),
+                                     this->isDown());
+        }
+
+        // The name, in the paint if there is one.
+        auto nameFont = this->font();
+        nameFont.setBold(true);
+        nameFont.setPointSizeF(nameFont.pointSizeF() * 1.15);
+        const QFontMetricsF nameMetrics(nameFont);
+        const auto nameText = nameMetrics.elidedText(
+            this->userName_, Qt::ElideRight, rect.width() - 8);
+        const QSizeF nameSize(nameMetrics.horizontalAdvance(nameText) + 2,
+                              nameMetrics.height());
+        const QPointF namePos((rect.width() - nameSize.width()) / 2, 5);
+
+        const auto paint =
+            this->paintId_.isEmpty()
+                ? nullptr
+                : getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+        if (paint)
+        {
+            const auto pixmap =
+                paint->getPixmap(nameText, nameFont, this->userColor_, nameSize,
+                                 1.0F, float(this->devicePixelRatioF()));
+            painter.drawPixmap(namePos, pixmap);
+        }
+        else
+        {
+            painter.setFont(nameFont);
+            painter.setPen(this->userColor_);
+            painter.drawText(QRectF(namePos, nameSize), Qt::AlignLeft,
+                             nameText);
+        }
+
+        // The paint's name below.
+        auto label = getApp()->getThemes()->window.text;
+        label.setAlpha(180);
+        painter.setFont(this->font());
+        painter.setPen(label);
+        const QRectF labelRect(
+            4, rect.height() - QFontMetricsF(this->font()).height() - 5,
+            rect.width() - 8, QFontMetricsF(this->font()).height());
+        painter.drawText(labelRect, Qt::AlignHCenter,
+                         QFontMetricsF(this->font())
+                             .elidedText(this->paintName_, Qt::ElideRight,
+                                         labelRect.width()));
+
+        if (this->hasFocus())
+        {
+            paintBadgeTileFocusRing(painter, rect);
+        }
+    }
+
+private:
+    QString paintId_;
+    QString paintName_;
+    QString userName_;
+    QColor userColor_;
+    bool selected_ = false;
     pajlada::Signals::SignalHolder connections_;
 };
 
@@ -983,6 +1143,26 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
     otherTabRow->addWidget(this->eventTabButton_, 1);
     otherTabRow->addWidget(this->moltorinoTabButton_, 1);
     tabRows->addLayout(otherTabRow);
+
+    auto *sevenTvTabRow = new QHBoxLayout();
+    sevenTvTabRow->setSpacing(tabSpacing);
+    const auto makeSevenTvTab = [&](const QString &text, View view) {
+        auto *button = new QPushButton(text, container);
+        button->setObjectName("TwitchBadgePickerTab");
+        button->setCheckable(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        QObject::connect(button, &QPushButton::clicked, this, [this, view] {
+            this->switchView(view);
+        });
+        sevenTvTabRow->addWidget(button, 1);
+        return button;
+    };
+    this->sevenTvBadgeTabButton_ =
+        makeSevenTvTab("7TV Badge", View::SevenTvBadges);
+    this->sevenTvPaintTabButton_ =
+        makeSevenTvTab("7TV Paint", View::SevenTvPaints);
+    tabRows->addLayout(sevenTvTabRow);
     this->mainLayout_->addLayout(tabRows);
 
     this->searchInput_ = new QLineEdit(container);
@@ -1200,7 +1380,8 @@ void TwitchBadgePickerDialog::rebuildContent()
     this->setStatus(this->statusText_, this->statusIsError_);
 
     if (this->badgesLoading_ && this->view_ != View::Color &&
-        this->view_ != View::Moltorino)
+        this->view_ != View::Moltorino && this->view_ != View::SevenTvBadges &&
+        this->view_ != View::SevenTvPaints)
     {
         this->setStatus("Loading badges...");
         this->contentLayout_->addStretch(1);
@@ -1215,6 +1396,9 @@ void TwitchBadgePickerDialog::rebuildContent()
         this->rebuildEventBadges();
     else if (this->view_ == View::Moltorino)
         this->rebuildMoltorinoBadges();
+    else if (this->view_ == View::SevenTvBadges ||
+             this->view_ == View::SevenTvPaints)
+        this->rebuildSevenTv();
     else
         this->rebuildColors();
 
@@ -1698,6 +1882,8 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->eventTabButton_->setChecked(view == View::EventBadges);
     this->colorTabButton_->setChecked(view == View::Color);
     this->moltorinoTabButton_->setChecked(view == View::Moltorino);
+    this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
+    this->sevenTvPaintTabButton_->setChecked(view == View::SevenTvPaints);
     this->updateSearchVisibility();
 
     if (view == View::EventBadges)
@@ -1707,6 +1893,10 @@ void TwitchBadgePickerDialog::switchView(View view)
     else if (view == View::Moltorino)
     {
         this->loadMoltorinoBadges(false);
+    }
+    else if (view == View::SevenTvBadges || view == View::SevenTvPaints)
+    {
+        this->loadSevenTv(false);
     }
 
     this->rebuildContent();
@@ -2851,6 +3041,541 @@ void TwitchBadgePickerDialog::selectMoltorino(const QString &badgeId)
             self->loadMoltorinoBadges(true);
         })
         .execute();
+}
+
+void TwitchBadgePickerDialog::sevenTvRequest(
+    const QString &query, const QJsonObject &variables,
+    std::function<void(const QJsonObject &)> onData,
+    std::function<void(const QString &)> onError)
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QString::fromLatin1(SEVENTV_GQL_URL),
+                   NetworkRequestType::Post)
+        .header("Authorization", "Bearer " + this->sevenTvToken_.toUtf8())
+        .json(QJsonObject{{"query", query}, {"variables", variables}})
+        .timeout(15000)
+        .onSuccess([self, onData, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            const auto root = result.parseJson();
+            const auto errors = root.value("errors").toArray();
+            if (!errors.isEmpty())
+            {
+                onError(errors.first().toObject().value("message").toString(
+                    QStringLiteral("7TV rejected the request")));
+                return;
+            }
+            onData(root.value("data").toObject());
+        })
+        .onError([self, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            if (result.status() == 401)
+            {
+                onError(QStringLiteral(
+                    "Your 7TV connection expired. Connect it again."));
+                return;
+            }
+            onError(result.formatError());
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::loadSevenTv(bool force)
+{
+    if (this->sevenTvLoading_ || (this->sevenTvLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto twitchUserId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+
+    // The token is read from the credential store once.
+    if (!this->sevenTvTokenRead_)
+    {
+        this->sevenTvLoading_ = true;
+        this->setStatus("Loading 7TV...");
+        this->rebuildContent();
+        Credentials::instance().get(
+            QString::fromLatin1(SEVENTV_CREDENTIAL_PROVIDER), twitchUserId,
+            this, [this](const QString &token) {
+                this->sevenTvTokenRead_ = true;
+                this->sevenTvToken_ = token;
+                this->sevenTvLoading_ = false;
+                this->setStatus({});
+                this->loadSevenTv(true);
+            });
+        return;
+    }
+
+    if (this->sevenTvToken_.isEmpty())
+    {
+        this->rebuildContent();
+        return;
+    }
+
+    this->sevenTvLoading_ = true;
+    this->setStatus("Loading 7TV badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    this->sevenTvRequest(
+        QString::fromLatin1(SEVENTV_INVENTORY_QUERY), {},
+        [self, twitchUserId](const QJsonObject &data) {
+            self->sevenTvLoading_ = false;
+            const auto me =
+                data.value("users").toObject().value("me").toObject();
+
+            // Only use a 7TV account that belongs to the current Twitch
+            // account.
+            bool sameAccount = false;
+            for (const auto &value : me.value("connections").toArray())
+            {
+                const auto connection = value.toObject();
+                if (connection.value("platform")
+                            .toString()
+                            .compare("TWITCH", Qt::CaseInsensitive) == 0 &&
+                    connection.value("platformId").toString() == twitchUserId)
+                {
+                    sameAccount = true;
+                }
+            }
+            if (me.isEmpty() || !sameAccount)
+            {
+                self->setStatus(
+                    me.isEmpty()
+                        ? QStringLiteral("7TV did not accept that token.")
+                        : QStringLiteral("This 7TV connection belongs to a "
+                                         "different Twitch account."),
+                    true);
+                self->rebuildContent();
+                return;
+            }
+
+            self->sevenTvUserId_ = me.value("id").toString();
+            const auto style = me.value("style").toObject();
+            self->sevenTvActiveBadge_ = style.value("activeBadgeId").toString();
+            self->sevenTvActivePaint_ = style.value("activePaintId").toString();
+
+            const auto inventory = me.value("inventory").toObject();
+            self->sevenTvBadges_.clear();
+            for (const auto &value : inventory.value("badges").toArray())
+            {
+                const auto badge = value.toObject()
+                                       .value("to")
+                                       .toObject()
+                                       .value("badge")
+                                       .toObject();
+                const auto id = badge.value("id").toString();
+                if (id.isEmpty())
+                {
+                    continue;
+                }
+                // Images come in scales 1 to 4.
+                QString images[4];
+                for (const auto &imageValue : badge.value("images").toArray())
+                {
+                    const auto image = imageValue.toObject();
+                    const auto scale = image.value("scale").toInt();
+                    const auto url = image.value("url").toString();
+                    if (scale >= 1 && scale <= 4 &&
+                        (images[scale - 1].isEmpty() || url.endsWith(".webp")))
+                    {
+                        images[scale - 1] = url;
+                    }
+                }
+                self->sevenTvBadges_.push_back({
+                    .id = id,
+                    .setID = id,
+                    .title = badge.value("name").toString(),
+                    .image1x = images[0],
+                    .image2x = images[1],
+                    .image4x = images[3].isEmpty() ? images[2] : images[3],
+                });
+            }
+
+            self->sevenTvPaints_.clear();
+            for (const auto &value : inventory.value("paints").toArray())
+            {
+                const auto paint = value.toObject()
+                                       .value("to")
+                                       .toObject()
+                                       .value("paint")
+                                       .toObject();
+                const auto id = paint.value("id").toString();
+                if (!id.isEmpty())
+                {
+                    self->sevenTvPaints_.push_back(
+                        {.id = id, .name = paint.value("name").toString()});
+                }
+            }
+
+            self->sevenTvLoaded_ = true;
+            self->setStatus({});
+            self->rebuildContent();
+            self->loadSevenTvPaintData();
+        },
+        [self](const QString &error) {
+            self->sevenTvLoading_ = false;
+            self->setStatus(error, true);
+            self->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::loadSevenTvPaintData()
+{
+    QJsonArray missing;
+    for (const auto &paint : this->sevenTvPaints_)
+    {
+        if (!getApp()->getSeventvPaints()->getPaintById(paint.id))
+        {
+            missing.append(paint.id);
+        }
+    }
+    if (missing.isEmpty())
+    {
+        return;
+    }
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QString::fromLatin1(SEVENTV_V3_GQL_URL),
+                   NetworkRequestType::Post)
+        .json(QJsonObject{
+            {"query", QString::fromLatin1(SEVENTV_PAINTS_QUERY)},
+            {"variables", QJsonObject{{"list", missing}}},
+        })
+        .timeout(15000)
+        .onSuccess([self](const NetworkResult &result) {
+            const auto paints = result.parseJson()
+                                    .value("data")
+                                    .toObject()
+                                    .value("cosmetics")
+                                    .toObject()
+                                    .value("paints")
+                                    .toArray();
+            for (const auto &paint : paints)
+            {
+                getApp()->getSeventvPaints()->addPaint(paint.toObject());
+            }
+            if (self && self->view_ == View::SevenTvPaints)
+            {
+                self->rebuildContent();
+            }
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::rebuildSevenTv()
+{
+    const bool paints = this->view_ == View::SevenTvPaints;
+    const bool connected = !this->sevenTvToken_.isEmpty();
+
+    // Title, hint and the connect button, like in Moltorino.
+    auto *headerRow = new QWidget(this->contentWidget_);
+    auto *header = new QHBoxLayout(headerRow);
+    header->setContentsMargins(0, 0, 0, 0);
+    auto *texts = new QVBoxLayout();
+    texts->setSpacing(0);
+    auto *title =
+        new QLabel(paints ? "7TV paint" : "7TV badge", this->contentWidget_);
+    title->setObjectName("TwitchBadgePickerSectionLabel");
+    texts->addWidget(title);
+    auto *hint =
+        new QLabel(connected ? (paints ? "Choose one of your 7TV paints."
+                                       : "Choose one of your 7TV badges.")
+                             : (paints ? "Connect 7TV to choose a paint."
+                                       : "Connect 7TV to choose a badge."),
+                   this->contentWidget_);
+    hint->setWordWrap(true);
+    texts->addWidget(hint);
+    header->addLayout(texts, 1);
+    auto *connectButton =
+        new QPushButton(connected ? "Disconnect" : "Connect", headerRow);
+    connectButton->setCursor(Qt::PointingHandCursor);
+    connectButton->setEnabled(!this->sevenTvLoading_ && !this->actionInFlight_);
+    QObject::connect(connectButton, &QPushButton::clicked, this,
+                     [this, connected] {
+                         // Later: both rebuild the content, which deletes this
+                         // button.
+                         QTimer::singleShot(0, this, [this, connected] {
+                             if (connected)
+                             {
+                                 this->disconnectSevenTv();
+                             }
+                             else
+                             {
+                                 this->connectSevenTv();
+                             }
+                         });
+                     });
+    header->addWidget(connectButton, 0, Qt::AlignTop);
+    this->contentLayout_->addWidget(headerRow);
+
+    if (!connected || this->sevenTvLoading_ || !this->sevenTvLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+
+    if (paints)
+    {
+        // Your name in each paint, two per row.
+        auto user = getApp()->getAccounts()->twitch.getCurrent();
+        const auto userName = user->getUserName();
+        auto userColor = user->color();
+        if (!userColor.isValid())
+        {
+            userColor = this->theme->window.text;
+        }
+
+        auto *list = new QWidget(this->contentWidget_);
+        auto *paintGrid = new QGridLayout(list);
+        paintGrid->setContentsMargins(0, 0, 0, 0);
+        paintGrid->setSpacing(BADGE_GRID_SPACING);
+        constexpr int paintColumns = 2;
+        int paintIndex = 0;
+        const auto addPaint = [&](const QString &id, const QString &name) {
+            auto *tile =
+                new PaintTileButton(id, name, userName, userColor, list);
+            tile->setSelected(id == this->sevenTvActivePaint_);
+            tile->setEnabled(!this->actionInFlight_);
+            QObject::connect(tile, &QPushButton::clicked, this, [this, id] {
+                this->selectSevenTv(true, id);
+            });
+            paintGrid->addWidget(tile, paintIndex / paintColumns,
+                                 paintIndex % paintColumns);
+            ++paintIndex;
+        };
+        if (needle.isEmpty())
+        {
+            addPaint({}, "No paint");
+        }
+        int shown = 0;
+        for (const auto &paint : this->sevenTvPaints_)
+        {
+            if (paint.name.contains(needle, Qt::CaseInsensitive))
+            {
+                addPaint(paint.id, paint.name);
+                ++shown;
+            }
+        }
+        if (shown == 0 && !needle.isEmpty())
+        {
+            this->contentLayout_->addWidget(makeEmptyListLabel(
+                QStringLiteral("No matching paints."), this->contentWidget_));
+            return;
+        }
+        this->contentLayout_->addWidget(list);
+        return;
+    }
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip("No 7TV badge");
+        noBadgeTile->setEnabled(!this->actionInFlight_);
+        noBadgeTile->setSelected(this->sevenTvActiveBadge_.isEmpty());
+        QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+            this->selectSevenTv(false, {});
+        });
+        grid->addWidget(noBadgeTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &badge : this->sevenTvBadges_)
+    {
+        if (!badgeMatchesSearch(badge, needle))
+        {
+            continue;
+        }
+        auto *tile = new BadgeTileButton(badge, gridWidget);
+        tile->setEnabled(!this->actionInFlight_);
+        tile->setSelected(badge.id == this->sevenTvActiveBadge_);
+        QObject::connect(tile, &QPushButton::clicked, this,
+                         [this, id = badge.id] {
+                             this->selectSevenTv(false, id);
+                         });
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0 && !needle.isEmpty())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("No matching badges."), this->contentWidget_));
+        return;
+    }
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::connectSevenTv()
+{
+    // The popup deletes itself when it loses focus, which the connect window
+    // takes. Keep it open while the connect window is shown.
+    const auto deactivateAction = this->windowDeactivateAction;
+    this->windowDeactivateAction = WindowDeactivateAction::Nothing;
+    const QPointer<TwitchBadgePickerDialog> self = this;
+
+    QDialog dialog;
+    dialog.setWindowTitle("Connect 7TV");
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *intro =
+        new QLabel("1. Click \"Copy command\" and open 7TV while signed in.\n"
+                   "2. Run the copied command in its browser console (F12).\n"
+                   "3. Paste the copied token below.\n\n"
+                   "Your 7TV token stays on this device.",
+                   &dialog);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    auto *copyButton = new QPushButton("Copy command and open 7TV", &dialog);
+    QObject::connect(copyButton, &QPushButton::clicked, &dialog, [] {
+        crossPlatformCopy(QString::fromLatin1(SEVENTV_TOKEN_COMMAND));
+        QDesktopServices::openUrl(QUrl("https://7tv.app"));
+    });
+    layout->addWidget(copyButton);
+
+    auto *tokenInput = new QLineEdit(&dialog);
+    tokenInput->setPlaceholderText("7TV token");
+    tokenInput->setEchoMode(QLineEdit::Password);
+    layout->addWidget(tokenInput);
+
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog,
+                     &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
+                     &QDialog::reject);
+    layout->addWidget(buttons);
+
+    const auto accepted = dialog.exec() == QDialog::Accepted;
+    if (!self)
+    {
+        return;
+    }
+    this->windowDeactivateAction = deactivateAction;
+    this->activateWindow();
+    if (!accepted)
+    {
+        return;
+    }
+
+    auto token = tokenInput->text().trimmed();
+    if (token.startsWith('"') && token.endsWith('"') && token.size() >= 2)
+    {
+        token = token.mid(1, token.size() - 2);
+    }
+    if (token.isEmpty())
+    {
+        this->setStatus("Paste a valid 7TV token.", true);
+        this->rebuildContent();
+        return;
+    }
+
+    this->sevenTvToken_ = token;
+    this->sevenTvTokenRead_ = true;
+    Credentials::instance().set(
+        QString::fromLatin1(SEVENTV_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId(), token);
+    this->setStatus({});
+    this->loadSevenTv(true);
+}
+
+void TwitchBadgePickerDialog::disconnectSevenTv()
+{
+    Credentials::instance().erase(
+        QString::fromLatin1(SEVENTV_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId());
+    this->sevenTvToken_.clear();
+    this->sevenTvLoaded_ = false;
+    this->sevenTvBadges_.clear();
+    this->sevenTvPaints_.clear();
+    this->setStatus({});
+    this->rebuildContent();
+}
+
+void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
+{
+    if (this->sevenTvUserId_.isEmpty())
+    {
+        return;
+    }
+
+    auto &active =
+        paint ? this->sevenTvActivePaint_ : this->sevenTvActiveBadge_;
+    const auto previous = active;
+    active = id;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    const auto value =
+        id.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(id);
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    this->sevenTvRequest(
+        QString::fromLatin1(paint ? SEVENTV_SET_PAINT_MUTATION
+                                  : SEVENTV_SET_BADGE_MUTATION),
+        {{"id", this->sevenTvUserId_}, {paint ? "paintId" : "badgeId", value}},
+        [self, paint, id](const QJsonObject &) {
+            self->actionInFlight_ = false;
+            QString name;
+            if (paint)
+            {
+                for (const auto &p : self->sevenTvPaints_)
+                {
+                    if (p.id == id)
+                    {
+                        name = p.name;
+                    }
+                }
+            }
+            else
+            {
+                for (const auto &b : self->sevenTvBadges_)
+                {
+                    if (b.id == id)
+                    {
+                        name = b.title;
+                    }
+                }
+            }
+            self->channel_->addSystemMessage(
+                id.isEmpty() ? (paint ? QStringLiteral("7TV paint removed.")
+                                      : QStringLiteral("7TV badge removed."))
+                             : (paint ? QStringLiteral("7TV paint set to: %1")
+                                      : QStringLiteral("7TV badge set to: %1"))
+                                   .arg(name));
+            self->rebuildContent();
+        },
+        [self, paint, previous](const QString &error) {
+            self->actionInFlight_ = false;
+            (paint ? self->sevenTvActivePaint_ : self->sevenTvActiveBadge_) =
+                previous;
+            self->setStatus(error, true);
+            self->rebuildContent();
+        });
 }
 
 QString TwitchBadgePickerDialog::authTokenOrMessage()
