@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "providers/publiclogs/PublicLogs.hpp"
 #include "providers/twitch/TwitchNameHistory.hpp"
 #include "singletons/Paths.hpp"
 #include "widgets/BaseWindow.hpp"
@@ -106,6 +107,12 @@ private:
     void maybeLoadMoreUsercardMessagesFromScroll();
     void fetchMoreUsercardMessages(int emptyPageSkipsLeft,
                                    bool enableLazyLoadOnSuccess);
+    void fetchMoreUsercardLogMessages(int emptyPageSkipsLeft,
+                                      bool enableLazyLoadOnSuccess);
+    void ensureUsercardMessagesChannel(const QString &channelName);
+    /// Shows `text` once at the top of the usercard messages, e.g. when the
+    /// public logs can't be loaded.
+    void showUsercardLogNotice(const QString &channelName, const QString &text);
     void updateNotes();
     void refreshSevenTVUserButtonVisibility();
     void refreshSeventvPaint();
@@ -211,6 +218,14 @@ private:
     bool usercardMessagesLoading_ = false;
     bool usercardMessagesHasNextPage_ = true;
     bool usercardMessagesLazyLoadEnabled_ = false;
+    /// Months with public logs of the user, newest first. Used instead of
+    /// the Twitch mod logs when we aren't a moderator.
+    std::vector<publiclogs::LogDate> usercardLogMonths_;
+    size_t usercardLogMonthIndex_ = 0;
+    /// Messages of the current month already loaded (newest first).
+    int usercardLogOffset_ = 0;
+    bool usercardLogMonthsLoaded_ = false;
+    bool usercardLogNoticeShown_ = false;
 
     QString kickUserSlug_;
     QPointer<QWidget> moderationReasonPopup_;

@@ -1059,6 +1059,11 @@ public:
         "/usercard/showLoadMoreMessagesButton", true};
     BoolSetting alwaysLoadMoreUsercardMessages = {
         "/usercard/alwaysLoadMoreMessages", false};
+    BoolSetting loadOlderUsercardMessages = {"/usercard/loadOlderMessages",
+                                             true};
+    /// Messages loaded per request on usercards (10-100).
+    IntSetting usercardOlderMessagesPageSize = {
+        "/usercard/olderMessagesPageSize", 100};
     BoolSetting showLeadModRoleButtons = {"/usercard/showLeadModRoleButtons",
                                           true};
     BoolSetting showUsercardRoleManagementMenu = {
@@ -1068,6 +1073,9 @@ public:
     BoolSetting showModActionsOnModUsercardsAsLeadMod = {
         "/usercard/showModActionsOnModUsercardsAsLeadMod", false};
     BoolSetting hideEmojiButton = {"/misc/hideEmojiButton", false};
+    /// Use the public logs from logs.zonian.dev for older messages.
+    BoolSetting loadOlderMessagesFromPublicLogs = {
+        "/misc/publicLogs/loadOlderMessages", true};
     BoolSetting showTitleInLiveMessage = {
         "/extraChannels/live/showTitle",
         false,
