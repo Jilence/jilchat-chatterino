@@ -3199,10 +3199,14 @@ void TwitchBadgePickerDialog::loadSevenTv(bool force)
                     const auto image = imageValue.toObject();
                     const auto scale = image.value("scale").toInt();
                     const auto url = image.value("url").toString();
-                    if (scale >= 1 && scale <= 4 &&
-                        (images[scale - 1].isEmpty() || url.endsWith(".webp")))
+                    if (scale < 1 || scale > 4)
                     {
-                        images[scale - 1] = url;
+                        continue;
+                    }
+                    auto &slot = images.at(static_cast<size_t>(scale - 1));
+                    if (slot.isEmpty() || url.endsWith(".webp"))
+                    {
+                        slot = url;
                     }
                 }
                 self->sevenTvBadges_.push_back({
