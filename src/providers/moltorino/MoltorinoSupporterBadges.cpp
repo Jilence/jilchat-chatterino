@@ -195,7 +195,11 @@ bool parsePayloadV2(const QJsonObject &root, ParsedPayload &parsed)
         }
         const auto badge = value.toObject();
         const auto id = badge.value("id").toString().trimmed();
-        auto emote = makeBadgeEmote(badge, version);
+        // Version the images by the badge's own asset version: the bundle
+        // version changes whenever anyone picks a badge, which would load every
+        // image again.
+        auto emote =
+            makeBadgeEmote(badge, badge.value("assetVersion").toInt(0));
         if (id.isEmpty() || !emote)
         {
             continue;
