@@ -8,6 +8,7 @@
 #include "providers/irc/IrcConnection2.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
+#include "singletons/Settings.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/QStringHash.hpp"  // IWYU pragma: keep
 #include "util/RatelimitBucket.hpp"
@@ -22,6 +23,7 @@ using namespace chatterino;
 
 // Ratelimits for joinBucket_
 constexpr int JOIN_RATELIMIT_BUDGET = 18;
+constexpr int BOT_JOIN_RATELIMIT_BUDGET = 2000;
 constexpr int JOIN_RATELIMIT_COOLDOWN = 12500;
 
 constexpr size_t CHANNELS_PER_CONNECTION = 18;
@@ -111,8 +113,11 @@ TwitchReadConnectionPoolSingle::TwitchReadConnectionPoolSingle(
         qCDebug(chatterinoIrc) << "Joining" << name;
         this->connection->sendRaw("JOIN #" + name);
     };
+    const int joinBudget = getSettings()->useBotLimitsJoin
+                               ? BOT_JOIN_RATELIMIT_BUDGET
+                               : JOIN_RATELIMIT_BUDGET;
     this->joinBucket.reset(new RatelimitBucket(
-        JOIN_RATELIMIT_BUDGET, JOIN_RATELIMIT_COOLDOWN, actuallyJoin, this));
+        joinBudget, JOIN_RATELIMIT_COOLDOWN, actuallyJoin, this));
 
     // Listen to read connection message signals
     this->connection->moveToThread(QCoreApplication::instance()->thread());

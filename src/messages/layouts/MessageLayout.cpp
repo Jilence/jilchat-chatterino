@@ -12,6 +12,7 @@
 #include "messages/MessageElement.hpp"
 #include "messages/Selection.hpp"
 #include "providers/colors/ColorProvider.hpp"
+#include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
 #include "singletons/WindowManager.hpp"
@@ -30,6 +31,33 @@
 namespace chatterino {
 
 namespace {
+
+constexpr int SCROLLBAR_PADDING = 20;
+
+std::optional<QColor> clientDetectionHighlightColor(
+    Message::ClientDetectionStatus status,
+    const MessagePreferences &preferences)
+{
+    if (!preferences.enableClientDetectionHighlight)
+    {
+        return std::nullopt;
+    }
+
+    switch (status)
+    {
+        case Message::ClientDetectionStatus::Web:
+            return preferences.clientDetectionWebColor;
+        case Message::ClientDetectionStatus::Android:
+            return preferences.clientDetectionAndroidColor;
+        case Message::ClientDetectionStatus::IOS:
+            return preferences.clientDetectionIosColor;
+        case Message::ClientDetectionStatus::Unknown:
+        case Message::ClientDetectionStatus::Abnormal:
+            return std::nullopt;
+    }
+
+    return std::nullopt;
+}
 
 QColor blendColors(const QColor &base, const QColor &apply)
 {
@@ -485,6 +513,7 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     {
         replacement = QColor(0x4A273D);
     }
+<<<<<<< HEAD
     else
     {
         if (prefs.enableClientDetectionHighlight)
@@ -510,6 +539,12 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             // TODO: Give this a better/its own color :-)
             addHighlight(*ctx.colorProvider.color(ColorType::Subscription));
         }
+=======
+    else if (const auto clientColor = clientDetectionHighlightColor(
+                 this->message_->clientDetection, ctx.preferences))
+    {
+        backgroundColor = blendColors(backgroundColor, *clientColor);
+>>>>>>> upstream/leafyrino
     }
 
     if (!highlights.empty())
@@ -527,8 +562,37 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                                       platformTint(this->message_->platform));
     }
 
+    std::optional<QPixmap> clientDetectionIcon = {};
+
+    if (getSettings()->clientDetectionIcon)
+    {
+        auto resources = getResources();
+
+        switch (this->message_->clientDetection)
+        {
+            using enum Message::ClientDetectionStatus;
+            case Webchat: {
+                clientDetectionIcon = resources.chat.twitch;
+                break;
+            }
+            case Android: {
+                clientDetectionIcon = resources.chat.android;
+                break;
+            }
+            case IOS: {
+                clientDetectionIcon = resources.chat.ios;
+                break;
+            }
+
+            case Unknown:
+            case Abnormal:
+                break;
+        }
+    }
+
     painter.fillRect(buffer->rect(), backgroundColor);
 
+<<<<<<< HEAD
     if (prefs.multipleHighlightBands && highlights.size() > 1)
     {
         // The other highlights as full-color bands at the left edge.
@@ -544,6 +608,18 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                        bandWidth, this->container_.getHeight()),
                 color);
         }
+=======
+    if (getSettings()->clientDetectionIcon && clientDetectionIcon.has_value())
+    {
+        float size = 16 * this->scale_;
+        float right =
+            float(buffer->rect().right()) - (SCROLLBAR_PADDING * this->scale_);
+        int left = int(right - size);
+        int top = int((float(buffer->height()) - size * this->scale_) / 2);
+
+        painter.drawPixmap(QRect(left, top, int(size), int(size)),
+                           clientDetectionIcon.value());
+>>>>>>> upstream/leafyrino
     }
 
     this->container_.paintElements(painter, ctx);

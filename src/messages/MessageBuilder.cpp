@@ -2311,6 +2311,11 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
                 return std::holds_alternative<TwitchGifOccurrence>(item.data);
             });
 
+        if (getSettings()->wrapAsciiArt && isAsciiArt(content))
+        {
+            builder->flags.set(MessageFlag::AsciiArt);
+        }
+
         bool traditionalParsing = true;
         if (getSettings()->markdownParsing && !hasGif)
         {
@@ -2340,11 +2345,6 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
 
         if (traditionalParsing)
         {
-            if (getSettings()->wrapAsciiArt && isAsciiArt(content))
-            {
-                builder->flags.set(MessageFlag::AsciiArt);
-            }
-
             builder.addWords(content, twitchSpecials, textState);
         }
 
@@ -2543,13 +2543,14 @@ void MessageBuilder::addTwitchGif(const QString &id, QStringView originalText)
         ImageSet set{
             Image::fromUrl(
                 Url{u"https://media4.giphy.com/media/" % id % u"/100.webp"},
-                1.0, {100, 100}),
+                1.0),
             Image::fromUrl(
                 Url{u"https://media4.giphy.com/media/" % id % u"/200.webp"},
-                0.5, {200, 200}),
+                0.5),
         };
         this->emplace<LinebreakElement>(MessageElementFlag::TwitchGif);
-        this->emplace<ScalingImageElement>(set, MessageElementFlag::TwitchGif)
+        this->emplace<ScalingImageElement>(set, MessageElementFlag::TwitchGif,
+                                           original)
             ->setLink(Link{Link::Url, link})
             ->setTooltip(original.toHtmlEscaped());
     }

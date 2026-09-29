@@ -59,6 +59,7 @@ using namespace chatterino;
 
 // Ratelimits for anonymousJoinBucket_
 constexpr int JOIN_RATELIMIT_BUDGET = 18;
+constexpr int BOT_JOIN_RATELIMIT_BUDGET = 2000;
 constexpr int JOIN_RATELIMIT_COOLDOWN = 12500;
 
 bool isWarningAcknowledgeNotice(const QString &text)
@@ -270,9 +271,11 @@ TwitchIrcServer::TwitchIrcServer()
         }
         this->anonymousReadConnection_->sendRaw("JOIN #" + message);
     };
-    this->anonymousJoinBucket_.reset(
-        new RatelimitBucket(JOIN_RATELIMIT_BUDGET, JOIN_RATELIMIT_COOLDOWN,
-                            actuallyJoinAnonymous, this));
+    const int joinBudget = getSettings()->useBotLimitsJoin
+                               ? BOT_JOIN_RATELIMIT_BUDGET
+                               : JOIN_RATELIMIT_BUDGET;
+    this->anonymousJoinBucket_.reset(new RatelimitBucket(
+        joinBudget, JOIN_RATELIMIT_COOLDOWN, actuallyJoinAnonymous, this));
 
     this->anonymousReadConnection_.reset(new IrcConnection);
     this->anonymousReadConnection_->moveToThread(
