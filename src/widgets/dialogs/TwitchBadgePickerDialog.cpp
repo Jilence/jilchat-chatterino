@@ -69,6 +69,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <optional>
 #include <unordered_map>
@@ -558,12 +559,12 @@ class PaintTileButton final : public QPushButton
 {
 public:
     PaintTileButton(QString paintId, QString paintName, QString userName,
-                    QColor userColor, QWidget *parent)
+                    const QColor &userColor, QWidget *parent)
         : QPushButton(parent)
         , paintId_(std::move(paintId))
         , paintName_(std::move(paintName))
         , userName_(std::move(userName))
-        , userColor_(std::move(userColor))
+        , userColor_(userColor)
     {
         this->setCursor(Qt::PointingHandCursor);
         this->setAttribute(Qt::WA_Hover, true);
@@ -591,7 +592,7 @@ public:
     }
 
 protected:
-    void paintEvent(QPaintEvent *) override
+    void paintEvent(QPaintEvent * /*event*/) override
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1389,18 +1390,30 @@ void TwitchBadgePickerDialog::rebuildContent()
     }
 
     if (this->view_ == View::GlobalBadges)
+    {
         this->rebuildGlobalBadges();
+    }
     else if (this->view_ == View::ChannelBadges)
+    {
         this->rebuildChannelBadges();
+    }
     else if (this->view_ == View::EventBadges)
+    {
         this->rebuildEventBadges();
+    }
     else if (this->view_ == View::Moltorino)
+    {
         this->rebuildMoltorinoBadges();
+    }
     else if (this->view_ == View::SevenTvBadges ||
              this->view_ == View::SevenTvPaints)
+    {
         this->rebuildSevenTv();
+    }
     else
+    {
         this->rebuildColors();
+    }
 
     this->contentLayout_->addStretch(1);
     this->lastBadgeGridColumns_ = this->badgeGridColumns();
@@ -2836,7 +2849,7 @@ void TwitchBadgePickerDialog::loadMoltorinoBadges(bool force)
                         assigned = root.value("assignedBadges").toArray();
                     }
                     QSet<QString> owned;
-                    for (const auto &value : assigned)
+                    for (const auto &value : std::as_const(assigned))
                     {
                         owned.insert(
                             value.isObject()
@@ -2938,7 +2951,7 @@ void TwitchBadgePickerDialog::rebuildMoltorinoBadges()
     }
 
     int shown = 0;
-    for (const auto &option : this->moltorinoBadges_)
+    for (const auto &option : std::as_const(this->moltorinoBadges_))
     {
         if (!badgeMatchesSearch(option.badge, needle))
         {
@@ -3045,8 +3058,8 @@ void TwitchBadgePickerDialog::selectMoltorino(const QString &badgeId)
 
 void TwitchBadgePickerDialog::sevenTvRequest(
     const QString &query, const QJsonObject &variables,
-    std::function<void(const QJsonObject &)> onData,
-    std::function<void(const QString &)> onError)
+    const std::function<void(const QJsonObject &)> &onData,
+    const std::function<void(const QString &)> &onError)
 {
     const QPointer<TwitchBadgePickerDialog> self = this;
     NetworkRequest(QString::fromLatin1(SEVENTV_GQL_URL),
@@ -3134,7 +3147,8 @@ void TwitchBadgePickerDialog::loadSevenTv(bool force)
             // Only use a 7TV account that belongs to the current Twitch
             // account.
             bool sameAccount = false;
-            for (const auto &value : me.value("connections").toArray())
+            const auto connections = me.value("connections").toArray();
+            for (const auto &value : connections)
             {
                 const auto connection = value.toObject();
                 if (connection.value("platform")
@@ -3164,7 +3178,8 @@ void TwitchBadgePickerDialog::loadSevenTv(bool force)
 
             const auto inventory = me.value("inventory").toObject();
             self->sevenTvBadges_.clear();
-            for (const auto &value : inventory.value("badges").toArray())
+            const auto inventoryBadges = inventory.value("badges").toArray();
+            for (const auto &value : inventoryBadges)
             {
                 const auto badge = value.toObject()
                                        .value("to")
@@ -3177,8 +3192,9 @@ void TwitchBadgePickerDialog::loadSevenTv(bool force)
                     continue;
                 }
                 // Images come in scales 1 to 4.
-                QString images[4];
-                for (const auto &imageValue : badge.value("images").toArray())
+                std::array<QString, 4> images;
+                const auto imageList = badge.value("images").toArray();
+                for (const auto &imageValue : imageList)
                 {
                     const auto image = imageValue.toObject();
                     const auto scale = image.value("scale").toInt();
@@ -3200,7 +3216,8 @@ void TwitchBadgePickerDialog::loadSevenTv(bool force)
             }
 
             self->sevenTvPaints_.clear();
-            for (const auto &value : inventory.value("paints").toArray())
+            const auto inventoryPaints = inventory.value("paints").toArray();
+            for (const auto &value : inventoryPaints)
             {
                 const auto paint = value.toObject()
                                        .value("to")
@@ -3230,7 +3247,7 @@ void TwitchBadgePickerDialog::loadSevenTv(bool force)
 void TwitchBadgePickerDialog::loadSevenTvPaintData()
 {
     QJsonArray missing;
-    for (const auto &paint : this->sevenTvPaints_)
+    for (const auto &paint : std::as_const(this->sevenTvPaints_))
     {
         if (!getApp()->getSeventvPaints()->getPaintById(paint.id))
         {
@@ -3285,12 +3302,18 @@ void TwitchBadgePickerDialog::rebuildSevenTv()
         new QLabel(paints ? "7TV paint" : "7TV badge", this->contentWidget_);
     title->setObjectName("TwitchBadgePickerSectionLabel");
     texts->addWidget(title);
-    auto *hint =
-        new QLabel(connected ? (paints ? "Choose one of your 7TV paints."
-                                       : "Choose one of your 7TV badges.")
-                             : (paints ? "Connect 7TV to choose a paint."
-                                       : "Connect 7TV to choose a badge."),
-                   this->contentWidget_);
+    QString hintText;
+    if (connected)
+    {
+        hintText = paints ? "Choose one of your 7TV paints."
+                          : "Choose one of your 7TV badges.";
+    }
+    else
+    {
+        hintText = paints ? "Connect 7TV to choose a paint."
+                          : "Connect 7TV to choose a badge.";
+    }
+    auto *hint = new QLabel(hintText, this->contentWidget_);
     hint->setWordWrap(true);
     texts->addWidget(hint);
     header->addLayout(texts, 1);
@@ -3357,7 +3380,7 @@ void TwitchBadgePickerDialog::rebuildSevenTv()
             addPaint({}, "No paint");
         }
         int shown = 0;
-        for (const auto &paint : this->sevenTvPaints_)
+        for (const auto &paint : std::as_const(this->sevenTvPaints_))
         {
             if (paint.name.contains(needle, Qt::CaseInsensitive))
             {
@@ -3404,7 +3427,7 @@ void TwitchBadgePickerDialog::rebuildSevenTv()
     }
 
     int shown = 0;
-    for (const auto &badge : this->sevenTvBadges_)
+    for (const auto &badge : std::as_const(this->sevenTvBadges_))
     {
         if (!badgeMatchesSearch(badge, needle))
         {
@@ -3543,7 +3566,7 @@ void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
             QString name;
             if (paint)
             {
-                for (const auto &p : self->sevenTvPaints_)
+                for (const auto &p : std::as_const(self->sevenTvPaints_))
                 {
                     if (p.id == id)
                     {
@@ -3553,7 +3576,7 @@ void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
             }
             else
             {
-                for (const auto &b : self->sevenTvBadges_)
+                for (const auto &b : std::as_const(self->sevenTvBadges_))
                 {
                     if (b.id == id)
                     {
@@ -3561,12 +3584,18 @@ void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
                     }
                 }
             }
-            self->channel_->addSystemMessage(
-                id.isEmpty() ? (paint ? QStringLiteral("7TV paint removed.")
-                                      : QStringLiteral("7TV badge removed."))
-                             : (paint ? QStringLiteral("7TV paint set to: %1")
-                                      : QStringLiteral("7TV badge set to: %1"))
-                                   .arg(name));
+            const auto what =
+                paint ? QStringLiteral("paint") : QStringLiteral("badge");
+            if (id.isEmpty())
+            {
+                self->channel_->addSystemMessage(
+                    QStringLiteral("7TV %1 removed.").arg(what));
+            }
+            else
+            {
+                self->channel_->addSystemMessage(
+                    QStringLiteral("7TV %1 set to: %2").arg(what, name));
+            }
             self->rebuildContent();
         },
         [self, paint, previous](const QString &error) {

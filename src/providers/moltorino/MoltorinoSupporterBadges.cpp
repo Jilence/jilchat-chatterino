@@ -186,7 +186,8 @@ bool parsePayloadV2(const QJsonObject &root, ParsedPayload &parsed)
         int priority = std::numeric_limits<int>::max();
     };
     std::unordered_map<QString, Definition> definitions;
-    for (const auto &value : root.value("badges").toArray())
+    const auto badgeList = root.value("badges").toArray();
+    for (const auto &value : badgeList)
     {
         if (definitions.size() >= static_cast<size_t>(MAX_CATEGORIES))
         {
@@ -234,7 +235,8 @@ bool parsePayloadV2(const QJsonObject &root, ParsedPayload &parsed)
         {
             // Otherwise the most important one they own.
             auto best = std::numeric_limits<int>::max();
-            for (const auto &owned : user.value("badges").toArray())
+            const auto ownedBadges = user.value("badges").toArray();
+            for (const auto &owned : ownedBadges)
             {
                 const auto id = owned.toString().trimmed();
                 const auto definition = definitions.find(id);
@@ -440,7 +442,6 @@ void MoltorinoSupporterBadges::refreshIfNewer(int version)
 
     // The pushed version may use the v1 numbering, which differs from the v2
     // bundle version, so it can't be compared: just load the badges again.
-    (void)version;
     this->refreshNow();
 }
 

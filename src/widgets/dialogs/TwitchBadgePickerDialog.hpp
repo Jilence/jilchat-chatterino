@@ -97,8 +97,8 @@ private:
     void selectSevenTv(bool paint, const QString &id);
     void loadSevenTvPaintData();
     void sevenTvRequest(const QString &query, const QJsonObject &variables,
-                        std::function<void(const QJsonObject &)> onData,
-                        std::function<void(const QString &)> onError);
+                        const std::function<void(const QJsonObject &)> &onData,
+                        const std::function<void(const QString &)> &onError);
     void clearContent();
     void deselectChannel();
     void setFlairHidden(bool hidden);
