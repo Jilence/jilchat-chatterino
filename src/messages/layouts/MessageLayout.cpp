@@ -513,38 +513,18 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     {
         replacement = QColor(0x4A273D);
     }
-<<<<<<< HEAD
     else
     {
-        if (prefs.enableClientDetectionHighlight)
+        if (const auto clientColor = clientDetectionHighlightColor(
+                this->message_->clientDetection, ctx.preferences))
         {
-            switch (this->message_->clientDetection)
-            {
-                case Message::ClientDetectionStatus::Web:
-                    addHighlight(prefs.clientDetectionWebColor);
-                    break;
-                case Message::ClientDetectionStatus::Android:
-                    addHighlight(prefs.clientDetectionAndroidColor);
-                    break;
-                case Message::ClientDetectionStatus::IOS:
-                    addHighlight(prefs.clientDetectionIosColor);
-                    break;
-                case Message::ClientDetectionStatus::Unknown:
-                case Message::ClientDetectionStatus::Abnormal:
-                    break;
-            }
+            addHighlight(*clientColor);
         }
         if (flags.has(MessageFlag::UncategorizedNotification))
         {
             // TODO: Give this a better/its own color :-)
             addHighlight(*ctx.colorProvider.color(ColorType::Subscription));
         }
-=======
-    else if (const auto clientColor = clientDetectionHighlightColor(
-                 this->message_->clientDetection, ctx.preferences))
-    {
-        backgroundColor = blendColors(backgroundColor, *clientColor);
->>>>>>> upstream/leafyrino
     }
 
     if (!highlights.empty())
@@ -592,7 +572,6 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
 
     painter.fillRect(buffer->rect(), backgroundColor);
 
-<<<<<<< HEAD
     if (prefs.multipleHighlightBands && highlights.size() > 1)
     {
         // The other highlights as full-color bands at the left edge.
@@ -608,7 +587,8 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                        bandWidth, this->container_.getHeight()),
                 color);
         }
-=======
+    }
+
     if (getSettings()->clientDetectionIcon && clientDetectionIcon.has_value())
     {
         float size = 16 * this->scale_;
@@ -619,7 +599,6 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
 
         painter.drawPixmap(QRect(left, top, int(size), int(size)),
                            clientDetectionIcon.value());
->>>>>>> upstream/leafyrino
     }
 
     this->container_.paintElements(painter, ctx);
