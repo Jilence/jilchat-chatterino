@@ -22,6 +22,7 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <limits>
 #include <mutex>
 
 namespace chatterino {
@@ -30,9 +31,13 @@ namespace {
 
 using namespace literals;
 
-constexpr auto ENDPOINT = "https://api.moltorino.com/badges";
-constexpr auto CACHE_FILE = "moltorino-supporter-badges.json";
+constexpr auto ENDPOINT = "https://api.moltorino.com/v2/badges";
+// The v2 bundle versions are counted separately from v1, so it gets its own
+// cache.
+constexpr auto CACHE_FILE = "moltorino-supporter-badges-v2.json";
 constexpr int PASSIVE_REFRESH_THROTTLE_MS = 60000;
+/// Picks made in Moltorino only reach us by loading the badges again.
+constexpr int REFRESH_INTERVAL_MS = 30000;
 constexpr qsizetype MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 constexpr int MAX_CATEGORIES = 64;
 constexpr int MAX_ASSIGNMENTS = 250000;
@@ -164,6 +169,103 @@ void addBadgeAssignment(ParsedPayload &parsed, const QString &userId,
     badges.emplace_back(MoltorinoSupporterBadge{categoryId, emote});
 }
 
+/// v2: the badges once, and per user the badges they own plus the one they
+/// picked to show.
+bool parsePayloadV2(const QJsonObject &root, ParsedPayload &parsed)
+{
+    bool ok = false;
+    const auto version = root.value("bundleVersion").toVariant().toInt(&ok);
+    if (!ok || version < 0)
+    {
+        return false;
+    }
+    parsed.version = version;
+
+    struct Definition {
+        EmotePtr emote;
+        int priority = std::numeric_limits<int>::max();
+    };
+    std::unordered_map<QString, Definition> definitions;
+    const auto badgeList = root.value("badges").toArray();
+    for (const auto &value : badgeList)
+    {
+        if (definitions.size() >= static_cast<size_t>(MAX_CATEGORIES))
+        {
+            break;
+        }
+        const auto badge = value.toObject();
+        const auto id = badge.value("id").toString().trimmed();
+        // Version the images by the badge's own asset version: the bundle
+        // version changes whenever anyone picks a badge, which would load every
+        // image again.
+        auto emote =
+            makeBadgeEmote(badge, badge.value("assetVersion").toInt(0));
+        if (id.isEmpty() || !emote)
+        {
+            continue;
+        }
+        definitions.emplace(
+            id, Definition{
+                    .emote = std::move(emote),
+                    .priority = badge.value("priority")
+                                    .toInt(std::numeric_limits<int>::max()),
+                });
+    }
+    parsed.categoryCount = definitions.size();
+
+    const auto users = root.value("users").toObject();
+    parsed.userBadges.reserve(std::min<qsizetype>(users.size(), 4096));
+    for (auto it = users.constBegin(); it != users.constEnd(); ++it)
+    {
+        if (parsed.assignmentCount >= MAX_ASSIGNMENTS)
+        {
+            break;
+        }
+
+        const auto userId = it.key().trimmed();
+        if (!isValidUserId(userId))
+        {
+            continue;
+        }
+
+        const auto user = it.value().toObject();
+        QString badgeId;
+        if (user.contains("activeBadge"))
+        {
+            // The badge the user picked; null means they show none.
+            badgeId = user.value("activeBadge").toString().trimmed();
+        }
+        else
+        {
+            // Otherwise the most important one they own.
+            auto best = std::numeric_limits<int>::max();
+            const auto ownedBadges = user.value("badges").toArray();
+            for (const auto &owned : ownedBadges)
+            {
+                const auto id = owned.toString().trimmed();
+                const auto definition = definitions.find(id);
+                if (definition != definitions.end() &&
+                    (badgeId.isEmpty() || definition->second.priority < best))
+                {
+                    best = definition->second.priority;
+                    badgeId = id;
+                }
+            }
+        }
+
+        const auto definition = definitions.find(badgeId);
+        if (definition == definitions.end())
+        {
+            continue;
+        }
+
+        ++parsed.assignmentCount;
+        addBadgeAssignment(parsed, userId, badgeId, definition->second.emote);
+    }
+
+    return true;
+}
+
 bool parsePayload(const QByteArray &payload, ParsedPayload &parsed)
 {
     if (payload.size() > MAX_PAYLOAD_BYTES)
@@ -179,6 +281,11 @@ bool parsePayload(const QByteArray &payload, ParsedPayload &parsed)
     }
 
     const auto root = document.object();
+    if (root.value("schemaVersion").toInt() == 2)
+    {
+        return parsePayloadV2(root, parsed);
+    }
+
     bool ok = false;
     const auto version = root.value("version").toVariant().toInt(&ok);
     if (!ok || version < 0)
@@ -293,6 +400,12 @@ void MoltorinoSupporterBadges::initialize()
     this->initialized_ = true;
     this->loadCache();
     this->refreshNow();
+
+    this->refreshTimer_.setInterval(REFRESH_INTERVAL_MS);
+    QObject::connect(&this->refreshTimer_, &QTimer::timeout, this, [this] {
+        this->refreshNow();
+    });
+    this->refreshTimer_.start();
 }
 
 void MoltorinoSupporterBadges::refreshNow()
@@ -331,12 +444,9 @@ void MoltorinoSupporterBadges::refreshIfNewer(int version)
         return;
     }
 
-    if (version <= this->version_)
-    {
-        return;
-    }
-
-    this->refreshInternal(true, version);
+    // The pushed version may use the v1 numbering, which differs from the v2
+    // bundle version, so it can't be compared: just load the badges again.
+    this->refreshNow();
 }
 
 std::vector<MoltorinoSupporterBadge> MoltorinoSupporterBadges::getBadges(
@@ -481,6 +591,11 @@ bool MoltorinoSupporterBadges::applyPayload(const QByteArray &payload,
     }
 
     if (parsed.version < this->version_)
+    {
+        return false;
+    }
+    // Unchanged: keep the badges, no need to redraw the chats.
+    if (!fromCache && parsed.version == this->version_)
     {
         return false;
     }

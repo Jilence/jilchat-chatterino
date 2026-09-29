@@ -10,11 +10,13 @@
 #include "widgets/DraggablePopup.hpp"
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QPointer>
 #include <QString>
 #include <QTimer>
 #include <QVector>
 
+#include <functional>
 #include <optional>
 
 class QLabel;
@@ -61,6 +63,20 @@ private:
         ChannelBadges,
         EventBadges,
         Color,
+        Moltorino,
+        SevenTvBadges,
+        SevenTvPaints,
+    };
+
+    struct SevenTvPaint {
+        QString id;
+        QString name;
+    };
+
+    /// A Moltorino supporter badge and whether the user owns it.
+    struct MoltorinoBadgeOption {
+        GqlBadge badge;
+        bool owned = false;
     };
 
     void loadBadges(bool force = false);
@@ -71,6 +87,18 @@ private:
     void rebuildChannelBadges();
     void rebuildEventBadges();
     void rebuildColors();
+    void loadMoltorinoBadges(bool force = false);
+    void rebuildMoltorinoBadges();
+    void selectMoltorino(const QString &badgeId);
+    void loadSevenTv(bool force = false);
+    void rebuildSevenTv();
+    void connectSevenTv();
+    void disconnectSevenTv();
+    void selectSevenTv(bool paint, const QString &id);
+    void loadSevenTvPaintData();
+    void sevenTvRequest(const QString &query, const QJsonObject &variables,
+                        const std::function<void(const QJsonObject &)> &onData,
+                        const std::function<void(const QString &)> &onError);
     void clearContent();
     void deselectChannel();
     void setFlairHidden(bool hidden);
@@ -97,6 +125,9 @@ private:
     QPushButton *channelTabButton_{};
     QPushButton *eventTabButton_{};
     QPushButton *colorTabButton_{};
+    QPushButton *moltorinoTabButton_{};
+    QPushButton *sevenTvBadgeTabButton_{};
+    QPushButton *sevenTvPaintTabButton_{};
     QWidget *searchRowWidget_{};
     QLineEdit *searchInput_{};
     Button *pinButton_{};
@@ -123,6 +154,24 @@ private:
     bool eventBadgesLoading_ = false;
     bool eventBadgesLoaded_ = false;
     QDateTime eventBadgesCacheTime_;
+
+    QVector<MoltorinoBadgeOption> moltorinoBadges_;
+    /// The profile from /v2/badges/me, sent back with a new selection.
+    QJsonObject moltorinoProfile_;
+    QString moltorinoSelected_;
+    bool moltorinoLoading_ = false;
+    bool moltorinoLoaded_ = false;
+
+    /// The user's 7TV token, kept in the system credential store.
+    QString sevenTvToken_;
+    bool sevenTvTokenRead_ = false;
+    QString sevenTvUserId_;
+    QVector<GqlBadge> sevenTvBadges_;
+    QVector<SevenTvPaint> sevenTvPaints_;
+    QString sevenTvActiveBadge_;
+    QString sevenTvActivePaint_;
+    bool sevenTvLoading_ = false;
+    bool sevenTvLoaded_ = false;
 
     static std::vector<QPointer<TwitchBadgePickerDialog>> activeDialogs_;
 };

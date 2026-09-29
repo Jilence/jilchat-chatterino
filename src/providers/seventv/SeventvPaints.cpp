@@ -158,6 +158,13 @@ std::shared_ptr<Paint> SeventvPaints::getPaint(const QString &userName,
     return nullptr;
 }
 
+std::shared_ptr<Paint> SeventvPaints::getPaintById(const QString &paintID) const
+{
+    std::shared_lock lock(this->mutex_);
+    const auto it = this->knownPaints_.find(paintID);
+    return it == this->knownPaints_.end() ? nullptr : it->second;
+}
+
 void SeventvPaints::addPaint(const QJsonObject &paintJson)
 {
     const auto paintID = paintJson["id"].toString();

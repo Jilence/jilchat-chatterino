@@ -30,6 +30,8 @@ public:
                              std::span<const seventv::eventapi::User> users);
 
     std::shared_ptr<Paint> getPaint(const QString &userName, bool kick) const;
+    /// A paint added with addPaint, or nullptr.
+    std::shared_ptr<Paint> getPaintById(const QString &paintID) const;
 
 private:
     mutable std::shared_mutex mutex_;
