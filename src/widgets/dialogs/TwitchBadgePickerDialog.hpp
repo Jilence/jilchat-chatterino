@@ -10,6 +10,7 @@
 #include "widgets/DraggablePopup.hpp"
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QPointer>
 #include <QString>
 #include <QTimer>
@@ -61,6 +62,13 @@ private:
         ChannelBadges,
         EventBadges,
         Color,
+        Moltorino,
+    };
+
+    /// A Moltorino supporter badge and whether the user owns it.
+    struct MoltorinoBadgeOption {
+        GqlBadge badge;
+        bool owned = false;
     };
 
     void loadBadges(bool force = false);
@@ -71,6 +79,9 @@ private:
     void rebuildChannelBadges();
     void rebuildEventBadges();
     void rebuildColors();
+    void loadMoltorinoBadges(bool force = false);
+    void rebuildMoltorinoBadges();
+    void selectMoltorino(const QString &badgeId);
     void clearContent();
     void deselectChannel();
     void setFlairHidden(bool hidden);
@@ -97,6 +108,7 @@ private:
     QPushButton *channelTabButton_{};
     QPushButton *eventTabButton_{};
     QPushButton *colorTabButton_{};
+    QPushButton *moltorinoTabButton_{};
     QWidget *searchRowWidget_{};
     QLineEdit *searchInput_{};
     Button *pinButton_{};
@@ -123,6 +135,13 @@ private:
     bool eventBadgesLoading_ = false;
     bool eventBadgesLoaded_ = false;
     QDateTime eventBadgesCacheTime_;
+
+    QVector<MoltorinoBadgeOption> moltorinoBadges_;
+    /// The profile from /v2/badges/me, sent back with a new selection.
+    QJsonObject moltorinoProfile_;
+    QString moltorinoSelected_;
+    bool moltorinoLoading_ = false;
+    bool moltorinoLoaded_ = false;
 
     static std::vector<QPointer<TwitchBadgePickerDialog>> activeDialogs_;
 };

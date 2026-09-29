@@ -8,12 +8,14 @@
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/emotes/EmoteController.hpp"
 #include "messages/Image.hpp"
 #include "messages/ImageSet.hpp"
 #include "messages/layouts/MessageLayout.hpp"
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
+#include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/TwitchGql.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -21,6 +23,7 @@
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchUsers.hpp"
 #include "singletons/Fonts.hpp"
+#include "singletons/helper/GifTimer.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Twitch.hpp"
@@ -36,9 +39,11 @@
 #include <QCursor>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QGraphicsOpacityEffect>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPainter>
@@ -57,6 +62,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <unordered_map>
@@ -73,6 +79,8 @@ constexpr QSize BADGE_ICON_SIZE(36, 36);
 constexpr float BADGE_IMAGE_SCALE =
     float(BADGE_ICON_SIZE.width()) / float(BADGE_ICON_SIZE.width() / 2);
 constexpr char BADGE_SELECTED_COLOR[] = "#9146ff";
+constexpr auto MOLTORINO_BADGES_URL = "https://api.moltorino.com/v2/badges";
+constexpr auto MOLTORINO_PROFILE_URL = "https://api.moltorino.com/v2/badges/me";
 
 int scaledSeparatorHeight(float scale)
 {
@@ -406,6 +414,16 @@ public:
         this->connections_.managedConnect(
             getApp()->getWindows()->layoutRequested, [this](Channel *) {
                 this->refreshImageIfNeeded();
+            });
+        // Animated badges only move when the tile is painted again.
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                const auto &image =
+                    this->images_.getImageOrLoaded(BADGE_IMAGE_SCALE);
+                if (image->animated() && this->isVisible())
+                {
+                    this->update();
+                }
             });
     }
 
@@ -949,8 +967,21 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
                          this->switchView(View::EventBadges);
                      });
 
+    this->moltorinoTabButton_ = new QPushButton("Moltorino", container);
+    this->moltorinoTabButton_->setObjectName("TwitchBadgePickerTab");
+    this->moltorinoTabButton_->setCheckable(true);
+    this->moltorinoTabButton_->setChecked(false);
+    this->moltorinoTabButton_->setCursor(Qt::PointingHandCursor);
+    this->moltorinoTabButton_->setSizePolicy(QSizePolicy::Expanding,
+                                             QSizePolicy::Fixed);
+    QObject::connect(this->moltorinoTabButton_, &QPushButton::clicked, this,
+                     [this] {
+                         this->switchView(View::Moltorino);
+                     });
+
     otherTabRow->addWidget(this->colorTabButton_, 1);
     otherTabRow->addWidget(this->eventTabButton_, 1);
+    otherTabRow->addWidget(this->moltorinoTabButton_, 1);
     tabRows->addLayout(otherTabRow);
     this->mainLayout_->addLayout(tabRows);
 
@@ -1168,7 +1199,8 @@ void TwitchBadgePickerDialog::rebuildContent()
     this->contentLayout_->addWidget(this->statusLabel_);
     this->setStatus(this->statusText_, this->statusIsError_);
 
-    if (this->badgesLoading_ && this->view_ != View::Color)
+    if (this->badgesLoading_ && this->view_ != View::Color &&
+        this->view_ != View::Moltorino)
     {
         this->setStatus("Loading badges...");
         this->contentLayout_->addStretch(1);
@@ -1181,6 +1213,8 @@ void TwitchBadgePickerDialog::rebuildContent()
         this->rebuildChannelBadges();
     else if (this->view_ == View::EventBadges)
         this->rebuildEventBadges();
+    else if (this->view_ == View::Moltorino)
+        this->rebuildMoltorinoBadges();
     else
         this->rebuildColors();
 
@@ -1663,11 +1697,16 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->channelTabButton_->setChecked(view == View::ChannelBadges);
     this->eventTabButton_->setChecked(view == View::EventBadges);
     this->colorTabButton_->setChecked(view == View::Color);
+    this->moltorinoTabButton_->setChecked(view == View::Moltorino);
     this->updateSearchVisibility();
 
     if (view == View::EventBadges)
     {
         this->loadEventBadges(false);
+    }
+    else if (view == View::Moltorino)
+    {
+        this->loadMoltorinoBadges(false);
     }
 
     this->rebuildContent();
@@ -2541,6 +2580,277 @@ void TwitchBadgePickerDialog::applySizeConstraints()
         this->resize(std::max(this->width(), minW),
                      std::max(this->height(), minH));
     }
+}
+
+void TwitchBadgePickerDialog::loadMoltorinoBadges(bool force)
+{
+    if (this->moltorinoLoading_ || (this->moltorinoLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto token = this->authTokenOrMessage();
+    if (token.isEmpty())
+    {
+        this->rebuildContent();
+        return;
+    }
+
+    this->moltorinoLoading_ = true;
+    this->setStatus("Loading Moltorino badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto fail = [self](const NetworkResult &result) {
+        if (!self)
+        {
+            return;
+        }
+        self->moltorinoLoading_ = false;
+        self->setStatus(QStringLiteral("Could not load Moltorino badges: %1")
+                            .arg(result.formatError()),
+                        true);
+        self->rebuildContent();
+    };
+
+    // All badges first, then which ones the user owns and picked.
+    NetworkRequest(QString::fromLatin1(MOLTORINO_BADGES_URL))
+        .timeout(15000)
+        .onSuccess([self, token, fail](const NetworkResult &list) {
+            if (!self)
+            {
+                return;
+            }
+            const auto badges = list.parseJson().value("badges").toArray();
+
+            NetworkRequest(QString::fromLatin1(MOLTORINO_PROFILE_URL))
+                .header("Authorization", "OAuth " + token.toUtf8())
+                .header("Accept", "application/json")
+                .timeout(15000)
+                .onSuccess([self, badges](const NetworkResult &result) {
+                    if (!self)
+                    {
+                        return;
+                    }
+                    const auto root = result.parseJson();
+                    auto profile = root.value("profile").toObject();
+                    if (profile.isEmpty())
+                    {
+                        profile = root;
+                    }
+
+                    // Owned badges, as ids or objects with an id.
+                    auto assigned = profile.value("assignedBadges").toArray();
+                    if (assigned.isEmpty())
+                    {
+                        assigned = root.value("assignedBadges").toArray();
+                    }
+                    QSet<QString> owned;
+                    for (const auto &value : assigned)
+                    {
+                        owned.insert(
+                            value.isObject()
+                                ? value.toObject().value("id").toString()
+                                : value.toString());
+                    }
+
+                    self->moltorinoBadges_.clear();
+                    for (const auto &value : badges)
+                    {
+                        const auto badge = value.toObject();
+                        const auto id = badge.value("id").toString();
+                        const auto images = badge.value("images").toObject();
+                        if (id.isEmpty())
+                        {
+                            continue;
+                        }
+                        const bool isOwned = owned.contains(id);
+                        // Unlisted badges only show up for people who own them.
+                        if (!isOwned && !badge.value("listed").toBool(true))
+                        {
+                            continue;
+                        }
+                        self->moltorinoBadges_.push_back({
+                            .badge =
+                                {
+                                    .id = id,
+                                    .setID = id,
+                                    .title =
+                                        badge.value("tooltip").toString(id),
+                                    .description =
+                                        badge.value("description").toString(),
+                                    .image1x = images.value("1x").toString(),
+                                    .image2x = images.value("2x").toString(),
+                                    .image4x = images.value("3x").toString(),
+                                },
+                            .owned = isOwned,
+                        });
+                    }
+                    // Owned badges first, like in Moltorino.
+                    std::ranges::stable_partition(self->moltorinoBadges_,
+                                                  [](const auto &option) {
+                                                      return option.owned;
+                                                  });
+
+                    self->moltorinoProfile_ = profile;
+                    self->moltorinoSelected_ =
+                        profile.value("selectedBadge").toString();
+                    self->moltorinoLoading_ = false;
+                    self->moltorinoLoaded_ = true;
+                    self->setStatus({});
+                    self->rebuildContent();
+                })
+                .onError(fail)
+                .execute();
+        })
+        .onError(fail)
+        .execute();
+}
+
+void TwitchBadgePickerDialog::rebuildMoltorinoBadges()
+{
+    if (this->moltorinoLoading_ || !this->moltorinoLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+    auto *label = new QLabel("Moltorino badge", this->contentWidget_);
+    label->setObjectName("TwitchBadgePickerSectionLabel");
+    this->contentLayout_->addWidget(label);
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setEnabled(!this->actionInFlight_);
+        noBadgeTile->setSelected(this->moltorinoSelected_.isEmpty());
+        QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+            this->selectMoltorino({});
+        });
+        grid->addWidget(noBadgeTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &option : this->moltorinoBadges_)
+    {
+        if (!badgeMatchesSearch(option.badge, needle))
+        {
+            continue;
+        }
+
+        auto *tile = new BadgeTileButton(option.badge, gridWidget);
+        tile->setSelected(option.badge.id == this->moltorinoSelected_);
+        if (option.owned)
+        {
+            tile->setEnabled(!this->actionInFlight_);
+            QObject::connect(tile, &QPushButton::clicked, this,
+                             [this, id = option.badge.id] {
+                                 this->selectMoltorino(id);
+                             });
+        }
+        else
+        {
+            // Not unlocked: shown dimmed for a preview, like in Moltorino.
+            tile->setEnabled(false);
+            tile->setToolTip(option.badge.title + QStringLiteral(" (locked)"));
+            auto *dim = new QGraphicsOpacityEffect(tile);
+            dim->setOpacity(0.35);
+            tile->setGraphicsEffect(dim);
+        }
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0 && !needle.isEmpty())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("No matching badges."), this->contentWidget_));
+        return;
+    }
+
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::selectMoltorino(const QString &badgeId)
+{
+    const auto token = this->authTokenOrMessage();
+    if (token.isEmpty())
+    {
+        return;
+    }
+
+    // Keep the order and hidden badges, only change the selection.
+    const auto &profile = this->moltorinoProfile_;
+    QJsonObject body{
+        {"revision", profile.value("revision")},
+        {"layoutSchemaVersion", profile.value("layoutSchemaVersion").toInt(1)},
+        {"order", profile.value("order").toArray()},
+        {"hidden", profile.value("hidden").toArray()},
+        {"selectedBadge", badgeId.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                            : QJsonValue(badgeId)},
+        {"badgeSelectionExplicit", true},
+    };
+
+    const auto previous = this->moltorinoSelected_;
+    this->moltorinoSelected_ = badgeId;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QString::fromLatin1(MOLTORINO_PROFILE_URL),
+                   NetworkRequestType::Put)
+        .header("Authorization", "OAuth " + token.toUtf8())
+        .header("Accept", "application/json")
+        .json(body)
+        .timeout(15000)
+        .onSuccess([self, badgeId](const NetworkResult &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->channel_->addSystemMessage(
+                badgeId.isEmpty() ? QStringLiteral("Moltorino badge cleared.")
+                                  : QStringLiteral("Moltorino badge set to: %1")
+                                        .arg(badgeId));
+            // New revision for the next change; badges for the chat.
+            self->loadMoltorinoBadges(true);
+            getApp()->getMoltorinoSupporterBadges()->refreshNow();
+        })
+        .onError([self, previous](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->moltorinoSelected_ = previous;
+            self->setStatus(
+                QStringLiteral("Could not change the Moltorino badge: %1")
+                    .arg(result.formatError()),
+                true);
+            // The profile may have changed elsewhere; load it again.
+            self->moltorinoLoaded_ = false;
+            self->loadMoltorinoBadges(true);
+        })
+        .execute();
 }
 
 QString TwitchBadgePickerDialog::authTokenOrMessage()
