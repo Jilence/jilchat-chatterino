@@ -87,6 +87,17 @@ void Scrollbar::addHighlightsAtStart(
     }
 }
 
+void Scrollbar::setHighlightCapacity(size_t capacity)
+{
+    // rset_capacity drops from the front when shrinking.
+    this->highlights_.rset_capacity(capacity);
+}
+
+size_t Scrollbar::highlightCapacity() const
+{
+    return this->highlights_.capacity();
+}
+
 void Scrollbar::replaceHighlight(size_t index, ScrollbarHighlight replacement)
 {
     if (this->highlights_.size() <= index)

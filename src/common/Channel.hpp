@@ -79,6 +79,11 @@ public:
     pajlada::Signals::Signal<const std::vector<MessagePtr> &> filledInMessages;
     pajlada::Signals::NoArgSignal displayNameChanged;
     pajlada::Signals::NoArgSignal messagesCleared;
+    /// Invoked with the number of extra slots before the message limit grows
+    /// (see #growMessageLimit). Views grow their own buffers by the same amount.
+    pajlada::Signals::Signal<size_t> messageLimitGrown;
+    /// Invoked after the message limit was reset to its default.
+    pajlada::Signals::NoArgSignal messageLimitReset;
 
     Type getType() const;
     const QString &getName() const;
@@ -112,6 +117,16 @@ public:
         MessagePtr message, MessageContext context,
         std::optional<MessageFlags> overridingFlags = std::nullopt) final;
     void addMessagesAtStart(const std::vector<MessagePtr> &messages_);
+
+    /// Raises the message limit by `by` so older messages can be added at the
+    /// start. While raised, new messages also raise it instead of pushing the
+    /// oldest ones out, so nothing disappears while someone reads the history.
+    void growMessageLimit(size_t by);
+    /// Shrinks the message limit back to its default, removing the oldest
+    /// messages. Does nothing if the limit wasn't raised.
+    void resetMessageLimit();
+    /// How many messages this channel keeps at most.
+    size_t messageLimit() const;
 
     void addSystemMessage(const QString &contents);
 
@@ -181,6 +196,9 @@ private:
 
     const QString name_;
     LimitedQueue<MessagePtr> messages_;
+    /// The limit messages_ was created with, see #resetMessageLimit.
+    size_t defaultMessageLimit_;
+    bool messageLimitRaised_ = false;
     Type type_;
     bool anythingLogged_ = false;
 

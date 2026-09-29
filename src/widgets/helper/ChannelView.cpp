@@ -1083,6 +1083,7 @@ ChannelView::ChannelView(InternalCtor /*tag*/, QWidget *parent, Split *split,
     , highlightAnimation_(this)
     , context_(context)
     , messages_(messagesLimit)
+    , defaultMessagesLimit_(messagesLimit)
     , tooltipWidget_(new TooltipWidget(this))
 {
     this->setMouseTracking(true);
@@ -1176,6 +1177,7 @@ void ChannelView::initializeScrollbar()
         {
             this->layoutQueued_ = true;
         }
+        this->updateOlderLogMessages();
     });
 }
 
@@ -1561,6 +1563,11 @@ void ChannelView::performLayout(bool causedByScrollbar, bool disableAnimation)
     this->goToBottom_->setVisible(this->enableScrollingToBottom_ &&
                                   this->scrollBar_->isVisible() &&
                                   !this->scrollBar_->isAtBottom());
+
+    if (!this->scrollBar_->isVisible())
+    {
+        this->loadOlderLogsIfChatFits();
+    }
 }
 
 void ChannelView::layoutVisibleMessages(
@@ -1991,17 +1998,42 @@ void ChannelView::refreshScrollbarHighlights()
     this->scrollBar_->update();
 }
 
+ChannelView::~ChannelView()
+{
+    // Disconnect first so resetting the limit doesn't call back into this
+    // view while it's being destroyed.
+    this->channelConnections_.clear();
+    this->releaseRaisedMessageLimit();
+}
+
 void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
 {
+    this->releaseRaisedMessageLimit();
+
     /// Clear connections from the last channel
     this->channelConnections_.clear();
 
     this->clearMessages();
     this->scrollBar_->clearHighlights();
+    this->messages_.setLimit(this->defaultMessagesLimit_);
+    this->scrollBar_->setHighlightCapacity(this->defaultMessagesLimit_);
+    this->ownsRaisedMessageLimit_ = false;
+    this->loadedOlderLogsBecauseChatFits_ = false;
 
     /// make copy of channel and expose
     this->channel_ = std::make_unique<Channel>(underlyingChannel->getName(),
                                                underlyingChannel->getType());
+
+    // Older messages from the logs raise the message limit of the underlying
+    // channel; raise it on our copy too so they fit.
+    this->channelConnections_.managedConnect(
+        underlyingChannel->messageLimitGrown, [this](size_t by) {
+            this->channel_->growMessageLimit(by);
+        });
+    this->channelConnections_.managedConnect(
+        underlyingChannel->messageLimitReset, [this] {
+            this->channel_->resetMessageLimit();
+        });
 
     //
     // Proxy channel connections
@@ -2130,6 +2162,15 @@ void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
         [this](std::vector<MessagePtr> &messages) {
             this->messageAddedAtStart(messages);
         });
+
+    this->channelConnections_.managedConnect(this->channel_->messageLimitGrown,
+                                             [this](size_t by) {
+                                                 this->messageLimitGrown(by);
+                                             });
+    this->channelConnections_.managedConnect(this->channel_->messageLimitReset,
+                                             [this] {
+                                                 this->messageLimitReset();
+                                             });
 
     // on message replaced
     this->channelConnections_.managedConnect(
@@ -2403,6 +2444,128 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
     }
 
     this->queueLayout();
+}
+
+void ChannelView::messageLimitGrown(size_t by)
+{
+    this->messages_.setLimit(this->messages_.limit() + by);
+    this->scrollBar_->setHighlightCapacity(
+        this->scrollBar_->highlightCapacity() + by);
+}
+
+void ChannelView::messageLimitReset()
+{
+    const auto removed =
+        this->messages_.setLimit(this->defaultMessagesLimit_).size();
+    this->scrollBar_->setHighlightCapacity(this->defaultMessagesLimit_);
+    this->ownsRaisedMessageLimit_ = false;
+
+    if (removed == 0)
+    {
+        return;
+    }
+
+    // Same bookkeeping as when messageAppended pushes messages out.
+    if (this->paused())
+    {
+        this->pauseScrollMinimumOffset_ += static_cast<int>(removed);
+        this->pauseSelectionOffset_ += static_cast<uint32_t>(removed);
+    }
+    else
+    {
+        this->scrollBar_->offsetMinimum(static_cast<qreal>(removed));
+        this->selection_.shiftMessageIndex(removed);
+        this->doubleClickSelection_.shiftMessageIndex(removed);
+    }
+    this->queueLayout();
+}
+
+TwitchChannel *ChannelView::olderLogsChannel() const
+{
+    if (this->context_ != Context::None || this->split_ == nullptr ||
+        !getSettings()->loadOlderMessagesFromPublicLogs)
+    {
+        return nullptr;
+    }
+
+    auto *twitchChannel =
+        dynamic_cast<TwitchChannel *>(this->underlyingChannel_.get());
+    if (twitchChannel == nullptr ||
+        twitchChannel->getType() != Channel::Type::Twitch)
+    {
+        return nullptr;
+    }
+    return twitchChannel;
+}
+
+void ChannelView::updateOlderLogMessages()
+{
+    if (this->scrollBar_->isAtBottom())
+    {
+        this->releaseRaisedMessageLimit();
+        return;
+    }
+
+    if (this->scrollBar_->getCurrentValue() >
+        this->scrollBar_->getMinimum() + 0.5)
+    {
+        return;
+    }
+
+    if (auto *twitchChannel = this->olderLogsChannel())
+    {
+        if (twitchChannel->loadOlderMessagesFromLogs())
+        {
+            this->ownsRaisedMessageLimit_ = true;
+        }
+    }
+}
+
+void ChannelView::releaseRaisedMessageLimit()
+{
+    if (!this->ownsRaisedMessageLimit_)
+    {
+        return;
+    }
+    this->ownsRaisedMessageLimit_ = false;
+    if (this->underlyingChannel_)
+    {
+        this->underlyingChannel_->resetMessageLimit();
+    }
+}
+
+void ChannelView::loadOlderLogsIfChatFits()
+{
+    if (this->loadedOlderLogsBecauseChatFits_)
+    {
+        return;
+    }
+
+    auto *twitchChannel = this->olderLogsChannel();
+    if (twitchChannel == nullptr)
+    {
+        return;
+    }
+    if (twitchChannel->loadOlderMessagesFromLogs())
+    {
+        this->loadedOlderLogsBecauseChatFits_ = true;
+        return;
+    }
+
+    // The recent messages are still loading. Try again soon: if they turn out
+    // empty, nothing triggers a new layout that would retry.
+    if (twitchChannel->isLoadingRecentMessages() &&
+        !this->olderLogsRetryPending_)
+    {
+        this->olderLogsRetryPending_ = true;
+        QTimer::singleShot(1000, this, [this] {
+            this->olderLogsRetryPending_ = false;
+            if (!this->scrollBar_->isVisible())
+            {
+                this->loadOlderLogsIfChatFits();
+            }
+        });
+    }
 }
 
 void ChannelView::messageReplaced(size_t hint, const MessagePtr &prev,

@@ -52,6 +52,7 @@ class LabelButton;
 struct Link;
 class MessageLayoutElement;
 class Split;
+class TwitchChannel;
 class FilterSet;
 using FilterSetPtr = std::shared_ptr<FilterSet>;
 
@@ -105,6 +106,12 @@ public:
     explicit ChannelView(QWidget *parent, Split *split,
                          Context context = Context::None,
                          size_t messagesLimit = 1000);
+
+    ~ChannelView() override;
+    ChannelView(const ChannelView &) = delete;
+    ChannelView(ChannelView &&) = delete;
+    ChannelView &operator=(const ChannelView &) = delete;
+    ChannelView &operator=(ChannelView &&) = delete;
 
     void queueUpdate();
     void queueUpdate(const QRect &area);
@@ -343,6 +350,21 @@ private:
     void messageAppended(MessagePtr &message,
                          std::optional<MessageFlags> overridingFlags);
     void messageAddedAtStart(std::vector<MessagePtr> &messages);
+    void messageLimitGrown(size_t by);
+    void messageLimitReset();
+
+    /// The Twitch channel whose public logs this view may load when scrolled
+    /// to the top, or nullptr.
+    TwitchChannel *olderLogsChannel() const;
+    /// Loads older messages from the public logs at the top of the view, and
+    /// drops them again once the view is back at the bottom.
+    void updateOlderLogMessages();
+    /// Loads older logs once when the whole chat fits without a scrollbar,
+    /// since then there is no top to scroll to.
+    void loadOlderLogsIfChatFits();
+    /// Resets the message limit this view raised on its channel, so it doesn't
+    /// stay raised after the view stops showing the channel.
+    void releaseRaisedMessageLimit();
     void messageRemoveFromStart(MessagePtr &message);
     void messageReplaced(size_t hint, const MessagePtr &prev,
                          const MessagePtr &replacement);
@@ -515,6 +537,15 @@ private:
     const Context context_;
 
     LimitedQueue<MessageLayoutPtr> messages_;
+    /// The limit messages_ was created with, see #messageLimitReset.
+    size_t defaultMessagesLimit_;
+    /// Whether this view raised the message limit by loading older logs, so it
+    /// is the one to reset it when scrolled back to the bottom.
+    bool ownsRaisedMessageLimit_ = false;
+    /// Whether older logs were already loaded because the chat fit.
+    bool loadedOlderLogsBecauseChatFits_ = false;
+    /// A retry of loadOlderLogsIfChatFits is scheduled.
+    bool olderLogsRetryPending_ = false;
 
     pajlada::Signals::SignalHolder signalHolder_;
 

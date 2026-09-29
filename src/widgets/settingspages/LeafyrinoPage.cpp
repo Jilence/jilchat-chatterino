@@ -251,6 +251,20 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->conditionallyEnabledBy(s.showSplitMps)
         ->addTo(layout);
 
+    layout.addTitle("Chat history");
+    SettingWidget::intInput("Messages per load", s.publicLogsPageSize,
+                            {
+                                .min = 10,
+                                .max = 100,
+                                .singleStep = 10,
+                            })
+        ->conditionallyEnabledBy(s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("How many older messages are loaded from the public "
+                     "logs each time you scroll to the top of a chat.")
+        ->addKeywords({"logs", "zonian", "scroll", "page", "count", "messages",
+                       "chat", "history", "older", "public"})
+        ->addTo(layout);
+
     layout.addTitle("Miscellaneous");
     SettingWidget::checkbox("Use message colors for tab alerts",
                             s.colorTabHighlightsByMessage)
