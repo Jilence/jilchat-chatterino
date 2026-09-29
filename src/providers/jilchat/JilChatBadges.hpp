@@ -42,6 +42,10 @@ private:
      * Guarded by mutex_
      */
     std::unordered_map<QString, std::vector<EmotePtr>> badgeMap_;
+
+    /// The last payload applied, used to skip unchanged refreshes.
+    /// Guarded by mutex_
+    QJsonArray lastPayload_;
 };
 
 }  // namespace chatterino

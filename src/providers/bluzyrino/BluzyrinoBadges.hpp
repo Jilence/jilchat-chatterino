@@ -92,6 +92,9 @@ private:
     std::unordered_map<QString, std::vector<QString>> userBadges_;
     /// User id -> selected donor badge id, guarded by mutex_.
     std::unordered_map<QString, QString> donorSelection_;
+    /// The last registry payload applied, used to skip unchanged refreshes.
+    /// Guarded by mutex_.
+    QJsonObject lastPayload_;
     /// User id -> precomputed render list, guarded by mutex_.
     std::unordered_map<QString, std::vector<EmotePtr>> renderCache_;
 };
