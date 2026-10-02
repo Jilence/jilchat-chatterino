@@ -47,6 +47,7 @@ class Label;
 class MarkdownLabel;
 class EditUserNotesDialog;
 class ChannelView;
+class UsercardLogsView;
 class Split;
 struct HelixUser;
 struct IvrSubage;
@@ -99,6 +100,8 @@ private:
     void updateUserData();
     void updateLatestMessages();
     void updateUsercardMessagesVisibility();
+    /// Switches between the recent messages and the public logs view.
+    void setUsercardLogsShown(bool shown);
     void resetUsercardMessageLoader();
     void updateLoadMoreMessagesButton();
     bool canLoadMoreUsercardMessages() const;
@@ -216,6 +219,7 @@ private:
     QString usercardMessagesError_;
     uint64_t usercardMessagesRequestGeneration_ = 0;
     bool usercardMessagesLoading_ = false;
+    bool usercardLogsShown_ = false;
     bool usercardMessagesHasNextPage_ = true;
     bool usercardMessagesLazyLoadEnabled_ = false;
     /// Months with public logs of the user, newest first. Used instead of
@@ -304,6 +308,7 @@ private:
         Label *noMessagesLabel = nullptr;
         ChannelView *latestMessages = nullptr;
         LabelButton *loadMoreMessages = nullptr;
+        UsercardLogsView *logsView = nullptr;
 
         LabelButton *usercardLabel = nullptr;
         LabelButton *userlogsLabel = nullptr;

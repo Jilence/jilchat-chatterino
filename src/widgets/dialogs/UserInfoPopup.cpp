@@ -60,6 +60,7 @@
 #include "widgets/helper/Line.hpp"
 #include "widgets/helper/LiveIndicator.hpp"
 #include "widgets/helper/ScalingSpacerItem.hpp"
+#include "widgets/helper/UsercardLogsView.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/MarkdownLabel.hpp"
 #include "widgets/Notebook.hpp"
@@ -1757,12 +1758,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 return;
             }
 
-            QUrl url("https://tv.supa.sh/logs");
-            QUrlQuery query;
-            query.addQueryItem("c", this->underlyingChannel_->getName());
-            query.addQueryItem("u", this->userName_);
-            url.setQuery(query);
-            QDesktopServices::openUrl(url);
+            this->setUsercardLogsShown(!this->usercardLogsShown_);
         };
         QObject::connect(userlogs.getElement(), &Button::leftClicked, openLogs);
         this->registerMnemonicButton(this->ui_.userlogsLabel, Qt::Key_L,
@@ -1925,6 +1921,11 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         logs->addWidget(this->ui_.loadMoreMessages);
         logs->addWidget(this->ui_.noMessagesLabel);
         logs->addWidget(this->ui_.latestMessages);
+
+        this->ui_.logsView = new UsercardLogsView(this->split_, this);
+        this->ui_.logsView->setMinimumSize(400, 275);
+        this->ui_.logsView->hide();
+        logs->addWidget(this->ui_.logsView);
         logs->setAlignment(this->ui_.noMessagesLabel, Qt::AlignHCenter);
         logs->setAlignment(this->ui_.loadMoreMessages, Qt::AlignHCenter);
     }
@@ -2438,6 +2439,12 @@ void UserInfoPopup::setData(const QString &name,
                             const ChannelPtr &contextChannel,
                             const ChannelPtr &openingChannel)
 {
+    // The logs view belongs to the user shown before.
+    if (this->usercardLogsShown_)
+    {
+        this->setUsercardLogsShown(false);
+    }
+
     const QStringView idPrefix = u"id:";
     bool isId = name.startsWith(idPrefix);
     if (isId)
@@ -2842,6 +2849,14 @@ void UserInfoPopup::updateUsercardMessagesVisibility()
     const bool hadLoadMoreButton = this->ui_.loadMoreMessages != nullptr &&
                                    this->ui_.loadMoreMessages->isVisible();
     const auto previousNoMessagesText = this->ui_.noMessagesLabel->getText();
+    if (this->usercardLogsShown_)
+    {
+        // The logs view takes the place of the recent messages.
+        this->ui_.latestMessages->hide();
+        this->ui_.noMessagesLabel->hide();
+        this->ui_.loadMoreMessages->hide();
+        return;
+    }
     const auto noMessagesText = this->usercardMessagesLoading_
                                     ? QStringLiteral("Loading messages...")
                                     : QStringLiteral("No recent messages");
@@ -2906,11 +2921,31 @@ bool UserInfoPopup::canLoadMoreUsercardMessages() const
     return getSettings()->loadOlderMessagesFromPublicLogs;
 }
 
+void UserInfoPopup::setUsercardLogsShown(bool shown)
+{
+    if (shown && this->underlyingChannel_)
+    {
+        this->ui_.logsView->setTarget(this->underlyingChannel_,
+                                      this->userName_);
+    }
+    this->usercardLogsShown_ = shown;
+    this->ui_.logsView->setVisible(shown);
+    this->ui_.userlogsLabel->setText(shown ? "Messages" : "&Logs");
+    this->ui_.userlogsLabel->setToolTip(shown ? "Return to recent messages"
+                                              : "View logs");
+    this->updateUsercardMessagesVisibility();
+}
+
 void UserInfoPopup::updateLoadMoreMessagesButton()
 {
     auto *button = this->ui_.loadMoreMessages;
     if (button == nullptr)
     {
+        return;
+    }
+    if (this->usercardLogsShown_)
+    {
+        button->hide();
         return;
     }
 
