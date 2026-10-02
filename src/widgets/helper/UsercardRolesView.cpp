@@ -72,6 +72,7 @@ QString formatSince(const QString &grantedAt)
 
 UsercardRolesView::UsercardRolesView(QWidget *parent)
     : BaseWidget(parent)
+    , scope_(new QComboBox(this))
 {
     // Frameless popups drag the window from widgets without mouse tracking.
     this->setMouseTracking(true);
@@ -80,7 +81,6 @@ UsercardRolesView::UsercardRolesView(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
 
     auto *topRow = new QHBoxLayout();
-    this->scope_ = new QComboBox(this);
     this->scope_->addItem("Their roles", u"user"_s);
     this->scope_->addItem("Their channel", u"channel"_s);
     this->scope_->setToolTip(

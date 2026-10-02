@@ -115,6 +115,10 @@ QDate messageDay(const MessagePtr &message)
 
 UsercardLogsView::UsercardLogsView(Split *split, QWidget *parent)
     : BaseWidget(parent)
+    , period_(new PeriodComboBox(this))
+    , search_(new QLineEdit(this))
+    , view_(new ChannelView(this, split, ChannelView::Context::UserCard,
+                            getSettings()->scrollbackUsercardLimit))
 {
     // Frameless popups drag the window from widgets without mouse tracking.
     this->setMouseTracking(true);
@@ -127,7 +131,6 @@ UsercardLogsView::UsercardLogsView(Split *split, QWidget *parent)
     this->older_->setToolTip("Older period");
     this->newer_ = new LabelButton(u"▶"_s, this, QSize{8, 2});
     this->newer_->setToolTip("Newer period");
-    this->period_ = new PeriodComboBox(this);
     // A plain list instead of the style's menu, which can't scroll.
     this->period_->setStyleSheet("QComboBox { combobox-popup: 0; }");
     // Sized for the short labels; the list gets as wide as the long ones.
@@ -146,7 +149,6 @@ UsercardLogsView::UsercardLogsView(Split *split, QWidget *parent)
     layout->addLayout(periodRow);
 
     auto *searchRow = new QHBoxLayout();
-    this->search_ = new QLineEdit(this);
     this->search_->setPlaceholderText("Search this period");
     this->search_->setClearButtonEnabled(true);
     this->search_->findChild<QAbstractButton *>()->setIcon(
@@ -156,8 +158,6 @@ UsercardLogsView::UsercardLogsView(Split *split, QWidget *parent)
     searchRow->addWidget(this->searchAll_);
     layout->addLayout(searchRow);
 
-    this->view_ = new ChannelView(this, split, ChannelView::Context::UserCard,
-                                  getSettings()->scrollbackUsercardLimit);
     this->view_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     layout->addWidget(this->view_, 1);
 
