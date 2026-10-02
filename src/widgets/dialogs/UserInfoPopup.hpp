@@ -70,6 +70,11 @@ public:
     UserInfoPopup(bool closeAutomatically, Split *split);
     ~UserInfoPopup() override;
 
+    /// Like BaseWindow's, but once the user moved a usercard, they all open
+    /// where it was left.
+    void moveTo(QPoint point, widgets::BoundsChecking mode);
+    void showAndMoveTo(QPoint point, widgets::BoundsChecking mode);
+
     void setData(const QString &name, const ChannelPtr &channel);
     void setData(const QString &name, const ChannelPtr &contextChannel,
                  const ChannelPtr &openingChannel);
@@ -91,8 +96,21 @@ protected:
     void scaleChangedEvent(float scale) override;
     void windowDeactivationEvent() override;
     void keyPressEvent(QKeyEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void moveEvent(QMoveEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray &eventType, void *message,
+                     qintptr *result) override;
+#endif
 
 private:
+    /// Sizes the popup for its content, but not smaller than the size the
+    /// user last gave a usercard.
+    void fitToContent();
+    void rememberPosition();
+    void rememberSize();
+
     void registerMnemonicButton(LabelButton *button, int key,
                                 std::function<void()> action);
 
@@ -220,6 +238,10 @@ private:
     uint64_t usercardMessagesRequestGeneration_ = 0;
     bool usercardMessagesLoading_ = false;
     bool usercardLogsShown_ = false;
+    /// Set while a change of the message area must not shrink the popup.
+    bool keepUsercardSize_ = false;
+    /// The geometry when the user started to move or resize the popup.
+    QRect geometryBeforeUserChange_;
     bool usercardMessagesHasNextPage_ = true;
     bool usercardMessagesLazyLoadEnabled_ = false;
     /// Months with public logs of the user, newest first. Used instead of

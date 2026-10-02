@@ -107,6 +107,10 @@
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
+#ifdef Q_OS_WIN
+#    include <qt_windows.h>
+#endif
+
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -738,24 +742,54 @@ void appendUsercardMessage(const ChannelPtr &channel, const MessagePtr &message)
 }
 
 /// Adds older messages (oldest first) in front of the existing ones, with day
-/// separators between days, including towards the first existing message.
+/// separators between days, including towards the first existing message, and
+/// one at the very top, so the day of the oldest message is always shown.
 void prependUsercardMessages(const ChannelPtr &channel,
                              const std::vector<MessagePtr> &messages)
 {
     auto withSeparators = withUsercardDaySeparators(messages);
 
-    QDate lastNewDay;
-    for (const auto &message : std::views::reverse(messages))
+    const auto isDated = [](const auto &message) {
+        return usercardMessageDay(message).isValid();
+    };
+    QDate firstNewDay;
+    if (const auto it = std::ranges::find_if(messages, isDated);
+        it != messages.end())
     {
-        lastNewDay = usercardMessageDay(message);
-        if (lastNewDay.isValid())
+        firstNewDay = usercardMessageDay(*it);
+    }
+    QDate lastNewDay;
+    if (const auto reversed = std::views::reverse(messages);
+        std::ranges::find_if(reversed, isDated) != reversed.end())
+    {
+        lastNewDay =
+            usercardMessageDay(*std::ranges::find_if(reversed, isDated));
+    }
+    if (firstNewDay.isValid())
+    {
+        withSeparators.insert(withSeparators.begin(),
+                              makeUsercardDaySeparator(firstNewDay));
+    }
+
+    const auto firstExistingDay = usercardEdgeDay(channel, false);
+    const auto existing = channel->getMessageSnapshot();
+    const bool topIsSeparator =
+        !existing.empty() &&
+        existing.front()->id.startsWith(USERCARD_DAY_SEPARATOR_ID);
+    if (topIsSeparator)
+    {
+        // The separator at the top would now repeat the day in the middle of
+        // it. Messages can't be removed, so the newest of the new messages
+        // takes its place.
+        if (lastNewDay.isValid() && lastNewDay == firstExistingDay &&
+            !messages.empty())
         {
-            break;
+            channel->replaceMessage(size_t{0}, withSeparators.back());
+            withSeparators.pop_back();
         }
     }
-    const auto firstExistingDay = usercardEdgeDay(channel, false);
-    if (lastNewDay.isValid() && firstExistingDay.isValid() &&
-        lastNewDay != firstExistingDay)
+    else if (lastNewDay.isValid() && firstExistingDay.isValid() &&
+             lastNewDay != firstExistingDay)
     {
         withSeparators.push_back(makeUsercardDaySeparator(firstExistingDay));
     }
@@ -1963,6 +1997,68 @@ void UserInfoPopup::themeChangedEvent()
     }
 }
 
+namespace {
+
+/// Parses "a,b" as written by rememberPosition and rememberSize.
+std::optional<QPoint> parseIntPair(const QString &text)
+{
+    const auto parts = text.split(u',');
+    bool okA = false;
+    bool okB = false;
+    if (parts.size() != 2)
+    {
+        return std::nullopt;
+    }
+    const QPoint pair(parts[0].toInt(&okA), parts[1].toInt(&okB));
+    return okA && okB ? std::optional(pair) : std::nullopt;
+}
+
+std::optional<QSize> rememberedSize()
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return std::nullopt;
+    }
+    const auto size = parseIntPair(getSettings()->lastUsercardSize);
+    return size ? std::optional(QSize(size->x(), size->y())) : std::nullopt;
+}
+
+/// Where the next usercard opens: where the user left the last one, or next
+/// to the usercards that are already there.
+std::optional<QPoint> rememberedPosition(const UserInfoPopup *opening)
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return std::nullopt;
+    }
+    auto position = parseIntPair(getSettings()->lastUsercardPosition);
+    if (!position)
+    {
+        return std::nullopt;
+    }
+
+    constexpr int gap = 8;
+    constexpr int samePlace = 24;
+    QMutexLocker locker(&activeUsercardsMutex());
+    const auto &cards = activeUsercards();
+    // Each pass moves past one card, so this many passes are enough.
+    for (qsizetype pass = 0; pass < cards.size(); ++pass)
+    {
+        const auto taken = std::ranges::find_if(cards, [&](const auto &card) {
+            return card && card != opening && card->isVisible() &&
+                   (card->pos() - *position).manhattanLength() < samePlace;
+        });
+        if (taken == cards.end())
+        {
+            break;
+        }
+        position->setX((*taken)->x() + (*taken)->width() + gap);
+    }
+    return position;
+}
+
+}  // namespace
+
 void UserInfoPopup::scaleChangedEvent(float scale)
 {
     this->themeChangedEvent();
@@ -1979,7 +2075,125 @@ void UserInfoPopup::scaleChangedEvent(float scale)
         geo.setHeight(10);
 
         this->setGeometry(geo);
+        if (rememberedSize())
+        {
+            this->fitToContent();
+        }
     });
+}
+
+void UserInfoPopup::moveTo(QPoint point, widgets::BoundsChecking mode)
+{
+    if (const auto remembered = rememberedPosition(this))
+    {
+        BaseWindow::moveTo(*remembered,
+                           widgets::BoundsChecking::DesiredPosition);
+        return;
+    }
+    BaseWindow::moveTo(point, mode);
+}
+
+void UserInfoPopup::showAndMoveTo(QPoint point, widgets::BoundsChecking mode)
+{
+    if (const auto remembered = rememberedPosition(this))
+    {
+        BaseWindow::showAndMoveTo(*remembered,
+                                  widgets::BoundsChecking::DesiredPosition);
+        return;
+    }
+    BaseWindow::showAndMoveTo(point, mode);
+}
+
+void UserInfoPopup::fitToContent()
+{
+    const auto remembered = rememberedSize();
+    if (!remembered)
+    {
+        this->adjustSize();
+        return;
+    }
+    this->resize(remembered->expandedTo(this->sizeHint()));
+}
+
+void UserInfoPopup::rememberPosition()
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return;
+    }
+    getSettings()->lastUsercardPosition =
+        u"%1,%2"_s.arg(this->x()).arg(this->y());
+}
+
+void UserInfoPopup::rememberSize()
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return;
+    }
+    getSettings()->lastUsercardSize =
+        u"%1,%2"_s.arg(this->width()).arg(this->height());
+}
+
+void UserInfoPopup::showEvent(QShowEvent *event)
+{
+    DraggablePopup::showEvent(event);
+    if (rememberedSize())
+    {
+        this->fitToContent();
+    }
+}
+
+// Windows tells us when the user starts and stops dragging or resizing the
+// window. Elsewhere, changes while the mouse button is down are the user's.
+#ifdef Q_OS_WIN
+bool UserInfoPopup::nativeEvent(const QByteArray &eventType, void *message,
+                                qintptr *result)
+{
+    const auto *msg = static_cast<MSG *>(message);
+    if (msg->message == WM_ENTERSIZEMOVE)
+    {
+        this->geometryBeforeUserChange_ = this->geometry();
+    }
+    else if (msg->message == WM_EXITSIZEMOVE &&
+             this->geometryBeforeUserChange_.isValid())
+    {
+        if (this->size() != this->geometryBeforeUserChange_.size())
+        {
+            this->rememberSize();
+        }
+        else if (this->pos() != this->geometryBeforeUserChange_.topLeft())
+        {
+            this->rememberPosition();
+        }
+        this->geometryBeforeUserChange_ = {};
+    }
+    return DraggablePopup::nativeEvent(eventType, message, result);
+}
+#endif
+
+void UserInfoPopup::moveEvent(QMoveEvent *event)
+{
+    DraggablePopup::moveEvent(event);
+#ifndef Q_OS_WIN
+    if (this->isVisible() &&
+        QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))
+    {
+        this->rememberPosition();
+    }
+#endif
+}
+
+void UserInfoPopup::resizeEvent(QResizeEvent *event)
+{
+    DraggablePopup::resizeEvent(event);
+#ifndef Q_OS_WIN
+    if (this->isVisible() &&
+        QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))
+    {
+        this->rememberSize();
+    }
+#endif
 }
 
 void UserInfoPopup::windowDeactivationEvent()
@@ -2868,11 +3082,22 @@ void UserInfoPopup::updateUsercardMessagesVisibility()
 
     const bool hasLoadMoreButton = this->ui_.loadMoreMessages != nullptr &&
                                    this->ui_.loadMoreMessages->isVisible();
+    // The label's text only matters for the size while it is shown.
+    const bool labelTextChanged =
+        !hasMessages && previousNoMessagesText != noMessagesText;
     if (hadMessages != hasMessages || hadNoMessagesLabel != !hasMessages ||
-        hadLoadMoreButton != hasLoadMoreButton ||
-        previousNoMessagesText != noMessagesText)
+        hadLoadMoreButton != hasLoadMoreButton || labelTextChanged)
     {
-        this->adjustSize();
+        if ((hadMessages && hasMessages) || this->keepUsercardSize_)
+        {
+            // The messages stay, so keep a size the user may have picked;
+            // only grow if something doesn't fit anymore.
+            this->resize(this->size().expandedTo(this->sizeHint()));
+        }
+        else
+        {
+            this->fitToContent();
+        }
     }
 }
 
@@ -2933,7 +3158,10 @@ void UserInfoPopup::setUsercardLogsShown(bool shown)
     this->ui_.userlogsLabel->setText(shown ? "Messages" : "&Logs");
     this->ui_.userlogsLabel->setToolTip(shown ? "Return to recent messages"
                                               : "View logs");
+    // Switching the view shouldn't undo a size the user picked.
+    this->keepUsercardSize_ = true;
     this->updateUsercardMessagesVisibility();
+    this->keepUsercardSize_ = false;
 }
 
 void UserInfoPopup::updateLoadMoreMessagesButton()
