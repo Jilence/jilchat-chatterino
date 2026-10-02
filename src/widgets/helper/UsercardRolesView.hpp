@@ -7,6 +7,7 @@
 #include "widgets/BaseWidget.hpp"
 
 #include <QJsonArray>
+#include <QPoint>
 #include <QString>
 
 #include <array>
@@ -40,7 +41,7 @@ private:
     void loadPage();
     void addEntries(const QJsonArray &entries);
     void setStatus(const QString &text);
-    void showContextMenu(const QPoint &pos);
+    void showContextMenu(QPoint pos);
 
     QString userId_;
     QString login_;

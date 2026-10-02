@@ -29,6 +29,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace chatterino {
 
@@ -246,7 +247,7 @@ void UsercardLogsView::loadMonths()
             }
             {
                 const QSignalBlocker blocker(self->period_);
-                for (int i = 0; i < int(self->months_.size()); ++i)
+                for (int i = 0; std::cmp_less(i, self->months_.size()); ++i)
                 {
                     const auto month = self->months_[i];
                     self->period_->addItem(longMonthLabel(month), i);
@@ -271,7 +272,7 @@ void UsercardLogsView::loadMonths()
 
 void UsercardLogsView::loadMonth(int index)
 {
-    if (index < 0 || index >= int(this->months_.size()))
+    if (index < 0 || std::cmp_greater_equal(index, this->months_.size()))
     {
         return;
     }

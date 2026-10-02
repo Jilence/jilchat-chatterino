@@ -106,6 +106,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QShowEvent>
+#include <QSpacerItem>
 #include <QStringBuilder>
 #include <QSvgRenderer>
 #include <QTimer>
@@ -5514,7 +5515,8 @@ void UserInfoPopup::updateUsercardBadges()
         }
         layout->addWidget(label);
     }
-    static_cast<QHBoxLayout *>(layout)->addStretch(1);
+    layout->addItem(
+        new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum));
     strip->setVisible(!badges.empty());
 }
 

@@ -46,10 +46,10 @@ struct Role {
 };
 
 const std::array<Role, 4> ROLES{{
-    {u"moderators"_s, u"Mods"_s},
-    {u"vips"_s, u"VIPs"_s},
-    {u"founders"_s, u"Founders"_s},
-    {u"artists"_s, u"Artists"_s},
+    {.key = u"moderators"_s, .title = u"Mods"_s},
+    {.key = u"vips"_s, .title = u"VIPs"_s},
+    {.key = u"founders"_s, .title = u"Founders"_s},
+    {.key = u"artists"_s, .title = u"Artists"_s},
 }};
 
 const QString API_URL = u"https://roles.tv/api"_s;
@@ -304,10 +304,15 @@ void UsercardRolesView::addEntries(const QJsonArray &entries)
         const auto login = entry.value("login").toString();
         const auto name = entry.value("displayName").toString(login);
         const auto since = formatSince(entry.value("grantedAt").toString());
-        const auto status = entry.value("isPartner").toBool() ? u"Partner"_s
-                            : entry.value("isAffiliate").toBool()
-                                ? u"Affiliate"_s
-                                : QString();
+        QString status;
+        if (entry.value("isPartner").toBool())
+        {
+            status = u"Partner"_s;
+        }
+        else if (entry.value("isAffiliate").toBool())
+        {
+            status = u"Affiliate"_s;
+        }
 
         auto *row = new QWidget(this->list_);
         row->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -345,7 +350,7 @@ void UsercardRolesView::setStatus(const QString &text)
     this->list_->setVisible(text.isEmpty());
 }
 
-void UsercardRolesView::showContextMenu(const QPoint &pos)
+void UsercardRolesView::showContextMenu(QPoint pos)
 {
     const auto *item = this->list_->itemAt(pos);
     if (item == nullptr)
@@ -355,10 +360,10 @@ void UsercardRolesView::showContextMenu(const QPoint &pos)
     const auto login = item->data(LOGIN_ROLE).toString();
     auto *menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->addAction("Copy username", [login] {
+    menu->addAction("Copy username", menu, [login] {
         crossPlatformCopy(login);
     });
-    menu->addAction("Open channel on Twitch", [login] {
+    menu->addAction("Open channel on Twitch", menu, [login] {
         QDesktopServices::openUrl(QUrl(u"https://www.twitch.tv/"_s + login));
     });
     menu->popup(this->list_->viewport()->mapToGlobal(pos));
