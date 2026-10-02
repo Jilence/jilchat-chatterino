@@ -4033,6 +4033,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendChatsenBadges(userId);
     builder.appendHomiesBadges(userId);
     builder.appendFolhinhaBadges(userId);
+    builder.appendJilChatBadges(userId);
 
     MessageParseArgs args;
     args.isAction = true;
