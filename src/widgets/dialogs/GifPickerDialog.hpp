@@ -58,6 +58,8 @@ private:
     void selectionChanged();
     void toggleFavorite();
     void sendGif();
+    /// Tells why Twitch may have rejected a GIF with `error`.
+    void explainSendError(const QString &error);
     void setStatus(const QString &text);
     void updateButtons();
     /// Whether the favorites are shown instead of search results.

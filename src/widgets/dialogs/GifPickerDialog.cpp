@@ -77,20 +77,6 @@ QString giphyRating(const QString &twitchRating)
     return twitchRating == u"PG_13" ? u"pg-13"_s : u"pg"_s;
 }
 
-/// What Twitch said about a GIF it didn't send.
-QString sendErrorMessage(const QString &error)
-{
-    if (error == u"TEMPORARILY_UNAVAILABLE")
-    {
-        return u"GIFs are temporarily unavailable. Try again later."_s;
-    }
-    if (error.contains(u"TIER") || error.contains(u"SUB"))
-    {
-        return u"A higher subscription tier is required to send GIFs here."_s;
-    }
-    return u"Could not send this GIF (%1)."_s.arg(error);
-}
-
 }  // namespace
 
 /// The GIFs, in rows that fill the width: every row is as high as it has to
@@ -754,9 +740,18 @@ void GifPickerDialog::sendGif()
             }
 
             QString message;
-            if (!result.error.isEmpty())
+            if (result.error == u"TEMPORARILY_UNAVAILABLE")
             {
-                message = sendErrorMessage(result.error);
+                message =
+                    u"GIFs are temporarily unavailable. Try again later."_s;
+            }
+            else if (!result.error.isEmpty())
+            {
+                // Twitch doesn't say why. Mostly it's the subscription, so
+                // look that up to tell the user more.
+                self->explainSendError(result.error);
+                self->updateButtons();
+                return;
             }
             else if (result.secondsUntilCanSend > 0)
             {
@@ -779,6 +774,42 @@ void GifPickerDialog::sendGif()
             self->notice_->setText(
                 MoltorinoAuth::normalizeAuthError("sending the GIF", message));
             self->updateButtons();
+        });
+}
+
+void GifPickerDialog::explainSendError(const QString &error)
+{
+    this->notice_->setText(u"Twitch rejected the GIF (%1)."_s.arg(error));
+
+    const QPointer<GifPickerDialog> self(this);
+    TwitchGql::getOwnSubscriptionTier(
+        this->channelId_, this->token_,
+        [self, error](int tier) {
+            if (!self)
+            {
+                return;
+            }
+            if (tier >= 2)
+            {
+                self->notice_->setText(
+                    u"Twitch rejected the GIF (%1), although you have a Tier "
+                    "%2 sub here. GIFs may be limited to a higher tier or "
+                    "turned off for this channel."_s.arg(error)
+                        .arg(tier));
+                return;
+            }
+            self->notice_->setText(
+                u"Tier 2+ sub required. You have %1 in this channel."_s.arg(
+                    tier == 1 ? u"a Tier 1 sub"_s : u"no sub"_s));
+        },
+        [self, error](const QString & /*message*/) {
+            if (self)
+            {
+                self->notice_->setText(
+                    u"Twitch rejected the GIF (%1). Most channels need a "
+                    "Tier 2+ sub for GIFs; your sub here could not be "
+                    "checked."_s.arg(error));
+            }
         });
 }
 

@@ -473,6 +473,12 @@ void getGifPickerConfig(
     const QString &channelId, const QString &oauthToken,
     const std::function<void(GqlGifPickerConfig)> &successCallback,
     const std::function<void(const QString &)> &failureCallback);
+/// The tier (1 to 3) of the logged in user's subscription to the channel; 0
+/// without one.
+void getOwnSubscriptionTier(
+    const QString &channelId, const QString &oauthToken,
+    const std::function<void(int)> &successCallback,
+    const std::function<void(const QString &)> &failureCallback);
 void sendGifMessage(
     const QString &channelId, const QString &gifId, const QString &gifUrl,
     const QString &searchTerm, const QString &oauthToken,
