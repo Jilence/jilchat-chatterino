@@ -1488,6 +1488,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::checkbox("Display 7TV Paints", s.displaySevenTVPaints)
         ->addTo(layout);
+    SettingWidget::checkbox("Show the 7TV Paint's name when hovering a name",
+                            s.showSevenTVPaintTooltip)
+        ->setTooltip("Hovering over a username with a 7TV Paint shows the "
+                     "name of the paint, drawn in the paint itself.")
+        ->addTo(layout);
     SettingWidget::checkbox("Display 7TV Paint Shadows",
                             s.displaySevenTVPaintShadows)
         ->addTo(layout);
