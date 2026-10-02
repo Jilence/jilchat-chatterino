@@ -182,6 +182,13 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "visible badges settings in General.")
         ->addKeywords({"usercard", "badges", "badge"})
         ->addTo(layout);
+    SettingWidget::checkbox("Show roles button", s.showUsercardRolesButton)
+        ->setTooltip("Show a button on usercards that lists where the user "
+                     "is moderator, VIP, founder or artist, and who has "
+                     "those roles in their channel. Looks the user up on "
+                     "roles.tv.")
+        ->addKeywords({"usercard", "roles", "roles.tv", "moderator", "vip"})
+        ->addTo(layout);
     SettingWidget::checkbox("Show 7TV paint", s.showUsercardSevenTVPaint)
         ->setTooltip("Show the user's equipped 7TV paint on the usercard.")
         ->addKeywords({"usercard", "7tv", "seventv", "paint", "cosmetic"})

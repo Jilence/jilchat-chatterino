@@ -65,6 +65,7 @@
 #include "widgets/helper/LiveIndicator.hpp"
 #include "widgets/helper/ScalingSpacerItem.hpp"
 #include "widgets/helper/UsercardLogsView.hpp"
+#include "widgets/helper/UsercardRolesView.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/MarkdownLabel.hpp"
 #include "widgets/Notebook.hpp"
@@ -1794,7 +1795,11 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         sevenTVUser->setToolTip("Checking 7TV profile...");
         sevenTVUser->setEnabled(false);
         sevenTVUser->hide();
-        auto roles = user.emplace<LabelButton>("Roles", this)
+        auto rolesView = user.emplace<LabelButton>("Roles", this)
+                             .assign(&this->ui_.rolesViewLabel);
+        rolesView->setToolTip("View roles and channels");
+        rolesView->hide();
+        auto roles = user.emplace<LabelButton>("Manage roles", this)
                          .assign(&this->ui_.rolesLabel);
         roles->setToolTip("Manage editor and lead mod roles");
         roles->hide();
@@ -1864,6 +1869,12 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                          openRoleMenu);
         this->registerMnemonicButton(this->ui_.rolesLabel, Qt::Key_R,
                                      openRoleMenu);
+
+        auto toggleRolesView = [this] {
+            this->setUsercardRolesShown(!this->usercardRolesShown_);
+        };
+        QObject::connect(rolesView.getElement(), &Button::leftClicked,
+                         toggleRolesView);
 
         QObject::connect(mod.getElement(), &Button::leftClicked, [this] {
             QString value = "/mod " + this->userName_;
@@ -2004,6 +2015,11 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         this->ui_.logsView->setMinimumSize(400, 275);
         this->ui_.logsView->hide();
         logs->addWidget(this->ui_.logsView);
+
+        this->ui_.rolesView = new UsercardRolesView(this);
+        this->ui_.rolesView->setMinimumSize(400, 275);
+        this->ui_.rolesView->hide();
+        logs->addWidget(this->ui_.rolesView);
         logs->setAlignment(this->ui_.noMessagesLabel, Qt::AlignHCenter);
         logs->setAlignment(this->ui_.loadMoreMessages, Qt::AlignHCenter);
     }
@@ -2030,6 +2046,11 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         });
     std::ignore = this->userStateChanged_.connect([this] {
         this->updateUsercardBadges();
+        // The roles view may have been opened before the user's ID was known.
+        if (this->usercardRolesShown_)
+        {
+            this->ui_.rolesView->setTarget(this->userId_, this->userName_);
+        }
         this->updateLoadMoreMessagesButton();
     });
     this->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Policy::Ignored);
@@ -2510,6 +2531,17 @@ void UserInfoPopup::installEvents()
             this->refreshSeventvPaint();
         },
         this->signalHolder_);
+    getSettings()->showUsercardRolesButton.connect(
+        [this](bool enabled) {
+            if (!enabled && this->usercardRolesShown_)
+            {
+                this->setUsercardRolesShown(false);
+            }
+            // Shown wherever the logs button is.
+            this->ui_.rolesViewLabel->setVisible(
+                enabled && !this->ui_.userlogsLabel->isHidden());
+        },
+        this->signalHolder_, false);
     getSettings()->showUsercardBadges.connect(
         [this](bool) {
             this->updateUsercardBadges();
@@ -2719,6 +2751,10 @@ void UserInfoPopup::setData(const QString &name,
     {
         this->setUsercardLogsShown(false);
     }
+    if (this->usercardRolesShown_)
+    {
+        this->setUsercardRolesShown(false);
+    }
 
     const QStringView idPrefix = u"id:";
     bool isId = name.startsWith(idPrefix);
@@ -2842,6 +2878,7 @@ void UserInfoPopup::setData(const QString &name,
         this->ui_.usercardLabel->setText("Open channel on &YouTube");
         this->ui_.usercardLabel->setVisible(!this->youtubeChannelId_.isEmpty());
         this->ui_.userlogsLabel->hide();
+        this->ui_.rolesViewLabel->hide();
     }
     else if (type == Channel::Type::TwitchLive ||
              type == Channel::Type::TwitchWhispers ||
@@ -2850,12 +2887,15 @@ void UserInfoPopup::setData(const QString &name,
         // not a normal twitch channel, the url opened by the button will be invalid, so hide the button
         this->ui_.usercardLabel->hide();
         this->ui_.userlogsLabel->hide();
+        this->ui_.rolesViewLabel->hide();
     }
     else
     {
         this->ui_.usercardLabel->setText("&Usercard");
         this->ui_.usercardLabel->show();
         this->ui_.userlogsLabel->show();
+        this->ui_.rolesViewLabel->setVisible(
+            getSettings()->showUsercardRolesButton);
     }
 
     this->updateBadgesButton();
@@ -3125,9 +3165,9 @@ void UserInfoPopup::updateUsercardMessagesVisibility()
                                    this->ui_.loadMoreMessages->isVisible();
     const auto previousNoMessagesText = this->ui_.noMessagesLabel->getText();
     this->updateUsercardBadges();
-    if (this->usercardLogsShown_)
+    if (this->usercardLogsShown_ || this->usercardRolesShown_)
     {
-        // The logs view takes the place of the recent messages.
+        // The logs or roles view takes the place of the recent messages.
         this->ui_.latestMessages->hide();
         this->ui_.noMessagesLabel->hide();
         this->ui_.loadMoreMessages->hide();
@@ -3208,8 +3248,33 @@ bool UserInfoPopup::canLoadMoreUsercardMessages() const
     return getSettings()->loadOlderMessagesFromPublicLogs;
 }
 
+void UserInfoPopup::setUsercardRolesShown(bool shown)
+{
+    if (shown && this->usercardLogsShown_)
+    {
+        this->setUsercardLogsShown(false);
+    }
+    if (shown)
+    {
+        this->ui_.rolesView->setTarget(this->userId_, this->userName_);
+    }
+    this->usercardRolesShown_ = shown;
+    this->ui_.rolesView->setVisible(shown);
+    this->ui_.rolesViewLabel->setText(shown ? "Messages" : "Roles");
+    this->ui_.rolesViewLabel->setToolTip(shown ? "Return to recent messages"
+                                               : "View roles and channels");
+    // Switching the view shouldn't undo a size the user picked.
+    this->keepUsercardSize_ = true;
+    this->updateUsercardMessagesVisibility();
+    this->keepUsercardSize_ = false;
+}
+
 void UserInfoPopup::setUsercardLogsShown(bool shown)
 {
+    if (shown && this->usercardRolesShown_)
+    {
+        this->setUsercardRolesShown(false);
+    }
     if (shown && this->underlyingChannel_)
     {
         this->ui_.logsView->setTarget(this->underlyingChannel_,
@@ -3233,7 +3298,7 @@ void UserInfoPopup::updateLoadMoreMessagesButton()
     {
         return;
     }
-    if (this->usercardLogsShown_)
+    if (this->usercardLogsShown_ || this->usercardRolesShown_)
     {
         button->hide();
         return;
@@ -3651,6 +3716,8 @@ void UserInfoPopup::fetchMoreUsercardLogMessages(int emptyPageSkipsLeft,
 void UserInfoPopup::updateUserData()
 {
     this->ui_.userlogsLabel->setVisible(true);
+    this->ui_.rolesViewLabel->setVisible(
+        getSettings()->showUsercardRolesButton);
 
     std::weak_ptr<bool> hack = this->lifetimeHack_;
     const auto requestGeneration = ++this->userDataRequestGeneration_;

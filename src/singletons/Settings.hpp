@@ -1056,6 +1056,7 @@ public:
     BoolSetting showUsercardColor = {"/usercard/showColor", true};
     BoolSetting showUsercardSevenTVPaint = {"/usercard/showSevenTVPaint", true};
     BoolSetting showUsercardBadges = {"/usercard/showBadges", true};
+    BoolSetting showUsercardRolesButton = {"/usercard/showRolesButton", true};
     BoolSetting showUsercardStatus = {"/usercard/showStatus", true};
     BoolSetting showSevenTVUsercardButton = {"/usercard/showSevenTVButton",
                                              true};

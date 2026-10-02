@@ -51,6 +51,7 @@ class TooltipWidget;
 class Image;
 using ImagePtr = std::shared_ptr<Image>;
 class UsercardLogsView;
+class UsercardRolesView;
 class Split;
 struct HelixUser;
 struct IvrSubage;
@@ -123,6 +124,8 @@ private:
     void updateUsercardMessagesVisibility();
     /// Switches between the recent messages and the public logs view.
     void setUsercardLogsShown(bool shown);
+    /// Switches between the recent messages and the roles.tv view.
+    void setUsercardRolesShown(bool shown);
     void resetUsercardMessageLoader();
     void updateLoadMoreMessagesButton();
     bool canLoadMoreUsercardMessages() const;
@@ -243,6 +246,7 @@ private:
     uint64_t usercardMessagesRequestGeneration_ = 0;
     bool usercardMessagesLoading_ = false;
     bool usercardLogsShown_ = false;
+    bool usercardRolesShown_ = false;
     /// What the badge strip shows, to leave it alone while nothing changed.
     QString usercardBadgesKey_;
     int usercardBadgeLoadRetries_ = 0;
@@ -345,6 +349,8 @@ private:
         ChannelView *latestMessages = nullptr;
         LabelButton *loadMoreMessages = nullptr;
         UsercardLogsView *logsView = nullptr;
+        UsercardRolesView *rolesView = nullptr;
+        LabelButton *rolesViewLabel = nullptr;
 
         LabelButton *usercardLabel = nullptr;
         LabelButton *userlogsLabel = nullptr;
