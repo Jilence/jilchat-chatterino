@@ -5706,8 +5706,8 @@ void TwitchGql::setBadgeModifierHidden(
 
 void TwitchGql::getGifPickerConfig(
     const QString &channelId, const QString &oauthToken,
-    std::function<void(GqlGifPickerConfig)> successCallback,
-    std::function<void(const QString &)> failureCallback)
+    const std::function<void(GqlGifPickerConfig)> &successCallback,
+    const std::function<void(const QString &)> &failureCallback)
 {
     static const char *query = R"(
     query getGifPickerConfig($channelID: ID!) {
@@ -5747,8 +5747,8 @@ void TwitchGql::getGifPickerConfig(
 void TwitchGql::sendGifMessage(
     const QString &channelId, const QString &gifId, const QString &gifUrl,
     const QString &searchTerm, const QString &oauthToken,
-    std::function<void(GqlSendGifResult)> successCallback,
-    std::function<void(const QString &)> failureCallback)
+    const std::function<void(GqlSendGifResult)> &successCallback,
+    const std::function<void(const QString &)> &failureCallback)
 {
     static const char *query = R"(
     mutation sendGifMessage($input: SendGifMessageInput!) {

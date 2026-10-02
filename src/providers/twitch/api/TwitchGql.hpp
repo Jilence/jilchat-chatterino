@@ -469,14 +469,15 @@ void setBadgeModifierHidden(
     std::function<void(const QString &)> failureCallback);
 /// Needs a device login token: the web client has to pass an integrity
 /// check for these.
-void getGifPickerConfig(const QString &channelId, const QString &oauthToken,
-                        std::function<void(GqlGifPickerConfig)> successCallback,
-                        std::function<void(const QString &)> failureCallback);
-void sendGifMessage(const QString &channelId, const QString &gifId,
-                    const QString &gifUrl, const QString &searchTerm,
-                    const QString &oauthToken,
-                    std::function<void(GqlSendGifResult)> successCallback,
-                    std::function<void(const QString &)> failureCallback);
+void getGifPickerConfig(
+    const QString &channelId, const QString &oauthToken,
+    const std::function<void(GqlGifPickerConfig)> &successCallback,
+    const std::function<void(const QString &)> &failureCallback);
+void sendGifMessage(
+    const QString &channelId, const QString &gifId, const QString &gifUrl,
+    const QString &searchTerm, const QString &oauthToken,
+    const std::function<void(GqlSendGifResult)> &successCallback,
+    const std::function<void(const QString &)> &failureCallback);
 
 }  // namespace TwitchGql
 
