@@ -31,12 +31,15 @@
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/links/LinkInfo.hpp"
 #include "providers/links/LinkResolver.hpp"
+#include "providers/seventv/paints/Paint.hpp"
+#include "providers/seventv/SeventvPaints.hpp"
 #include "providers/translation/Translator.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/youtube/YouTubeChannel.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
+#include "singletons/Fonts.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
@@ -65,12 +68,14 @@
 
 #include <magic_enum/magic_enum_flags.hpp>
 #include <QApplication>
+#include <QBuffer>
 #include <QClipboard>
 #include <QColor>
 #include <QDate>
 #include <QDebug>
 #include <QDesktopServices>
 #include <QEasingCurve>
+#include <QFontMetricsF>
 #include <QGestureEvent>
 #include <QGraphicsBlurEffect>
 #include <QHash>
@@ -1038,6 +1043,121 @@ qreal highlightEasingFunction(qreal progress)
     return 1.0 + pow((20.0 / 9.0) * (0.5 * progress - 0.5), 3.0);
 }
 
+/// The tooltip for a username with a 7TV paint: "Paint: <name>", with the
+/// name drawn in the paint. Empty if the user has none.
+/// `animated` tells whether it has to be made again for every frame.
+QString seventvPaintTooltip(const QString &userName, bool kick,
+                            QColor userColor, float scale, qreal dpr,
+                            bool &animated)
+{
+    animated = false;
+    if (!getSettings()->showSevenTVPaintTooltip)
+    {
+        return {};
+    }
+    const auto paint = getApp()->getSeventvPaints()->getPaint(userName, kick);
+    if (!paint)
+    {
+        return {};
+    }
+    const auto name = paint->name.isEmpty() ? paint->id : paint->name;
+    if (!getSettings()->displaySevenTVPaints)
+    {
+        // Paints are off, so the name is plain text as well.
+        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+    }
+    animated = paint->animated();
+
+    // The mouse moves a lot; don't draw and encode the image every time.
+    static QHash<QString, QString> cache;
+    const auto key = QStringLiteral("%1|%2|%3|%4")
+                         .arg(paint->id, userColor.name())
+                         .arg(scale)
+                         .arg(dpr);
+    if (const auto it = cache.constFind(key);
+        !animated && it != cache.constEnd())
+    {
+        return *it;
+    }
+    if (cache.size() > 256)
+    {
+        cache.clear();
+    }
+
+    // The size of the other tooltips' text, in bold like a username.
+    auto font =
+        getApp()->getFonts()->getFont(FontStyle::ChatMediumSmall, scale);
+    font.setBold(true);
+    const QFontMetricsF metrics(font);
+    // The text is centered in this box and clipped to it. Its line can be a
+    // bit higher than the font's height, so the box gets some slack, or the
+    // tops of the letters are cut off.
+    const qreal slack = std::round(4 * scale);
+    // In width, two pixels are enough to keep the name from wrapping.
+    const QSizeF size(std::ceil(metrics.horizontalAdvance(name)) + 2,
+                      std::ceil(metrics.height()) + (2 * slack));
+    // Room around the name for the paint's shadow or glow.
+    const qreal padding = std::round(6 * scale);
+    const auto namePixmap = paint->getPixmap(
+        name, font, userColor.isValid() ? userColor : QColor(Qt::white), size,
+        scale, static_cast<float>(dpr), true, padding);
+
+    // "Paint:" goes into the image as well, on the baseline of the name.
+    // Next to an image, it would sit higher or lower depending on how far
+    // the paint's shadow reaches.
+    const auto labelText = QStringLiteral("Paint: ");
+    const auto labelFont =
+        getApp()->getFonts()->getFont(FontStyle::ChatMediumSmall, scale);
+    const auto labelWidth =
+        std::ceil(QFontMetricsF(labelFont).horizontalAdvance(labelText));
+    // Only a band around the text is shown: some paints have shadows
+    // reaching far below, which would make the tooltip very high.
+    const qreal textCenter = padding + (size.height() / 2);
+    const qreal bandTop = std::max(
+        0.0, std::floor(textCenter - (metrics.height() / 2) - padding));
+    const qreal bandHeight =
+        std::min(namePixmap.deviceIndependentSize().height() - bandTop,
+                 std::ceil(metrics.height() + (2 * padding)));
+    // The room left of the name isn't needed after "Paint: ", and on the
+    // right a little of it is enough.
+    const QSizeF fullSize(labelWidth - padding +
+                              namePixmap.deviceIndependentSize().width() -
+                              (padding / 2),
+                          bandHeight);
+
+    QPixmap pixmap((fullSize * dpr).toSize());
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    {
+        QPainter painter(&pixmap);
+        painter.setFont(labelFont);
+        painter.setPen(Qt::white);
+        painter.drawText(QPointF(0, textCenter - (metrics.height() / 2) +
+                                        metrics.ascent() - bandTop),
+                         labelText);
+        painter.drawPixmap(QPointF(labelWidth - padding, -bandTop), namePixmap);
+    }
+
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    if (!pixmap.save(&buffer, "PNG"))
+    {
+        // Better the plain name than no tooltip.
+        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+    }
+    const auto tooltip = QStringLiteral("<img src=\"data:image/png;base64,%1\" "
+                                        "width=\"%2\" height=\"%3\">")
+                             .arg(QString::fromLatin1(png.toBase64()))
+                             .arg(qRound(fullSize.width()))
+                             .arg(qRound(fullSize.height()));
+    if (!animated)
+    {
+        cache.insert(key, tooltip);
+    }
+    return tooltip;
+}
+
 float getTooltipScale(EmoteTooltipScale emoteTooltipScale)
 {
     switch (emoteTooltipScale)
@@ -1113,6 +1233,19 @@ ChannelView::ChannelView(InternalCtor /*tag*/, QWidget *parent, Split *split,
     auto *shortcut = new QShortcut(QKeySequence::StandardKey::Copy, this);
     QObject::connect(shortcut, &QShortcut::activated, [this] {
         this->copySelectedText();
+    });
+
+    this->paintTooltipTimer_.setInterval(std::chrono::milliseconds(33));
+    QObject::connect(&this->paintTooltipTimer_, &QTimer::timeout, this, [this] {
+        if (!this->paintTooltipSource_ || !this->tooltipWidget_->isVisible())
+        {
+            this->paintTooltipTimer_.stop();
+            return;
+        }
+        this->tooltipWidget_->setOne(TooltipEntry{
+            .image = nullptr,
+            .text = this->paintTooltipSource_(),
+        });
     });
 
     this->clickTimer_.setSingleShot(true);
@@ -3388,8 +3521,47 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
     bool isNotEmote = emoteElement == nullptr && emoteLinkElement == nullptr &&
                       layeredEmoteElement == nullptr;
 
-    if (element->getTooltip().isEmpty() ||
-        (isLinkValid && isNotEmote && !getSettings()->linkInfoTooltip))
+    QString paintTooltip;
+    this->paintTooltipSource_ = nullptr;
+    if (const auto linkType = hoverLayoutElement->getLink().type;
+        linkType == Link::UserInfo || linkType == Link::UserWhisper)
+    {
+        bool animated = false;
+        auto source =
+            [userName = hoverLayoutElement->getLink().value.toLower(),
+             kick = element->getFlags().has(MessageElementFlag::KickUsername),
+             color = layout->getMessage()->usernameColor, scale = this->scale(),
+             dpr = this->devicePixelRatioF()](bool &isAnimated) {
+                return seventvPaintTooltip(userName, kick, color, scale, dpr,
+                                           isAnimated);
+            };
+        paintTooltip = source(animated);
+        if (animated)
+        {
+            this->paintTooltipSource_ = [source] {
+                bool ignored = false;
+                return source(ignored);
+            };
+            if (!this->paintTooltipTimer_.isActive())
+            {
+                this->paintTooltipTimer_.start();
+            }
+        }
+    }
+    if (!paintTooltip.isEmpty())
+    {
+        this->tooltipWidget_->setOne(TooltipEntry{
+            .image = nullptr,
+            .text = paintTooltip,
+        });
+        this->tooltipWidget_->moveTo(
+            event->globalPosition().toPoint() + QPoint(16, 16),
+            widgets::BoundsChecking::CursorPosition);
+        this->tooltipWidget_->setWordWrap(false);
+        this->tooltipWidget_->show();
+    }
+    else if (element->getTooltip().isEmpty() ||
+             (isLinkValid && isNotEmote && !getSettings()->linkInfoTooltip))
     {
         this->tooltipWidget_->hide();
     }

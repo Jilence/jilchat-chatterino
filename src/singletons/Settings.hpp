@@ -422,6 +422,8 @@ public:
     BoolSetting enableSmoothScrollingNewMessages = {
         "/appearance/smoothScrollingNewMessages", false};
     BoolSetting displaySevenTVPaints = {"/misc/displaySevenTVPaints", true};
+    BoolSetting showSevenTVPaintTooltip = {"/misc/showSevenTVPaintTooltip",
+                                           false};
     BoolSetting displaySevenTVPaintShadows = {
         "/misc/displaySevenTVPaintShadows", true};
     BoolSetting largeSevenTVPaintShadows = {"/misc/largeSevenTVPaintShadows",

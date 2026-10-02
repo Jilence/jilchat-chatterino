@@ -27,6 +27,7 @@
 #include <QWheelEvent>
 #include <QWidget>
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -560,6 +561,12 @@ private:
     void scrollUpdateRequested();
 
     TooltipWidget *const tooltipWidget_{};
+
+    /// Redraws the tooltip of an animated 7TV paint while it is shown.
+    QTimer paintTooltipTimer_;
+    /// Makes the next frame of that tooltip; empty while another tooltip, or
+    /// none, is shown.
+    std::function<QString()> paintTooltipSource_;
 
     /// Pointer to a link info that hasn't loaded yet
     QPointer<LinkInfo> pendingLinkInfo_;
