@@ -1066,8 +1066,7 @@ public:
         "/usercard/showLoadMoreMessagesButton", true};
     /// Where the user last moved a usercard to ("x,y") and the size they last
     /// gave one ("width,height"). Empty until they did.
-    BoolSetting rememberUsercardGeometry = {"/usercard/rememberGeometry",
-                                            true};
+    BoolSetting rememberUsercardGeometry = {"/usercard/rememberGeometry", true};
     QStringSetting lastUsercardPosition = {"/usercard/lastPosition", ""};
     QStringSetting lastUsercardSize = {"/usercard/lastSize", ""};
     BoolSetting alwaysLoadMoreUsercardMessages = {
