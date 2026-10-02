@@ -47,6 +47,9 @@ class Label;
 class MarkdownLabel;
 class EditUserNotesDialog;
 class ChannelView;
+class TooltipWidget;
+class Image;
+using ImagePtr = std::shared_ptr<Image>;
 class UsercardLogsView;
 class Split;
 struct HelixUser;
@@ -142,6 +145,8 @@ private:
     bool applyCachedNameHistory();
     void updateNameHistoryButton();
     void updateBadgesButton();
+    /// Shows the badges of the user's newest message below their name.
+    void updateUsercardBadges();
     void openBadgesDialog();
     void showNameHistoryMenu();
     void openNameHistoryMenu(const QString &statusText = {});
@@ -238,6 +243,15 @@ private:
     uint64_t usercardMessagesRequestGeneration_ = 0;
     bool usercardMessagesLoading_ = false;
     bool usercardLogsShown_ = false;
+    /// What the badge strip shows, to leave it alone while nothing changed.
+    QString usercardBadgesKey_;
+    int usercardBadgeLoadRetries_ = 0;
+    /// The tooltip of the badge under the mouse, like the ones in the chat.
+    TooltipWidget *usercardBadgeTooltip_ = nullptr;
+    /// The animated badges in the strip, redrawn with every frame.
+    std::vector<std::pair<QPointer<QLabel>, ImagePtr>> usercardAnimatedBadges_;
+    /// Draws the current frame of `image` into a label of the badge strip.
+    void setUsercardBadgePixmap(QLabel *label, const ImagePtr &image);
     /// Set while a change of the message area must not shrink the popup.
     bool keepUsercardSize_ = false;
     /// The geometry when the user started to move or resize the popup.
@@ -338,6 +352,7 @@ private:
         LabelButton *sevenTVUserLabel = nullptr;
         QLabel *seventvPaintPixmapLabel = nullptr;
         QWidget *seventvPaintRow = nullptr;
+        QWidget *badgeStrip = nullptr;
         LabelButton *rolesLabel = nullptr;
         LabelButton *switchAvatars = nullptr;
 

@@ -14,9 +14,12 @@
 #include "controllers/commands/builtin/Misc.hpp"
 #include "controllers/commands/CommandContext.hpp"
 #include "controllers/commands/CommandController.hpp"
+#include "controllers/emotes/EmoteController.hpp"
 #include "controllers/highlights/HighlightBlacklistUser.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/userdata/UserDataController.hpp"
+#include "messages/Emote.hpp"
+#include "messages/Image.hpp"
 #include "messages/Link.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
@@ -38,6 +41,7 @@
 #include "providers/twitch/TwitchNameHistory.hpp"
 #include "providers/youtube/YouTubeChannel.hpp"
 #include "singletons/Fonts.hpp"
+#include "singletons/helper/GifTimer.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
@@ -66,13 +70,16 @@
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
+#include "widgets/TooltipWidget.hpp"
 #include "widgets/Window.hpp"
 
 #include <IrcMessage>
 #include <QCheckBox>
 #include <QColor>
+#include <QCursor>
 #include <QDate>
 #include <QDesktopServices>
+#include <QEnterEvent>
 #include <QFile>
 #include <QFontMetrics>
 #include <QFrame>
@@ -1251,6 +1258,34 @@ QMutex &activeUsercardsMutex()
     return mutex;
 }
 
+/// A badge in the usercard's badge strip, telling when the mouse is on it.
+class UsercardBadgeLabel : public QLabel
+{
+public:
+    using QLabel::QLabel;
+
+    std::function<void(bool)> hovered;
+
+protected:
+    void enterEvent(QEnterEvent *event) override
+    {
+        QLabel::enterEvent(event);
+        if (this->hovered)
+        {
+            this->hovered(true);
+        }
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QLabel::leaveEvent(event);
+        if (this->hovered)
+        {
+            this->hovered(false);
+        }
+    }
+};
+
 QList<QPointer<UserInfoPopup>> &activeUsercards()
 {
     static QList<QPointer<UserInfoPopup>> cards;
@@ -1620,6 +1655,15 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             }
 
             // items on the left
+            {
+                auto *strip = new QWidget(this);
+                auto *stripLayout = new QHBoxLayout(strip);
+                stripLayout->setContentsMargins(0, 0, 0, 0);
+                stripLayout->setSpacing(4);
+                strip->hide();
+                this->ui_.badgeStrip = strip;
+                vbox->addWidget(strip);
+            }
             if (getSettings()->showPronouns)
             {
                 vbox.emplace<Label>(TEXT_PRONOUNS.arg(TEXT_LOADING))
@@ -1973,7 +2017,19 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
 
     this->installEvents();
     this->updateUsercardStatusIcons();
+    // Animated badges in the strip move along with the ones in the chat.
+    this->signalHolder_.managedConnect(
+        getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+            for (const auto &[label, image] : this->usercardAnimatedBadges_)
+            {
+                if (label)
+                {
+                    this->setUsercardBadgePixmap(label, image);
+                }
+            }
+        });
     std::ignore = this->userStateChanged_.connect([this] {
+        this->updateUsercardBadges();
         this->updateLoadMoreMessagesButton();
     });
     this->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Policy::Ignored);
@@ -2454,6 +2510,11 @@ void UserInfoPopup::installEvents()
             this->refreshSeventvPaint();
         },
         this->signalHolder_);
+    getSettings()->showUsercardBadges.connect(
+        [this](bool) {
+            this->updateUsercardBadges();
+        },
+        this->signalHolder_, false);
     getSettings()->showSevenTVUsercardButton.connect(
         [this](bool enabled) {
             if (enabled && this->seventvUserID_.isEmpty() &&
@@ -3063,6 +3124,7 @@ void UserInfoPopup::updateUsercardMessagesVisibility()
     const bool hadLoadMoreButton = this->ui_.loadMoreMessages != nullptr &&
                                    this->ui_.loadMoreMessages->isVisible();
     const auto previousNoMessagesText = this->ui_.noMessagesLabel->getText();
+    this->updateUsercardBadges();
     if (this->usercardLogsShown_)
     {
         // The logs view takes the place of the recent messages.
@@ -5240,6 +5302,167 @@ void UserInfoPopup::updateNameHistoryButton()
     }
 
     this->ui_.nameHistoryButton->setToolTip("Show name history");
+}
+
+void UserInfoPopup::updateUsercardBadges()
+{
+    auto *strip = this->ui_.badgeStrip;
+    if (strip == nullptr || this->ui_.latestMessages == nullptr)
+    {
+        return;
+    }
+
+    // The badges of the user's newest message; without one, the badges that
+    // don't depend on a message.
+    MessagePtr source;
+    if (getSettings()->showUsercardBadges)
+    {
+        if (this->usercardMessagesChannel_)
+        {
+            const auto snapshot =
+                this->usercardMessagesChannel_->getMessageSnapshot();
+            for (const auto &message : std::views::reverse(snapshot))
+            {
+                if (!message->loginName.isEmpty() &&
+                    !message->flags.has(MessageFlag::System))
+                {
+                    source = message;
+                    break;
+                }
+            }
+        }
+        if (!source && !this->userId_.isEmpty())
+        {
+            if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(
+                    this->underlyingChannel_.get()))
+            {
+                source = MessageBuilder::makeSelfBadgePreviewMessage(
+                    twitchChannel, this->userId_, this->userName_,
+                    this->userName_, std::nullopt, {}, {});
+            }
+        }
+    }
+
+    struct Badge {
+        ImagePtr image;
+        QString tooltip;
+    };
+    std::vector<Badge> badges;
+    QString key;
+    bool loading = false;
+    if (source)
+    {
+        // Like in the chat, only the kinds of badges that are turned on.
+        const auto visible = this->ui_.latestMessages->getFlags();
+        for (const auto &element : source->elements)
+        {
+            const auto *badge =
+                dynamic_cast<const BadgeElement *>(element.get());
+            if (badge == nullptr || !visible.hasAny(badge->getFlags()))
+            {
+                continue;
+            }
+            const auto emote = badge->getEmote();
+            auto image = emote->images.getImage2();
+            if (image->isEmpty())
+            {
+                image = emote->images.getImage1();
+            }
+            auto pixmap = image->pixmapOrLoad();
+            loading = loading || !pixmap;
+            key += emote->name.string;
+            key += pixmap ? QStringLiteral("|1;") : QStringLiteral("|0;");
+            badges.push_back({image, badge->getTooltip()});
+        }
+    }
+    key += QString::number(this->scale());
+
+    // Images still loading: look again in a moment.
+    if (loading && this->usercardBadgeLoadRetries_ < 40)
+    {
+        ++this->usercardBadgeLoadRetries_;
+        QTimer::singleShot(250, this, [this] {
+            this->updateUsercardBadges();
+        });
+    }
+    else if (!loading)
+    {
+        this->usercardBadgeLoadRetries_ = 0;
+    }
+
+    if (key == this->usercardBadgesKey_)
+    {
+        return;
+    }
+    this->usercardBadgesKey_ = key;
+
+    auto *layout = strip->layout();
+    while (auto *item = layout->takeAt(0))
+    {
+        delete item->widget();
+        delete item;
+    }
+
+    const int size = std::max(1, qRound(18 * this->scale()));
+    // Starts where the text of the labels below does.
+    layout->setContentsMargins(qRound(8 * this->scale()), 0, 0, 0);
+    this->usercardAnimatedBadges_.clear();
+    if (this->usercardBadgeTooltip_ != nullptr)
+    {
+        this->usercardBadgeTooltip_->hide();
+    }
+    for (const auto &badge : badges)
+    {
+        auto *label = new UsercardBadgeLabel(strip);
+        label->setFixedSize(size, size);
+        label->hovered = [this, tooltip = badge.tooltip](bool hovered) {
+            if (!hovered || tooltip.isEmpty())
+            {
+                if (this->usercardBadgeTooltip_ != nullptr)
+                {
+                    this->usercardBadgeTooltip_->hide();
+                }
+                return;
+            }
+            if (this->usercardBadgeTooltip_ == nullptr)
+            {
+                this->usercardBadgeTooltip_ = new TooltipWidget(this);
+            }
+            this->usercardBadgeTooltip_->setOne(TooltipEntry{
+                .image = nullptr,
+                .text = tooltip,
+            });
+            this->usercardBadgeTooltip_->moveTo(
+                QCursor::pos() + QPoint(16, 16),
+                widgets::BoundsChecking::CursorPosition);
+            this->usercardBadgeTooltip_->show();
+        };
+        // Without it the popup takes the label for a place to drag the
+        // window at, and no tooltip shows.
+        label->setMouseTracking(true);
+        this->setUsercardBadgePixmap(label, badge.image);
+        if (badge.image->animated())
+        {
+            this->usercardAnimatedBadges_.emplace_back(label, badge.image);
+        }
+        layout->addWidget(label);
+    }
+    static_cast<QHBoxLayout *>(layout)->addStretch(1);
+    strip->setVisible(!badges.empty());
+}
+
+void UserInfoPopup::setUsercardBadgePixmap(QLabel *label, const ImagePtr &image)
+{
+    const auto pixmap = image->pixmapOrLoad();
+    if (!pixmap)
+    {
+        return;
+    }
+    const auto dpr = this->devicePixelRatioF();
+    auto scaled = pixmap->scaled(label->size() * dpr, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(dpr);
+    label->setPixmap(scaled);
 }
 
 void UserInfoPopup::updateBadgesButton()
