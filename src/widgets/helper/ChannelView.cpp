@@ -1095,7 +1095,7 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     const qreal slack = std::round(4 * scale);
     // In width, two pixels are enough to keep the name from wrapping.
     const QSizeF size(std::ceil(metrics.horizontalAdvance(name)) + 2,
-                      std::ceil(metrics.height()) + 2 * slack);
+                      std::ceil(metrics.height()) + (2 * slack));
     // Room around the name for the paint's shadow or glow.
     const qreal padding = std::round(6 * scale);
     const auto namePixmap = paint->getPixmap(
@@ -1112,17 +1112,17 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
         std::ceil(QFontMetricsF(labelFont).horizontalAdvance(labelText));
     // Only a band around the text is shown: some paints have shadows
     // reaching far below, which would make the tooltip very high.
-    const qreal textCenter = padding + size.height() / 2;
-    const qreal bandTop =
-        std::max(0.0, std::floor(textCenter - metrics.height() / 2 - padding));
+    const qreal textCenter = padding + (size.height() / 2);
+    const qreal bandTop = std::max(
+        0.0, std::floor(textCenter - (metrics.height() / 2) - padding));
     const qreal bandHeight =
         std::min(namePixmap.deviceIndependentSize().height() - bandTop,
-                 std::ceil(metrics.height() + 2 * padding));
+                 std::ceil(metrics.height() + (2 * padding)));
     // The room left of the name isn't needed after "Paint: ", and on the
     // right a little of it is enough.
     const QSizeF fullSize(labelWidth - padding +
                               namePixmap.deviceIndependentSize().width() -
-                              padding / 2,
+                              (padding / 2),
                           bandHeight);
 
     QPixmap pixmap((fullSize * dpr).toSize());
@@ -1132,7 +1132,7 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
         QPainter painter(&pixmap);
         painter.setFont(labelFont);
         painter.setPen(Qt::white);
-        painter.drawText(QPointF(0, textCenter - metrics.height() / 2 +
+        painter.drawText(QPointF(0, textCenter - (metrics.height() / 2) +
                                         metrics.ascent() - bandTop),
                          labelText);
         painter.drawPixmap(QPointF(labelWidth - padding, -bandTop), namePixmap);
@@ -1141,7 +1141,11 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     QByteArray png;
     QBuffer buffer(&png);
     buffer.open(QIODevice::WriteOnly);
-    pixmap.save(&buffer, "PNG");
+    if (!pixmap.save(&buffer, "PNG"))
+    {
+        // Better the plain name than no tooltip.
+        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+    }
     const auto tooltip = QStringLiteral("<img src=\"data:image/png;base64,%1\" "
                                         "width=\"%2\" height=\"%3\">")
                              .arg(QString::fromLatin1(png.toBase64()))
@@ -1231,7 +1235,7 @@ ChannelView::ChannelView(InternalCtor /*tag*/, QWidget *parent, Split *split,
         this->copySelectedText();
     });
 
-    this->paintTooltipTimer_.setInterval(33);
+    this->paintTooltipTimer_.setInterval(std::chrono::milliseconds(33));
     QObject::connect(&this->paintTooltipTimer_, &QTimer::timeout, this, [this] {
         if (!this->paintTooltipSource_ || !this->tooltipWidget_->isVisible())
         {
