@@ -1084,14 +1084,17 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
         cache.clear();
     }
 
-    const auto font =
-        getApp()->getFonts()->getFont(FontStyle::ChatMediumBold, scale);
+    // The size of the other tooltips' text, in bold like a username.
+    auto font =
+        getApp()->getFonts()->getFont(FontStyle::ChatMediumSmall, scale);
+    font.setBold(true);
     const QFontMetricsF metrics(font);
     // The text is centered in this box and clipped to it. Its line can be a
     // bit higher than the font's height, so the box gets some slack, or the
     // tops of the letters are cut off.
     const qreal slack = std::round(4 * scale);
-    const QSizeF size(std::ceil(metrics.horizontalAdvance(name)) + 2 * slack,
+    // In width, two pixels are enough to keep the name from wrapping.
+    const QSizeF size(std::ceil(metrics.horizontalAdvance(name)) + 2,
                       std::ceil(metrics.height()) + 2 * slack);
     // Room around the name for the paint's shadow or glow.
     const qreal padding = std::round(6 * scale);
@@ -1115,9 +1118,12 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     const qreal bandHeight =
         std::min(namePixmap.deviceIndependentSize().height() - bandTop,
                  std::ceil(metrics.height() + 2 * padding));
-    const QSizeF fullSize(
-        labelWidth - padding + namePixmap.deviceIndependentSize().width(),
-        bandHeight);
+    // The room left of the name isn't needed after "Paint: ", and on the
+    // right a little of it is enough.
+    const QSizeF fullSize(labelWidth - padding +
+                              namePixmap.deviceIndependentSize().width() -
+                              padding / 2,
+                          bandHeight);
 
     QPixmap pixmap((fullSize * dpr).toSize());
     pixmap.setDevicePixelRatio(dpr);

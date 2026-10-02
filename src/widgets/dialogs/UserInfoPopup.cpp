@@ -5529,7 +5529,8 @@ void UserInfoPopup::updateSeventvPaintPixmap()
     // only a band around the text is shown: some paints have shadows reaching
     // far below, which would push the rows apart and the name off the middle.
     const qreal textCenter = padding + size.height() / 2;
-    const qreal halfBand = std::ceil(lineHeight / 2.0) + padding;
+    // Just the line, so the row is as high as the ones around it.
+    const qreal halfBand = std::ceil(lineHeight / 2.0) + 1;
     const QRectF band(padding, std::max(0.0, textCenter - halfBand),
                       pixmap.deviceIndependentSize().width() - padding,
                       2 * halfBand);
