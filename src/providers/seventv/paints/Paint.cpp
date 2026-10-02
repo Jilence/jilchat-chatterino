@@ -28,7 +28,7 @@ qreal textBaseline(const QFont &font, const QRectF &rect)
 
 QPixmap Paint::getPixmap(const QString &text, const QFont &font,
                          QColor userColor, QSizeF size, float scale, float dpr,
-                         bool centerVertically) const
+                         bool centerVertically, qreal padding) const
 {
     QSizeF drawSize = size;
     if (centerVertically && getSettings()->displaySevenTVPaintShadows)
@@ -47,6 +47,11 @@ QPixmap Paint::getPixmap(const QString &text, const QFont &font,
 
         drawSize.setHeight(size.height() + shadowExtent);
     }
+    if (!centerVertically)
+    {
+        padding = 0;
+    }
+    drawSize += QSizeF(2 * padding, 2 * padding);
 
     QPixmap pixmap((drawSize * dpr).toSize());
     pixmap.setDevicePixelRatio(dpr);
@@ -57,7 +62,7 @@ QPixmap Paint::getPixmap(const QString &text, const QFont &font,
     pixmapPainter.setFont(font);
 
     const QRectF pixmapRect(QPointF{}, drawSize);
-    const QRectF textRect(QPointF{}, size);
+    const QRectF textRect(QPointF{padding, padding}, size);
 
     // NOTE: draw colon separately from the nametag
     // otherwise the paint would extend onto the colon

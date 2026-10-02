@@ -5497,12 +5497,17 @@ void UserInfoPopup::updateSeventvPaintPixmap()
     const QString paintName = paint->name.isEmpty() ? paint->id : paint->name;
 
     const QFontMetricsF metrics(font);
-    const int lineHeight = std::max(1, qRound(metrics.height()));
-    const int paintWidth =
-        std::max(1, qRound(metrics.horizontalAdvance(paintName)));
-    const QSizeF size(paintWidth, lineHeight);
-
-    this->ui_.seventvPaintPixmapLabel->setFixedSize(paintWidth, lineHeight);
+    // Rounded up, with some room: a pixel too few and the name wraps, which
+    // hides everything after the first word, or loses its descenders.
+    const int lineHeight =
+        std::max(1, static_cast<int>(std::ceil(metrics.height())));
+    const int paintWidth = std::max(
+        1,
+        static_cast<int>(std::ceil(metrics.horizontalAdvance(paintName))) + 2);
+    // The text is centered in this box and clipped to it; its line can be a
+    // bit higher than the font's height, so the box gets some slack.
+    const QSizeF size(paintWidth,
+                      lineHeight + 2 * std::round(3 * this->scale()));
 
     QColor userColor = Qt::white;
     if (this->ui_.userColorRow)
@@ -5515,9 +5520,28 @@ void UserInfoPopup::updateSeventvPaintPixmap()
         }
     }
 
-    const auto pixmap = paint->getPixmap(paintName, font, userColor, size,
-                                         this->scale(), dpr, true);
+    // Room around the name for the paint's shadow or glow.
+    const qreal padding = std::round(4 * this->scale());
+    auto pixmap = paint->getPixmap(paintName, font, userColor, size,
+                                   this->scale(), dpr, true, padding);
 
+    // The room on the left would move the name away from "7TV Paint:". And
+    // only a band around the text is shown: some paints have shadows reaching
+    // far below, which would push the rows apart and the name off the middle.
+    const qreal textCenter = padding + size.height() / 2;
+    const qreal halfBand = std::ceil(lineHeight / 2.0) + padding;
+    const QRectF band(padding, std::max(0.0, textCenter - halfBand),
+                      pixmap.deviceIndependentSize().width() - padding,
+                      2 * halfBand);
+    pixmap = pixmap.copy(QRectF(band.topLeft() * dpr, band.size() * dpr)
+                             .toRect()
+                             .intersected(pixmap.rect()));
+    pixmap.setDevicePixelRatio(dpr);
+
+    this->ui_.seventvPaintPixmapLabel->setAlignment(Qt::AlignLeft |
+                                                    Qt::AlignVCenter);
+    this->ui_.seventvPaintPixmapLabel->setFixedSize(
+        pixmap.deviceIndependentSize().toSize());
     this->ui_.seventvPaintPixmapLabel->setPixmap(pixmap);
     this->ui_.seventvPaintPixmapLabel->setToolTip(paintName);
 }
