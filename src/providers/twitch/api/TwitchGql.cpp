@@ -5704,4 +5704,96 @@ void TwitchGql::setBadgeModifierHidden(
         .execute();
 }
 
+void TwitchGql::getGifPickerConfig(
+    const QString &channelId, const QString &oauthToken,
+    std::function<void(GqlGifPickerConfig)> successCallback,
+    std::function<void(const QString &)> failureCallback)
+{
+    static const char *query = R"(
+    query getGifPickerConfig($channelID: ID!) {
+        gifPickerConfig(channelID: $channelID) {
+            isEnabled isAllowlisted apiKey contentRating
+        }
+    }
+    )";
+
+    QJsonObject variables;
+    variables.insert("channelID", channelId);
+
+    makeTvInlineGqlRequest(query, variables, oauthToken)
+        .onSuccess(
+            [successCallback, failureCallback](const NetworkResult &result) {
+                const auto root = result.parseJsonValue();
+                if (const auto error = extractFirstGqlErrorMessage(root);
+                    !error.isEmpty())
+                {
+                    failureCallback("Twitch API Error: " + error);
+                    return;
+                }
+                const auto config =
+                    payloadDataObject(root).value("gifPickerConfig").toObject();
+                successCallback({
+                    .enabled = config.value("isEnabled").toBool(),
+                    .apiKey = config.value("apiKey").toString(),
+                    .contentRating = config.value("contentRating").toString(),
+                });
+            })
+        .onError([failureCallback](const NetworkResult &result) {
+            failureCallback("Network Error: " + result.formatError());
+        })
+        .execute();
+}
+
+void TwitchGql::sendGifMessage(
+    const QString &channelId, const QString &gifId, const QString &gifUrl,
+    const QString &searchTerm, const QString &oauthToken,
+    std::function<void(GqlSendGifResult)> successCallback,
+    std::function<void(const QString &)> failureCallback)
+{
+    static const char *query = R"(
+    mutation sendGifMessage($input: SendGifMessageInput!) {
+        sendGifMessage(input: $input) {
+            error secondsUntilCanSend message { id }
+        }
+    }
+    )";
+
+    QJsonObject input;
+    input.insert("channelID", channelId);
+    input.insert("gifID", gifId);
+    input.insert("gifURL", gifUrl);
+    if (!searchTerm.isEmpty())
+    {
+        input.insert("searchTerm", searchTerm);
+    }
+
+    QJsonObject variables;
+    variables.insert("input", input);
+
+    makeTvInlineGqlRequest(query, variables, oauthToken)
+        .onSuccess([successCallback,
+                    failureCallback](const NetworkResult &result) {
+            const auto root = result.parseJsonValue();
+            if (const auto error = extractFirstGqlErrorMessage(root);
+                !error.isEmpty())
+            {
+                failureCallback("Twitch API Error: " + error);
+                return;
+            }
+            const auto payload =
+                payloadDataObject(root).value("sendGifMessage").toObject();
+            successCallback({
+                .messageId =
+                    payload.value("message").toObject().value("id").toString(),
+                .error = payload.value("error").toString(),
+                .secondsUntilCanSend =
+                    payload.value("secondsUntilCanSend").toInt(),
+            });
+        })
+        .onError([failureCallback](const NetworkResult &result) {
+            failureCallback("Network Error: " + result.formatError());
+        })
+        .execute();
+}
+
 }  // namespace chatterino

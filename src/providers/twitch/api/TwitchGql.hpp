@@ -128,6 +128,23 @@ struct PredictionTemplate {
     int durationSeconds = 120;
 };
 
+/// Whether GIFs can be sent in a channel, and what to search them with.
+struct GqlGifPickerConfig {
+    bool enabled = false;
+    /// The key for Giphy's API.
+    QString apiKey;
+    /// The content rating allowed in the channel, like "G_PG" or "PG_13".
+    QString contentRating;
+};
+
+struct GqlSendGifResult {
+    /// The message Twitch made of the GIF; empty if it wasn't sent.
+    QString messageId;
+    /// Why it wasn't sent, like "TEMPORARILY_UNAVAILABLE".
+    QString error;
+    int secondsUntilCanSend = 0;
+};
+
 struct GqlBadge {
     QString id;
     QString setID;
@@ -450,6 +467,16 @@ void setBadgeModifierHidden(
     bool hidden, const QString &oauthToken,
     std::function<void(bool)> successCallback,
     std::function<void(const QString &)> failureCallback);
+/// Needs a device login token: the web client has to pass an integrity
+/// check for these.
+void getGifPickerConfig(const QString &channelId, const QString &oauthToken,
+                        std::function<void(GqlGifPickerConfig)> successCallback,
+                        std::function<void(const QString &)> failureCallback);
+void sendGifMessage(const QString &channelId, const QString &gifId,
+                    const QString &gifUrl, const QString &searchTerm,
+                    const QString &oauthToken,
+                    std::function<void(GqlSendGifResult)> successCallback,
+                    std::function<void(const QString &)> failureCallback);
 
 }  // namespace TwitchGql
 
