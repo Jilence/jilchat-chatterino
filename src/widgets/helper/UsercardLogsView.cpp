@@ -213,9 +213,6 @@ void UsercardLogsView::setTarget(const ChannelPtr &channel, const QString &user)
     }
     this->channel_ = channel;
     this->user_ = user;
-    this->viewChannel_ = std::make_shared<TwitchChannel>(channel->getName());
-    this->view_->setChannel(this->viewChannel_);
-    this->view_->setSourceChannel(channel);
     {
         const QSignalBlocker blocker(this->search_);
         this->search_->clear();
@@ -382,7 +379,10 @@ void UsercardLogsView::applyFilter()
     const auto shown = matching.size();
     const auto first = shown > limit ? shown - limit : 0;
 
-    this->viewChannel_->clearMessages();
+    // A new channel every time: the view then starts at the newest message
+    // again, wherever it was scrolled to before.
+    this->viewChannel_ =
+        std::make_shared<TwitchChannel>(this->channel_->getName());
     QDate previousDay;
     for (auto i = first; i < shown; ++i)
     {
@@ -396,6 +396,9 @@ void UsercardLogsView::applyFilter()
         }
         this->viewChannel_->addMessage(message, MessageContext::Repost);
     }
+
+    this->view_->setChannel(this->viewChannel_);
+    this->view_->setSourceChannel(this->channel_);
 
     const auto total = this->messages_.size();
     this->count_->setText(shown == total
