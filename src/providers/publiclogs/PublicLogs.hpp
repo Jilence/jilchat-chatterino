@@ -46,6 +46,10 @@ QUrl listUrl(const QString &channel, const QString &user = {});
 /// of them, newest first, starting `offset` messages from the newest.
 QUrl userMonthUrl(const QString &channel, const QString &user, LogDate month,
                   int limit = 0, int offset = 0);
+/// Up to `limit` messages of a user in a channel containing `query`, from all
+/// months, newest first.
+QUrl userSearchUrl(const QString &channel, const QString &user,
+                   const QString &query, int limit);
 /// All messages in a channel on one day.
 QUrl channelDayUrl(const QString &channel, LogDate day);
 /// Up to `limit` messages in a channel between `from` and `to`, newest first.

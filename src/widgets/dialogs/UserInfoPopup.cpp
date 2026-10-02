@@ -14,9 +14,12 @@
 #include "controllers/commands/builtin/Misc.hpp"
 #include "controllers/commands/CommandContext.hpp"
 #include "controllers/commands/CommandController.hpp"
+#include "controllers/emotes/EmoteController.hpp"
 #include "controllers/highlights/HighlightBlacklistUser.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/userdata/UserDataController.hpp"
+#include "messages/Emote.hpp"
+#include "messages/Image.hpp"
 #include "messages/Link.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
@@ -38,6 +41,7 @@
 #include "providers/twitch/TwitchNameHistory.hpp"
 #include "providers/youtube/YouTubeChannel.hpp"
 #include "singletons/Fonts.hpp"
+#include "singletons/helper/GifTimer.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
@@ -60,18 +64,23 @@
 #include "widgets/helper/Line.hpp"
 #include "widgets/helper/LiveIndicator.hpp"
 #include "widgets/helper/ScalingSpacerItem.hpp"
+#include "widgets/helper/UsercardLogsView.hpp"
+#include "widgets/helper/UsercardRolesView.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/MarkdownLabel.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
+#include "widgets/TooltipWidget.hpp"
 #include "widgets/Window.hpp"
 
 #include <IrcMessage>
 #include <QCheckBox>
 #include <QColor>
+#include <QCursor>
 #include <QDate>
 #include <QDesktopServices>
+#include <QEnterEvent>
 #include <QFile>
 #include <QFontMetrics>
 #include <QFrame>
@@ -97,6 +106,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QShowEvent>
+#include <QSpacerItem>
 #include <QStringBuilder>
 #include <QSvgRenderer>
 #include <QTimer>
@@ -105,6 +115,10 @@
 #include <QUrlQuery>
 #include <QVBoxLayout>
 #include <QWidgetAction>
+
+#ifdef Q_OS_WIN
+#    include <qt_windows.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -737,24 +751,54 @@ void appendUsercardMessage(const ChannelPtr &channel, const MessagePtr &message)
 }
 
 /// Adds older messages (oldest first) in front of the existing ones, with day
-/// separators between days, including towards the first existing message.
+/// separators between days, including towards the first existing message, and
+/// one at the very top, so the day of the oldest message is always shown.
 void prependUsercardMessages(const ChannelPtr &channel,
                              const std::vector<MessagePtr> &messages)
 {
     auto withSeparators = withUsercardDaySeparators(messages);
 
-    QDate lastNewDay;
-    for (const auto &message : std::views::reverse(messages))
+    const auto isDated = [](const auto &message) {
+        return usercardMessageDay(message).isValid();
+    };
+    QDate firstNewDay;
+    if (const auto it = std::ranges::find_if(messages, isDated);
+        it != messages.end())
     {
-        lastNewDay = usercardMessageDay(message);
-        if (lastNewDay.isValid())
+        firstNewDay = usercardMessageDay(*it);
+    }
+    QDate lastNewDay;
+    if (const auto reversed = std::views::reverse(messages);
+        std::ranges::find_if(reversed, isDated) != reversed.end())
+    {
+        lastNewDay =
+            usercardMessageDay(*std::ranges::find_if(reversed, isDated));
+    }
+    if (firstNewDay.isValid())
+    {
+        withSeparators.insert(withSeparators.begin(),
+                              makeUsercardDaySeparator(firstNewDay));
+    }
+
+    const auto firstExistingDay = usercardEdgeDay(channel, false);
+    const auto existing = channel->getMessageSnapshot();
+    const bool topIsSeparator =
+        !existing.empty() &&
+        existing.front()->id.startsWith(USERCARD_DAY_SEPARATOR_ID);
+    if (topIsSeparator)
+    {
+        // The separator at the top would now repeat the day in the middle of
+        // it. Messages can't be removed, so the newest of the new messages
+        // takes its place.
+        if (lastNewDay.isValid() && lastNewDay == firstExistingDay &&
+            !messages.empty())
         {
-            break;
+            channel->replaceMessage(size_t{0}, withSeparators.back());
+            withSeparators.pop_back();
         }
     }
-    const auto firstExistingDay = usercardEdgeDay(channel, false);
-    if (lastNewDay.isValid() && firstExistingDay.isValid() &&
-        lastNewDay != firstExistingDay)
+    else if (lastNewDay.isValid() && firstExistingDay.isValid() &&
+             lastNewDay != firstExistingDay)
     {
         withSeparators.push_back(makeUsercardDaySeparator(firstExistingDay));
     }
@@ -1216,6 +1260,34 @@ QMutex &activeUsercardsMutex()
     return mutex;
 }
 
+/// A badge in the usercard's badge strip, telling when the mouse is on it.
+class UsercardBadgeLabel : public QLabel
+{
+public:
+    using QLabel::QLabel;
+
+    std::function<void(bool)> hovered;
+
+protected:
+    void enterEvent(QEnterEvent *event) override
+    {
+        QLabel::enterEvent(event);
+        if (this->hovered)
+        {
+            this->hovered(true);
+        }
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QLabel::leaveEvent(event);
+        if (this->hovered)
+        {
+            this->hovered(false);
+        }
+    }
+};
+
 QList<QPointer<UserInfoPopup>> &activeUsercards()
 {
     static QList<QPointer<UserInfoPopup>> cards;
@@ -1585,6 +1657,15 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             }
 
             // items on the left
+            {
+                auto *strip = new QWidget(this);
+                auto *stripLayout = new QHBoxLayout(strip);
+                stripLayout->setContentsMargins(0, 0, 0, 0);
+                stripLayout->setSpacing(4);
+                strip->hide();
+                this->ui_.badgeStrip = strip;
+                vbox->addWidget(strip);
+            }
             if (getSettings()->showPronouns)
             {
                 vbox.emplace<Label>(TEXT_PRONOUNS.arg(TEXT_LOADING))
@@ -1715,7 +1796,11 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         sevenTVUser->setToolTip("Checking 7TV profile...");
         sevenTVUser->setEnabled(false);
         sevenTVUser->hide();
-        auto roles = user.emplace<LabelButton>("Roles", this)
+        auto rolesView = user.emplace<LabelButton>("Roles", this)
+                             .assign(&this->ui_.rolesViewLabel);
+        rolesView->setToolTip("View roles and channels");
+        rolesView->hide();
+        auto roles = user.emplace<LabelButton>("Manage roles", this)
                          .assign(&this->ui_.rolesLabel);
         roles->setToolTip("Manage editor and lead mod roles");
         roles->hide();
@@ -1757,12 +1842,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 return;
             }
 
-            QUrl url("https://tv.supa.sh/logs");
-            QUrlQuery query;
-            query.addQueryItem("c", this->underlyingChannel_->getName());
-            query.addQueryItem("u", this->userName_);
-            url.setQuery(query);
-            QDesktopServices::openUrl(url);
+            this->setUsercardLogsShown(!this->usercardLogsShown_);
         };
         QObject::connect(userlogs.getElement(), &Button::leftClicked, openLogs);
         this->registerMnemonicButton(this->ui_.userlogsLabel, Qt::Key_L,
@@ -1790,6 +1870,12 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                          openRoleMenu);
         this->registerMnemonicButton(this->ui_.rolesLabel, Qt::Key_R,
                                      openRoleMenu);
+
+        auto toggleRolesView = [this] {
+            this->setUsercardRolesShown(!this->usercardRolesShown_);
+        };
+        QObject::connect(rolesView.getElement(), &Button::leftClicked,
+                         toggleRolesView);
 
         QObject::connect(mod.getElement(), &Button::leftClicked, [this] {
             QString value = "/mod " + this->userName_;
@@ -1925,6 +2011,16 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         logs->addWidget(this->ui_.loadMoreMessages);
         logs->addWidget(this->ui_.noMessagesLabel);
         logs->addWidget(this->ui_.latestMessages);
+
+        this->ui_.logsView = new UsercardLogsView(this->split_, this);
+        this->ui_.logsView->setMinimumSize(400, 275);
+        this->ui_.logsView->hide();
+        logs->addWidget(this->ui_.logsView);
+
+        this->ui_.rolesView = new UsercardRolesView(this);
+        this->ui_.rolesView->setMinimumSize(400, 275);
+        this->ui_.rolesView->hide();
+        logs->addWidget(this->ui_.rolesView);
         logs->setAlignment(this->ui_.noMessagesLabel, Qt::AlignHCenter);
         logs->setAlignment(this->ui_.loadMoreMessages, Qt::AlignHCenter);
     }
@@ -1938,7 +2034,24 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
 
     this->installEvents();
     this->updateUsercardStatusIcons();
+    // Animated badges in the strip move along with the ones in the chat.
+    this->signalHolder_.managedConnect(
+        getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+            for (const auto &[label, image] : this->usercardAnimatedBadges_)
+            {
+                if (label)
+                {
+                    this->setUsercardBadgePixmap(label, image);
+                }
+            }
+        });
     std::ignore = this->userStateChanged_.connect([this] {
+        this->updateUsercardBadges();
+        // The roles view may have been opened before the user's ID was known.
+        if (this->usercardRolesShown_)
+        {
+            this->ui_.rolesView->setTarget(this->userId_, this->userName_);
+        }
         this->updateLoadMoreMessagesButton();
     });
     this->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Policy::Ignored);
@@ -1962,6 +2075,68 @@ void UserInfoPopup::themeChangedEvent()
     }
 }
 
+namespace {
+
+/// Parses "a,b" as written by rememberPosition and rememberSize.
+std::optional<QPoint> parseIntPair(const QString &text)
+{
+    const auto parts = text.split(u',');
+    bool okA = false;
+    bool okB = false;
+    if (parts.size() != 2)
+    {
+        return std::nullopt;
+    }
+    const QPoint pair(parts[0].toInt(&okA), parts[1].toInt(&okB));
+    return okA && okB ? std::optional(pair) : std::nullopt;
+}
+
+std::optional<QSize> rememberedSize()
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return std::nullopt;
+    }
+    const auto size = parseIntPair(getSettings()->lastUsercardSize);
+    return size ? std::optional(QSize(size->x(), size->y())) : std::nullopt;
+}
+
+/// Where the next usercard opens: where the user left the last one, or next
+/// to the usercards that are already there.
+std::optional<QPoint> rememberedPosition(const UserInfoPopup *opening)
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return std::nullopt;
+    }
+    auto position = parseIntPair(getSettings()->lastUsercardPosition);
+    if (!position)
+    {
+        return std::nullopt;
+    }
+
+    constexpr int gap = 8;
+    constexpr int samePlace = 24;
+    QMutexLocker locker(&activeUsercardsMutex());
+    const auto &cards = activeUsercards();
+    // Each pass moves past one card, so this many passes are enough.
+    for (qsizetype pass = 0; pass < cards.size(); ++pass)
+    {
+        const auto taken = std::ranges::find_if(cards, [&](const auto &card) {
+            return card && card != opening && card->isVisible() &&
+                   (card->pos() - *position).manhattanLength() < samePlace;
+        });
+        if (taken == cards.end())
+        {
+            break;
+        }
+        position->setX((*taken)->x() + (*taken)->width() + gap);
+    }
+    return position;
+}
+
+}  // namespace
+
 void UserInfoPopup::scaleChangedEvent(float scale)
 {
     this->themeChangedEvent();
@@ -1978,7 +2153,125 @@ void UserInfoPopup::scaleChangedEvent(float scale)
         geo.setHeight(10);
 
         this->setGeometry(geo);
+        if (rememberedSize())
+        {
+            this->fitToContent();
+        }
     });
+}
+
+void UserInfoPopup::moveTo(QPoint point, widgets::BoundsChecking mode)
+{
+    if (const auto remembered = rememberedPosition(this))
+    {
+        BaseWindow::moveTo(*remembered,
+                           widgets::BoundsChecking::DesiredPosition);
+        return;
+    }
+    BaseWindow::moveTo(point, mode);
+}
+
+void UserInfoPopup::showAndMoveTo(QPoint point, widgets::BoundsChecking mode)
+{
+    if (const auto remembered = rememberedPosition(this))
+    {
+        BaseWindow::showAndMoveTo(*remembered,
+                                  widgets::BoundsChecking::DesiredPosition);
+        return;
+    }
+    BaseWindow::showAndMoveTo(point, mode);
+}
+
+void UserInfoPopup::fitToContent()
+{
+    const auto remembered = rememberedSize();
+    if (!remembered)
+    {
+        this->adjustSize();
+        return;
+    }
+    this->resize(remembered->expandedTo(this->sizeHint()));
+}
+
+void UserInfoPopup::rememberPosition()
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return;
+    }
+    getSettings()->lastUsercardPosition =
+        u"%1,%2"_s.arg(this->x()).arg(this->y());
+}
+
+void UserInfoPopup::rememberSize()
+{
+    if (!getSettings()->rememberUsercardGeometry)
+    {
+        return;
+    }
+    getSettings()->lastUsercardSize =
+        u"%1,%2"_s.arg(this->width()).arg(this->height());
+}
+
+void UserInfoPopup::showEvent(QShowEvent *event)
+{
+    DraggablePopup::showEvent(event);
+    if (rememberedSize())
+    {
+        this->fitToContent();
+    }
+}
+
+// Windows tells us when the user starts and stops dragging or resizing the
+// window. Elsewhere, changes while the mouse button is down are the user's.
+#ifdef Q_OS_WIN
+bool UserInfoPopup::nativeEvent(const QByteArray &eventType, void *message,
+                                qintptr *result)
+{
+    const auto *msg = static_cast<MSG *>(message);
+    if (msg->message == WM_ENTERSIZEMOVE)
+    {
+        this->geometryBeforeUserChange_ = this->geometry();
+    }
+    else if (msg->message == WM_EXITSIZEMOVE &&
+             this->geometryBeforeUserChange_.isValid())
+    {
+        if (this->size() != this->geometryBeforeUserChange_.size())
+        {
+            this->rememberSize();
+        }
+        else if (this->pos() != this->geometryBeforeUserChange_.topLeft())
+        {
+            this->rememberPosition();
+        }
+        this->geometryBeforeUserChange_ = {};
+    }
+    return DraggablePopup::nativeEvent(eventType, message, result);
+}
+#endif
+
+void UserInfoPopup::moveEvent(QMoveEvent *event)
+{
+    DraggablePopup::moveEvent(event);
+#ifndef Q_OS_WIN
+    if (this->isVisible() &&
+        QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))
+    {
+        this->rememberPosition();
+    }
+#endif
+}
+
+void UserInfoPopup::resizeEvent(QResizeEvent *event)
+{
+    DraggablePopup::resizeEvent(event);
+#ifndef Q_OS_WIN
+    if (this->isVisible() &&
+        QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))
+    {
+        this->rememberSize();
+    }
+#endif
 }
 
 void UserInfoPopup::windowDeactivationEvent()
@@ -2239,6 +2532,22 @@ void UserInfoPopup::installEvents()
             this->refreshSeventvPaint();
         },
         this->signalHolder_);
+    getSettings()->showUsercardRolesButton.connect(
+        [this](bool enabled) {
+            if (!enabled && this->usercardRolesShown_)
+            {
+                this->setUsercardRolesShown(false);
+            }
+            // Shown wherever the logs button is.
+            this->ui_.rolesViewLabel->setVisible(
+                enabled && !this->ui_.userlogsLabel->isHidden());
+        },
+        this->signalHolder_, false);
+    getSettings()->showUsercardBadges.connect(
+        [this](bool) {
+            this->updateUsercardBadges();
+        },
+        this->signalHolder_, false);
     getSettings()->showSevenTVUsercardButton.connect(
         [this](bool enabled) {
             if (enabled && this->seventvUserID_.isEmpty() &&
@@ -2438,6 +2747,16 @@ void UserInfoPopup::setData(const QString &name,
                             const ChannelPtr &contextChannel,
                             const ChannelPtr &openingChannel)
 {
+    // The logs view belongs to the user shown before.
+    if (this->usercardLogsShown_)
+    {
+        this->setUsercardLogsShown(false);
+    }
+    if (this->usercardRolesShown_)
+    {
+        this->setUsercardRolesShown(false);
+    }
+
     const QStringView idPrefix = u"id:";
     bool isId = name.startsWith(idPrefix);
     if (isId)
@@ -2560,6 +2879,7 @@ void UserInfoPopup::setData(const QString &name,
         this->ui_.usercardLabel->setText("Open channel on &YouTube");
         this->ui_.usercardLabel->setVisible(!this->youtubeChannelId_.isEmpty());
         this->ui_.userlogsLabel->hide();
+        this->ui_.rolesViewLabel->hide();
     }
     else if (type == Channel::Type::TwitchLive ||
              type == Channel::Type::TwitchWhispers ||
@@ -2568,12 +2888,15 @@ void UserInfoPopup::setData(const QString &name,
         // not a normal twitch channel, the url opened by the button will be invalid, so hide the button
         this->ui_.usercardLabel->hide();
         this->ui_.userlogsLabel->hide();
+        this->ui_.rolesViewLabel->hide();
     }
     else
     {
         this->ui_.usercardLabel->setText("&Usercard");
         this->ui_.usercardLabel->show();
         this->ui_.userlogsLabel->show();
+        this->ui_.rolesViewLabel->setVisible(
+            getSettings()->showUsercardRolesButton);
     }
 
     this->updateBadgesButton();
@@ -2842,6 +3165,15 @@ void UserInfoPopup::updateUsercardMessagesVisibility()
     const bool hadLoadMoreButton = this->ui_.loadMoreMessages != nullptr &&
                                    this->ui_.loadMoreMessages->isVisible();
     const auto previousNoMessagesText = this->ui_.noMessagesLabel->getText();
+    this->updateUsercardBadges();
+    if (this->usercardLogsShown_ || this->usercardRolesShown_)
+    {
+        // The logs or roles view takes the place of the recent messages.
+        this->ui_.latestMessages->hide();
+        this->ui_.noMessagesLabel->hide();
+        this->ui_.loadMoreMessages->hide();
+        return;
+    }
     const auto noMessagesText = this->usercardMessagesLoading_
                                     ? QStringLiteral("Loading messages...")
                                     : QStringLiteral("No recent messages");
@@ -2853,11 +3185,22 @@ void UserInfoPopup::updateUsercardMessagesVisibility()
 
     const bool hasLoadMoreButton = this->ui_.loadMoreMessages != nullptr &&
                                    this->ui_.loadMoreMessages->isVisible();
+    // The label's text only matters for the size while it is shown.
+    const bool labelTextChanged =
+        !hasMessages && previousNoMessagesText != noMessagesText;
     if (hadMessages != hasMessages || hadNoMessagesLabel != !hasMessages ||
-        hadLoadMoreButton != hasLoadMoreButton ||
-        previousNoMessagesText != noMessagesText)
+        hadLoadMoreButton != hasLoadMoreButton || labelTextChanged)
     {
-        this->adjustSize();
+        if ((hadMessages && hasMessages) || this->keepUsercardSize_)
+        {
+            // The messages stay, so keep a size the user may have picked;
+            // only grow if something doesn't fit anymore.
+            this->resize(this->size().expandedTo(this->sizeHint()));
+        }
+        else
+        {
+            this->fitToContent();
+        }
     }
 }
 
@@ -2906,11 +3249,59 @@ bool UserInfoPopup::canLoadMoreUsercardMessages() const
     return getSettings()->loadOlderMessagesFromPublicLogs;
 }
 
+void UserInfoPopup::setUsercardRolesShown(bool shown)
+{
+    if (shown && this->usercardLogsShown_)
+    {
+        this->setUsercardLogsShown(false);
+    }
+    if (shown)
+    {
+        this->ui_.rolesView->setTarget(this->userId_, this->userName_);
+    }
+    this->usercardRolesShown_ = shown;
+    this->ui_.rolesView->setVisible(shown);
+    this->ui_.rolesViewLabel->setText(shown ? "Messages" : "Roles");
+    this->ui_.rolesViewLabel->setToolTip(shown ? "Return to recent messages"
+                                               : "View roles and channels");
+    // Switching the view shouldn't undo a size the user picked.
+    this->keepUsercardSize_ = true;
+    this->updateUsercardMessagesVisibility();
+    this->keepUsercardSize_ = false;
+}
+
+void UserInfoPopup::setUsercardLogsShown(bool shown)
+{
+    if (shown && this->usercardRolesShown_)
+    {
+        this->setUsercardRolesShown(false);
+    }
+    if (shown && this->underlyingChannel_)
+    {
+        this->ui_.logsView->setTarget(this->underlyingChannel_,
+                                      this->userName_);
+    }
+    this->usercardLogsShown_ = shown;
+    this->ui_.logsView->setVisible(shown);
+    this->ui_.userlogsLabel->setText(shown ? "Messages" : "&Logs");
+    this->ui_.userlogsLabel->setToolTip(shown ? "Return to recent messages"
+                                              : "View logs");
+    // Switching the view shouldn't undo a size the user picked.
+    this->keepUsercardSize_ = true;
+    this->updateUsercardMessagesVisibility();
+    this->keepUsercardSize_ = false;
+}
+
 void UserInfoPopup::updateLoadMoreMessagesButton()
 {
     auto *button = this->ui_.loadMoreMessages;
     if (button == nullptr)
     {
+        return;
+    }
+    if (this->usercardLogsShown_ || this->usercardRolesShown_)
+    {
+        button->hide();
         return;
     }
 
@@ -3326,6 +3717,8 @@ void UserInfoPopup::fetchMoreUsercardLogMessages(int emptyPageSkipsLeft,
 void UserInfoPopup::updateUserData()
 {
     this->ui_.userlogsLabel->setVisible(true);
+    this->ui_.rolesViewLabel->setVisible(
+        getSettings()->showUsercardRolesButton);
 
     std::weak_ptr<bool> hack = this->lifetimeHack_;
     const auto requestGeneration = ++this->userDataRequestGeneration_;
@@ -4977,6 +5370,168 @@ void UserInfoPopup::updateNameHistoryButton()
     }
 
     this->ui_.nameHistoryButton->setToolTip("Show name history");
+}
+
+void UserInfoPopup::updateUsercardBadges()
+{
+    auto *strip = this->ui_.badgeStrip;
+    if (strip == nullptr || this->ui_.latestMessages == nullptr)
+    {
+        return;
+    }
+
+    // The badges of the user's newest message; without one, the badges that
+    // don't depend on a message.
+    MessagePtr source;
+    if (getSettings()->showUsercardBadges)
+    {
+        if (this->usercardMessagesChannel_)
+        {
+            const auto snapshot =
+                this->usercardMessagesChannel_->getMessageSnapshot();
+            for (const auto &message : std::views::reverse(snapshot))
+            {
+                if (!message->loginName.isEmpty() &&
+                    !message->flags.has(MessageFlag::System))
+                {
+                    source = message;
+                    break;
+                }
+            }
+        }
+        if (!source && !this->userId_.isEmpty())
+        {
+            if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(
+                    this->underlyingChannel_.get()))
+            {
+                source = MessageBuilder::makeSelfBadgePreviewMessage(
+                    twitchChannel, this->userId_, this->userName_,
+                    this->userName_, std::nullopt, {}, {});
+            }
+        }
+    }
+
+    struct Badge {
+        ImagePtr image;
+        QString tooltip;
+    };
+    std::vector<Badge> badges;
+    QString key;
+    bool loading = false;
+    if (source)
+    {
+        // Like in the chat, only the kinds of badges that are turned on.
+        const auto visible = this->ui_.latestMessages->getFlags();
+        for (const auto &element : source->elements)
+        {
+            const auto *badge =
+                dynamic_cast<const BadgeElement *>(element.get());
+            if (badge == nullptr || !visible.hasAny(badge->getFlags()))
+            {
+                continue;
+            }
+            const auto emote = badge->getEmote();
+            auto image = emote->images.getImage2();
+            if (image->isEmpty())
+            {
+                image = emote->images.getImage1();
+            }
+            auto pixmap = image->pixmapOrLoad();
+            loading = loading || !pixmap;
+            key += emote->name.string;
+            key += pixmap ? QStringLiteral("|1;") : QStringLiteral("|0;");
+            badges.push_back({image, badge->getTooltip()});
+        }
+    }
+    key += QString::number(this->scale());
+
+    // Images still loading: look again in a moment.
+    if (loading && this->usercardBadgeLoadRetries_ < 40)
+    {
+        ++this->usercardBadgeLoadRetries_;
+        QTimer::singleShot(250, this, [this] {
+            this->updateUsercardBadges();
+        });
+    }
+    else if (!loading)
+    {
+        this->usercardBadgeLoadRetries_ = 0;
+    }
+
+    if (key == this->usercardBadgesKey_)
+    {
+        return;
+    }
+    this->usercardBadgesKey_ = key;
+
+    auto *layout = strip->layout();
+    while (auto *item = layout->takeAt(0))
+    {
+        delete item->widget();
+        delete item;
+    }
+
+    const int size = std::max(1, qRound(18 * this->scale()));
+    // Starts where the text of the labels below does.
+    layout->setContentsMargins(qRound(8 * this->scale()), 0, 0, 0);
+    this->usercardAnimatedBadges_.clear();
+    if (this->usercardBadgeTooltip_ != nullptr)
+    {
+        this->usercardBadgeTooltip_->hide();
+    }
+    for (const auto &badge : badges)
+    {
+        auto *label = new UsercardBadgeLabel(strip);
+        label->setFixedSize(size, size);
+        label->hovered = [this, tooltip = badge.tooltip](bool hovered) {
+            if (!hovered || tooltip.isEmpty())
+            {
+                if (this->usercardBadgeTooltip_ != nullptr)
+                {
+                    this->usercardBadgeTooltip_->hide();
+                }
+                return;
+            }
+            if (this->usercardBadgeTooltip_ == nullptr)
+            {
+                this->usercardBadgeTooltip_ = new TooltipWidget(this);
+            }
+            this->usercardBadgeTooltip_->setOne(TooltipEntry{
+                .image = nullptr,
+                .text = tooltip,
+            });
+            this->usercardBadgeTooltip_->moveTo(
+                QCursor::pos() + QPoint(16, 16),
+                widgets::BoundsChecking::CursorPosition);
+            this->usercardBadgeTooltip_->show();
+        };
+        // Without it the popup takes the label for a place to drag the
+        // window at, and no tooltip shows.
+        label->setMouseTracking(true);
+        this->setUsercardBadgePixmap(label, badge.image);
+        if (badge.image->animated())
+        {
+            this->usercardAnimatedBadges_.emplace_back(label, badge.image);
+        }
+        layout->addWidget(label);
+    }
+    layout->addItem(
+        new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum));
+    strip->setVisible(!badges.empty());
+}
+
+void UserInfoPopup::setUsercardBadgePixmap(QLabel *label, const ImagePtr &image)
+{
+    const auto pixmap = image->pixmapOrLoad();
+    if (!pixmap)
+    {
+        return;
+    }
+    const auto dpr = this->devicePixelRatioF();
+    auto scaled = pixmap->scaled(label->size() * dpr, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(dpr);
+    label->setPixmap(scaled);
 }
 
 void UserInfoPopup::updateBadgesButton()

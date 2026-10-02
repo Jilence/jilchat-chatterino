@@ -995,6 +995,12 @@ MoltorinoPage::MoltorinoPage()
         ->setTooltip("Start lazy-loading older usercard messages without "
                      "clicking the load button.")
         ->addTo(*view);
+    SettingWidget::checkbox("Remember usercard size and position",
+                            s.rememberUsercardGeometry)
+        ->setTooltip("Open usercards with the size you last gave one and "
+                     "where you last moved one to, instead of the default "
+                     "size at the mouse cursor.")
+        ->addTo(*view);
     SettingWidget::checkbox(
         "Show mod/unmod and vip/unvip buttons as a lead mod",
         s.showLeadModRoleButtons)
