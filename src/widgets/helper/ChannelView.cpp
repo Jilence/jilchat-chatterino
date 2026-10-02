@@ -1089,22 +1089,41 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     const QFontMetricsF metrics(font);
     const QSizeF size(std::ceil(metrics.horizontalAdvance(name)) + 2,
                       std::ceil(metrics.height()));
-    const auto pixmap = paint->getPixmap(
+    const auto namePixmap = paint->getPixmap(
         name, font, userColor.isValid() ? userColor : QColor(Qt::white), size,
         scale, static_cast<float>(dpr), true);
+
+    // "Paint:" goes into the image as well, on the baseline of the name.
+    // Next to an image, it would sit higher or lower depending on how far
+    // the paint's shadow reaches.
+    const auto labelText = QStringLiteral("Paint: ");
+    const auto labelFont =
+        getApp()->getFonts()->getFont(FontStyle::ChatMediumSmall, scale);
+    const auto labelWidth =
+        std::ceil(QFontMetricsF(labelFont).horizontalAdvance(labelText));
+    const auto nameSize = namePixmap.deviceIndependentSize();
+    const QSizeF fullSize(labelWidth + nameSize.width(), nameSize.height());
+
+    QPixmap pixmap((fullSize * dpr).toSize());
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    {
+        QPainter painter(&pixmap);
+        painter.setFont(labelFont);
+        painter.setPen(Qt::white);
+        painter.drawText(QPointF(0, metrics.ascent()), labelText);
+        painter.drawPixmap(QPointF(labelWidth, 0), namePixmap);
+    }
 
     QByteArray png;
     QBuffer buffer(&png);
     buffer.open(QIODevice::WriteOnly);
     pixmap.save(&buffer, "PNG");
-    const auto logicalSize = pixmap.deviceIndependentSize();
-    const auto tooltip =
-        QStringLiteral("Paint: <img src=\"data:image/png;base64,%1\" "
-                       "width=\"%2\" height=\"%3\" "
-                       "style=\"vertical-align: middle;\">")
-            .arg(QString::fromLatin1(png.toBase64()))
-            .arg(qRound(logicalSize.width()))
-            .arg(qRound(logicalSize.height()));
+    const auto tooltip = QStringLiteral("<img src=\"data:image/png;base64,%1\" "
+                                        "width=\"%2\" height=\"%3\">")
+                             .arg(QString::fromLatin1(png.toBase64()))
+                             .arg(qRound(fullSize.width()))
+                             .arg(qRound(fullSize.height()));
     if (!animated)
     {
         cache.insert(key, tooltip);
