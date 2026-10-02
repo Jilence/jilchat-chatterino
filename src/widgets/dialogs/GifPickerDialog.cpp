@@ -47,7 +47,8 @@ using namespace literals;
 namespace {
 
 constexpr int TIMEOUT_MS = 15000;
-constexpr int PAGE_SIZE = 24;
+// Not PAGE_SIZE: that is a macro on FreeBSD.
+constexpr int RESULTS_PER_PAGE = 24;
 constexpr int MAX_FAVORITES = 50;
 constexpr QSize DIALOG_SIZE(500, 700);
 constexpr int FAVORITES_TAB = 1;
@@ -543,7 +544,7 @@ void GifPickerDialog::loadPage()
             query.addQueryItem(
                 u"q"_s, QString::fromUtf8(QUrl::toPercentEncoding(term)));
         }
-        query.addQueryItem(u"limit"_s, QString::number(PAGE_SIZE));
+        query.addQueryItem(u"limit"_s, QString::number(RESULTS_PER_PAGE));
         query.addQueryItem(u"offset"_s, QString::number(offset));
     }
     url.setQuery(query);
