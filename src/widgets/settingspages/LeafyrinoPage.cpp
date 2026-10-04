@@ -176,6 +176,19 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->setTooltip("Show the user's Twitch chat color.")
         ->addKeywords({"usercard", "color", "chat"})
         ->addTo(layout);
+    SettingWidget::checkbox("Show badges", s.showUsercardBadges)
+        ->setTooltip("Show the user's badges below their name on the "
+                     "usercard. Which kinds of badges are shown follows the "
+                     "visible badges settings in General.")
+        ->addKeywords({"usercard", "badges", "badge"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show roles button", s.showUsercardRolesButton)
+        ->setTooltip("Show a button on usercards that lists where the user "
+                     "is moderator, VIP, founder or artist, and who has "
+                     "those roles in their channel. Looks the user up on "
+                     "roles.tv.")
+        ->addKeywords({"usercard", "roles", "roles.tv", "moderator", "vip"})
+        ->addTo(layout);
     SettingWidget::checkbox("Show 7TV paint", s.showUsercardSevenTVPaint)
         ->setTooltip("Show the user's equipped 7TV paint on the usercard.")
         ->addKeywords({"usercard", "7tv", "seventv", "paint", "cosmetic"})

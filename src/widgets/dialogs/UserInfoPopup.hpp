@@ -47,6 +47,11 @@ class Label;
 class MarkdownLabel;
 class EditUserNotesDialog;
 class ChannelView;
+class TooltipWidget;
+class Image;
+using ImagePtr = std::shared_ptr<Image>;
+class UsercardLogsView;
+class UsercardRolesView;
 class Split;
 struct HelixUser;
 struct IvrSubage;
@@ -69,6 +74,11 @@ public:
     UserInfoPopup(bool closeAutomatically, Split *split);
     ~UserInfoPopup() override;
 
+    /// Like BaseWindow's, but once the user moved a usercard, they all open
+    /// where it was left.
+    void moveTo(QPoint point, widgets::BoundsChecking mode);
+    void showAndMoveTo(QPoint point, widgets::BoundsChecking mode);
+
     void setData(const QString &name, const ChannelPtr &channel);
     void setData(const QString &name, const ChannelPtr &contextChannel,
                  const ChannelPtr &openingChannel);
@@ -90,8 +100,21 @@ protected:
     void scaleChangedEvent(float scale) override;
     void windowDeactivationEvent() override;
     void keyPressEvent(QKeyEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void moveEvent(QMoveEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray &eventType, void *message,
+                     qintptr *result) override;
+#endif
 
 private:
+    /// Sizes the popup for its content, but not smaller than the size the
+    /// user last gave a usercard.
+    void fitToContent();
+    void rememberPosition();
+    void rememberSize();
+
     void registerMnemonicButton(LabelButton *button, int key,
                                 std::function<void()> action);
 
@@ -99,6 +122,10 @@ private:
     void updateUserData();
     void updateLatestMessages();
     void updateUsercardMessagesVisibility();
+    /// Switches between the recent messages and the public logs view.
+    void setUsercardLogsShown(bool shown);
+    /// Switches between the recent messages and the roles.tv view.
+    void setUsercardRolesShown(bool shown);
     void resetUsercardMessageLoader();
     void updateLoadMoreMessagesButton();
     bool canLoadMoreUsercardMessages() const;
@@ -121,6 +148,8 @@ private:
     bool applyCachedNameHistory();
     void updateNameHistoryButton();
     void updateBadgesButton();
+    /// Shows the badges of the user's newest message below their name.
+    void updateUsercardBadges();
     void openBadgesDialog();
     void showNameHistoryMenu();
     void openNameHistoryMenu(const QString &statusText = {});
@@ -216,6 +245,21 @@ private:
     QString usercardMessagesError_;
     uint64_t usercardMessagesRequestGeneration_ = 0;
     bool usercardMessagesLoading_ = false;
+    bool usercardLogsShown_ = false;
+    bool usercardRolesShown_ = false;
+    /// What the badge strip shows, to leave it alone while nothing changed.
+    QString usercardBadgesKey_;
+    int usercardBadgeLoadRetries_ = 0;
+    /// The tooltip of the badge under the mouse, like the ones in the chat.
+    TooltipWidget *usercardBadgeTooltip_ = nullptr;
+    /// The animated badges in the strip, redrawn with every frame.
+    std::vector<std::pair<QPointer<QLabel>, ImagePtr>> usercardAnimatedBadges_;
+    /// Draws the current frame of `image` into a label of the badge strip.
+    void setUsercardBadgePixmap(QLabel *label, const ImagePtr &image);
+    /// Set while a change of the message area must not shrink the popup.
+    bool keepUsercardSize_ = false;
+    /// The geometry when the user started to move or resize the popup.
+    QRect geometryBeforeUserChange_;
     bool usercardMessagesHasNextPage_ = true;
     bool usercardMessagesLazyLoadEnabled_ = false;
     /// Months with public logs of the user, newest first. Used instead of
@@ -304,6 +348,9 @@ private:
         Label *noMessagesLabel = nullptr;
         ChannelView *latestMessages = nullptr;
         LabelButton *loadMoreMessages = nullptr;
+        UsercardLogsView *logsView = nullptr;
+        UsercardRolesView *rolesView = nullptr;
+        LabelButton *rolesViewLabel = nullptr;
 
         LabelButton *usercardLabel = nullptr;
         LabelButton *userlogsLabel = nullptr;
@@ -311,6 +358,7 @@ private:
         LabelButton *sevenTVUserLabel = nullptr;
         QLabel *seventvPaintPixmapLabel = nullptr;
         QWidget *seventvPaintRow = nullptr;
+        QWidget *badgeStrip = nullptr;
         LabelButton *rolesLabel = nullptr;
         LabelButton *switchAvatars = nullptr;
 

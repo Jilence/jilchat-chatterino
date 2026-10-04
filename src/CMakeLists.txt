@@ -937,6 +937,10 @@ set(SOURCE_FILES
         widgets/helper/color/ColorItemDelegate.hpp
         widgets/helper/color/HueSlider.cpp
         widgets/helper/color/HueSlider.hpp
+        widgets/helper/UsercardLogsView.cpp
+        widgets/helper/UsercardLogsView.hpp
+        widgets/helper/UsercardRolesView.cpp
+        widgets/helper/UsercardRolesView.hpp
         widgets/helper/color/SBCanvas.cpp
         widgets/helper/color/SBCanvas.hpp
 

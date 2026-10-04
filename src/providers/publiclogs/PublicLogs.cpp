@@ -227,6 +227,19 @@ QUrl userMonthUrl(const QString &channel, const QString &user, LogDate month,
                          });
 }
 
+QUrl userSearchUrl(const QString &channel, const QString &user,
+                   const QString &query, int limit)
+{
+    return makeUrl(
+        u"/channel/%1/user/%2/search"_s.arg(encode(channel), encode(user)),
+        {
+            {u"q"_s, encode(query)},
+            {u"json"_s, u"1"_s},
+            {u"reverse"_s, u"1"_s},
+            {u"limit"_s, QString::number(limit)},
+        });
+}
+
 QUrl channelDayUrl(const QString &channel, LogDate day)
 {
     return makeUrl(u"/channel/%1/%2/%3/%4"_s.arg(

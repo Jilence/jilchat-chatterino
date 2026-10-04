@@ -1055,6 +1055,8 @@ public:
                                                false};
     BoolSetting showUsercardColor = {"/usercard/showColor", true};
     BoolSetting showUsercardSevenTVPaint = {"/usercard/showSevenTVPaint", true};
+    BoolSetting showUsercardBadges = {"/usercard/showBadges", true};
+    BoolSetting showUsercardRolesButton = {"/usercard/showRolesButton", true};
     BoolSetting showUsercardStatus = {"/usercard/showStatus", true};
     BoolSetting showSevenTVUsercardButton = {"/usercard/showSevenTVButton",
                                              true};
@@ -1062,6 +1064,11 @@ public:
         "/usercard/showNameHistoryButton", true};
     BoolSetting showUsercardLoadMoreMessagesButton = {
         "/usercard/showLoadMoreMessagesButton", true};
+    /// Where the user last moved a usercard to ("x,y") and the size they last
+    /// gave one ("width,height"). Empty until they did.
+    BoolSetting rememberUsercardGeometry = {"/usercard/rememberGeometry", true};
+    QStringSetting lastUsercardPosition = {"/usercard/lastPosition", ""};
+    QStringSetting lastUsercardSize = {"/usercard/lastSize", ""};
     BoolSetting alwaysLoadMoreUsercardMessages = {
         "/usercard/alwaysLoadMoreMessages", false};
     BoolSetting loadOlderUsercardMessages = {"/usercard/loadOlderMessages",
