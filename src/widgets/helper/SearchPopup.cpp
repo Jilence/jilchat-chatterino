@@ -1014,12 +1014,12 @@ void SearchPopup::updateResultCount(size_t matches, size_t total)
         fm.horizontalAdvance(this->resultCountLabel_->text());
     // The line edit keeps the clear button free by itself while it's shown
     // (with text), so only the counter left of it has to be added then.
-    constexpr int CLEAR_BUTTON_PADDING = 28;
-    constexpr int COUNTER_SPACING = 6;
+    constexpr int clearButtonPadding = 28;
+    constexpr int counterSpacing = 6;
     const int buttonSpace =
-        this->searchInput_->text().isEmpty() ? CLEAR_BUTTON_PADDING : 0;
+        this->searchInput_->text().isEmpty() ? clearButtonPadding : 0;
     this->searchInput_->setTextMargins(
-        0, 0, counterWidth + COUNTER_SPACING + buttonSpace, 0);
+        0, 0, counterWidth + counterSpacing + buttonSpace, 0);
     this->layoutResultCountLabel();
 }
 
