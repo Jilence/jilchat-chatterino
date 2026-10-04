@@ -64,6 +64,7 @@ private:
         EventBadges,
         Color,
         Moltorino,
+        JilChat,
         SevenTvBadges,
         SevenTvPaints,
     };
@@ -90,6 +91,10 @@ private:
     void loadMoltorinoBadges(bool force = false);
     void rebuildMoltorinoBadges();
     void selectMoltorino(const QString &badgeId);
+    void loadJilChatBadges(bool force = false);
+    void rebuildJilChatBadges();
+    /// Makes the badge with `slug` the one shown in chat; none if empty.
+    void selectJilChat(const QString &slug);
     void loadSevenTv(bool force = false);
     void rebuildSevenTv();
     void connectSevenTv();
@@ -126,6 +131,7 @@ private:
     QPushButton *eventTabButton_{};
     QPushButton *colorTabButton_{};
     QPushButton *moltorinoTabButton_{};
+    QPushButton *jilChatTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
     QPushButton *sevenTvPaintTabButton_{};
     QWidget *searchRowWidget_{};
@@ -161,6 +167,19 @@ private:
     QString moltorinoSelected_;
     bool moltorinoLoading_ = false;
     bool moltorinoLoaded_ = false;
+
+    /// A JilChat badge and whether the user owns it. `badge.id` is its slug.
+    struct JilChatBadgeOption {
+        GqlBadge badge;
+        /// Milestone badges are picked by their months instead, see the slug.
+        QString badgeId;
+        bool owned = false;
+    };
+    QVector<JilChatBadgeOption> jilChatBadges_;
+    /// The slug of the badge shown in chat; empty for none.
+    QString jilChatSelected_;
+    bool jilChatLoading_ = false;
+    bool jilChatLoaded_ = false;
 
     /// The user's 7TV token, kept in the system credential store.
     QString sevenTvToken_;
