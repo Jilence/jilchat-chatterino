@@ -2552,6 +2552,10 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
     auto addedMessages = this->messages_.pushFront(messageRefs);
     if (!addedMessages.empty())
     {
+        // Raise the maximum first: the new position is limited to it, so when
+        // about as many messages are added as there were, the view would
+        // otherwise end up at the bottom.
+        this->scrollBar_->offsetMaximum(qreal(addedMessages.size()));
         if (this->scrollBar_->isAtBottom())
         {
             this->scrollBar_->scrollToBottom();
@@ -2560,7 +2564,6 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
         {
             this->scrollBar_->offset(qreal(addedMessages.size()));
         }
-        this->scrollBar_->offsetMaximum(qreal(addedMessages.size()));
     }
 
     if (this->showScrollbarHighlights())
