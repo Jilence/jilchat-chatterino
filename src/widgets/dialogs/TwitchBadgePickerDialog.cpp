@@ -375,6 +375,16 @@ QWidget *makeSettingRow(const QString &labelText,
     return row;
 }
 
+/// The months a JilChat milestone badge is for; -1 for the other badges.
+int jilChatMilestoneMonths(QStringView slug)
+{
+    if (!slug.startsWith(JILCHAT_MILESTONE_PREFIX))
+    {
+        return -1;
+    }
+    return slug.mid(JILCHAT_MILESTONE_PREFIX.size()).toInt();
+}
+
 /// The tooltip of the tile under the mouse. The pickers share it; it goes
 /// away with the picker it was made for and is made again when needed.
 QPointer<TooltipWidget> &tileTooltip()
@@ -3249,21 +3259,15 @@ void TwitchBadgePickerDialog::loadJilChatBadges(bool force)
 
                     // The user's badges first; the milestones after the
                     // others, by their months.
-                    const auto months = [](const JilChatBadgeOption &option) {
-                        const auto &slug = option.badge.id;
-                        return slug.startsWith(JILCHAT_MILESTONE_PREFIX)
-                                   ? slug.mid(JILCHAT_MILESTONE_PREFIX.size())
-                                         .toInt()
-                                   : -1;
-                    };
-                    std::ranges::stable_sort(self->jilChatBadges_,
-                                             [&](const auto &a, const auto &b) {
-                                                 if (a.owned != b.owned)
-                                                 {
-                                                     return a.owned;
-                                                 }
-                                                 return months(a) < months(b);
-                                             });
+                    std::ranges::stable_sort(
+                        self->jilChatBadges_, [](const auto &a, const auto &b) {
+                            if (a.owned != b.owned)
+                            {
+                                return a.owned;
+                            }
+                            return jilChatMilestoneMonths(a.badge.id) <
+                                   jilChatMilestoneMonths(b.badge.id);
+                        });
 
                     self->jilChatLoading_ = false;
                     self->jilChatLoaded_ = true;
@@ -3393,11 +3397,10 @@ void TwitchBadgePickerDialog::selectJilChat(const QString &slug)
             return;
         }
         name = option->badge.title;
-        if (slug.startsWith(JILCHAT_MILESTONE_PREFIX))
+        if (const auto months = jilChatMilestoneMonths(slug); months >= 0)
         {
             body.insert("type", "milestone");
-            body.insert("months",
-                        slug.mid(JILCHAT_MILESTONE_PREFIX.size()).toInt());
+            body.insert("months", months);
         }
         else
         {
