@@ -464,6 +464,7 @@ MessageSinkTraits Channel::sinkTraits() const
     return {
         MessageSinkTrait::AddMentionsToGlobalChannel,
         MessageSinkTrait::RequiresKnownChannelPointReward,
+        MessageSinkTrait::UpdateCurrentUserState,
     };
 }
 

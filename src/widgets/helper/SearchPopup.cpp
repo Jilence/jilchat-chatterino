@@ -20,6 +20,7 @@
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/ChannelHelpers.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/splits/Split.hpp"
 
@@ -341,18 +342,8 @@ std::vector<MessagePtr> SearchPopup::buildSnapshot()
         }
     }
 
-    std::sort(combinedSnapshot.begin(), combinedSnapshot.end(),
-              [](MessagePtr &a, MessagePtr &b) {
-                  return a->id > b->id;
-              });
-
-    auto uniqueIterator =
-        std::unique(combinedSnapshot.begin(), combinedSnapshot.end(),
-                    [](MessagePtr &a, MessagePtr &b) {
-                        return !a->id.isEmpty() && a->id == b->id;
-                    });
-
-    combinedSnapshot.erase(uniqueIterator, combinedSnapshot.end());
+    // remove any duplicate messages from splits containing the same channel
+    deduplicateMessages(combinedSnapshot);
 
     std::sort(combinedSnapshot.begin(), combinedSnapshot.end(),
               [](MessagePtr &a, MessagePtr &b) {
