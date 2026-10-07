@@ -3816,7 +3816,7 @@ void TwitchBadgePickerDialog::selectBluzyrino(const QString &badgeId,
         self->actionInFlight_ = false;
         if (ok)
         {
-            self->setStatus(
+            self->channel_->addSystemMessage(
                 QStringLiteral("Bluzyrino badge set to: %1").arg(title));
         }
         else
@@ -5026,7 +5026,7 @@ void TwitchBadgePickerDialog::selectBttvEffect(const QString &effect)
             BttvUsernameEffects::instance().setUserEffect(
                 getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
                 effect);
-            self->setStatus(
+            self->channel_->addSystemMessage(
                 label.isEmpty()
                     ? QStringLiteral("BetterTTV username effect removed.")
                     : QStringLiteral("BetterTTV username effect set to: %1")
@@ -5068,10 +5068,31 @@ void TwitchBadgePickerDialog::selectBttv(bool show, const QString &badgeId)
 
     const QPointer<TwitchBadgePickerDialog> self = this;
     const auto path = QString::fromLatin1(BTTV_BADGE_PATH);
-    const std::function<void()> done = [self, show] {
+    const std::function<void()> done = [self, show, badgeId] {
         self->actionInFlight_ = false;
-        self->setStatus(show ? QStringLiteral("BetterTTV badge changed.")
-                             : QStringLiteral("BetterTTV badge hidden."));
+        QString message;
+        if (!show)
+        {
+            message = QStringLiteral("BetterTTV badge cleared.");
+        }
+        else if (badgeId.isEmpty())
+        {
+            message =
+                QStringLiteral("BetterTTV badge set to: always the latest");
+        }
+        else
+        {
+            QString title;
+            for (const auto &badge : std::as_const(self->bttvBadges_))
+            {
+                if (badge.id == badgeId)
+                {
+                    title = badge.title;
+                }
+            }
+            message = QStringLiteral("BetterTTV badge set to: %1").arg(title);
+        }
+        self->channel_->addSystemMessage(message);
         self->rebuildContent();
     };
     const std::function<void(const QString &)> fail =
