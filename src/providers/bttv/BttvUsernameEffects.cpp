@@ -260,6 +260,9 @@ public:
     {
         return QStringLiteral("BTTV");
     }
+
+private:
+    Q_DISABLE_COPY(FlarePaint)
 };
 
 /// The name in its color with a light of that color around it.
@@ -303,6 +306,8 @@ public:
     }
 
 private:
+    Q_DISABLE_COPY(GlowPaint)
+
     mutable std::vector<PaintDropShadow> dropShadows_;
 };
 
