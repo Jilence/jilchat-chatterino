@@ -1246,9 +1246,11 @@ void IrcMessageHandler::addMessage(Communi::IrcMessage *message,
 
     auto tags = message->tags();
 
-    if (sink.sinkTraits().has(MessageSinkTrait::UpdateCurrentUserState))
+    if (sink.sinkTraits().has(
+            MessageSinkTrait::RequiresKnownChannelPointReward))
     {
-        // A message that was just written, not one from the history.
+        // Only the channel itself has this trait: a message that was just
+        // written, not one from the history.
         BttvUsernameEffects::instance().userActive(
             message->nick(), tags.getOrEmpty("user-id"), chan->roomId());
     }
