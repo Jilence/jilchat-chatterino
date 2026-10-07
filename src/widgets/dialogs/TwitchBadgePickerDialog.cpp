@@ -10,11 +10,13 @@
 #include "common/network/NetworkResult.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/emotes/EmoteController.hpp"
+#include "messages/Emote.hpp"
 #include "messages/Image.hpp"
 #include "messages/ImageSet.hpp"
 #include "messages/layouts/MessageLayout.hpp"
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/MessageBuilder.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
@@ -28,6 +30,7 @@
 #include "providers/twitch/TwitchUsers.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/helper/GifTimer.hpp"
+#include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
@@ -54,9 +57,12 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -98,6 +104,16 @@ constexpr auto JILCHAT_ACTIVE_BADGE_URL =
     "https://api.jil.chat/v1/badges/me/active";
 /// The slug of a milestone badge is this and the months it is for.
 constexpr QStringView JILCHAT_MILESTONE_PREFIX = u"milestone_";
+constexpr auto BTTV_API_URL = "https://api.betterttv.net/3/";
+constexpr auto BTTV_BADGE_PATH = "account/subscription/badge";
+constexpr auto BTTV_CREDENTIAL_PROVIDER = "bttv";
+/// Run in the browser console on betterttv.com: copies the user's own
+/// BetterTTV token.
+constexpr auto BTTV_TOKEN_COMMAND =
+    "(()=>{copy(JSON.parse(localStorage.getItem('USER_TOKEN')));"
+    "return 'BetterTTV token copied.'})()";
+constexpr auto BTTV_EFFECT_PATH = "account/subscription/username_effect";
+constexpr auto BTTV_SITE_URL = "https://betterttv.com";
 constexpr auto SEVENTV_GQL_URL = "https://api.7tv.app/v4/gql";
 /// Has the paint definitions in the format SeventvPaints reads.
 constexpr auto SEVENTV_V3_GQL_URL = "https://7tv.io/v3/gql";
@@ -781,6 +797,300 @@ private:
     pajlada::Signals::SignalHolder connections_;
 };
 
+/// A BetterTTV username effect. `texture` is the address of its image.
+struct BttvEffectInfo {
+    QString id;
+    QString label;
+    QString requirement;
+    QString texture;
+    QString outline;
+};
+
+/// The username effects betterttv.com has, in its order; empty until the
+/// page is read, see applyBttvSite.
+QVector<BttvEffectInfo> &bttvEffectCatalog()
+{
+    static QVector<BttvEffectInfo> catalog;
+    return catalog;
+}
+
+/// The name for an effect of which only the id is known.
+QString bttvEffectLabelFromId(const QString &id)
+{
+    return id.isEmpty() ? id : id.at(0).toUpper() + id.mid(1);
+}
+
+/// Takes the username effects from the style sheet and the script of
+/// betterttv.com, which has no interface for them.
+void applyBttvSite(const QString &style, const QString &script)
+{
+    static const QRegularExpression textureRegex(
+        R"re(\._([a-z]+)_\w+\{[^}]*background-image:url\((/assets/[^)]+\.png)\))re");
+    static const QRegularExpression outlineRegex(
+        R"re("stroke-text-svg-filter-([a-z]+)":`(#[0-9a-fA-F]{3,8})`)re");
+    static const QRegularExpression labelRegex(
+        R"re(label:\w+\.formatMessage\(\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`([^`]*)`\}\]\}\),requirement:\w+\.formatMessage\(\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`([^`]*)`\}\]\}\))re");
+
+    QHash<QString, QString> textures;
+    for (auto it = textureRegex.globalMatch(style); it.hasNext();)
+    {
+        const auto match = it.next();
+        textures.insert(match.captured(1),
+                        QString::fromLatin1(BTTV_SITE_URL) + match.captured(2));
+    }
+    QHash<QString, QString> outlines;
+    QStringList outlineOrder;
+    for (auto it = outlineRegex.globalMatch(script); it.hasNext();)
+    {
+        const auto match = it.next();
+        outlines.insert(match.captured(1), match.captured(2));
+        outlineOrder.push_back(match.captured(1));
+    }
+
+    QVector<BttvEffectInfo> updated;
+    QSet<QString> listed;
+    for (auto it = labelRegex.globalMatch(script); it.hasNext();)
+    {
+        const auto match = it.next();
+        const auto id = match.captured(1).toLower();
+        if (id.isEmpty() || listed.contains(id))
+        {
+            continue;
+        }
+        updated.push_back({
+            .id = id,
+            .label = match.captured(1),
+            .requirement = match.captured(2),
+            .texture = {},
+            .outline = {},
+        });
+        listed.insert(id);
+    }
+    // An effect with an image the page describes in a way not known here.
+    for (const auto &id : std::as_const(outlineOrder))
+    {
+        if (!listed.contains(id) && textures.contains(id))
+        {
+            updated.push_back({
+                .id = id,
+                .label = bttvEffectLabelFromId(id),
+                .requirement = {},
+                .texture = {},
+                .outline = {},
+            });
+            listed.insert(id);
+        }
+    }
+    for (auto &effect : updated)
+    {
+        if (textures.contains(effect.id) && outlines.contains(effect.id))
+        {
+            effect.texture = textures.value(effect.id);
+            effect.outline = outlines.value(effect.id);
+        }
+    }
+    bttvEffectCatalog() = updated;
+}
+
+/// The user's name with a BetterTTV username effect and the effect's name
+/// below, like the 7TV paints.
+class BttvEffectTileButton final : public QPushButton
+{
+public:
+    /// `effect` is null for no effect.
+    BttvEffectTileButton(const BttvEffectInfo *effect, QString userName,
+                         const QColor &userColor, QWidget *parent)
+        : QPushButton(parent)
+        , effectId_(effect == nullptr ? QString{} : effect->id)
+        , label_(effect == nullptr ? QStringLiteral("No effect")
+                                   : effect->label)
+        , userName_(std::move(userName))
+        , userColor_(userColor)
+    {
+        this->setCursor(Qt::PointingHandCursor);
+        this->setAttribute(Qt::WA_Hover, true);
+        this->setFlat(true);
+        this->setFixedHeight(PAINT_TILE_HEIGHT);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+        if (effect != nullptr && !effect->texture.isEmpty())
+        {
+            this->texture_ = Image::fromUrl(Url{effect->texture});
+            this->outline_ = QColor(effect->outline);
+        }
+
+        // The effects move; the texture also has to be loaded first.
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                if (!this->isVisible())
+                {
+                    return;
+                }
+                // Every frame: the texture moves by less than a pixel.
+                if (this->texture_ != nullptr ||
+                    this->effectId_ == QLatin1StringView("flare"))
+                {
+                    this->update();
+                }
+            });
+    }
+
+    void setSelected(bool selected)
+    {
+        this->selected_ = selected;
+        this->update();
+    }
+
+protected:
+    bool event(QEvent *event) override
+    {
+        return handleTileTooltip(this, event) || QPushButton::event(event);
+    }
+
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+        const auto rect = this->rect().adjusted(0, 0, -1, -1);
+        if (this->selected_)
+        {
+            const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
+            painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(selectionRect, 3, 3);
+            paintBadgeTileBackground(painter,
+                                     selectionRect.adjusted(2, 2, -2, -2),
+                                     this->underMouse(), this->isDown());
+        }
+        else
+        {
+            paintBadgeTileBackground(painter, rect, this->underMouse(),
+                                     this->isDown());
+        }
+
+        auto nameFont = this->font();
+        nameFont.setBold(true);
+        nameFont.setPointSizeF(nameFont.pointSizeF() * 1.15);
+        const QFontMetricsF nameMetrics(nameFont);
+        const auto nameText = nameMetrics.elidedText(
+            this->userName_, Qt::ElideRight, rect.width() - 12);
+        const auto nameWidth = nameMetrics.horizontalAdvance(nameText);
+        const QPointF namePos((rect.width() - nameWidth) / 2, 5);
+        QPainterPath name;
+        name.addText(namePos.x(), namePos.y() + nameMetrics.ascent(), nameFont,
+                     nameText);
+
+        painter.setPen(Qt::NoPen);
+        if (this->texture_ != nullptr)
+        {
+            // An outline that is thicker below, then the moving texture.
+            painter.setPen(QPen(this->outline_, 2, Qt::SolidLine, Qt::RoundCap,
+                                Qt::RoundJoin));
+            painter.setBrush(this->outline_);
+            painter.drawPath(name.translated(0, 2));
+            painter.drawPath(name);
+            painter.setPen(Qt::NoPen);
+
+            const auto pixmap = this->texture_->pixmapOrLoad();
+            if (pixmap)
+            {
+                const auto offset = textureOffset();
+                QBrush brush(*pixmap);
+                brush.setTransform(QTransform::fromTranslate(-offset, -offset));
+                painter.setBrush(brush);
+            }
+            else
+            {
+                painter.setBrush(this->userColor_);
+            }
+            painter.drawPath(name);
+        }
+        else if (this->effectId_ == QLatin1StringView("glow"))
+        {
+            // A soft light around the name in its color.
+            auto light = this->userColor_;
+            light.setAlpha(22);
+            painter.setBrush(Qt::NoBrush);
+            for (const int width : {12, 9, 6, 3})
+            {
+                painter.setPen(QPen(light, width, Qt::SolidLine, Qt::RoundCap,
+                                    Qt::RoundJoin));
+                painter.drawPath(name);
+            }
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(this->userColor_);
+            painter.drawPath(name);
+        }
+        else
+        {
+            painter.setBrush(this->userColor_);
+            painter.drawPath(name);
+            if (this->effectId_ == QLatin1StringView("flare"))
+            {
+                // A light that crosses the name in the first half of every
+                // eight seconds.
+                const auto phase =
+                    double(QDateTime::currentMSecsSinceEpoch() % 8000) / 4000.0;
+                if (phase < 1.0)
+                {
+                    const auto center =
+                        namePos.x() - nameWidth + (4 * nameWidth * phase);
+                    const auto reach = 0.2 * nameWidth;
+                    QColor shine((this->userColor_.red() + (4 * 255)) / 5,
+                                 (this->userColor_.green() + (4 * 255)) / 5,
+                                 (this->userColor_.blue() + (4 * 255)) / 5);
+                    auto clear = shine;
+                    clear.setAlpha(0);
+                    QLinearGradient gradient(center - reach, 0, center + reach,
+                                             0);
+                    gradient.setColorAt(0, clear);
+                    gradient.setColorAt(0.5, shine);
+                    gradient.setColorAt(1, clear);
+                    painter.setBrush(gradient);
+                    painter.drawPath(name);
+                }
+            }
+        }
+
+        // The effect's name below.
+        auto label = getApp()->getThemes()->window.text;
+        label.setAlpha(180);
+        painter.setFont(this->font());
+        painter.setPen(label);
+        const QRectF labelRect(
+            4, rect.height() - QFontMetricsF(this->font()).height() - 5,
+            rect.width() - 8, QFontMetricsF(this->font()).height());
+        painter.drawText(
+            labelRect, Qt::AlignHCenter,
+            QFontMetricsF(this->font())
+                .elidedText(this->label_, Qt::ElideRight, labelRect.width()));
+
+        if (this->hasFocus())
+        {
+            paintBadgeTileFocusRing(painter, rect);
+        }
+    }
+
+private:
+    /// How far the 96 pixel texture has moved; once around in 16 seconds.
+    static double textureOffset()
+    {
+        return double(QDateTime::currentMSecsSinceEpoch() % 16000) * 96.0 /
+               16000.0;
+    }
+
+    QString effectId_;
+    QString label_;
+    QString userName_;
+    QColor userColor_;
+    ImagePtr texture_;
+    QColor outline_;
+    bool selected_ = false;
+    pajlada::Signals::SignalHolder connections_;
+};
+
 class ColorTileButton final : public QPushButton
 {
 public:
@@ -1253,14 +1563,14 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
                          this->switchView(View::Moltorino);
                      });
 
-    otherTabRow->addWidget(this->colorTabButton_, 1);
-    otherTabRow->addWidget(this->eventTabButton_, 1);
-    otherTabRow->addWidget(this->moltorinoTabButton_, 1);
+    // Roughly in the order the badges have in the chat, each paint before
+    // the badge of the same service; the rest comes last.
     tabRows->addLayout(otherTabRow);
 
-    auto *sevenTvTabRow = new QHBoxLayout();
-    sevenTvTabRow->setSpacing(tabSpacing);
-    const auto makeTab = [&](const QString &text, View view) {
+    auto *extraTabRow = new QHBoxLayout();
+    extraTabRow->setSpacing(tabSpacing);
+    const auto makeTab = [&](QHBoxLayout *tabRow, const QString &text,
+                             View view) {
         auto *button = new QPushButton(text, container);
         button->setObjectName("TwitchBadgePickerTab");
         button->setCheckable(true);
@@ -1269,13 +1579,26 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
         QObject::connect(button, &QPushButton::clicked, this, [this, view] {
             this->switchView(view);
         });
-        sevenTvTabRow->addWidget(button, 1);
+        tabRow->addWidget(button, 1);
         return button;
     };
-    this->jilChatTabButton_ = makeTab("JilChat", View::JilChat);
-    this->sevenTvBadgeTabButton_ = makeTab("7TV Badge", View::SevenTvBadges);
-    this->sevenTvPaintTabButton_ = makeTab("7TV Paint", View::SevenTvPaints);
-    tabRows->addLayout(sevenTvTabRow);
+    this->bttvEffectTabButton_ =
+        makeTab(otherTabRow, "BTTV Paint", View::BttvEffects);
+    this->bttvTabButton_ = makeTab(otherTabRow, "BTTV Badge", View::Bttv);
+    otherTabRow->addWidget(this->moltorinoTabButton_, 1);
+    auto *paintTabRow = new QHBoxLayout();
+    paintTabRow->setSpacing(tabSpacing);
+    this->bluzyrinoTabButton_ =
+        makeTab(paintTabRow, "Bluzyrino", View::Bluzyrino);
+    this->jilChatTabButton_ = makeTab(paintTabRow, "JilChat", View::JilChat);
+    this->sevenTvPaintTabButton_ =
+        makeTab(paintTabRow, "7TV Paint", View::SevenTvPaints);
+    tabRows->addLayout(paintTabRow);
+    this->sevenTvBadgeTabButton_ =
+        makeTab(extraTabRow, "7TV Badge", View::SevenTvBadges);
+    extraTabRow->addWidget(this->colorTabButton_, 1);
+    extraTabRow->addWidget(this->eventTabButton_, 1);
+    tabRows->addLayout(extraTabRow);
     this->mainLayout_->addLayout(tabRows);
 
     this->searchInput_ = new QLineEdit(container);
@@ -1324,10 +1647,17 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
 
     // The preview shows the badges of other providers too; they change when
     // one is picked here.
-    this->signalHolder_.managedConnect(getApp()->getWindows()->badgesUpdated,
-                                       [this](const QString &) {
-                                           this->updatePreview();
-                                       });
+    this->signalHolder_.managedConnect(
+        getApp()->getWindows()->badgesUpdated, [this](const QString &) {
+            // The Bluzyrino tab shows what
+            // the registry lists.
+            if (this->view_ == View::Bluzyrino && !this->actionInFlight_)
+            {
+                this->rebuildContent();
+                return;
+            }
+            this->updatePreview();
+        });
 
     this->refreshStyle();
     this->rebuildContent();
@@ -1500,8 +1830,9 @@ void TwitchBadgePickerDialog::rebuildContent()
     this->setStatus(this->statusText_, this->statusIsError_);
 
     if (this->badgesLoading_ && this->view_ != View::Color &&
+        this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
         this->view_ != View::Moltorino && this->view_ != View::JilChat &&
-        this->view_ != View::SevenTvBadges &&
+        this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
         this->view_ != View::SevenTvPaints)
     {
         this->setStatus("Loading badges...");
@@ -1528,6 +1859,14 @@ void TwitchBadgePickerDialog::rebuildContent()
     else if (this->view_ == View::JilChat)
     {
         this->rebuildJilChatBadges();
+    }
+    else if (this->view_ == View::Bluzyrino)
+    {
+        this->rebuildBluzyrinoBadges();
+    }
+    else if (this->view_ == View::Bttv || this->view_ == View::BttvEffects)
+    {
+        this->rebuildBttv();
     }
     else if (this->view_ == View::SevenTvBadges ||
              this->view_ == View::SevenTvPaints)
@@ -2018,8 +2357,11 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->channelTabButton_->setChecked(view == View::ChannelBadges);
     this->eventTabButton_->setChecked(view == View::EventBadges);
     this->colorTabButton_->setChecked(view == View::Color);
+    this->bttvTabButton_->setChecked(view == View::Bttv);
+    this->bttvEffectTabButton_->setChecked(view == View::BttvEffects);
     this->moltorinoTabButton_->setChecked(view == View::Moltorino);
     this->jilChatTabButton_->setChecked(view == View::JilChat);
+    this->bluzyrinoTabButton_->setChecked(view == View::Bluzyrino);
     this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
     this->sevenTvPaintTabButton_->setChecked(view == View::SevenTvPaints);
     this->updateSearchVisibility();
@@ -2036,6 +2378,10 @@ void TwitchBadgePickerDialog::switchView(View view)
     {
         this->loadJilChatBadges(false);
     }
+    else if (view == View::Bttv || view == View::BttvEffects)
+    {
+        this->loadBttv(false);
+    }
     else if (view == View::SevenTvBadges || view == View::SevenTvPaints)
     {
         this->loadSevenTv(false);
@@ -2048,7 +2394,8 @@ void TwitchBadgePickerDialog::updateSearchVisibility()
 {
     if (this->searchRowWidget_ != nullptr)
     {
-        this->searchRowWidget_->setVisible(this->view_ != View::Color);
+        this->searchRowWidget_->setVisible(this->view_ != View::Color &&
+                                           this->view_ != View::Bttv);
     }
 }
 
@@ -3367,6 +3714,208 @@ void TwitchBadgePickerDialog::rebuildJilChatBadges()
     this->contentLayout_->addWidget(gridWidget);
 }
 
+void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
+{
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (!account || account->isAnon())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("Log in to pick your Bluzyrino badges."),
+            this->contentWidget_));
+        return;
+    }
+
+    auto *bluzyrino = getApp()->getBluzyrinoBadges();
+    const auto catalog = bluzyrino->catalog();
+    if (catalog.empty())
+    {
+        // The registry is read shortly after the start and then again and
+        // again; the tab is filled once it's there.
+        bluzyrino->loadBluzyrinoBadges();
+        this->contentLayout_->addWidget(
+            makeEmptyListLabel(QStringLiteral("Loading Bluzyrino badges..."),
+                               this->contentWidget_));
+        return;
+    }
+
+    const auto userId = account->getUserId();
+    const auto owned = bluzyrino->availableBadgeIds(userId);
+    const auto isOwned = [&owned](const QString &id) {
+        return std::ranges::find(owned, id) != owned.end();
+    };
+    const auto donor = QStringLiteral("donor");
+
+    // The donor badge shown in chat: the picked one, else the first owned.
+    auto selected = bluzyrino->selectedDonor(userId);
+    if (!this->bluzyrinoPending_.isEmpty())
+    {
+        if (selected == this->bluzyrinoPending_)
+        {
+            this->bluzyrinoPending_.clear();
+        }
+        else
+        {
+            selected = this->bluzyrinoPending_;
+        }
+    }
+    if (selected.isEmpty() || !isOwned(selected))
+    {
+        selected.clear();
+        for (const auto &badge : catalog)
+        {
+            if (badge.category == donor && isOwned(badge.id))
+            {
+                selected = badge.id;
+                break;
+            }
+        }
+    }
+
+    if (bluzyrino->ownsFounder(userId))
+    {
+        const auto scale = this->scale();
+        auto *founderButton = new BadgePickerToggleSwitch(this->contentWidget_);
+        founderButton->setChecked(
+            getSettings()->bluzyrinoFounderVisible.getValue());
+        founderButton->updateMetrics(scale);
+        QObject::connect(
+            founderButton, &QPushButton::clicked, this, [](bool checked) {
+                getSettings()->bluzyrinoFounderVisible.setValue(checked);
+                getApp()->getBluzyrinoBadges()->setFounderVisible(checked);
+            });
+        this->contentLayout_->addWidget(
+            makeSettingRow("Show my Founder badge to other Bluzyrino users",
+                           founderButton, this->contentWidget_, scale));
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+    const int gridColumns = this->badgeGridColumns();
+    int shown = 0;
+    const auto addSection = [&](const QString &title, const QString &category,
+                                bool pickable) {
+        QWidget *gridWidget = nullptr;
+        QGridLayout *grid = nullptr;
+        int index = 0;
+        for (const auto &badge : catalog)
+        {
+            if (badge.category != category || !badge.emote)
+            {
+                continue;
+            }
+
+            GqlBadge tileBadge;
+            tileBadge.id = badge.id;
+            tileBadge.setID = badge.id;
+            tileBadge.title = badge.emote->tooltip.string;
+            tileBadge.image1x = badge.emote->images.getImage1()->url().string;
+            tileBadge.image2x = badge.emote->images.getImage2()->url().string;
+            tileBadge.image4x = badge.emote->images.getImage3()->url().string;
+            if (!badgeMatchesSearch(tileBadge, needle))
+            {
+                continue;
+            }
+
+            if (grid == nullptr)
+            {
+                auto *label = new QLabel(title, this->contentWidget_);
+                label->setObjectName("TwitchBadgePickerSectionLabel");
+                this->contentLayout_->addWidget(label);
+
+                gridWidget = new QWidget(this->contentWidget_);
+                grid = new QGridLayout(gridWidget);
+                grid->setContentsMargins(0, 0, 0, 0);
+                grid->setSpacing(BADGE_GRID_SPACING);
+            }
+
+            auto *tile = new BadgeTileButton(tileBadge, gridWidget);
+            if (!isOwned(badge.id))
+            {
+                // Not unlocked: shown dimmed, to see what there is.
+                tile->setEnabled(false);
+                tile->setToolTip(tileBadge.title + QStringLiteral(" (locked)"));
+                auto *dim = new QGraphicsOpacityEffect(tile);
+                dim->setOpacity(0.35);
+                tile->setGraphicsEffect(dim);
+            }
+            else if (pickable)
+            {
+                tile->setSelected(badge.id == selected);
+                tile->setEnabled(!this->actionInFlight_);
+                if (badge.id != selected)
+                {
+                    QObject::connect(
+                        tile, &QPushButton::clicked, this,
+                        [this, id = badge.id, name = tileBadge.title] {
+                            this->selectBluzyrino(id, name);
+                        });
+                }
+            }
+            else
+            {
+                // Owned and always shown; there is nothing to pick.
+                tile->setCursor(Qt::ArrowCursor);
+                tile->setFocusPolicy(Qt::NoFocus);
+            }
+            grid->addWidget(tile, index / gridColumns, index % gridColumns);
+            ++index;
+            ++shown;
+        }
+
+        if (gridWidget != nullptr)
+        {
+            this->contentLayout_->addWidget(gridWidget);
+        }
+    };
+
+    addSection(QStringLiteral("Donor badge"), donor, true);
+    addSection(QStringLiteral("Special badges (always shown)"),
+               QStringLiteral("special"), false);
+
+    if (shown == 0)
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            needle.isEmpty() ? QStringLiteral("No Bluzyrino badges available.")
+                             : QStringLiteral("No matching badges."),
+            this->contentWidget_));
+    }
+}
+
+void TwitchBadgePickerDialog::selectBluzyrino(const QString &badgeId,
+                                              const QString &title)
+{
+    if (this->actionInFlight_)
+    {
+        return;
+    }
+
+    this->actionInFlight_ = true;
+    this->bluzyrinoPending_ = badgeId;
+    this->setStatus({});
+    this->rebuildContent();
+
+    QPointer<TwitchBadgePickerDialog> self = this;
+    getApp()->getBluzyrinoBadges()->setDonorSelection(badgeId, [self, title](
+                                                                   bool ok) {
+        if (!self)
+        {
+            return;
+        }
+        self->actionInFlight_ = false;
+        if (ok)
+        {
+            self->channel_->addSystemMessage(
+                QStringLiteral("Bluzyrino badge set to: %1").arg(title));
+        }
+        else
+        {
+            self->bluzyrinoPending_.clear();
+            self->setStatus(
+                QStringLiteral("Could not change the Bluzyrino badge."), true);
+        }
+        self->rebuildContent();
+    });
+}
+
 void TwitchBadgePickerDialog::selectJilChat(const QString &slug)
 {
     if (slug == this->jilChatSelected_ || this->actionInFlight_)
@@ -3948,7 +4497,8 @@ void TwitchBadgePickerDialog::rebuildSevenTv()
     this->contentLayout_->addWidget(gridWidget);
 }
 
-void TwitchBadgePickerDialog::connectSevenTv()
+std::optional<QString> TwitchBadgePickerDialog::askForToken(
+    const QString &service, const QString &command, const QString &site)
 {
     // The popup deletes itself when it loses focus, which the connect window
     // takes. Keep it open while the connect window is shown.
@@ -3957,26 +4507,30 @@ void TwitchBadgePickerDialog::connectSevenTv()
     const QPointer<TwitchBadgePickerDialog> self = this;
 
     QDialog dialog;
-    dialog.setWindowTitle("Connect 7TV");
+    dialog.setWindowTitle(QStringLiteral("Connect %1").arg(service));
     auto *layout = new QVBoxLayout(&dialog);
-    auto *intro =
-        new QLabel("1. Click \"Copy command\" and open 7TV while signed in.\n"
-                   "2. Run the copied command in its browser console (F12).\n"
-                   "3. Paste the copied token below.\n\n"
-                   "Your 7TV token stays on this device.",
-                   &dialog);
+    auto *intro = new QLabel(
+        QStringLiteral(
+            "1. Click \"Copy command\" and open %1 while signed in.\n"
+            "2. Run the copied command in its browser console (F12).\n"
+            "3. Paste the copied token below.\n\n"
+            "Your %1 token stays on this device.")
+            .arg(service),
+        &dialog);
     intro->setWordWrap(true);
     layout->addWidget(intro);
 
-    auto *copyButton = new QPushButton("Copy command and open 7TV", &dialog);
-    QObject::connect(copyButton, &QPushButton::clicked, &dialog, [] {
-        crossPlatformCopy(QString::fromLatin1(SEVENTV_TOKEN_COMMAND));
-        QDesktopServices::openUrl(QUrl("https://7tv.app"));
-    });
+    auto *copyButton = new QPushButton(
+        QStringLiteral("Copy command and open %1").arg(service), &dialog);
+    QObject::connect(copyButton, &QPushButton::clicked, &dialog,
+                     [command, site] {
+                         crossPlatformCopy(command);
+                         QDesktopServices::openUrl(QUrl(site));
+                     });
     layout->addWidget(copyButton);
 
     auto *tokenInput = new QLineEdit(&dialog);
-    tokenInput->setPlaceholderText("7TV token");
+    tokenInput->setPlaceholderText(QStringLiteral("%1 token").arg(service));
     tokenInput->setEchoMode(QLineEdit::Password);
     layout->addWidget(tokenInput);
 
@@ -3991,13 +4545,13 @@ void TwitchBadgePickerDialog::connectSevenTv()
     const auto accepted = dialog.exec() == QDialog::Accepted;
     if (!self)
     {
-        return;
+        return std::nullopt;
     }
     this->windowDeactivateAction = deactivateAction;
     this->activateWindow();
     if (!accepted)
     {
-        return;
+        return std::nullopt;
     }
 
     auto token = tokenInput->text().trimmed();
@@ -4007,16 +4561,30 @@ void TwitchBadgePickerDialog::connectSevenTv()
     }
     if (token.isEmpty())
     {
-        this->setStatus("Paste a valid 7TV token.", true);
+        this->setStatus(QStringLiteral("Paste a valid %1 token.").arg(service),
+                        true);
         this->rebuildContent();
+        return std::nullopt;
+    }
+    return token;
+}
+
+void TwitchBadgePickerDialog::connectSevenTv()
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto token = this->askForToken(
+        QStringLiteral("7TV"), QString::fromLatin1(SEVENTV_TOKEN_COMMAND),
+        QStringLiteral("https://7tv.app"));
+    if (!self || !token)
+    {
         return;
     }
 
-    this->sevenTvToken_ = token;
+    this->sevenTvToken_ = *token;
     this->sevenTvTokenRead_ = true;
     Credentials::instance().set(
         QString::fromLatin1(SEVENTV_CREDENTIAL_PROVIDER),
-        getApp()->getAccounts()->twitch.getCurrent()->getUserId(), token);
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId(), *token);
     this->setStatus({});
     this->loadSevenTv(true);
 }
@@ -4099,6 +4667,600 @@ void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
             self->setStatus(error, true);
             self->rebuildContent();
         });
+}
+
+void TwitchBadgePickerDialog::bttvRequest(
+    const QString &path, const std::optional<QJsonObject> &patch,
+    const std::function<void(const QJsonObject &)> &onData,
+    const std::function<void(const QString &)> &onError)
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    auto request =
+        NetworkRequest(
+            QUrl(QString::fromLatin1(BTTV_API_URL) + path),
+            patch ? NetworkRequestType::Patch : NetworkRequestType::Get)
+            .header("Authorization", "Bearer " + this->bttvToken_.toUtf8())
+            .header("Accept", "application/json")
+            .timeout(15000);
+    if (patch)
+    {
+        request = std::move(request).json(*patch);
+    }
+    std::move(request)
+        .onSuccess([self, onData](const NetworkResult &result) {
+            if (self)
+            {
+                onData(result.parseJson());
+            }
+        })
+        .onError([self, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            if (result.status() == 401)
+            {
+                onError(QStringLiteral(
+                    "Your BetterTTV connection expired. Connect it again."));
+                return;
+            }
+            const auto message = result.parseJson().value("message").toString();
+            onError(message.isEmpty() ? result.formatError() : message);
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::refreshBttvEffects()
+{
+    static bool started = false;
+    if (started)
+    {
+        return;
+    }
+    started = true;
+
+    // The page names its script and its style sheet; these have the effects.
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto site = QString::fromLatin1(BTTV_SITE_URL);
+    NetworkRequest(QUrl(site + QStringLiteral("/dashboard/pro")))
+        .timeout(15000)
+        .onSuccess([self, site](const NetworkResult &page) {
+            static const QRegularExpression scriptRegex(
+                R"re("(/assets/index-[^"]+\.js)")re");
+            static const QRegularExpression styleRegex(
+                R"re("(/assets/index-[^"]+\.css)")re");
+            const auto html = QString::fromUtf8(page.getData());
+            const auto script = scriptRegex.match(html).captured(1);
+            const auto style = styleRegex.match(html).captured(1);
+            if (script.isEmpty() || style.isEmpty())
+            {
+                return;
+            }
+            NetworkRequest(QUrl(site + style))
+                .timeout(15000)
+                .onSuccess([self, site, script](const NetworkResult &css) {
+                    const auto styleText = QString::fromUtf8(css.getData());
+                    NetworkRequest(QUrl(site + script))
+                        .timeout(30000)
+                        .onSuccess([self, styleText](const NetworkResult &js) {
+                            applyBttvSite(styleText,
+                                          QString::fromUtf8(js.getData()));
+                            if (self && self->view_ == View::BttvEffects &&
+                                !self->actionInFlight_)
+                            {
+                                self->rebuildContent();
+                            }
+                        })
+                        .execute();
+                })
+                .execute();
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::loadBttv(bool force)
+{
+    this->refreshBttvEffects();
+
+    if (this->bttvLoading_ || (this->bttvLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto twitchUserId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+
+    // The token is read from the credential store once.
+    if (!this->bttvTokenRead_)
+    {
+        this->bttvLoading_ = true;
+        this->setStatus("Loading BetterTTV...");
+        this->rebuildContent();
+        Credentials::instance().get(
+            QString::fromLatin1(BTTV_CREDENTIAL_PROVIDER), twitchUserId, this,
+            [this](const QString &token) {
+                this->bttvTokenRead_ = true;
+                this->bttvToken_ = token;
+                this->bttvLoading_ = false;
+                this->setStatus({});
+                this->loadBttv(true);
+            });
+        return;
+    }
+
+    if (this->bttvToken_.isEmpty())
+    {
+        this->rebuildContent();
+        return;
+    }
+
+    this->bttvLoading_ = true;
+    this->setStatus("Loading BetterTTV badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto fail = [self](const QString &error) {
+        self->bttvLoading_ = false;
+        self->setStatus(error, true);
+        self->rebuildContent();
+    };
+    this->bttvRequest(
+        QStringLiteral("account"), std::nullopt,
+        [self, twitchUserId, fail](const QJsonObject &account) {
+            // Only use a BetterTTV account that belongs to the current
+            // Twitch account.
+            const auto providerId = account.value("providerId").toString();
+            if (!providerId.isEmpty() && providerId != twitchUserId)
+            {
+                fail(QStringLiteral("This BetterTTV connection belongs to a "
+                                    "different Twitch account."));
+                return;
+            }
+            self->bttvBadgeShown_ = account.value("subscriptionBadge").toBool();
+            self->bttvBadgeId_ =
+                account.value("subscriptionBadgeId").toString();
+            self->bttvEffect_ = account.value("usernameEffect").toString();
+
+            self->bttvRequest(
+                QString::fromLatin1(BTTV_BADGE_PATH) +
+                    QStringLiteral("/eligibility"),
+                std::nullopt,
+                [self, fail](const QJsonObject &eligibility) {
+                    // They come with the latest one first.
+                    self->bttvBadges_.clear();
+                    const auto list =
+                        eligibility.value("eligibleBadges").toArray();
+                    for (const auto &value : list)
+                    {
+                        const auto badge = value.toObject();
+                        const auto id = badge.value("badgeId").toString();
+                        const auto url = badge.value("badgeUrl").toString();
+                        if (id.isEmpty() || url.isEmpty())
+                        {
+                            continue;
+                        }
+                        GqlBadge tileBadge;
+                        tileBadge.id = id;
+                        tileBadge.setID = id;
+                        tileBadge.image1x = url;
+                        tileBadge.image2x = url;
+                        tileBadge.image4x = url;
+                        self->bttvBadges_.push_front(tileBadge);
+                    }
+                    for (qsizetype i = 0; i < self->bttvBadges_.size(); ++i)
+                    {
+                        self->bttvBadges_[i].title =
+                            QStringLiteral("BetterTTV Pro badge %1").arg(i + 1);
+                    }
+
+                    const auto next = eligibility.value("nextBadgeUnlocksAt");
+                    self->bttvNextUnlock_ =
+                        next.isDouble()
+                            ? QDateTime::fromMSecsSinceEpoch(
+                                  static_cast<qint64>(next.toDouble()))
+                            : QDateTime::fromString(next.toString(),
+                                                    Qt::ISODateWithMs);
+
+                    self->bttvRequest(
+                        QString::fromLatin1(BTTV_EFFECT_PATH) +
+                            QStringLiteral("/eligibility"),
+                        std::nullopt,
+                        [self](const QJsonObject &effects) {
+                            self->bttvEffectEligibility_ = effects;
+                            self->bttvLoading_ = false;
+                            self->bttvLoaded_ = true;
+                            self->setStatus({});
+                            self->rebuildContent();
+                        },
+                        fail);
+                },
+                fail);
+        },
+        fail);
+}
+
+void TwitchBadgePickerDialog::rebuildBttv()
+{
+    const bool effects = this->view_ == View::BttvEffects;
+    const bool connected = !this->bttvToken_.isEmpty();
+
+    // Title, hint and the connect button, like for 7TV.
+    auto *headerRow = new QWidget(this->contentWidget_);
+    auto *header = new QHBoxLayout(headerRow);
+    header->setContentsMargins(0, 0, 0, 0);
+    auto *texts = new QVBoxLayout();
+    texts->setSpacing(0);
+    auto *title = new QLabel(
+        effects ? "BetterTTV username effect" : "BetterTTV Pro badge",
+        this->contentWidget_);
+    title->setObjectName("TwitchBadgePickerSectionLabel");
+    texts->addWidget(title);
+    QString hintText;
+    if (connected)
+    {
+        hintText = effects ? "Choose how BetterTTV users see your name."
+                           : "Choose one of your BetterTTV Pro badges.";
+    }
+    else
+    {
+        hintText = effects ? "Connect BetterTTV to choose an effect."
+                           : "Connect BetterTTV to choose a badge.";
+    }
+    auto *hint = new QLabel(hintText, this->contentWidget_);
+    hint->setWordWrap(true);
+    texts->addWidget(hint);
+    header->addLayout(texts, 1);
+    auto *connectButton =
+        new QPushButton(connected ? "Disconnect" : "Connect", headerRow);
+    connectButton->setCursor(Qt::PointingHandCursor);
+    connectButton->setEnabled(!this->bttvLoading_ && !this->actionInFlight_);
+    QObject::connect(connectButton, &QPushButton::clicked, this,
+                     [this, connected] {
+                         // Later: both rebuild the content, which deletes this
+                         // button.
+                         QTimer::singleShot(0, this, [this, connected] {
+                             if (connected)
+                             {
+                                 this->disconnectBttv();
+                             }
+                             else
+                             {
+                                 this->connectBttv();
+                             }
+                         });
+                     });
+    header->addWidget(connectButton, 0, Qt::AlignTop);
+    this->contentLayout_->addWidget(headerRow);
+
+    if (!connected || this->bttvLoading_ || !this->bttvLoaded_)
+    {
+        return;
+    }
+
+    if (effects)
+    {
+        // Your name with each effect, two per row.
+        auto user = getApp()->getAccounts()->twitch.getCurrent();
+        const auto userName = user->getUserName();
+        auto userColor = user->color();
+        if (!userColor.isValid())
+        {
+            userColor = this->theme->window.text;
+        }
+
+        const auto needle = this->searchQuery_.trimmed();
+        auto *list = new QWidget(this->contentWidget_);
+        auto *effectGrid = new QGridLayout(list);
+        effectGrid->setContentsMargins(0, 0, 0, 0);
+        effectGrid->setSpacing(BADGE_GRID_SPACING);
+        constexpr int effectColumns = 2;
+        int effectIndex = 0;
+        const auto addEffect = [&](const BttvEffectInfo *effect) {
+            const auto id = effect == nullptr ? QString{} : effect->id;
+            auto *tile =
+                new BttvEffectTileButton(effect, userName, userColor, list);
+            tile->setSelected(id == this->bttvEffect_);
+            if (effect == nullptr ||
+                this->bttvEffectEligibility_.value(id).toBool())
+            {
+                tile->setEnabled(!this->actionInFlight_);
+                QObject::connect(tile, &QPushButton::clicked, this, [this, id] {
+                    this->selectBttvEffect(id);
+                });
+            }
+            else
+            {
+                // Not unlocked: shown dimmed, with what unlocks it.
+                tile->setEnabled(false);
+                tile->setToolTip(effect->requirement.isEmpty()
+                                     ? QStringLiteral("Locked")
+                                     : effect->requirement);
+                auto *dim = new QGraphicsOpacityEffect(tile);
+                dim->setOpacity(0.35);
+                tile->setGraphicsEffect(dim);
+            }
+            effectGrid->addWidget(tile, effectIndex / effectColumns,
+                                  effectIndex % effectColumns);
+            ++effectIndex;
+        };
+        if (needle.isEmpty())
+        {
+            addEffect(nullptr);
+        }
+        // What BetterTTV lists for the account and the page doesn't
+        // describe comes last, plain.
+        auto catalog = bttvEffectCatalog();
+        for (auto it = this->bttvEffectEligibility_.constBegin();
+             it != this->bttvEffectEligibility_.constEnd(); ++it)
+        {
+            const auto id = it.key();
+            if (it.value().isBool() &&
+                std::ranges::find(catalog, id, &BttvEffectInfo::id) ==
+                    catalog.end())
+            {
+                catalog.push_back({
+                    .id = id,
+                    .label = bttvEffectLabelFromId(id),
+                    .requirement = {},
+                    .texture = {},
+                    .outline = {},
+                });
+            }
+        }
+        for (const auto &effect : std::as_const(catalog))
+        {
+            if (effect.label.contains(needle, Qt::CaseInsensitive))
+            {
+                addEffect(&effect);
+            }
+        }
+        if (effectIndex == 0)
+        {
+            delete list;
+            this->contentLayout_->addWidget(makeEmptyListLabel(
+                QStringLiteral("No matching effects."), this->contentWidget_));
+            return;
+        }
+        this->contentLayout_->addWidget(list);
+        return;
+    }
+
+    if (this->bttvBadges_.isEmpty())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("This account has no BetterTTV Pro badges."),
+            this->contentWidget_));
+        return;
+    }
+
+    const auto latestId = this->bttvBadges_.constLast().id;
+    const bool usesLatest =
+        this->bttvBadgeShown_ && this->bttvBadgeId_.isEmpty();
+    const auto scale = this->scale();
+    auto *latestButton = new BadgePickerToggleSwitch(this->contentWidget_);
+    latestButton->setChecked(usesLatest);
+    latestButton->setEnabled(!this->actionInFlight_);
+    latestButton->updateMetrics(scale);
+    QObject::connect(latestButton, &QPushButton::clicked, this,
+                     [this, latestId](bool checked) {
+                         this->selectBttv(true, checked ? QString{} : latestId);
+                     });
+    this->contentLayout_->addWidget(
+        makeSettingRow("Always use your latest badge", latestButton,
+                       this->contentWidget_, scale));
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+
+    auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+    noBadgeTile->setToolTip("No BetterTTV badge");
+    noBadgeTile->setEnabled(!this->actionInFlight_);
+    noBadgeTile->setSelected(!this->bttvBadgeShown_);
+    QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+        this->selectBttv(false, {});
+    });
+    grid->addWidget(noBadgeTile, 0, 0);
+
+    const auto shownId = usesLatest ? latestId : this->bttvBadgeId_;
+    int index = 1;
+    for (const auto &badge : std::as_const(this->bttvBadges_))
+    {
+        auto *tile = new BadgeTileButton(badge, gridWidget);
+        tile->setEnabled(!this->actionInFlight_);
+        tile->setSelected(this->bttvBadgeShown_ && badge.id == shownId);
+        QObject::connect(tile, &QPushButton::clicked, this,
+                         [this, id = badge.id] {
+                             this->selectBttv(true, id);
+                         });
+        grid->addWidget(tile, index / gridColumns, index % gridColumns);
+        ++index;
+    }
+    this->contentLayout_->addWidget(gridWidget);
+
+    if (this->bttvNextUnlock_.isValid())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("Next badge unlocks on %1.")
+                .arg(QLocale().toString(
+                    this->bttvNextUnlock_.toLocalTime().date(),
+                    QLocale::ShortFormat)),
+            this->contentWidget_));
+    }
+}
+
+void TwitchBadgePickerDialog::connectBttv()
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto token = this->askForToken(
+        QStringLiteral("BetterTTV"), QString::fromLatin1(BTTV_TOKEN_COMMAND),
+        QStringLiteral("https://betterttv.com/dashboard/pro"));
+    if (!self || !token)
+    {
+        return;
+    }
+
+    this->bttvToken_ = *token;
+    this->bttvTokenRead_ = true;
+    Credentials::instance().set(
+        QString::fromLatin1(BTTV_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId(), *token);
+    this->setStatus({});
+    this->loadBttv(true);
+}
+
+void TwitchBadgePickerDialog::disconnectBttv()
+{
+    Credentials::instance().erase(
+        QString::fromLatin1(BTTV_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId());
+    this->bttvToken_.clear();
+    this->bttvLoaded_ = false;
+    this->bttvBadges_.clear();
+    this->bttvEffect_.clear();
+    this->bttvEffectEligibility_ = {};
+    this->setStatus({});
+    this->rebuildContent();
+}
+
+void TwitchBadgePickerDialog::selectBttvEffect(const QString &effect)
+{
+    if (this->actionInFlight_ || effect == this->bttvEffect_)
+    {
+        return;
+    }
+
+    const auto previous = this->bttvEffect_;
+    this->bttvEffect_ = effect;
+    this->actionInFlight_ = true;
+    this->setStatus({});
+    this->rebuildContent();
+
+    auto label = bttvEffectLabelFromId(effect);
+    for (const auto &known : std::as_const(bttvEffectCatalog()))
+    {
+        if (effect == known.id)
+        {
+            label = known.label;
+        }
+    }
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    this->bttvRequest(
+        QString::fromLatin1(BTTV_EFFECT_PATH),
+        QJsonObject{{"effect", effect.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                                : QJsonValue(effect)}},
+        [self, label](const QJsonObject &) {
+            self->actionInFlight_ = false;
+            self->channel_->addSystemMessage(
+                label.isEmpty()
+                    ? QStringLiteral("BetterTTV username effect removed.")
+                    : QStringLiteral("BetterTTV username effect set to: %1")
+                          .arg(label));
+            self->rebuildContent();
+        },
+        [self, previous](const QString &error) {
+            self->actionInFlight_ = false;
+            self->bttvEffect_ = previous;
+            self->setStatus(error, true);
+            self->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::selectBttv(bool show, const QString &badgeId)
+{
+    if (this->actionInFlight_)
+    {
+        return;
+    }
+
+    const bool previousShown = this->bttvBadgeShown_;
+    const auto previousId = this->bttvBadgeId_;
+    const bool idChanges = show && badgeId != previousId;
+    const bool shownChanges = show != previousShown;
+    if (!idChanges && !shownChanges)
+    {
+        return;
+    }
+
+    this->bttvBadgeShown_ = show;
+    if (show)
+    {
+        this->bttvBadgeId_ = badgeId;
+    }
+    this->actionInFlight_ = true;
+    this->setStatus({});
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto path = QString::fromLatin1(BTTV_BADGE_PATH);
+    const std::function<void()> done = [self, show, badgeId] {
+        self->actionInFlight_ = false;
+        QString message;
+        if (!show)
+        {
+            message = QStringLiteral("BetterTTV badge cleared.");
+        }
+        else if (badgeId.isEmpty())
+        {
+            message =
+                QStringLiteral("BetterTTV badge set to: always the latest");
+        }
+        else
+        {
+            QString title;
+            for (const auto &badge : std::as_const(self->bttvBadges_))
+            {
+                if (badge.id == badgeId)
+                {
+                    title = badge.title;
+                }
+            }
+            message = QStringLiteral("BetterTTV badge set to: %1").arg(title);
+        }
+        self->channel_->addSystemMessage(message);
+        self->rebuildContent();
+    };
+    const std::function<void(const QString &)> fail =
+        [self, previousShown, previousId](const QString &error) {
+            self->actionInFlight_ = false;
+            self->bttvBadgeShown_ = previousShown;
+            self->bttvBadgeId_ = previousId;
+            self->setStatus(error, true);
+            self->rebuildContent();
+        };
+    // Which badge and whether it's shown are set one after the other.
+    const std::function<void()> setShown = [self, path, show, done, fail] {
+        self->bttvRequest(
+            path, QJsonObject{{"badge", show}},
+            [done](const QJsonObject &) {
+                done();
+            },
+            fail);
+    };
+
+    if (!idChanges)
+    {
+        setShown();
+        return;
+    }
+    this->bttvRequest(
+        path,
+        QJsonObject{{"badgeId", badgeId.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                                  : QJsonValue(badgeId)}},
+        [shownChanges, setShown, done](const QJsonObject &) {
+            if (shownChanges)
+            {
+                setShown();
+            }
+            else
+            {
+                done();
+            }
+        },
+        fail);
 }
 
 QString TwitchBadgePickerDialog::authTokenOrMessage()
