@@ -17,6 +17,7 @@
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
+#include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
@@ -113,7 +114,6 @@ constexpr auto BTTV_TOKEN_COMMAND =
     "(()=>{copy(JSON.parse(localStorage.getItem('USER_TOKEN')));"
     "return 'BetterTTV token copied.'})()";
 constexpr auto BTTV_EFFECT_PATH = "account/subscription/username_effect";
-constexpr auto BTTV_SITE_URL = "https://betterttv.com";
 constexpr auto SEVENTV_GQL_URL = "https://api.7tv.app/v4/gql";
 /// Has the paint definitions in the format SeventvPaints reads.
 constexpr auto SEVENTV_V3_GQL_URL = "https://7tv.io/v3/gql";
@@ -797,108 +797,13 @@ private:
     pajlada::Signals::SignalHolder connections_;
 };
 
-/// A BetterTTV username effect. `texture` is the address of its image.
-struct BttvEffectInfo {
-    QString id;
-    QString label;
-    QString requirement;
-    QString texture;
-    QString outline;
-};
-
-/// The username effects betterttv.com has, in its order; empty until the
-/// page is read, see applyBttvSite.
-QVector<BttvEffectInfo> &bttvEffectCatalog()
-{
-    static QVector<BttvEffectInfo> catalog;
-    return catalog;
-}
-
-/// The name for an effect of which only the id is known.
-QString bttvEffectLabelFromId(const QString &id)
-{
-    return id.isEmpty() ? id : id.at(0).toUpper() + id.mid(1);
-}
-
-/// Takes the username effects from the style sheet and the script of
-/// betterttv.com, which has no interface for them.
-void applyBttvSite(const QString &style, const QString &script)
-{
-    static const QRegularExpression textureRegex(
-        R"re(\._([a-z]+)_\w+\{[^}]*background-image:url\((/assets/[^)]+\.png)\))re");
-    static const QRegularExpression outlineRegex(
-        R"re("stroke-text-svg-filter-([a-z]+)":`(#[0-9a-fA-F]{3,8})`)re");
-    static const QRegularExpression labelRegex(
-        R"re(label:\w+\.formatMessage\(\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`([^`]*)`\}\]\}\),requirement:\w+\.formatMessage\(\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`([^`]*)`\}\]\}\))re");
-
-    QHash<QString, QString> textures;
-    for (auto it = textureRegex.globalMatch(style); it.hasNext();)
-    {
-        const auto match = it.next();
-        textures.insert(match.captured(1),
-                        QString::fromLatin1(BTTV_SITE_URL) + match.captured(2));
-    }
-    QHash<QString, QString> outlines;
-    QStringList outlineOrder;
-    for (auto it = outlineRegex.globalMatch(script); it.hasNext();)
-    {
-        const auto match = it.next();
-        outlines.insert(match.captured(1), match.captured(2));
-        outlineOrder.push_back(match.captured(1));
-    }
-
-    QVector<BttvEffectInfo> updated;
-    QSet<QString> listed;
-    for (auto it = labelRegex.globalMatch(script); it.hasNext();)
-    {
-        const auto match = it.next();
-        const auto id = match.captured(1).toLower();
-        if (id.isEmpty() || listed.contains(id))
-        {
-            continue;
-        }
-        updated.push_back({
-            .id = id,
-            .label = match.captured(1),
-            .requirement = match.captured(2),
-            .texture = {},
-            .outline = {},
-        });
-        listed.insert(id);
-    }
-    // An effect with an image the page describes in a way not known here.
-    for (const auto &id : std::as_const(outlineOrder))
-    {
-        if (!listed.contains(id) && textures.contains(id))
-        {
-            updated.push_back({
-                .id = id,
-                .label = bttvEffectLabelFromId(id),
-                .requirement = {},
-                .texture = {},
-                .outline = {},
-            });
-            listed.insert(id);
-        }
-    }
-    for (auto &effect : updated)
-    {
-        if (textures.contains(effect.id) && outlines.contains(effect.id))
-        {
-            effect.texture = textures.value(effect.id);
-            effect.outline = outlines.value(effect.id);
-        }
-    }
-    bttvEffectCatalog() = updated;
-}
-
 /// The user's name with a BetterTTV username effect and the effect's name
 /// below, like the 7TV paints.
 class BttvEffectTileButton final : public QPushButton
 {
 public:
     /// `effect` is null for no effect.
-    BttvEffectTileButton(const BttvEffectInfo *effect, QString userName,
+    BttvEffectTileButton(const BttvUsernameEffect *effect, QString userName,
                          const QColor &userColor, QWidget *parent)
         : QPushButton(parent)
         , effectId_(effect == nullptr ? QString{} : effect->id)
@@ -1657,6 +1562,14 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
                 return;
             }
             this->updatePreview();
+        });
+
+    this->signalHolder_.managedConnect(
+        BttvUsernameEffects::instance().effectsUpdated, [this] {
+            if (this->view_ == View::BttvEffects && !this->actionInFlight_)
+            {
+                this->rebuildContent();
+            }
         });
 
     this->refreshStyle();
@@ -4710,57 +4623,9 @@ void TwitchBadgePickerDialog::bttvRequest(
         .execute();
 }
 
-void TwitchBadgePickerDialog::refreshBttvEffects()
-{
-    static bool started = false;
-    if (started)
-    {
-        return;
-    }
-    started = true;
-
-    // The page names its script and its style sheet; these have the effects.
-    const QPointer<TwitchBadgePickerDialog> self = this;
-    const auto site = QString::fromLatin1(BTTV_SITE_URL);
-    NetworkRequest(QUrl(site + QStringLiteral("/dashboard/pro")))
-        .timeout(15000)
-        .onSuccess([self, site](const NetworkResult &page) {
-            static const QRegularExpression scriptRegex(
-                R"re("(/assets/index-[^"]+\.js)")re");
-            static const QRegularExpression styleRegex(
-                R"re("(/assets/index-[^"]+\.css)")re");
-            const auto html = QString::fromUtf8(page.getData());
-            const auto script = scriptRegex.match(html).captured(1);
-            const auto style = styleRegex.match(html).captured(1);
-            if (script.isEmpty() || style.isEmpty())
-            {
-                return;
-            }
-            NetworkRequest(QUrl(site + style))
-                .timeout(15000)
-                .onSuccess([self, site, script](const NetworkResult &css) {
-                    const auto styleText = QString::fromUtf8(css.getData());
-                    NetworkRequest(QUrl(site + script))
-                        .timeout(30000)
-                        .onSuccess([self, styleText](const NetworkResult &js) {
-                            applyBttvSite(styleText,
-                                          QString::fromUtf8(js.getData()));
-                            if (self && self->view_ == View::BttvEffects &&
-                                !self->actionInFlight_)
-                            {
-                                self->rebuildContent();
-                            }
-                        })
-                        .execute();
-                })
-                .execute();
-        })
-        .execute();
-}
-
 void TwitchBadgePickerDialog::loadBttv(bool force)
 {
-    this->refreshBttvEffects();
+    BttvUsernameEffects::instance().refresh();
 
     if (this->bttvLoading_ || (this->bttvLoaded_ && !force))
     {
@@ -4820,6 +4685,9 @@ void TwitchBadgePickerDialog::loadBttv(bool force)
             self->bttvBadgeId_ =
                 account.value("subscriptionBadgeId").toString();
             self->bttvEffect_ = account.value("usernameEffect").toString();
+            BttvUsernameEffects::instance().setUserEffect(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+                self->bttvEffect_);
 
             self->bttvRequest(
                 QString::fromLatin1(BTTV_BADGE_PATH) +
@@ -4955,7 +4823,7 @@ void TwitchBadgePickerDialog::rebuildBttv()
         effectGrid->setSpacing(BADGE_GRID_SPACING);
         constexpr int effectColumns = 2;
         int effectIndex = 0;
-        const auto addEffect = [&](const BttvEffectInfo *effect) {
+        const auto addEffect = [&](const BttvUsernameEffect *effect) {
             const auto id = effect == nullptr ? QString{} : effect->id;
             auto *tile =
                 new BttvEffectTileButton(effect, userName, userColor, list);
@@ -4989,18 +4857,18 @@ void TwitchBadgePickerDialog::rebuildBttv()
         }
         // What BetterTTV lists for the account and the page doesn't
         // describe comes last, plain.
-        auto catalog = bttvEffectCatalog();
+        auto catalog = BttvUsernameEffects::instance().effects();
         for (auto it = this->bttvEffectEligibility_.constBegin();
              it != this->bttvEffectEligibility_.constEnd(); ++it)
         {
             const auto id = it.key();
             if (it.value().isBool() &&
-                std::ranges::find(catalog, id, &BttvEffectInfo::id) ==
+                std::ranges::find(catalog, id, &BttvUsernameEffect::id) ==
                     catalog.end())
             {
                 catalog.push_back({
                     .id = id,
-                    .label = bttvEffectLabelFromId(id),
+                    .label = BttvUsernameEffects::labelFromId(id),
                     .requirement = {},
                     .texture = {},
                     .outline = {},
@@ -5138,8 +5006,9 @@ void TwitchBadgePickerDialog::selectBttvEffect(const QString &effect)
     this->setStatus({});
     this->rebuildContent();
 
-    auto label = bttvEffectLabelFromId(effect);
-    for (const auto &known : std::as_const(bttvEffectCatalog()))
+    auto label = BttvUsernameEffects::labelFromId(effect);
+    const auto catalog = BttvUsernameEffects::instance().effects();
+    for (const auto &known : catalog)
     {
         if (effect == known.id)
         {
@@ -5152,8 +5021,11 @@ void TwitchBadgePickerDialog::selectBttvEffect(const QString &effect)
         QString::fromLatin1(BTTV_EFFECT_PATH),
         QJsonObject{{"effect", effect.isEmpty() ? QJsonValue(QJsonValue::Null)
                                                 : QJsonValue(effect)}},
-        [self, label](const QJsonObject &) {
+        [self, label, effect](const QJsonObject &) {
             self->actionInFlight_ = false;
+            BttvUsernameEffects::instance().setUserEffect(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+                effect);
             self->setStatus(
                 label.isEmpty()
                     ? QStringLiteral("BetterTTV username effect removed.")

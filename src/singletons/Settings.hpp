@@ -98,6 +98,15 @@ enum class TabStyle : std::uint8_t {
     Compact,
 };
 
+/// Whose paint names in the chat are drawn with.
+enum class UsernamePaintSource : std::uint8_t {
+    SevenTV,
+    BetterTTV,
+    /// What the user has; the 7TV paint if it's both.
+    Automatic,
+    Off,
+};
+
 enum class EmoteTooltipScale : std::uint8_t {
     Small,
     Medium,
@@ -421,7 +430,12 @@ public:
     BoolSetting enableSmoothScrolling = {"/appearance/smoothScrolling", true};
     BoolSetting enableSmoothScrollingNewMessages = {
         "/appearance/smoothScrollingNewMessages", false};
-    BoolSetting displaySevenTVPaints = {"/misc/displaySevenTVPaints", true};
+    BoolSetting displayBttvUsernameEffectOutlines = {
+        "/misc/displayBttvUsernameEffectOutlines", true};
+    EnumStringSetting<UsernamePaintSource> usernamePaintSource = {
+        "/misc/usernamePaintSource",
+        UsernamePaintSource::SevenTV,
+    };
     BoolSetting showSevenTVPaintTooltip = {"/misc/showSevenTVPaintTooltip",
                                            false};
     BoolSetting displaySevenTVPaintShadows = {
@@ -1468,6 +1482,24 @@ private:
 Settings *getSettings();
 
 }  // namespace chatterino
+
+template <>
+constexpr magic_enum::customize::customize_t
+    magic_enum::customize::enum_name<chatterino::UsernamePaintSource>(
+        chatterino::UsernamePaintSource value) noexcept
+{
+    switch (value)
+    {
+        case chatterino::UsernamePaintSource::SevenTV:
+            return "7TV";
+
+        case chatterino::UsernamePaintSource::BetterTTV:
+        case chatterino::UsernamePaintSource::Automatic:
+        case chatterino::UsernamePaintSource::Off:
+        default:
+            return default_tag;
+    }
+}
 
 template <>
 constexpr magic_enum::customize::customize_t

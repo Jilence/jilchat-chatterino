@@ -256,6 +256,8 @@ template SettingWidget *SettingWidget::dropdown<RecentMessagesApi>(
     const QString &label, EnumStringSetting<RecentMessagesApi> &setting);
 template SettingWidget *SettingWidget::dropdown<TabStyle>(
     const QString &label, EnumStringSetting<TabStyle> &setting);
+template SettingWidget *SettingWidget::dropdown<UsernamePaintSource>(
+    const QString &label, EnumStringSetting<UsernamePaintSource> &setting);
 template SettingWidget *SettingWidget::dropdown<ShowModerationState>(
     const QString &label, EnumStringSetting<ShowModerationState> &setting);
 template SettingWidget *SettingWidget::dropdown<EmojiStyle>(

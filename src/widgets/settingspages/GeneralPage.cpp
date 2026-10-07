@@ -1472,7 +1472,10 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         s.autoCloseThreadPopup)
         ->addTo(layout);
 
-    SettingWidget::checkbox("Display 7TV Paints", s.displaySevenTVPaints)
+    SettingWidget::dropdown("Username paints", s.usernamePaintSource)
+        ->setTooltip("Whether names are drawn with their 7TV Paint or with "
+                     "their BetterTTV username effect. Automatic takes what "
+                     "a user has, and the 7TV Paint if it's both.")
         ->addTo(layout);
     SettingWidget::checkbox("Show the 7TV Paint's name when hovering a name",
                             s.showSevenTVPaintTooltip)
@@ -1487,11 +1490,15 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->setDescription(
             "This aims to match the appearance of paints in the browser.")
         ->addTo(layout);
+    SettingWidget::checkbox("Display BetterTTV username effect outlines",
+                            s.displayBttvUsernameEffectOutlines)
+        ->addTo(layout);
     {
         auto cb = [] {
             getApp()->getWindows()->invalidateChannelViewBuffers();
         };
-        s.displaySevenTVPaints.connect(cb, false);
+        s.displayBttvUsernameEffectOutlines.connect(cb, false);
+        s.usernamePaintSource.connect(cb, false);
         s.displaySevenTVPaintShadows.connect(cb, false);
         s.largeSevenTVPaintShadows.connect(cb, false);
     }

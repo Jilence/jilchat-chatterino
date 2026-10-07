@@ -23,6 +23,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/colors/ColorProvider.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/jilchat/JilChatVoice.hpp"
@@ -1055,13 +1056,16 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     {
         return {};
     }
-    const auto paint = getApp()->getSeventvPaints()->getPaint(userName, kick);
+    const bool paintsShown = usernamePaintsEnabled();
+    const auto paint =
+        paintsShown ? usernamePaint(userName, kick)
+                    : getApp()->getSeventvPaints()->getPaint(userName, kick);
     if (!paint)
     {
         return {};
     }
     const auto name = paint->name.isEmpty() ? paint->id : paint->name;
-    if (!getSettings()->displaySevenTVPaints)
+    if (!paintsShown)
     {
         // Paints are off, so the name is plain text as well.
         return QStringLiteral("Paint: ") + name.toHtmlEscaped();

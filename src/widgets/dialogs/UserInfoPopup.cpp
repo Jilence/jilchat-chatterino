@@ -24,6 +24,7 @@
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
+#include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/IvrApi.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickApi.hpp"
@@ -6024,8 +6025,7 @@ void UserInfoPopup::refreshSeventvPaint()
         return;
     }
 
-    const auto paint = getApp()->getSeventvPaints()->getPaint(
-        this->userName_.toLower(), this->isKick_);
+    const auto paint = usernamePaint(this->userName_.toLower(), this->isKick_);
     this->seventvPaint_ = paint;
 
     if (!paint)

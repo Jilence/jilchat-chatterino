@@ -26,12 +26,17 @@ qreal textBaseline(const QFont &font, const QRectF &rect)
 
 }  // namespace
 
+bool Paint::shadowsEnabled() const
+{
+    return getSettings()->displaySevenTVPaintShadows;
+}
+
 QPixmap Paint::getPixmap(const QString &text, const QFont &font,
                          QColor userColor, QSizeF size, float scale, float dpr,
                          bool centerVertically, qreal padding) const
 {
     QSizeF drawSize = size;
-    if (centerVertically && getSettings()->displaySevenTVPaintShadows)
+    if (centerVertically && this->shadowsEnabled())
     {
         float shadowExtent = 0;
         for (const auto &shadow : this->getDropShadows())
@@ -99,8 +104,7 @@ QPixmap Paint::getPixmap(const QString &text, const QFont &font,
     }
     pixmapPainter.end();
 
-    if (!this->getDropShadows().empty() &&
-        getSettings()->displaySevenTVPaintShadows)
+    if (!this->getDropShadows().empty() && this->shadowsEnabled())
     {
         QPixmap outMap((drawSize * dpr).toSize());
         outMap.setDevicePixelRatio(dpr);
