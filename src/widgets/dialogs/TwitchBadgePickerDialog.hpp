@@ -111,8 +111,6 @@ private:
     /// Styles the user's name with the BetterTTV effect `effect`; with none
     /// if empty.
     void selectBttvEffect(const QString &effect);
-    /// Reads the username effects betterttv.com has now, once per run.
-    void refreshBttvEffects();
     /// A request to BetterTTV as the connected user; a PATCH with `patch`.
     void bttvRequest(const QString &path,
                      const std::optional<QJsonObject> &patch,

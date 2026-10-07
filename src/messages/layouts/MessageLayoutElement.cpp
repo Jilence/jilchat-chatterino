@@ -9,6 +9,7 @@
 #include "messages/Image.hpp"
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/MessageElement.hpp"
+#include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
@@ -532,13 +533,12 @@ void TextLayoutElement::paint(QPainter &painter,
     bool isNametag = this->getLink().type == chatterino::Link::UserInfo ||
                      this->getLink().type == chatterino::Link::UserWhisper;
     bool drawPaint = isNametag && this->messageColor_ != MessageColor::System &&
-                     getSettings()->displaySevenTVPaints;
+                     usernamePaintsEnabled();
     if (drawPaint)
     {
-        auto paint = app->getSeventvPaints()->getPaint(
-            this->getLink().value.toLower(),
-            this->getCreator().getFlags().has(
-                MessageElementFlag::KickUsername));
+        auto paint = usernamePaint(this->getLink().value.toLower(),
+                                   this->getCreator().getFlags().has(
+                                       MessageElementFlag::KickUsername));
         if (paint)
         {
             if (paint->animated())
@@ -546,11 +546,15 @@ void TextLayoutElement::paint(QPainter &painter,
                 return;
             }
 
+            // Some paints reach beyond the name, e.g. with an outline.
+            const auto overflow = paint->overflow();
             auto paintPixmap = paint->getPixmap(
                 this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_);
+                this->scale_, this->dpr_, false, overflow);
 
-            painter.drawPixmap(this->getRect().topLeft(), paintPixmap);
+            painter.drawPixmap(
+                this->getRect().topLeft() - QPointF(overflow, overflow),
+                paintPixmap);
             return;
         }
     }
@@ -584,12 +588,12 @@ bool TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
     const bool isNametag =
         this->getLink().type == chatterino::Link::UserInfo ||
         this->getLink().type == chatterino::Link::UserWhisper;
-    const bool drawPaint = isNametag && getSettings()->displaySevenTVPaints;
+    const bool drawPaint = isNametag && usernamePaintsEnabled();
     if (!drawPaint)
     {
         return false;
     }
-    const auto paint = getApp()->getSeventvPaints()->getPaint(
+    const auto paint = usernamePaint(
         this->getLink().value.toLower(),
         this->getCreator().getFlags().has(MessageElementFlag::KickUsername));
     if (!paint || !paint->animated())
@@ -597,12 +601,14 @@ bool TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
         return false;
     }
 
-    const auto paintPixmap =
-        paint->getPixmap(this->getText(), font, this->color_,
-                         this->getRect().size(), this->scale_, this->dpr_);
+    const auto overflow = paint->overflow();
+    const auto paintPixmap = paint->getPixmap(
+        this->getText(), font, this->color_, this->getRect().size(),
+        this->scale_, this->dpr_, false, overflow);
 
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
+    rect.adjust(-overflow, -overflow, overflow, overflow);
     painter.drawPixmap(rect, paintPixmap, QRectF());
     return true;
 }
