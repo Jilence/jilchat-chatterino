@@ -50,6 +50,13 @@ public:
     /// none if empty. Can be called from any thread.
     void setUserEffect(const QString &userName, const QString &effect);
 
+    /// The user wrote in the channel with the id `channelId`. BetterTTV only
+    /// tells about a user when a client announces them, so a changed effect
+    /// would go unnoticed: for users BetterTTV told about before, this asks
+    /// again, at most every 20 seconds. Call it from the GUI thread.
+    void userActive(const QString &userName, const QString &userId,
+                    const QString &channelId);
+
     /// The paint that draws the effect of the user with the login
     /// `userName`, or nullptr. Call it from the GUI thread.
     std::shared_ptr<Paint> getPaint(const QString &userName) const;
@@ -69,6 +76,9 @@ private:
     QVector<BttvUsernameEffect> effects_;
     /// Login -> effect id, guarded by mutex_.
     std::unordered_map<QString, QString> users_;
+    /// Login of a user BetterTTV told about -> when to ask about them again
+    /// at the earliest, in milliseconds since the epoch. Guarded by mutex_.
+    std::unordered_map<QString, qint64> known_;
     /// Effect id -> its paint, made when first needed. Guarded by mutex_.
     mutable std::unordered_map<QString, std::shared_ptr<Paint>> paints_;
 };

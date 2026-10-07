@@ -138,7 +138,9 @@ constexpr QStringView TEXT_UNSPECIFIED = u"(unspecified)";
 constexpr QStringView TEXT_LOADING = u"(loading...)";
 constexpr QStringView TEXT_LAST_LIVE = u"Last Live: %1";
 constexpr QStringView TEXT_COLOR = u"Color: %1";
-constexpr QStringView TEXT_SEVENTV_PAINT = u"7TV Paint: ";
+/// With whose paint it is: 7TV's or BetterTTV's.
+constexpr QStringView TEXT_PAINT = u"%1 Paint: ";
+constexpr auto PAINT_PREFIX_OBJECT_NAME = "UsercardPaintPrefix";
 constexpr QStringView TEXT_CHATTERS = u"Chatters: %1";
 
 constexpr QStringView SEVENTV_TWITCH_USER_API =
@@ -407,7 +409,8 @@ void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
     layout->setContentsMargins(8, 0, 8, 0);
     layout->setSpacing(0);
 
-    auto *prefixLabel = new Label(TEXT_SEVENTV_PAINT.toString());
+    auto *prefixLabel = new Label(TEXT_PAINT.arg(QStringLiteral("7TV")));
+    prefixLabel->setObjectName(PAINT_PREFIX_OBJECT_NAME);
     prefixLabel->setPadding({});
     layout->addWidget(prefixLabel, 0, Qt::AlignVCenter);
 
@@ -1710,8 +1713,11 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             {
                 QObject::connect(
                     seventvPaintNameButton, &Button::leftClicked, this, [this] {
+                        // The page is about 7TV paints.
                         if (!this->seventvPaint_ ||
-                            this->seventvPaint_->id.isEmpty())
+                            this->seventvPaint_->id.isEmpty() ||
+                            this->seventvPaint_->sourceName() !=
+                                QLatin1StringView("7TV"))
                         {
                             return;
                         }
@@ -6034,6 +6040,12 @@ void UserInfoPopup::refreshSeventvPaint()
         return;
     }
 
+    if (auto *prefixLabel = dynamic_cast<Label *>(
+            this->ui_.seventvPaintRow->findChild<QWidget *>(
+                PAINT_PREFIX_OBJECT_NAME)))
+    {
+        prefixLabel->setText(TEXT_PAINT.arg(paint->sourceName()));
+    }
     this->ui_.seventvPaintRow->show();
     this->updateSeventvPaintPixmap();
 }

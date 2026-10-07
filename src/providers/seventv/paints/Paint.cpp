@@ -31,6 +31,11 @@ bool Paint::shadowsEnabled() const
     return getSettings()->displaySevenTVPaintShadows;
 }
 
+QString Paint::sourceName() const
+{
+    return QStringLiteral("7TV");
+}
+
 QPixmap Paint::getPixmap(const QString &text, const QFont &font,
                          QColor userColor, QSizeF size, float scale, float dpr,
                          bool centerVertically, qreal padding) const

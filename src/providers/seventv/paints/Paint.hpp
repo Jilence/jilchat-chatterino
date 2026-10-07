@@ -17,6 +17,8 @@ public:
     virtual bool animated() const = 0;
     /// Whether the drop shadows are drawn; a setting of the paint's kind.
     virtual bool shadowsEnabled() const;
+    /// Whose paint this is, to tell the user: "7TV" unless said otherwise.
+    virtual QString sourceName() const;
 
     /// With `centerVertically`, `padding` adds room on all sides of the
     /// text, so shadows and glows around it aren't cut off.

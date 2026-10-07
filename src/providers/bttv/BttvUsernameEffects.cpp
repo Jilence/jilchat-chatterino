@@ -8,6 +8,7 @@
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "messages/Image.hpp"
+#include "providers/bttv/BttvLiveUpdates.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
@@ -30,6 +31,9 @@ namespace {
 using namespace chatterino;
 
 constexpr auto SITE_URL = "https://betterttv.com";
+/// BetterTTV keeps telling the old effect for up to about a minute after a
+/// change, so asking once isn't enough; it answers about every ten seconds.
+constexpr qint64 ASK_AGAIN_AFTER_MS = 20 * 1000;
 
 /// Fills the name with an image that moves diagonally, once around its 96
 /// pixels in 16 seconds, and outlines it.
@@ -78,6 +82,11 @@ public:
         return getSettings()->displayBttvUsernameEffectOutlines;
     }
 
+    QString sourceName() const override
+    {
+        return QStringLiteral("BTTV");
+    }
+
 private:
     ImagePtr image_;
     std::vector<PaintDropShadow> dropShadows_;
@@ -124,6 +133,11 @@ public:
     {
         return true;
     }
+
+    QString sourceName() const override
+    {
+        return QStringLiteral("BTTV");
+    }
 };
 
 /// The name in its color with a light of that color around it.
@@ -159,6 +173,11 @@ public:
     {
         // The light is all there is to this effect.
         return true;
+    }
+
+    QString sourceName() const override
+    {
+        return QStringLiteral("BTTV");
     }
 
 private:
@@ -317,6 +336,9 @@ void BttvUsernameEffects::setUserEffect(const QString &userName,
 
     {
         const std::lock_guard lock(this->mutex_);
+        this->known_[login] =
+            QDateTime::currentMSecsSinceEpoch() + ASK_AGAIN_AFTER_MS;
+
         const auto it = this->users_.find(login);
         if (effect.isEmpty())
         {
@@ -343,6 +365,34 @@ void BttvUsernameEffects::setUserEffect(const QString &userName,
             app->getWindows()->invalidateChannelViewBuffers();
         }
     });
+}
+
+void BttvUsernameEffects::userActive(const QString &userName,
+                                     const QString &userId,
+                                     const QString &channelId)
+{
+    if (userId.isEmpty() || channelId.isEmpty())
+    {
+        return;
+    }
+
+    {
+        const std::lock_guard lock(this->mutex_);
+        const auto it = this->known_.find(userName.toLower());
+        const auto now = QDateTime::currentMSecsSinceEpoch();
+        if (it == this->known_.end() || now < it->second)
+        {
+            return;
+        }
+        it->second = now + ASK_AGAIN_AFTER_MS;
+    }
+
+    // BetterTTV answers an announcement with what it knows about the user.
+    auto *app = tryGetApp();
+    if (app != nullptr && app->getBttvLiveUpdates() != nullptr)
+    {
+        app->getBttvLiveUpdates()->broadcastMe(channelId, userId);
+    }
 }
 
 std::shared_ptr<Paint> BttvUsernameEffects::getPaint(

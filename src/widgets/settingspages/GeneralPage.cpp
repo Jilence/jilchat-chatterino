@@ -1477,9 +1477,10 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                      "their BetterTTV username effect. Automatic takes what "
                      "a user has, and the 7TV Paint if it's both.")
         ->addTo(layout);
-    SettingWidget::checkbox("Show the 7TV Paint's name when hovering a name",
+    SettingWidget::checkbox("Show the paint's name when hovering a name",
                             s.showSevenTVPaintTooltip)
-        ->setTooltip("Hovering over a username with a 7TV Paint shows the "
+        ->setTooltip("Hovering over a username with a 7TV Paint or a BetterTTV "
+                     "username effect shows the "
                      "name of the paint, drawn in the paint itself.")
         ->addTo(layout);
     SettingWidget::checkbox("Display 7TV Paint Shadows",

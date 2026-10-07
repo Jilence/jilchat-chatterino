@@ -1065,17 +1065,19 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
         return {};
     }
     const auto name = paint->name.isEmpty() ? paint->id : paint->name;
+    // Whose paint it is: "7TV Paint: " or "BTTV Paint: ".
+    const auto labelText = paint->sourceName() + QStringLiteral(" Paint: ");
     if (!paintsShown)
     {
         // Paints are off, so the name is plain text as well.
-        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+        return labelText + name.toHtmlEscaped();
     }
     animated = paint->animated();
 
     // The mouse moves a lot; don't draw and encode the image every time.
     static QHash<QString, QString> cache;
-    const auto key = QStringLiteral("%1|%2|%3|%4")
-                         .arg(paint->id, userColor.name())
+    const auto key = QStringLiteral("%1|%2|%3|%4|%5")
+                         .arg(paint->sourceName(), paint->id, userColor.name())
                          .arg(scale)
                          .arg(dpr);
     if (const auto it = cache.constFind(key);
@@ -1106,10 +1108,9 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
         name, font, userColor.isValid() ? userColor : QColor(Qt::white), size,
         scale, static_cast<float>(dpr), true, padding);
 
-    // "Paint:" goes into the image as well, on the baseline of the name.
+    // The label goes into the image as well, on the baseline of the name.
     // Next to an image, it would sit higher or lower depending on how far
     // the paint's shadow reaches.
-    const auto labelText = QStringLiteral("Paint: ");
     const auto labelFont =
         getApp()->getFonts()->getFont(FontStyle::ChatMediumSmall, scale);
     const auto labelWidth =
@@ -1148,7 +1149,7 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     if (!pixmap.save(&buffer, "PNG"))
     {
         // Better the plain name than no tooltip.
-        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+        return labelText + name.toHtmlEscaped();
     }
     const auto tooltip = QStringLiteral("<img src=\"data:image/png;base64,%1\" "
                                         "width=\"%2\" height=\"%3\">")
