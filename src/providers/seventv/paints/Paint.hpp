@@ -22,9 +22,10 @@ public:
 
     /// With `centerVertically`, `padding` adds room on all sides of the
     /// text, so shadows and glows around it aren't cut off.
-    QPixmap getPixmap(const QString &text, const QFont &font, QColor userColor,
-                      QSizeF size, float scale, float dpr,
-                      bool centerVertically = false, qreal padding = 0) const;
+    virtual QPixmap getPixmap(const QString &text, const QFont &font,
+                              QColor userColor, QSizeF size, float scale,
+                              float dpr, bool centerVertically = false,
+                              qreal padding = 0) const;
 
     Paint(QString id, QString name = {})
         : id(std::move(id))

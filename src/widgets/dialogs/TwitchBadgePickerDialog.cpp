@@ -831,11 +831,25 @@ public:
                 {
                     return;
                 }
-                // Every frame: the texture moves by less than a pixel.
-                if (this->texture_ != nullptr ||
-                    this->effectId_ == QLatin1StringView("flare"))
+                if (this->texture_ != nullptr)
                 {
-                    this->update();
+                    // The texture moves by a fraction of a pixel per frame;
+                    // a new picture every half pixel looks the same.
+                    const auto step = int(textureOffset() * 2);
+                    if (step != this->paintedStep_)
+                    {
+                        this->update();
+                    }
+                }
+                else if (this->effectId_ == QLatin1StringView("flare"))
+                {
+                    // The light is only there half of the time.
+                    const bool lit = flarePhase() < 1.0;
+                    if (lit || this->flareLit_)
+                    {
+                        this->flareLit_ = lit;
+                        this->update();
+                    }
                 }
             });
     }
@@ -843,6 +857,14 @@ public:
     void setSelected(bool selected)
     {
         this->selected_ = selected;
+        this->update();
+    }
+
+    /// Draws the tile dimmed. An opacity effect on the widget would do the
+    /// same, but draws every frame of the moving name twice.
+    void setLocked(bool locked)
+    {
+        this->locked_ = locked;
         this->update();
     }
 
@@ -857,6 +879,10 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        if (this->locked_)
+        {
+            painter.setOpacity(0.35);
+        }
 
         const auto rect = this->rect().adjusted(0, 0, -1, -1);
         if (this->selected_)
@@ -901,7 +927,8 @@ protected:
             const auto pixmap = this->texture_->pixmapOrLoad();
             if (pixmap)
             {
-                const auto offset = textureOffset();
+                this->paintedStep_ = int(textureOffset() * 2);
+                const auto offset = this->paintedStep_ / 2.0;
                 QBrush brush(*pixmap);
                 brush.setTransform(QTransform::fromTranslate(-offset, -offset));
                 painter.setBrush(brush);
@@ -936,8 +963,7 @@ protected:
             {
                 // A light that crosses the name in the first half of every
                 // eight seconds.
-                const auto phase =
-                    double(QDateTime::currentMSecsSinceEpoch() % 8000) / 4000.0;
+                const auto phase = flarePhase();
                 if (phase < 1.0)
                 {
                     const auto center =
@@ -979,6 +1005,13 @@ protected:
     }
 
 private:
+    /// Below 1 while the light of the flare crosses the name: the first
+    /// half of every eight seconds.
+    static double flarePhase()
+    {
+        return double(QDateTime::currentMSecsSinceEpoch() % 8000) / 4000.0;
+    }
+
     /// How far the 96 pixel texture has moved; once around in 16 seconds.
     static double textureOffset()
     {
@@ -992,6 +1025,10 @@ private:
     QColor userColor_;
     ImagePtr texture_;
     QColor outline_;
+    /// The texture's position at the last paint, in half pixels.
+    int paintedStep_ = -1;
+    bool flareLit_ = false;
+    bool locked_ = false;
     bool selected_ = false;
     pajlada::Signals::SignalHolder connections_;
 };
@@ -4843,9 +4880,7 @@ void TwitchBadgePickerDialog::rebuildBttv()
                 tile->setToolTip(effect->requirement.isEmpty()
                                      ? QStringLiteral("Locked")
                                      : effect->requirement);
-                auto *dim = new QGraphicsOpacityEffect(tile);
-                dim->setOpacity(0.35);
-                tile->setGraphicsEffect(dim);
+                tile->setLocked(true);
             }
             effectGrid->addWidget(tile, effectIndex / effectColumns,
                                   effectIndex % effectColumns);

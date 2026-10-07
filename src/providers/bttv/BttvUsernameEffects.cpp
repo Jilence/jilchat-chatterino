@@ -13,18 +13,26 @@
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/PostToThread.hpp"
 
 #include <QBrush>
+#include <QCache>
 #include <QDateTime>
+#include <QFontMetricsF>
 #include <QHash>
 #include <QLinearGradient>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QSet>
 #include <QStringList>
 #include <QTransform>
 #include <QUrl>
+
+#include <algorithm>
 
 namespace {
 
@@ -37,39 +45,130 @@ constexpr qint64 ASK_AGAIN_AFTER_MS = 20 * 1000;
 
 /// Fills the name with an image that moves diagonally, once around its 96
 /// pixels in 16 seconds, and outlines it.
+///
+/// It draws the name itself: the general way blurs a shadow for every
+/// outline again in every frame of every name, which is too slow for a
+/// paint that always moves.
 class TexturePaint final : public Paint
 {
 public:
     TexturePaint(const BttvUsernameEffect &effect)
         : Paint(effect.id, effect.label)
         , image_(Image::fromUrl(Url{effect.texture}))
+        , outline_(effect.outline)
     {
-        // The page outlines the name by a pixel, thicker below. Close
-        // shadows come near that.
-        const QColor outline(effect.outline);
-        this->dropShadows_.emplace_back(0.F, 0.F, 1.F, outline, true);
-        this->dropShadows_.emplace_back(0.F, 0.F, 1.F, outline, true);
-        this->dropShadows_.emplace_back(0.F, 1.5F, 1.F, outline, true);
+    }
+
+    QPixmap getPixmap(const QString &text, const QFont &font, QColor userColor,
+                      QSizeF size, float /*scale*/, float dpr,
+                      bool centerVertically, qreal padding) const override
+    {
+        if (!centerVertically)
+        {
+            padding = 0;
+        }
+        const auto texture = this->image_->pixmapOrLoad();
+        const bool outlined = this->shadowsEnabled();
+
+        // The image moves by a fraction of a pixel per frame. A new picture
+        // every half pixel looks the same and is drawn far less often.
+        const auto step = static_cast<int>(
+            double(QDateTime::currentMSecsSinceEpoch() % 16000) * 96.0 * 2.0 /
+            16000.0);
+        const auto key =
+            QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8|%9")
+                .arg(text, font.key())
+                .arg(size.width())
+                .arg(size.height())
+                .arg(dpr)
+                .arg(centerVertically)
+                .arg(padding)
+                .arg(outlined)
+                .arg(texture ? QString{} : userColor.name(QColor::HexArgb));
+        if (const auto *frame = this->frames_.object(key);
+            frame != nullptr && frame->step == step)
+        {
+            return frame->pixmap;
+        }
+
+        const QSizeF drawSize = size + QSizeF(2 * padding, 2 * padding);
+        QPixmap pixmap((drawSize * dpr).toSize());
+        pixmap.setDevicePixelRatio(dpr);
+        pixmap.fill(Qt::transparent);
+
+        // The colon after the name isn't part of the name.
+        auto nametag = text;
+        const bool colon = nametag.endsWith(u':');
+        if (colon)
+        {
+            nametag.chop(1);
+        }
+
+        const QRectF textRect(QPointF{padding, padding}, size);
+        const QFontMetricsF metrics(font);
+        const auto baseline =
+            centerVertically
+                ? textRect.top() +
+                      ((textRect.height() - metrics.height()) / 2) +
+                      metrics.ascent()
+                : textRect.bottom() - metrics.descent();
+        QPainterPath name;
+        name.addText(textRect.left(), baseline, font, nametag);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        if (outlined)
+        {
+            // Around the name and thicker below, like on the page, where
+            // the name is 20 pixels high.
+            const auto unit = metrics.height() / 20.0;
+            painter.setPen(QPen(this->outline_, std::max(1.5, 2 * unit),
+                                Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.setBrush(this->outline_);
+            painter.drawPath(name.translated(0, 1.5 * unit));
+            painter.drawPath(name);
+        }
+        painter.setPen(Qt::NoPen);
+        if (texture)
+        {
+            QBrush brush(*texture);
+            brush.setTransform(
+                QTransform::fromTranslate(-step / 2.0, -step / 2.0));
+            painter.setBrush(brush);
+        }
+        else
+        {
+            painter.setBrush(userColor);
+        }
+        painter.drawPath(name);
+
+        if (colon)
+        {
+            painter.setPen(getApp()->getThemes()->messages.textColors.regular);
+            painter.setFont(font);
+            painter.drawText(
+                QPointF(textRect.left() + metrics.horizontalAdvance(nametag),
+                        baseline),
+                QStringLiteral(":"));
+        }
+        painter.end();
+
+        this->frames_.insert(key, new Frame{.step = step, .pixmap = pixmap});
+        return pixmap;
     }
 
     QBrush asBrush(QColor userColor, QRectF /*drawingRect*/) const override
     {
-        const auto pixmap = this->image_->pixmapOrLoad();
-        if (!pixmap)
-        {
-            return {userColor};
-        }
-        const auto offset =
-            double(QDateTime::currentMSecsSinceEpoch() % 16000) * 96.0 /
-            16000.0;
-        QBrush brush(*pixmap);
-        brush.setTransform(QTransform::fromTranslate(-offset, -offset));
-        return brush;
+        // getPixmap doesn't ask for it.
+        return {userColor};
     }
 
     const std::vector<PaintDropShadow> &getDropShadows() const override
     {
-        return this->dropShadows_;
+        // The outline is drawn with the name.
+        static const std::vector<PaintDropShadow> none;
+        return none;
     }
 
     bool animated() const override
@@ -88,8 +187,16 @@ public:
     }
 
 private:
+    /// A name as it was drawn last, to show again while the image hasn't
+    /// moved on.
+    struct Frame {
+        int step;
+        QPixmap pixmap;
+    };
+
     ImagePtr image_;
-    std::vector<PaintDropShadow> dropShadows_;
+    QColor outline_;
+    mutable QCache<QString, Frame> frames_{128};
 };
 
 /// The name in its color; a light crosses it in the first half of every
