@@ -1716,8 +1716,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                         // The page is about 7TV paints.
                         if (!this->seventvPaint_ ||
                             this->seventvPaint_->id.isEmpty() ||
-                            this->seventvPaint_->sourceName() !=
-                                QLatin1StringView("7TV"))
+                            this->seventvPaint_->sourceName() != u"7TV")
                         {
                             return;
                         }

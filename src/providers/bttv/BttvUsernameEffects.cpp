@@ -45,7 +45,7 @@ constexpr auto TEXTURE_URL =
     "https://cdn.betterttv.net/assets/username_effects/%1.png";
 /// BetterTTV keeps telling the old effect for up to about a minute after a
 /// change, so asking once isn't enough; it answers about every ten seconds.
-constexpr qint64 ASK_AGAIN_AFTER_MS = 20 * 1000;
+constexpr qint64 ASK_AGAIN_AFTER_MS = 20'000;
 
 /// Fills the name with an image that moves diagonally, once around its 96
 /// pixels in 16 seconds, and outlines it.
@@ -318,7 +318,7 @@ BttvUsernameEffects &BttvUsernameEffects::instance()
 
 QVector<BttvUsernameEffect> BttvUsernameEffects::effects() const
 {
-    const std::lock_guard lock(this->mutex_);
+    const std::scoped_lock lock(this->mutex_);
     return this->effects_;
 }
 
@@ -436,7 +436,7 @@ void BttvUsernameEffects::applySite(const QString &style, const QString &script)
     }
 
     {
-        const std::lock_guard lock(this->mutex_);
+        const std::scoped_lock lock(this->mutex_);
         this->effects_ = updated;
         this->paints_.clear();
     }
@@ -457,7 +457,7 @@ void BttvUsernameEffects::setUserEffect(const QString &userName,
     }
 
     {
-        const std::lock_guard lock(this->mutex_);
+        const std::scoped_lock lock(this->mutex_);
         this->known_[login] =
             QDateTime::currentMSecsSinceEpoch() + ASK_AGAIN_AFTER_MS;
 
@@ -499,7 +499,7 @@ void BttvUsernameEffects::userActive(const QString &userName,
     }
 
     {
-        const std::lock_guard lock(this->mutex_);
+        const std::scoped_lock lock(this->mutex_);
         const auto it = this->known_.find(userName.toLower());
         const auto now = QDateTime::currentMSecsSinceEpoch();
         if (it == this->known_.end() || now < it->second)
@@ -520,7 +520,7 @@ void BttvUsernameEffects::userActive(const QString &userName,
 std::shared_ptr<Paint> BttvUsernameEffects::getPaint(
     const QString &userName) const
 {
-    const std::lock_guard lock(this->mutex_);
+    const std::scoped_lock lock(this->mutex_);
     const auto user = this->users_.find(userName);
     if (user == this->users_.end())
     {
@@ -546,11 +546,11 @@ std::shared_ptr<Paint> BttvUsernameEffects::getPaint(
             paint = std::make_shared<TexturePaint>(effect);
         }
     }
-    if (paint == nullptr && id == QLatin1StringView("flare"))
+    if (paint == nullptr && id == u"flare")
     {
         paint = std::make_shared<FlarePaint>(id, label);
     }
-    if (paint == nullptr && id == QLatin1StringView("glow"))
+    if (paint == nullptr && id == u"glow")
     {
         paint = std::make_shared<GlowPaint>(id, label);
     }

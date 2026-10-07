@@ -841,7 +841,7 @@ public:
                         this->update();
                     }
                 }
-                else if (this->effectId_ == QLatin1StringView("flare"))
+                else if (this->effectId_ == u"flare")
                 {
                     // The light is only there half of the time.
                     const bool lit = flarePhase() < 1.0;
@@ -939,7 +939,7 @@ protected:
             }
             painter.drawPath(name);
         }
-        else if (this->effectId_ == QLatin1StringView("glow"))
+        else if (this->effectId_ == u"glow")
         {
             // A soft light around the name in its color.
             auto light = this->userColor_;
@@ -959,7 +959,7 @@ protected:
         {
             painter.setBrush(this->userColor_);
             painter.drawPath(name);
-            if (this->effectId_ == QLatin1StringView("flare"))
+            if (this->effectId_ == u"flare")
             {
                 // A light that crosses the name in the first half of every
                 // eight seconds.
