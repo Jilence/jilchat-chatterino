@@ -412,6 +412,8 @@ set(SOURCE_FILES
 
         providers/bttv/BttvBadges.cpp
         providers/bttv/BttvBadges.hpp
+        providers/bttv/BttvUsernameEffects.cpp
+        providers/bttv/BttvUsernameEffects.hpp
         providers/bttv/BttvEmotes.cpp
         providers/bttv/BttvEmotes.hpp
         providers/bttv/BttvLiveUpdates.cpp
@@ -846,8 +848,6 @@ set(SOURCE_FILES
 
         widgets/dialogs/BadgePickerDialog.cpp
         widgets/dialogs/BadgePickerDialog.hpp
-        widgets/dialogs/BluzyrinoBadgesDialog.cpp
-        widgets/dialogs/BluzyrinoBadgesDialog.hpp
         widgets/dialogs/TwitchBadgePickerDialog.cpp
         widgets/dialogs/TwitchBadgePickerDialog.hpp
         widgets/dialogs/UserBadgesDialog.cpp

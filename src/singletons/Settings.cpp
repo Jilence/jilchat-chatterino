@@ -734,6 +734,20 @@ Settings::Settings(const Modes &modes, const Args &args,
     migrateStringSetting("/moltorino/client/androidHighlightColor",
                          this->androidColor);
     migrateStringSetting("/moltorino/client/iosHighlightColor", this->iosColor);
+
+    // "Display 7TV Paints" became one of the choices for the paints of names.
+    if (auto *oldSetting = settingsInstance->get("/misc/displaySevenTVPaints");
+        oldSetting != nullptr)
+    {
+        if (settingsInstance->get(this->usernamePaintSource.getPath()) ==
+                nullptr &&
+            oldSetting->IsBool() && !oldSetting->GetBool())
+        {
+            this->usernamePaintSource = QStringLiteral("off");
+        }
+        settingsInstance->removeSetting("/misc/displaySevenTVPaints");
+        this->requestSave();
+    }
 }
 
 Settings::~Settings()

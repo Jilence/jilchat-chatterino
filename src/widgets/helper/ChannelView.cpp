@@ -23,6 +23,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/colors/ColorProvider.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/jilchat/JilChatVoice.hpp"
@@ -1055,23 +1056,28 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     {
         return {};
     }
-    const auto paint = getApp()->getSeventvPaints()->getPaint(userName, kick);
+    const bool paintsShown = usernamePaintsEnabled();
+    const auto paint =
+        paintsShown ? usernamePaint(userName, kick)
+                    : getApp()->getSeventvPaints()->getPaint(userName, kick);
     if (!paint)
     {
         return {};
     }
     const auto name = paint->name.isEmpty() ? paint->id : paint->name;
-    if (!getSettings()->displaySevenTVPaints)
+    // Whose paint it is: "7TV Paint: " or "BTTV Paint: ".
+    const auto labelText = paint->sourceName() + QStringLiteral(" Paint: ");
+    if (!paintsShown)
     {
         // Paints are off, so the name is plain text as well.
-        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+        return labelText + name.toHtmlEscaped();
     }
     animated = paint->animated();
 
     // The mouse moves a lot; don't draw and encode the image every time.
     static QHash<QString, QString> cache;
-    const auto key = QStringLiteral("%1|%2|%3|%4")
-                         .arg(paint->id, userColor.name())
+    const auto key = QStringLiteral("%1|%2|%3|%4|%5")
+                         .arg(paint->sourceName(), paint->id, userColor.name())
                          .arg(scale)
                          .arg(dpr);
     if (const auto it = cache.constFind(key);
@@ -1102,10 +1108,9 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
         name, font, userColor.isValid() ? userColor : QColor(Qt::white), size,
         scale, static_cast<float>(dpr), true, padding);
 
-    // "Paint:" goes into the image as well, on the baseline of the name.
+    // The label goes into the image as well, on the baseline of the name.
     // Next to an image, it would sit higher or lower depending on how far
     // the paint's shadow reaches.
-    const auto labelText = QStringLiteral("Paint: ");
     const auto labelFont =
         getApp()->getFonts()->getFont(FontStyle::ChatMediumSmall, scale);
     const auto labelWidth =
@@ -1144,7 +1149,7 @@ QString seventvPaintTooltip(const QString &userName, bool kick,
     if (!pixmap.save(&buffer, "PNG"))
     {
         // Better the plain name than no tooltip.
-        return QStringLiteral("Paint: ") + name.toHtmlEscaped();
+        return labelText + name.toHtmlEscaped();
     }
     const auto tooltip = QStringLiteral("<img src=\"data:image/png;base64,%1\" "
                                         "width=\"%2\" height=\"%3\">")

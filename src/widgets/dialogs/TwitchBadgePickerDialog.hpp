@@ -63,8 +63,11 @@ private:
         ChannelBadges,
         EventBadges,
         Color,
+        Bttv,
+        BttvEffects,
         Moltorino,
         JilChat,
+        Bluzyrino,
         SevenTvBadges,
         SevenTvPaints,
     };
@@ -95,6 +98,29 @@ private:
     void rebuildJilChatBadges();
     /// Makes the badge with `slug` the one shown in chat; none if empty.
     void selectJilChat(const QString &slug);
+    void rebuildBluzyrinoBadges();
+    /// Makes the donor badge `badgeId` the one shown in chat.
+    void selectBluzyrino(const QString &badgeId, const QString &title);
+    void loadBttv(bool force = false);
+    void rebuildBttv();
+    void connectBttv();
+    void disconnectBttv();
+    /// Shows the BetterTTV Pro badge `badgeId` (the latest one if empty) or,
+    /// with `show` off, none.
+    void selectBttv(bool show, const QString &badgeId);
+    /// Styles the user's name with the BetterTTV effect `effect`; with none
+    /// if empty.
+    void selectBttvEffect(const QString &effect);
+    /// A request to BetterTTV as the connected user; a PATCH with `patch`.
+    void bttvRequest(const QString &path,
+                     const std::optional<QJsonObject> &patch,
+                     const std::function<void(const QJsonObject &)> &onData,
+                     const std::function<void(const QString &)> &onError);
+    /// Asks for the token of the user's `service` account, which the
+    /// `command` copies in the browser console on `site`.
+    std::optional<QString> askForToken(const QString &service,
+                                       const QString &command,
+                                       const QString &site);
     void loadSevenTv(bool force = false);
     void rebuildSevenTv();
     void connectSevenTv();
@@ -130,8 +156,11 @@ private:
     QPushButton *channelTabButton_{};
     QPushButton *eventTabButton_{};
     QPushButton *colorTabButton_{};
+    QPushButton *bttvTabButton_{};
+    QPushButton *bttvEffectTabButton_{};
     QPushButton *moltorinoTabButton_{};
     QPushButton *jilChatTabButton_{};
+    QPushButton *bluzyrinoTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
     QPushButton *sevenTvPaintTabButton_{};
     QWidget *searchRowWidget_{};
@@ -180,6 +209,25 @@ private:
     QString jilChatSelected_;
     bool jilChatLoading_ = false;
     bool jilChatLoaded_ = false;
+
+    /// The Bluzyrino donor badge just picked, until the registry lists it.
+    QString bluzyrinoPending_;
+
+    /// The user's BetterTTV token, kept in the system credential store.
+    QString bttvToken_;
+    bool bttvTokenRead_ = false;
+    /// The unlocked Pro badges, the latest one last.
+    QVector<GqlBadge> bttvBadges_;
+    bool bttvBadgeShown_ = false;
+    /// The Pro badge picked; empty for always the latest one.
+    QString bttvBadgeId_;
+    QDateTime bttvNextUnlock_;
+    /// The username effect in use; empty for none.
+    QString bttvEffect_;
+    /// The username effects by their id, true for the unlocked ones.
+    QJsonObject bttvEffectEligibility_;
+    bool bttvLoading_ = false;
+    bool bttvLoaded_ = false;
 
     /// The user's 7TV token, kept in the system credential store.
     QString sevenTvToken_;

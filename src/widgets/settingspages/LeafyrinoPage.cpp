@@ -189,8 +189,9 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "roles.tv.")
         ->addKeywords({"usercard", "roles", "roles.tv", "moderator", "vip"})
         ->addTo(layout);
-    SettingWidget::checkbox("Show 7TV paint", s.showUsercardSevenTVPaint)
-        ->setTooltip("Show the user's equipped 7TV paint on the usercard.")
+    SettingWidget::checkbox("Show paint", s.showUsercardSevenTVPaint)
+        ->setTooltip("Show the user's 7TV paint or BetterTTV username "
+                     "effect on the usercard.")
         ->addKeywords({"usercard", "7tv", "seventv", "paint", "cosmetic"})
         ->addTo(layout);
     SettingWidget::checkbox("Show Twitch status", s.showUsercardStatus)

@@ -10,7 +10,6 @@
 #include "common/Version.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
-#include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/CrashHandler.hpp"
@@ -23,7 +22,6 @@
 #include "util/Helpers.hpp"
 #include "util/IncognitoBrowser.hpp"
 #include "widgets/BaseWindow.hpp"
-#include "widgets/dialogs/BluzyrinoBadgesDialog.hpp"
 #include "widgets/helper/FontSettingWidget.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
@@ -1234,18 +1232,6 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->setTooltip(
             "Badges for Bluzyrino founders, donors, and special badges")
         ->addTo(layout);
-    SettingWidget::customCheckbox(
-        "Show my Founder badge to other Bluzyrino users",
-        s.bluzyrinoFounderVisible.getValue(),
-        [](bool value) {
-            getSettings()->bluzyrinoFounderVisible.setValue(value);
-            getApp()->getBluzyrinoBadges()->setFounderVisible(value);
-        })
-        ->addKeywords({"bluzyrino", "founder"})
-        ->addTo(layout);
-    layout.addButton("Manage my Bluzyrino badges...", [this] {
-        BluzyrinoBadgesDialog::showDialog(this->window());
-    });
     layout.addSeparator();
     SettingWidget::checkbox("Use custom FrankerFaceZ moderator badges",
                             s.useCustomFfzModeratorBadges)
@@ -1486,11 +1472,15 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         s.autoCloseThreadPopup)
         ->addTo(layout);
 
-    SettingWidget::checkbox("Display 7TV Paints", s.displaySevenTVPaints)
+    SettingWidget::dropdown("Username paints", s.usernamePaintSource)
+        ->setTooltip("Whether names are drawn with their 7TV Paint or with "
+                     "their BetterTTV username effect. Automatic takes what "
+                     "a user has, and the 7TV Paint if it's both.")
         ->addTo(layout);
-    SettingWidget::checkbox("Show the 7TV Paint's name when hovering a name",
+    SettingWidget::checkbox("Show the paint's name when hovering a name",
                             s.showSevenTVPaintTooltip)
-        ->setTooltip("Hovering over a username with a 7TV Paint shows the "
+        ->setTooltip("Hovering over a username with a 7TV Paint or a BetterTTV "
+                     "username effect shows the "
                      "name of the paint, drawn in the paint itself.")
         ->addTo(layout);
     SettingWidget::checkbox("Display 7TV Paint Shadows",
@@ -1501,11 +1491,15 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->setDescription(
             "This aims to match the appearance of paints in the browser.")
         ->addTo(layout);
+    SettingWidget::checkbox("Display BetterTTV username effect outlines",
+                            s.displayBttvUsernameEffectOutlines)
+        ->addTo(layout);
     {
         auto cb = [] {
             getApp()->getWindows()->invalidateChannelViewBuffers();
         };
-        s.displaySevenTVPaints.connect(cb, false);
+        s.displayBttvUsernameEffectOutlines.connect(cb, false);
+        s.usernamePaintSource.connect(cb, false);
         s.displaySevenTVPaintShadows.connect(cb, false);
         s.largeSevenTVPaintShadows.connect(cb, false);
     }
