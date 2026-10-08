@@ -58,6 +58,7 @@ BttvLiveUpdateUserUpdateMessage::BttvLiveUpdateUserUpdateMessage(
     : userID(json["providerId"_L1].toString())
     , userName(json["name"_L1].toString())
     , usernameEffect(json["usernameEffect"_L1].toString())
+    , emotes(json["emotes"_L1].toArray())
     , badgeObject(json["badge"_L1].toObject())
 {
 }

@@ -7,6 +7,7 @@
 #include "Application.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvLiveUpdates.hpp"
+#include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/bttv/liveupdates/BttvLiveUpdateMessages.hpp"
 
@@ -84,6 +85,8 @@ void BttvLiveUpdateClient::onMessage(const QByteArray &msg)
 
         BttvUsernameEffects::instance().setUserEffect(message.userName,
                                                       message.usernameEffect);
+        BttvPersonalEmotes::instance().setUserEmotes(message.userID,
+                                                     message.emotes);
 
         if (!message.hasBadge())
         {

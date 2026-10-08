@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <QJsonArray>
 #include <QJsonObject>
 
 namespace chatterino {
@@ -42,6 +43,8 @@ struct BttvLiveUpdateUserUpdateMessage {
     QString userName;
     /// The id of the user's username effect; empty for none.
     QString usernameEffect;
+    /// The user's personal emotes.
+    QJsonArray emotes;
     QJsonObject badgeObject;
 
     bool validate() const;
