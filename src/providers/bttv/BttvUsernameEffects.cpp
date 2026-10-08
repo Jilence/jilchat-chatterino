@@ -223,6 +223,7 @@ public:
         : Paint(id, label)
     {
     }
+    ~FlarePaint() override = default;
 
     QBrush asBrush(QColor userColor, QRectF drawingRect) const override
     {
@@ -262,7 +263,7 @@ public:
     }
 
 private:
-    Q_DISABLE_COPY(FlarePaint)
+    Q_DISABLE_COPY_MOVE(FlarePaint)
 };
 
 /// The name in its color with a light of that color around it.
@@ -273,6 +274,7 @@ public:
         : Paint(id, label)
     {
     }
+    ~GlowPaint() override = default;
 
     QBrush asBrush(QColor userColor, QRectF /*drawingRect*/) const override
     {
@@ -306,7 +308,7 @@ public:
     }
 
 private:
-    Q_DISABLE_COPY(GlowPaint)
+    Q_DISABLE_COPY_MOVE(GlowPaint)
 
     mutable std::vector<PaintDropShadow> dropShadows_;
 };
