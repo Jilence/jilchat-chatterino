@@ -194,6 +194,44 @@ EmoteMap bttv::detail::parseChannelEmotes(const QJsonObject &jsonRoot,
     return emotes;
 }
 
+EmoteMap bttv::detail::parsePersonalEmotes(const QJsonArray &jsonEmotes)
+{
+    auto emotes = EmoteMap();
+
+    for (const auto &jsonEmote_ : jsonEmotes)
+    {
+        const auto jsonEmote = jsonEmote_.toObject();
+        auto id = EmoteId{jsonEmote.value("id").toString()};
+        auto name = EmoteName{jsonEmote.value("code").toString()};
+        if (id.string.isEmpty() || name.string.isEmpty())
+        {
+            continue;
+        }
+        const auto baseSize = emoteBaseSize(jsonEmote);
+
+        auto emote = Emote({
+            .name = name,
+            .images =
+                ImageSet{
+                    Image::fromUrl(getEmoteLinkV3(id, "1x"), 1, baseSize),
+                    Image::fromUrl(getEmoteLinkV3(id, "2x"), 0.5, baseSize * 2),
+                    Image::fromUrl(getEmoteLinkV3(id, "3x"), 0.25,
+                                   baseSize * 4),
+                },
+            .tooltip = Tooltip{name.string + "<br>Personal BetterTTV Emote"},
+            .homePage = Url{EMOTE_LINK_FORMAT.arg(id.string)},
+            .zeroWidth = false,
+            .id = id,
+        });
+
+        // Not the cache of the channel emotes: the same emote has another
+        // tooltip there.
+        emotes[name] = std::make_shared<const Emote>(std::move(emote));
+    }
+
+    return emotes;
+}
+
 BttvEmotes::BttvEmotes()
     : global_(std::make_shared<EmoteMap>())
 {

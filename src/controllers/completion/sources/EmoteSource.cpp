@@ -9,6 +9,7 @@
 #include "controllers/completion/sources/Helpers.hpp"
 #include "controllers/emotes/EmoteController.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
+#include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/kick/KickAccount.hpp"
@@ -118,6 +119,11 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
                      app->getAccounts()->twitch.getCurrent()->getUserId()))
             {
                 addEmotes(emotes, *map, "Personal 7TV");
+            }
+            if (auto bttvPersonal = BttvPersonalEmotes::instance().getEmotes(
+                    app->getAccounts()->twitch.getCurrent()->getUserId()))
+            {
+                addEmotes(emotes, *bttvPersonal, "Personal BetterTTV");
             }
 
             // TODO extract "Channel {BetterTTV,7TV,FrankerFaceZ}" text into a #define.

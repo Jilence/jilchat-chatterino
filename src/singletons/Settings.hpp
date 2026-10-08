@@ -685,6 +685,7 @@ public:
 
     BoolSetting enableBTTVGlobalEmotes = {"/emotes/bttv/global", true};
     BoolSetting enableBTTVChannelEmotes = {"/emotes/bttv/channel", true};
+    BoolSetting enableBTTVPersonalEmotes = {"/emotes/bttv/personal", true};
     BoolSetting enableBTTVLiveUpdates = {"/emotes/bttv/liveupdates", true};
     BoolSetting sendBTTVActivity = {"/emotes/bttv/sendActivity", true};
     BoolSetting enableFFZGlobalEmotes = {"/emotes/ffz/global", true};

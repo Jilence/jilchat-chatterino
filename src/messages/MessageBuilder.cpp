@@ -26,6 +26,7 @@
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
+#include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/colors/ColorProvider.hpp"
@@ -686,6 +687,7 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
 {
     // Emote order:
     //  - 7TV Personal Emotes
+    //  - BetterTTV Personal Emotes
     //  - FrankerFaceZ Channel
     //  - BetterTTV Channel
     //  - 7TV Channel
@@ -705,6 +707,12 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
         emote = getApp()->getSeventvPersonalEmotes()->getEmoteForTwitchUser(
             userID, name);
         if (*emote)
+        {
+            return *emote;
+        }
+
+        emote = BttvPersonalEmotes::instance().getEmote(userID, name);
+        if (emote)
         {
             return *emote;
         }

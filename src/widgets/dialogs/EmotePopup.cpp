@@ -17,6 +17,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
+#include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/kick/KickAccount.hpp"
@@ -907,6 +908,11 @@ void EmotePopup::reloadEmotes()
                  getApp()->getAccounts()->twitch.getCurrent()->getUserId()))
         {
             addEmotes(*subChannel, *map, "7TV (Personal)");
+        }
+        if (auto bttvPersonal = BttvPersonalEmotes::instance().getEmotes(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserId()))
+        {
+            addEmotes(*subChannel, *bttvPersonal, "BetterTTV (Personal)");
         }
     }
     if (this->kickChannel_)

@@ -412,6 +412,8 @@ set(SOURCE_FILES
 
         providers/bttv/BttvBadges.cpp
         providers/bttv/BttvBadges.hpp
+        providers/bttv/BttvPersonalEmotes.cpp
+        providers/bttv/BttvPersonalEmotes.hpp
         providers/bttv/BttvUsernameEffects.cpp
         providers/bttv/BttvUsernameEffects.hpp
         providers/bttv/BttvEmotes.cpp

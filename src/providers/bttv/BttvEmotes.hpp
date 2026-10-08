@@ -8,6 +8,7 @@
 #include "common/Atomic.hpp"
 
 #include <pajlada/signals/scoped-connection.hpp>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 
@@ -31,7 +32,11 @@ namespace bttv::detail {
 EmoteMap parseChannelEmotes(const QJsonObject &jsonRoot,
                             const QString &channelDisplayName);
 
-}
+/// The personal emotes of a user as BetterTTV lists them when it tells
+/// about the user. Call it from the GUI thread.
+EmoteMap parsePersonalEmotes(const QJsonArray &jsonEmotes);
+
+}  // namespace bttv::detail
 
 class BttvEmotes final
 {

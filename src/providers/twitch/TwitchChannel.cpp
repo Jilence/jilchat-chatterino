@@ -2918,8 +2918,11 @@ void TwitchChannel::joinBttvChannel() const
     {
         const auto currentAccount =
             getApp()->getAccounts()->twitch.getCurrent();
+        // Joining with a user announces them to BetterTTV; like without
+        // an account, none is given if the user doesn't want that.
         QString userID;
-        if (currentAccount && !currentAccount->isAnon())
+        if (currentAccount && !currentAccount->isAnon() &&
+            getSettings()->sendBTTVActivity)
         {
             userID = currentAccount->getUserId();
         }
@@ -4504,7 +4507,7 @@ std::optional<CheerEmote> TwitchChannel::cheerEmote(const QString &string) const
 
 void TwitchChannel::updateBttvActivity()
 {
-    if (!getApp()->getBttvLiveUpdates())
+    if (!getApp()->getBttvLiveUpdates() || !getSettings()->sendBTTVActivity)
     {
         return;
     }

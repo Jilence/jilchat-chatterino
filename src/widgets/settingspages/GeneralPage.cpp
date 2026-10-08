@@ -709,6 +709,13 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                             s.enableBTTVChannelEmotes)
         ->addKeywords({"bttv"})
         ->addTo(layout);
+    SettingWidget::checkbox("Show BetterTTV personal emotes",
+                            s.enableBTTVPersonalEmotes)
+        ->addKeywords({"bttv"})
+        ->setTooltip("Emotes BetterTTV Pro users can use in any channel. "
+                     "This requires 'BetterTTV live emote updates' to "
+                     "work.")
+        ->addTo(layout);
     SettingWidget::checkbox(
         "Enable BetterTTV live emote updates (requires restart)",
         s.enableBTTVLiveUpdates)
