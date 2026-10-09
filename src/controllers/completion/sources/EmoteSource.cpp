@@ -8,6 +8,7 @@
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/completion/sources/Helpers.hpp"
 #include "controllers/emotes/EmoteController.hpp"
+#include "messages/Emote.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
@@ -27,15 +28,35 @@ namespace chatterino::completion {
 namespace {
 
 void addEmotes(std::vector<EmoteItem> &out, const EmoteMap &map,
-               const QString &providerName)
+               const QString &providerName, bool includeModifiers = true)
 {
     for (auto &&emote : map)
     {
+        auto sourceName = providerName;
+        if (emote.second->modifierPlacement != EmoteModifierPlacement::None)
+        {
+            if (!includeModifiers)
+            {
+                // Effects only work in Twitch chats.
+                continue;
+            }
+
+            if (emote.second->modifierSource == EmoteModifierSource::BetterTTV)
+            {
+                sourceName = QStringLiteral("BetterTTV modifier");
+            }
+            else if (emote.second->modifierSource ==
+                     EmoteModifierSource::FrankerFaceZ)
+            {
+                sourceName = QStringLiteral("FrankerFaceZ modifier");
+            }
+        }
+
         out.push_back({.emote = emote.second,
                        .searchName = emote.first.string,
                        .tabCompletionName = emote.first.string,
                        .displayName = emote.second->name.string,
-                       .providerName = providerName,
+                       .providerName = std::move(sourceName),
                        .isEmoji = false});
     }
 }
@@ -160,13 +181,14 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
 
     if (channel->isTwitchOrKickChannel())
     {
+        const bool includeModifiers = channel->isTwitchChannel();
         if (auto bttvG = app->getBttvEmotes()->emotes())
         {
-            addEmotes(emotes, *bttvG, "Global BetterTTV");
+            addEmotes(emotes, *bttvG, "Global BetterTTV", includeModifiers);
         }
         if (auto ffzG = app->getFfzEmotes()->emotes())
         {
-            addEmotes(emotes, *ffzG, "Global FrankerFaceZ");
+            addEmotes(emotes, *ffzG, "Global FrankerFaceZ", includeModifiers);
         }
         if (auto seventvG = app->getSeventvEmotes()->globalEmotes())
         {

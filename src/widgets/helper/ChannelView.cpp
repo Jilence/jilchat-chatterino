@@ -3588,7 +3588,19 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
                 (showThumbnailSetting == ThumbnailPreviewMode::ShowOnShift &&
                  event->modifiers() == Qt::ShiftModifier);
 
-            if (emoteElement || emoteLinkElement)
+            if (const auto *modifierImage =
+                    dynamic_cast<const ModifierImageLayoutElement *>(
+                        hoverLayoutElement))
+            {
+                // An emote effect that is turned off: it's shown as its own
+                // emote, so it's described as one.
+                const auto &modifier = modifierImage->modifier();
+                auto scale = getSettings()->emoteTooltipScale.getEnum();
+                this->tooltipWidget_->setOne(TooltipEntry::scaled(
+                    showThumbnail ? modifier->images.getImage(3.0) : nullptr,
+                    modifier->tooltip.string, getTooltipScale(scale)));
+            }
+            else if (emoteElement || emoteLinkElement)
             {
                 const auto emote = emoteElement ? emoteElement->getEmote()
                                                 : emoteLinkElement->getEmote();
@@ -3608,6 +3620,21 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
 
                     const auto &emoteTooltips =
                         layeredEmoteElement->getEmoteTooltips();
+                    QStringList modifiers;
+                    for (const auto &modifier :
+                         layeredEmoteElement->getModifiers())
+                    {
+                        if (getSettings()->isEmoteModifierEnabled(
+                                modifier->name.string))
+                        {
+                            modifiers.append(
+                                modifier->name.string.toHtmlEscaped());
+                        }
+                    }
+                    const auto modifierTooltip =
+                        modifiers.isEmpty()
+                            ? QString{}
+                            : "<br>Modifiers: " + modifiers.join(", ");
 
                     // Someone performing some tomfoolery could put an emote with tens,
                     // if not hundreds of zero-width emotes on a single emote. If the
@@ -3631,7 +3658,8 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
                             entries.push_back(TooltipEntry::scaled(
                                 showThumbnail ? emote->images.getImage(3.0)
                                               : nullptr,
-                                emoteTooltips[i], getTooltipScale(scale)));
+                                emoteTooltips[i] + modifierTooltip,
+                                getTooltipScale(scale)));
                         }
                         else
                         {

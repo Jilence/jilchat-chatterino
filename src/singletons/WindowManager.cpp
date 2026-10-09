@@ -212,6 +212,8 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
 
     this->forceLayoutChannelViewsListener.add(
         settings.moderationActions.delayedItemsChanged);
+    this->forceLayoutChannelViewsListener.add(settings.enableEmoteModifiers);
+    this->forceLayoutChannelViewsListener.add(settings.disabledEmoteModifiers);
     this->forceLayoutChannelViewsListener.add(
         settings.highlightedMessages.delayedItemsChanged);
     this->forceLayoutChannelViewsListener.add(

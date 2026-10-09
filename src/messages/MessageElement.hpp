@@ -604,6 +604,9 @@ public:
         const MessageColor &textElementColor = MessageColor::Text);
 
     void addEmoteLayer(const Emote &emote);
+    /// Adds an emote effect, see EmoteModifierPlacement. The modifier isn't
+    /// shown itself; it changes how the layers are drawn.
+    void addModifier(const EmotePtr &modifier);
 
     void addToContainer(MessageLayoutContainer &container,
                         const MessageLayoutContext &ctx) override;
@@ -611,6 +614,7 @@ public:
     // Returns a concatenation of each emote layer's cleaned copy string
     QString getCleanCopyString() const;
     const std::vector<Emote> &getEmotes() const;
+    const std::vector<EmotePtr> &getModifiers() const;
     std::vector<Emote> getUniqueEmotes() const;
     const std::vector<QString> &getEmoteTooltips() const;
     const MessageColor &textElementColor() const;
@@ -630,6 +634,8 @@ private:
 
     std::vector<Emote> emotes_;
     std::vector<QString> emoteTooltips_;
+    /// The emote effects, in the order they were written.
+    std::vector<EmotePtr> modifiers_;
 
     std::unique_ptr<TextElement> textElement_;
     MessageColor textElementColor_;
