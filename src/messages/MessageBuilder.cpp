@@ -2428,9 +2428,9 @@ void MessageBuilder::addTextOrEmote(TextState &state, QString string,
     {
         QStringView remainder{string};
         std::vector<EmotePtr> directModifiers;
-        constexpr size_t MAX_MODIFIERS = 16;
+        constexpr size_t maxModifiers = 16;
         while (remainder.size() > 2 && remainder.at(1) == u'!' &&
-               directModifiers.size() < MAX_MODIFIERS)
+               directModifiers.size() < maxModifiers)
         {
             const auto modifier =
                 parseEmote(state.twitchChannel, state.userID,
@@ -3312,11 +3312,11 @@ Outcome MessageBuilder::tryAppendEmote(TwitchChannel *twitchChannel,
 
 bool MessageBuilder::appendModifier(const EmotePtr &modifier)
 {
-    constexpr size_t MAX_MODIFIERS = 16;
+    constexpr size_t maxModifiers = 16;
 
     if (modifier->modifierPlacement == EmoteModifierPlacement::Prefix)
     {
-        if (this->pendingPrefixModifiers_.size() >= MAX_MODIFIERS)
+        if (this->pendingPrefixModifiers_.size() >= maxModifiers)
         {
             this->flushPendingModifiers();
             this->emplace<TextElement>(modifier->getCopyString(),
@@ -3344,7 +3344,7 @@ bool MessageBuilder::appendModifier(const EmotePtr &modifier)
 
     if (auto *layered = dynamic_cast<LayeredEmoteElement *>(&this->back()))
     {
-        if (layered->getModifiers().size() >= MAX_MODIFIERS)
+        if (layered->getModifiers().size() >= maxModifiers)
         {
             this->emplace<TextElement>(modifier->getCopyString(),
                                        MessageElementFlag::Text,

@@ -341,9 +341,9 @@ int colorPhase(uint32_t flags, unsigned long time)
     {
         return 0;
     }
-    constexpr unsigned long PHASES = 12;
+    constexpr unsigned long phases = 12;
     const auto duration = (flags & PARTY) != 0 ? 1500UL : 2000UL;
-    return static_cast<int>((time % duration) * PHASES / duration);
+    return static_cast<int>((time % duration) * phases / duration);
 }
 
 constexpr int MODIFIER_FILTER_CACHE_KIB = 8 * 1024;
@@ -356,7 +356,7 @@ struct ModifierFilterKey {
     bool operator==(const ModifierFilterKey &) const = default;
 };
 
-size_t qHash(const ModifierFilterKey &key, size_t seed = 0) noexcept
+size_t qHash(ModifierFilterKey key, size_t seed = 0) noexcept
 {
     return qHashMulti(seed, key.pixmapCacheKey, key.flags, key.phase);
 }
@@ -366,44 +366,60 @@ struct ModifierFilterFrame {
     std::weak_ptr<chatterino::Image> source;
 };
 
-QCache<ModifierFilterKey, ModifierFilterFrame> *modifierFilterCache = nullptr;
-QSet<ModifierFilterKey> *pendingModifierFilters = nullptr;
-QThreadPool *modifierFilterPool = nullptr;
-std::atomic_bool modifierFiltersShuttingDown{false};
+/// What's needed to change the colors of emotes off the GUI thread. It's
+/// created when the first such emote is drawn, and removed before the
+/// application is.
+struct ModifierFilters {
+    QCache<ModifierFilterKey, ModifierFilterFrame> cache{
+        MODIFIER_FILTER_CACHE_KIB};
+    QSet<ModifierFilterKey> pending;
+    QThreadPool pool;
+};
 
-void clearModifierFilterCache()
+std::atomic_bool &modifierFiltersShuttingDown()
 {
-    modifierFiltersShuttingDown.store(true, std::memory_order_release);
-    if (modifierFilterPool != nullptr)
-    {
-        modifierFilterPool->clear();
-        modifierFilterPool->waitForDone();
-        delete modifierFilterPool;
-        modifierFilterPool = nullptr;
-    }
-    delete pendingModifierFilters;
-    pendingModifierFilters = nullptr;
-    delete modifierFilterCache;
-    modifierFilterCache = nullptr;
+    static std::atomic_bool shuttingDown{false};
+    return shuttingDown;
 }
 
-QCache<ModifierFilterKey, ModifierFilterFrame> &getModifierFilterCache()
+std::unique_ptr<ModifierFilters> &modifierFilterStorage()
 {
-    if (modifierFilterCache == nullptr)
+    static std::unique_ptr<ModifierFilters> storage;
+    return storage;
+}
+
+void clearModifierFilters()
+{
+    modifierFiltersShuttingDown().store(true, std::memory_order_release);
+    auto &storage = modifierFilterStorage();
+    if (storage)
     {
-        modifierFilterCache =
-            new QCache<ModifierFilterKey, ModifierFilterFrame>(
-                MODIFIER_FILTER_CACHE_KIB);
-        pendingModifierFilters = new QSet<ModifierFilterKey>;
-        modifierFilterPool = new QThreadPool;
-
-        modifierFilterPool->setMaxThreadCount(1);
-        modifierFilterPool->setExpiryTimeout(10'000);
-        modifierFiltersShuttingDown.store(false, std::memory_order_release);
-
-        qAddPostRoutine(clearModifierFilterCache);
+        storage->pool.clear();
+        storage->pool.waitForDone();
+        storage.reset();
     }
-    return *modifierFilterCache;
+}
+
+/// Returns nullptr if nothing was filtered yet or the application is
+/// shutting down.
+ModifierFilters *existingModifierFilters()
+{
+    return modifierFilterStorage().get();
+}
+
+ModifierFilters &getModifierFilters()
+{
+    auto &storage = modifierFilterStorage();
+    if (!storage)
+    {
+        storage = std::make_unique<ModifierFilters>();
+        storage->pool.setMaxThreadCount(1);
+        storage->pool.setExpiryTimeout(10'000);
+        modifierFiltersShuttingDown().store(false, std::memory_order_release);
+
+        qAddPostRoutine(clearModifierFilters);
+    }
+    return *storage;
 }
 
 int clampColor(qreal value)
@@ -413,26 +429,26 @@ int clampColor(qreal value)
 
 void applySepia(qreal amount, int &red, int &green, int &blue)
 {
-    const auto sepiaRed = 0.393 * red + 0.769 * green + 0.189 * blue;
-    const auto sepiaGreen = 0.349 * red + 0.686 * green + 0.168 * blue;
-    const auto sepiaBlue = 0.272 * red + 0.534 * green + 0.131 * blue;
-    red = clampColor(red + (sepiaRed - red) * amount);
-    green = clampColor(green + (sepiaGreen - green) * amount);
-    blue = clampColor(blue + (sepiaBlue - blue) * amount);
+    const auto sepiaRed = (0.393 * red) + (0.769 * green) + (0.189 * blue);
+    const auto sepiaGreen = (0.349 * red) + (0.686 * green) + (0.168 * blue);
+    const auto sepiaBlue = (0.272 * red) + (0.534 * green) + (0.131 * blue);
+    red = clampColor(red + ((sepiaRed - red) * amount));
+    green = clampColor(green + ((sepiaGreen - green) * amount));
+    blue = clampColor(blue + ((sepiaBlue - blue) * amount));
 }
 
 void applySaturation(qreal amount, int &red, int &green, int &blue)
 {
-    const auto luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-    red = clampColor(luminance + (red - luminance) * amount);
-    green = clampColor(luminance + (green - luminance) * amount);
-    blue = clampColor(luminance + (blue - luminance) * amount);
+    const auto luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+    red = clampColor(luminance + ((red - luminance) * amount));
+    green = clampColor(luminance + ((green - luminance) * amount));
+    blue = clampColor(luminance + ((blue - luminance) * amount));
 }
 
 void applyContrast(qreal amount, int &red, int &green, int &blue)
 {
     const auto adjust = [amount](int channel) {
-        return clampColor((channel - 127.5) * amount + 127.5);
+        return clampColor(((channel - 127.5) * amount) + 127.5);
     };
     red = adjust(red);
     green = adjust(green);
@@ -445,6 +461,7 @@ QImage filterModifierImage(QImage image, uint32_t filterFlags, int phase)
     image = image.convertToFormat(QImage::Format_ARGB32);
     for (int y = 0; y < image.height(); ++y)
     {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
         for (int x = 0; x < image.width(); ++x)
         {
@@ -460,8 +477,8 @@ QImage filterModifierImage(QImage image, uint32_t filterFlags, int phase)
             int blue = qBlue(pixel);
             if ((filterFlags & CURSED) != 0)
             {
-                const auto gray =
-                    clampColor(0.2126 * red + 0.7152 * green + 0.0722 * blue);
+                const auto gray = clampColor((0.2126 * red) + (0.7152 * green) +
+                                             (0.0722 * blue));
                 red = green = blue = clampColor(gray * 0.7);
                 applyContrast(2.5, red, green, blue);
             }
@@ -489,7 +506,7 @@ QImage filterModifierImage(QImage image, uint32_t filterFlags, int phase)
                 int saturation = 0;
                 int value = 0;
                 color.getHsv(&hue, &saturation, &value);
-                hue = (std::max(0, hue) + phase * 30) % 360;
+                hue = (std::max(0, hue) + (phase * 30)) % 360;
                 color.setHsv(hue, saturation, value);
                 red = color.red();
                 green = color.green();
@@ -506,27 +523,27 @@ void insertModifierFilterResult(const ModifierFilterKey &key, QImage image,
                                 const ModifierFilterKey &fallbackKey,
                                 const std::weak_ptr<chatterino::Image> &source)
 {
-    if (modifierFiltersShuttingDown.load(std::memory_order_acquire) ||
-        modifierFilterCache == nullptr || pendingModifierFilters == nullptr)
+    auto *filters = existingModifierFilters();
+    if (modifierFiltersShuttingDown().load(std::memory_order_acquire) ||
+        filters == nullptr)
     {
         return;
     }
 
-    pendingModifierFilters->remove(key);
+    filters->pending.remove(key);
     auto result = QPixmap::fromImage(std::move(image));
     result.setDevicePixelRatio(devicePixelRatio);
     const auto costKiB = std::max<qsizetype>(
-        1,
-        (static_cast<qsizetype>(result.width()) * result.height() * 4 + 1023) /
-            1024);
+        1, ((static_cast<qsizetype>(result.width()) * result.height() * 4) +
+            1023) /
+               1024);
     if (costKiB <= MODIFIER_FILTER_CACHE_KIB)
     {
-        modifierFilterCache->insert(key,
-                                    new ModifierFilterFrame{result, source},
-                                    static_cast<int>(costKiB));
+        filters->cache.insert(key, new ModifierFilterFrame{result, source},
+                              static_cast<int>(costKiB));
         if (!source.expired())
         {
-            modifierFilterCache->insert(
+            filters->cache.insert(
                 fallbackKey, new ModifierFilterFrame{std::move(result), source},
                 static_cast<int>(costKiB));
         }
@@ -548,7 +565,8 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
         .flags = filterFlags,
         .phase = phase,
     };
-    auto &cache = getModifierFilterCache();
+    auto &filters = getModifierFilters();
+    auto &cache = filters.cache;
     if (const auto *cached = cache.object(key))
     {
         return cached->pixmap;
@@ -572,18 +590,18 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
         }
         if (fallback.isNull())
         {
-            constexpr int PREVIEW_DIMENSION = 128;
+            constexpr int previewDimension = 128;
             auto preview = source;
-            if (std::max(source.width(), source.height()) > PREVIEW_DIMENSION)
+            if (std::max(source.width(), source.height()) > previewDimension)
             {
-                preview = source.scaled(PREVIEW_DIMENSION, PREVIEW_DIMENSION,
+                preview = source.scaled(previewDimension, previewDimension,
                                         Qt::KeepAspectRatio);
             }
             fallback = QPixmap::fromImage(
                 filterModifierImage(preview.toImage(), filterFlags, phase));
             fallback.setDevicePixelRatio(source.devicePixelRatio());
             const auto costKiB = std::max(
-                1, (fallback.width() * fallback.height() * 4 + 1023) / 1024);
+                1, ((fallback.width() * fallback.height() * 4) + 1023) / 1024);
             cache.insert(fallbackKey,
                          new ModifierFilterFrame{fallback, sourceImage},
                          costKiB);
@@ -595,29 +613,26 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
                 return fallback;
             }
         }
-        if (pendingModifierFilters == nullptr ||
-            modifierFilterPool == nullptr ||
-            pendingModifierFilters->contains(key) ||
-            pendingModifierFilters->size() >= 16 ||
-            modifierFilterPool->activeThreadCount() >=
-                modifierFilterPool->maxThreadCount())
+        if (filters.pending.contains(key) || filters.pending.size() >= 16 ||
+            filters.pool.activeThreadCount() >= filters.pool.maxThreadCount())
         {
             return fallback;
         }
 
-        pendingModifierFilters->insert(key);
+        filters.pending.insert(key);
         const auto dpr = source.devicePixelRatio();
         auto image = source.toImage();
         std::weak_ptr<chatterino::Image> weakSource = sourceImage;
         auto *context = QCoreApplication::instance();
         const bool started =
             context != nullptr &&
-            modifierFilterPool->tryStart([key, image = std::move(image),
-                                          filterFlags, phase, dpr, fallbackKey,
-                                          weakSource, context]() mutable {
+            filters.pool.tryStart([key, image = std::move(image), filterFlags,
+                                   phase, dpr, fallbackKey, weakSource,
+                                   context]() mutable {
                 auto filtered =
                     filterModifierImage(std::move(image), filterFlags, phase);
-                if (modifierFiltersShuttingDown.load(std::memory_order_acquire))
+                if (modifierFiltersShuttingDown().load(
+                        std::memory_order_acquire))
                 {
                     return;
                 }
@@ -633,7 +648,7 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
             });
         if (!started)
         {
-            pendingModifierFilters->remove(key);
+            filters.pending.remove(key);
         }
         return fallback;
     }
@@ -642,9 +657,9 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
         filterModifierImage(source.toImage(), filterFlags, phase));
     result.setDevicePixelRatio(source.devicePixelRatio());
     const auto costKiB = std::max<qsizetype>(
-        1,
-        (static_cast<qsizetype>(result.width()) * result.height() * 4 + 1023) /
-            1024);
+        1, ((static_cast<qsizetype>(result.width()) * result.height() * 4) +
+            1023) /
+               1024);
     if (costKiB <= MODIFIER_FILTER_CACHE_KIB)
     {
         cache.insert(key, new ModifierFilterFrame{result, {}},
@@ -771,7 +786,7 @@ void LayeredImageLayoutElement::paintModified(QPainter &painter, qreal yOffset)
         return static_cast<qreal>(position % duration) /
                static_cast<qreal>(duration);
     };
-    constexpr qreal PI = 3.14159265358979323846;
+    constexpr qreal pi = 3.14159265358979323846;
     const auto colorFlags = this->modifierFlags_ & COLORS;
     const auto phase = colorPhase(animatedFlags, time);
 
@@ -818,7 +833,7 @@ void LayeredImageLayoutElement::paintModified(QPainter &painter, qreal yOffset)
     {
         const auto duration = static_cast<unsigned long>(
             std::clamp(contentRect.width() / 32.0 * 500.0, 250.0, 2000.0));
-        translation.rx() += std::sin(cycle(time, duration) * PI * 2.0) *
+        translation.rx() += std::sin(cycle(time, duration) * pi * 2.0) *
                             contentRect.width() * 0.28;
     }
     if ((animatedFlags & (HYPER_RED | SHAKE)) != 0)
@@ -851,14 +866,14 @@ void LayeredImageLayoutElement::paintModified(QPainter &painter, qreal yOffset)
         const auto eased = 1.0 - std::pow(1.0 - progress, 3.0);
         opacity = progress;
         animatedScaleX = animatedScaleY =
-            eased + std::sin(progress * PI) * 0.04;
+            eased + (std::sin(progress * pi) * 0.04);
         translation.rx() -= (1.0 - eased) * contentRect.width() * 0.65;
     };
     const auto leave = [&](qreal progress) {
         progress = std::clamp(progress, 0.0, 1.0);
         const auto remaining = 1.0 - progress;
         opacity = remaining;
-        animatedScaleX = remaining * std::cos(progress * PI);
+        animatedScaleX = remaining * std::cos(progress * pi);
         animatedScaleY = remaining;
         translation.rx() -= progress * contentRect.width() * 0.65;
     };
@@ -907,19 +922,19 @@ void LayeredImageLayoutElement::paintModified(QPainter &painter, qreal yOffset)
     }
     if ((animatedFlags & JAM) != 0)
     {
-        const auto beat = std::sin(cycle(time, 600) * PI * 2.0);
-        scaleX *= 1.0 + beat * 0.08;
-        scaleY *= 1.0 - beat * 0.12;
+        const auto beat = std::sin(cycle(time, 600) * pi * 2.0);
+        scaleX *= 1.0 + (beat * 0.08);
+        scaleY *= 1.0 - (beat * 0.12);
         translation +=
-            QPointF(beat * 3.0, std::cos(cycle(time, 600) * PI * 2.0) * 4.0);
-        rotation += -2.5 + beat * 5.5;
+            QPointF(beat * 3.0, std::cos(cycle(time, 600) * pi * 2.0) * 4.0);
+        rotation += -2.5 + (beat * 5.5);
     }
     if ((animatedFlags & BOUNCE) != 0)
     {
         const auto progress = cycle(time, 500);
-        const auto squash = std::sin(progress * PI);
-        scaleX *= 1.0 + squash * 0.2;
-        scaleY *= 1.0 - squash * 0.65;
+        const auto squash = std::sin(progress * pi);
+        scaleX *= 1.0 + (squash * 0.2);
+        scaleY *= 1.0 - (squash * 0.65);
         if (progress >= 0.25 && progress < 0.75)
         {
             scaleX = -scaleX;
