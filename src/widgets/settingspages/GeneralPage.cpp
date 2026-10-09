@@ -10,6 +10,9 @@
 #include "common/Version.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
+#include "messages/Emote.hpp"
+#include "providers/bttv/BttvEmotes.hpp"
+#include "providers/ffz/FfzEmotes.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/CrashHandler.hpp"
@@ -26,15 +29,24 @@
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
 
+#include <QCheckBox>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFontDialog>
 #include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QMap>
 #include <QMessageBox>
 #include <QPalette>
 #include <QSignalBlocker>
+#include <QVBoxLayout>
+
+#include <utility>
 
 namespace {
 
@@ -629,6 +641,92 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                             s.animationsWhenFocused)
         ->addTo(layout);
 
+    SettingWidget::checkbox("Enable emote effects", s.enableEmoteModifiers)
+        ->setTooltip(
+            "BetterTTV's and FrankerFaceZ's emote effects change the emote "
+            "next to them: w! and ffzW make it wide, h! and ffzX flip it, "
+            "ffzSpin spins it, and so on. Effects that are turned off appear "
+            "as normal emotes.")
+        ->addKeywords({"modifier", "modifiers", "bttv", "ffz", "effect", "flip",
+                       "wide", "rotate"})
+        ->addTo(layout);
+    auto *chooseEmoteEffects =
+        layout.addButton("Choose emote effects...", [this] {
+            QMap<QString, QStringList> names{
+                {"FrankerFaceZ",
+                 {"ffzArrive", "ffzBounce", "ffzCursed", "ffzHyper", "ffzJam",
+                  "ffzLeave", "ffzRainbow", "ffzSlide", "ffzSpin", "ffzW",
+                  "ffzX", "ffzY"}},
+                {"BetterTTV",
+                 {"w!", "h!", "v!", "l!", "r!", "z!", "c!", "p!", "s!"}},
+            };
+            // What the services have added since
+            const auto addLoaded = [&names](const auto &emotes,
+                                            const QString &provider) {
+                if (!emotes)
+                {
+                    return;
+                }
+                for (const auto &[name, emote] : *emotes)
+                {
+                    if (emote->modifierPlacement !=
+                        EmoteModifierPlacement::None)
+                    {
+                        names[provider].append(name.string);
+                    }
+                }
+            };
+            addLoaded(getApp()->getFfzEmotes()->emotes(), "FrankerFaceZ");
+            addLoaded(getApp()->getBttvEmotes()->emotes(), "BetterTTV");
+
+            QDialog dialog(this);
+            dialog.setWindowTitle("Emote effects");
+            auto *root = new QVBoxLayout(&dialog);
+            auto *providers = new QHBoxLayout;
+            root->addLayout(providers);
+            for (auto it = names.begin(); it != names.end(); ++it)
+            {
+                it.value().removeDuplicates();
+                it.value().sort(Qt::CaseInsensitive);
+
+                auto *group = new QGroupBox(it.key(), &dialog);
+                auto *choices = new QVBoxLayout(group);
+                providers->addWidget(group);
+                for (const auto &name : std::as_const(it.value()))
+                {
+                    auto *check = new QCheckBox(name, group);
+                    check->setChecked(!getSettings()
+                                           ->disabledEmoteModifiers.getValue()
+                                           .contains(name));
+                    choices->addWidget(check);
+                    QObject::connect(
+                        check, &QCheckBox::toggled, &dialog,
+                        [name](bool enabled) {
+                            auto &setting =
+                                getSettings()->disabledEmoteModifiers;
+                            auto disabled = setting.getValue();
+                            disabled.removeAll(name);
+                            if (!enabled)
+                            {
+                                disabled.append(name);
+                            }
+                            setting.setValue(disabled);
+                        });
+                }
+                choices->addStretch();
+            }
+            auto *buttons =
+                new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+            root->addWidget(buttons);
+            QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
+                             &QDialog::reject);
+            dialog.exec();
+        });
+    // Found by the same words as the switch above it
+    layout.registerWidget(chooseEmoteEffects,
+                          {"Choose emote effects...", "modifier", "modifiers",
+                           "bttv", "ffz", "effect", "flip", "wide", "rotate"},
+                          nullptr);
     SettingWidget::checkbox("Enable zero-width emotes", s.enableZeroWidthEmotes)
         ->setTooltip(
             "When disabled, emotes that overlap other emotes, such as BTTV's "

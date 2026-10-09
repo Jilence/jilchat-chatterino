@@ -40,6 +40,68 @@ const QSet<QStringView> ZERO_WIDTH_EMOTES{
 constexpr QStringView EMOTE_CDN_FORMAT =
     u"https://cdn.betterttv.net/emote/%1/%2.webp";
 
+/// What BetterTTV's modifier emote `name` does to the emote after it.
+uint32_t modifierFlags(QStringView name)
+{
+    using namespace emote_modifiers;
+    if (name == u"w!")
+    {
+        return BTTV_WIDE;
+    }
+    if (name == u"h!")
+    {
+        return FLIP_X;
+    }
+    if (name == u"v!")
+    {
+        return FLIP_Y;
+    }
+    if (name == u"l!")
+    {
+        return ROTATE_LEFT;
+    }
+    if (name == u"r!")
+    {
+        return ROTATE_RIGHT;
+    }
+    if (name == u"z!")
+    {
+        return ZERO_SPACE;
+    }
+    if (name == u"c!")
+    {
+        return CURSED;
+    }
+    if (name == u"p!")
+    {
+        return PARTY;
+    }
+    if (name == u"s!")
+    {
+        return BTTV_SHAKE;
+    }
+    return 0;
+}
+
+/// Marks the emote as a modifier if BetterTTV lists it as one.
+void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
+{
+    if (!jsonEmote.value("modifier").toBool())
+    {
+        return;
+    }
+    const auto flags = modifierFlags(emote.name.string);
+    if ((flags & emote_modifiers::SUPPORTED) == 0)
+    {
+        return;
+    }
+
+    emote.modifierFlags = flags;
+    emote.modifierPlacement = EmoteModifierPlacement::Prefix;
+    emote.modifierSource = EmoteModifierSource::BetterTTV;
+    emote.tooltip = Tooltip{emote.name.string + "<br>BetterTTV emote effect"};
+}
+
 QSize emoteBaseSize(const QJsonObject &jsonEmote)
 {
     return {jsonEmote.value("width").toInt(28),
@@ -90,6 +152,7 @@ std::pair<Outcome, EmoteMap> parseGlobalEmotes(const QJsonArray &jsonEmotes,
             .homePage = Url{EMOTE_LINK_FORMAT.arg(id.string)},
             .zeroWidth = ZERO_WIDTH_EMOTES.contains(name.string),
         });
+        applyModifierMetadata(emoteJson, emote);
 
         emotes[name] = cachedOrMakeEmotePtr(std::move(emote), currentEmotes);
     }

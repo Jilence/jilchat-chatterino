@@ -844,6 +844,12 @@ void Settings::disableSave()
     this->disableSaving = true;
 }
 
+bool Settings::isEmoteModifierEnabled(const QString &name) const
+{
+    return this->enableEmoteModifiers.getValue() &&
+           !this->disabledEmoteModifiers.getValue().contains(name);
+}
+
 bool Settings::shouldSendHelixChat() const
 {
     switch (this->chatSendProtocol.getEnum())

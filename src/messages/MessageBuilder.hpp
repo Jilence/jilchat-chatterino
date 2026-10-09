@@ -302,6 +302,18 @@ private:
     Outcome tryAppendCheermote(TextState &state, const QString &string);
     Outcome tryAppendEmote(TwitchChannel *twitchChannel, const QString &userID,
                            EmoteNameView name);
+    /// Takes an emote effect: one that comes before its emote waits for it,
+    /// one that comes after is attached to the last emote. Returns whether
+    /// the modifier was dealt with.
+    bool appendModifier(const EmotePtr &modifier);
+    /// Writes the effects that wait for an emote as text; none came.
+    void flushPendingModifiers();
+    /// Appends an emote that isn't a modifier, with the effects waiting for
+    /// it. Returns the element it is in.
+    MessageElement *appendEmoteWithPendingModifiers(const EmotePtr &emote);
+
+    /// Emote effects that come before their emote, until it arrives.
+    std::vector<EmotePtr> pendingPrefixModifiers_;
 
     bool isEmpty() const;
     MessageElement &back();
