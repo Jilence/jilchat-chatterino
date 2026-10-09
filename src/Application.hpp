@@ -77,6 +77,10 @@ class KickChatServer;
 
 class YouTubeChatServer;
 
+class PotatCommands;
+
+class SupibotCommands;
+
 class IApplication
 {
 public:
@@ -144,6 +148,8 @@ public:
     virtual SpellChecker *getSpellChecker() = 0;
     virtual KickChatServer *getKickChatServer() = 0;
     virtual YouTubeChatServer *getYouTubeChatServer() = 0;
+    virtual PotatCommands *getPotatCommands() = 0;
+    virtual SupibotCommands *getSupibotCommands() = 0;
 
     int monoFontId;
 };
@@ -229,6 +235,8 @@ private:
     std::unique_ptr<SpellChecker> spellChecker;
     std::unique_ptr<KickChatServer> kickChatServer;
     std::unique_ptr<YouTubeChatServer> youTubeChatServer;
+    std::unique_ptr<PotatCommands> potatCommands;
+    std::unique_ptr<SupibotCommands> supibotCommands;
 #ifdef CHATTERINO_HAVE_PLUGINS
     std::unique_ptr<PluginController> plugins;
 #endif
@@ -299,6 +307,8 @@ public:
     SpellChecker *getSpellChecker() override;
     KickChatServer *getKickChatServer() override;
     YouTubeChatServer *getYouTubeChatServer() override;
+    PotatCommands *getPotatCommands() override;
+    SupibotCommands *getSupibotCommands() override;
 
 private:
     void initNm(const Modes &modes, const Paths &paths);

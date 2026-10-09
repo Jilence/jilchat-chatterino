@@ -575,6 +575,11 @@ public:
         50,
     };
 
+    BoolSetting showChatterListInAllTwitchChannels = {
+        "/behaviour/chatterList/showInAllTwitchChannels", true};
+    QStringSetting chatterListDataMode = {"/behaviour/chatterList/dataMode",
+                                          "best"};
+
     // Auto-completion
     BoolSetting onlyFetchChattersForSmallerStreamers = {
         "/behaviour/autocompletion/onlyFetchChattersForSmallerStreamers", true};
@@ -1057,6 +1062,8 @@ public:
                                           true};
     BoolSetting showUsercardRoleManagementMenu = {
         "/usercard/showRoleManagementMenu", false};
+    BoolSetting showCrossActionsInUnmoderatedChannels = {
+        "/usercard/showCrossActionsInUnmoderatedChannels", false};
     BoolSetting hideModActionsOnModUsercards = {
         "/misc/hideModActionsOnModUsercards", true};
     BoolSetting showModActionsOnModUsercardsAsLeadMod = {
@@ -1296,6 +1303,10 @@ public:
     BoolSetting nukeSkipVips{"/moltorino/moderation/nuke/skipVips", false};
     QStringSetting nukeModerationMessage{
         "/moltorino/moderation/nuke/moderationMessage", ""};
+    BoolSetting showEditStreamInfoButtonInSplitHeader{
+        "/moltorino/showEditStreamInfoButtonInSplitHeader", true};
+    IntSetting defaultCommercialDuration{
+        "/moltorino/moderation/defaultCommercialDuration", 30};
     BoolSetting showRaidStatusAboveInput{
         "/moltorino/moderation/raid/showStatusAboveInput", true};
 
@@ -1324,6 +1335,13 @@ public:
     /// Others
     BoolSetting showCommandSuggestions{"/moltorino/showCommandSuggestions",
                                        true};
+    BoolSetting includePotatCommands{"/moltorino/includePotatCommands", true};
+    BoolSetting showPotatCommandAliases{"/moltorino/showPotatCommandAliases",
+                                        true};
+    BoolSetting includeSupibotCommands{"/leafyrino/includeSupibotCommands",
+                                       true};
+    BoolSetting showSupibotCommandAliases{
+        "/leafyrino/showSupibotCommandAliases", true};
     BoolSetting hideUnavailableModCommands{
         "/moltorino/hideUnavailableModCommands", true};
     BoolSetting showFollowButtonInSplitHeader{

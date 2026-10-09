@@ -4,6 +4,7 @@
 #include "common/network/NetworkResult.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/translation/Translator.hpp"
+#include "providers/twitch/ChannelManagement.hpp"
 #include "singletons/Settings.hpp"
 #include "util/Clipboard.hpp"
 #include "util/FuzzyConvert.hpp"
@@ -693,6 +694,17 @@ MoltorinoPage::MoltorinoPage()
                      "message input.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Include Potat commands in suggestions",
+                            s.includePotatCommands)
+        ->setTooltip("Suggest Potat # commands after you type #.")
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show Potat command aliases",
+                            s.showPotatCommandAliases)
+        ->setTooltip("Include shortcuts such as #ga in Potat suggestions.")
+        ->conditionallyEnabledBy(s.includePotatCommands)
+        ->addTo(*view);
+
     SettingWidget::checkbox("Hide unavailable mod commands",
                             s.hideUnavailableModCommands)
         ->setTooltip(
@@ -940,6 +952,32 @@ MoltorinoPage::MoltorinoPage()
     view->addWidget(nukeMessageRow,
                     {"Nuke mod message", "Nuke timeout ban message"});
 
+    SettingWidget::checkbox(
+        "Show the edit stream info button in the chat header",
+        s.showEditStreamInfoButtonInSplitHeader)
+        ->setTooltip("Show the edit stream info shortcut in the chat header "
+                     "when broadcaster or editor access is available.")
+        ->addTo(*view);
+
+    view->addSubtitle("Commercials");
+    view->addDropdown<int>(
+            "Default commercial duration",
+            {"30 seconds", "60 seconds", "90 seconds", "120 seconds",
+             "150 seconds", "180 seconds"},
+            s.defaultCommercialDuration,
+            [](int value) {
+                return QString("%1 seconds")
+                    .arg(ChannelManagement::isValidCommercialLength(value)
+                             ? value
+                             : 30);
+            },
+            [](auto args) {
+                return args.value.section(' ', 0, 0).toInt();
+            },
+            false)
+        ->setToolTip("Used when /commercial has no duration. An explicit "
+                     "duration, such as /commercial 60, overrides this.");
+
     view->addTitle("Client");
     view->addDescription(
         "Twitch chat behavior, compatibility, and client experience options.");
@@ -1006,6 +1044,12 @@ MoltorinoPage::MoltorinoPage()
             "Show a compact usercard menu for adding or removing editor and "
             "lead moderator roles. Actions still require a saved broadcaster "
             "login.")
+        ->addTo(*view);
+    SettingWidget::checkbox(
+        "Show cross ban and cross unban in channels you don't moderate",
+        s.showCrossActionsInUnmoderatedChannels)
+        ->setTooltip("Use your saved account's channels even when you cannot "
+                     "moderate the channel you are viewing.")
         ->addTo(*view);
 
 #ifndef Q_OS_MACOS
@@ -1095,6 +1139,23 @@ MoltorinoPage::MoltorinoPage()
             this->revealBotBadgeSettings(true);
         }
     });
+
+    SettingWidget::checkbox("Show chatter list in all Twitch channels",
+                            s.showChatterListInAllTwitchChannels)
+        ->setTooltip(
+            "Show the chatter list button even when you are not a moderator.")
+        ->addTo(*view);
+    SettingWidget::dropdown("Chatter list source", s.chatterListDataMode,
+                            {{"Twitch and Tackling", "best"},
+                             {"Twitch only", "twitch"},
+                             {"Tackling only", "community"},
+                             {"Chat session only", "local"}})
+        ->setTooltip(
+            "Choose the API used for the chatter list. Tackling provides the "
+            "extended list. Twitch requires moderator access. All choices "
+            "include chatters seen in your chat session. Refresh or reopen "
+            "the list after changing its source.")
+        ->addTo(*view);
 
     SettingWidget::checkbox("Show follow button in chat header",
                             s.showFollowButtonInSplitHeader)
