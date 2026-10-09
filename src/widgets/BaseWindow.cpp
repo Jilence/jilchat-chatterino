@@ -94,8 +94,14 @@ std::optional<UINT> hiddenTaskbarEdge(LPRECT rcMon = nullptr)
         return std::nullopt;
     }
 
-    APPBARDATA state = {sizeof(state), taskbar};
-    APPBARDATA pos = {sizeof(pos), taskbar};
+    APPBARDATA state{
+        .cbSize = sizeof(state),
+        .hWnd = taskbar,
+    };
+    APPBARDATA pos{
+        .cbSize = sizeof(pos),
+        .hWnd = taskbar,
+    };
 
     auto appBarState =
         static_cast<LRESULT>(SHAppBarMessage(ABM_GETSTATE, &state));
@@ -1087,7 +1093,8 @@ bool BaseWindow::handleSHOWWINDOW(MSG *msg)
 
         if (this->hasCustomWindowFrame())
         {
-            const MARGINS margins = {-1};
+            // disable OS window border
+            const MARGINS margins{.cxLeftWidth = -1};
             DwmExtendFrameIntoClientArea(msg->hwnd, &margins);
         }
 

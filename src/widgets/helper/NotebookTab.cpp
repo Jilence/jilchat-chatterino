@@ -714,9 +714,9 @@ void NotebookTab::titleUpdated()
 {
     // Queue up save because: Tab title changed
     getApp()->getWindows()->queueSave();
-    this->notebook_->refresh();
-    this->refreshAndCommitSize(true);
+    this->refreshSize();
     this->update();
+    this->notebook_->refresh();
 }
 
 bool NotebookTab::isSelected() const

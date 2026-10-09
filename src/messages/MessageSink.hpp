@@ -25,6 +25,10 @@ enum class MessageSinkTrait : uint8_t {
     AddMentionsToGlobalChannel = 1 << 0,
 
     RequiresKnownChannelPointReward = 1 << 1,
+
+    /// Messages from the current user may update the corresponding TwitchChannel
+    /// e.g. for mod, vip, staff, and send-wait state.
+    UpdateCurrentUserState = 1 << 2,
 };
 using MessageSinkTraits = FlagsEnum<MessageSinkTrait>;
 

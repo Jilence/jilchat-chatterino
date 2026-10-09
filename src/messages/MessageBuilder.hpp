@@ -276,6 +276,7 @@ public:
 
     static MessagePtrMut makeClearChatMessage(const QDateTime &now,
                                               const QString &actor,
+                                              const QString &channelName,
                                               uint32_t count = 1);
 
     static MessagePtr makeSelfBadgePreviewMessage(
