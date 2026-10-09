@@ -161,6 +161,8 @@ set(SOURCE_FILES
         controllers/commands/CommandModel.cpp
         controllers/commands/CommandModel.hpp
 
+        controllers/completion/CommandUsage.cpp
+        controllers/completion/CommandUsage.hpp
         controllers/completion/CompletionModel.cpp
         controllers/completion/CompletionModel.hpp
         controllers/completion/sources/Source.hpp
@@ -541,8 +543,14 @@ set(SOURCE_FILES
         providers/pronouns/alejo/PronounsAlejoApi.cpp
         providers/pronouns/alejo/PronounsAlejoApi.hpp
 
+        providers/potat/PotatCommands.cpp
+        providers/potat/PotatCommands.hpp
+
         providers/publiclogs/PublicLogs.cpp
         providers/publiclogs/PublicLogs.hpp
+
+        providers/supibot/SupibotCommands.cpp
+        providers/supibot/SupibotCommands.hpp
 
         providers/recentmessages/Api.cpp
         providers/recentmessages/Api.hpp
@@ -606,6 +614,8 @@ set(SOURCE_FILES
         providers/twitch/TwitchBadges.cpp
         providers/twitch/TwitchBadges.hpp
         providers/twitch/api/TwitchGql.cpp
+        providers/twitch/ChannelManagement.cpp
+        providers/twitch/ChannelManagement.hpp
         providers/twitch/TwitchChannel.cpp
         providers/twitch/TwitchChannel.hpp
         providers/twitch/TwitchCommon.cpp
@@ -856,14 +866,20 @@ set(SOURCE_FILES
         widgets/dialogs/UserBadgesDialog.hpp
         widgets/dialogs/ChannelFilterEditorDialog.cpp
         widgets/dialogs/ChannelFilterEditorDialog.hpp
+        widgets/dialogs/ChannelManagementDialog.cpp
+        widgets/dialogs/ChannelManagementDialog.hpp
         widgets/dialogs/ChannelPointsDialog.cpp
         widgets/dialogs/ChannelPointsDialog.hpp
+        widgets/dialogs/MoltorinoDialogTheme.hpp
+        widgets/dialogs/PopupControlMetrics.hpp
         widgets/dialogs/ChannelPointsChartDialog.cpp
         widgets/dialogs/ChannelPointsChartDialog.hpp
         widgets/dialogs/ChannelPointsChartView.cpp
         widgets/dialogs/ChannelPointsChartView.hpp
         widgets/dialogs/ColorPickerDialog.cpp
         widgets/dialogs/ColorPickerDialog.hpp
+        widgets/dialogs/CrossBanDialog.cpp
+        widgets/dialogs/CrossBanDialog.hpp
         widgets/dialogs/EditHotkeyDialog.cpp
         widgets/dialogs/EditHotkeyDialog.hpp
         widgets/dialogs/EditUserNotesDialog.cpp
@@ -950,6 +966,8 @@ set(SOURCE_FILES
         widgets/helper/color/SBCanvas.cpp
         widgets/helper/color/SBCanvas.hpp
 
+        widgets/helper/ChannelCategoryPicker.cpp
+        widgets/helper/ChannelCategoryPicker.hpp
         widgets/helper/ChannelView.cpp
         widgets/helper/ChannelView.hpp
         widgets/helper/CmdDeleteKeyFilter.cpp

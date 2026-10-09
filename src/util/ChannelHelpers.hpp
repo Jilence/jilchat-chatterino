@@ -11,7 +11,43 @@
 
 #include <QDateTime>
 
+#include <algorithm>
+#include <functional>
+#include <vector>
+
 namespace chatterino {
+
+/// Removes duplicate messages by pointer equality or ID, does not preserve order
+inline void deduplicateMessages(std::vector<MessagePtr> &messages)
+{
+    std::ranges::sort(messages, [](const MessagePtr &a, const MessagePtr &b) {
+        const bool aHasId = !a->id.isEmpty();
+        const bool bHasId = !b->id.isEmpty();
+        if (aHasId != bHasId)
+        {
+            return aHasId > bHasId;
+        }
+        if (aHasId)
+        {
+            return a->id > b->id;
+        }
+        return std::less<const Message *>{}(a.get(), b.get());
+    });
+
+    auto duplicates = std::ranges::unique(
+        messages, [](const MessagePtr &a, const MessagePtr &b) {
+            // a message can appear in multiple splits and may not have an ID,
+            // so check for pointer equality
+            if (a == b)
+            {
+                return true;
+            }
+
+            return !a->id.isEmpty() && !b->id.isEmpty() && a->id == b->id;
+        });
+
+    messages.erase(duplicates.begin(), duplicates.end());
+}
 
 template <typename Buf, typename Replace, typename Add>
 void addOrReplaceChannelTimeout(const Buf &buffer, MessagePtr message,
@@ -178,7 +214,8 @@ void addOrReplaceChannelClear(const Buffer &buffer, MessagePtr message,
         uint32_t count = s->count + 1;
 
         auto replacement = MessageBuilder::makeClearChatMessage(
-            message->serverReceivedTime, message->timeoutUser, count);
+            message->serverReceivedTime, message->timeoutUser,
+            message->channelName, count);
         replacement->flags = message->flags;
 
         replaceMessage(i, s, replacement);

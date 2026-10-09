@@ -14,6 +14,7 @@
 #include <QDateTime>
 #include <QFont>
 #include <QPointer>
+#include <QSet>
 #include <QShortcut>
 #include <QShowEvent>
 #include <QString>
@@ -255,6 +256,7 @@ private:
     bool deferredTwitchRefreshInteractive_{};
     bool deferredTwitchForcePersonalRefresh_{};
     bool deferredTwitchWarningStartupSeen_{};
+    QSet<QString> editorAccessProbedChannels_;
 
 public Q_SLOTS:
     void addSibling();

@@ -325,7 +325,8 @@ void KickChatServer::onMessageDeleted(KickChannel *channel,
 void KickChatServer::onChatroomClear(KickChannel *channel, BoostJsonObject)
 {
     auto now = QDateTime::currentDateTime();
-    auto clear = KickMessageBuilder::makeClearChatMessage(now, {});
+    auto clear =
+        KickMessageBuilder::makeClearChatMessage(now, {}, channel->getName());
     channel->disableAllMessages();
     channel->addOrReplaceClearChat(clear, now);
 }
