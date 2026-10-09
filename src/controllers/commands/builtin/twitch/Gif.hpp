@@ -10,8 +10,7 @@ struct CommandContext;
 
 namespace chatterino::commands {
 
-QString openChannelPointRewards(const CommandContext &ctx);
-QString openChannelPointsChart(const CommandContext &ctx);
-QString sendGigantifiedEmote(const CommandContext &ctx);
+/// /gif [search term]: opens the GIF picker for the channel.
+QString openGifPicker(const CommandContext &ctx);
 
 }  // namespace chatterino::commands
