@@ -40,6 +40,7 @@
 #include <atomic>
 #include <cmath>
 #include <memory>
+#include <numbers>
 #include <utility>
 
 namespace {
@@ -518,9 +519,9 @@ QImage filterModifierImage(QImage image, uint32_t filterFlags, int phase)
     return image;
 }
 
-void insertModifierFilterResult(const ModifierFilterKey &key, QImage image,
+void insertModifierFilterResult(ModifierFilterKey key, QImage image,
                                 qreal devicePixelRatio,
-                                const ModifierFilterKey &fallbackKey,
+                                ModifierFilterKey fallbackKey,
                                 const std::weak_ptr<chatterino::Image> &source)
 {
     auto *filters = existingModifierFilters();
@@ -539,12 +540,15 @@ void insertModifierFilterResult(const ModifierFilterKey &key, QImage image,
                1024);
     if (costKiB <= MODIFIER_FILTER_CACHE_KIB)
     {
-        filters->cache.insert(key, new ModifierFilterFrame{result, source},
-                              static_cast<int>(costKiB));
+        filters->cache.insert(
+            key, new ModifierFilterFrame{.pixmap = result, .source = source},
+            static_cast<int>(costKiB));
         if (!source.expired())
         {
             filters->cache.insert(
-                fallbackKey, new ModifierFilterFrame{std::move(result), source},
+                fallbackKey,
+                new ModifierFilterFrame{.pixmap = std::move(result),
+                                        .source = source},
                 static_cast<int>(costKiB));
         }
     }
@@ -575,8 +579,10 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
     const bool deferFiltering =
         sourceImage->animated() || (filterFlags & (RAINBOW | PARTY)) != 0;
     const ModifierFilterKey fallbackKey{
+        // The image itself stands for "whichever of its frames".
         .pixmapCacheKey =
-            static_cast<qint64>(reinterpret_cast<quintptr>(sourceImage.get())),
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        static_cast<qint64>(reinterpret_cast<quintptr>(sourceImage.get())),
         .flags = filterFlags,
         .phase = -1,
     };
@@ -584,7 +590,7 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
     {
         QPixmap fallback;
         if (const auto *last = cache.object(fallbackKey);
-            last && last->source.lock() == sourceImage)
+            last != nullptr && last->source.lock() == sourceImage)
         {
             fallback = last->pixmap;
         }
@@ -603,12 +609,14 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
             const auto costKiB = std::max(
                 1, ((fallback.width() * fallback.height() * 4) + 1023) / 1024);
             cache.insert(fallbackKey,
-                         new ModifierFilterFrame{fallback, sourceImage},
+                         new ModifierFilterFrame{.pixmap = fallback,
+                                                 .source = sourceImage},
                          costKiB);
             if (preview.size() == source.size())
             {
                 cache.insert(key,
-                             new ModifierFilterFrame{fallback, sourceImage},
+                             new ModifierFilterFrame{.pixmap = fallback,
+                                                     .source = sourceImage},
                              costKiB);
                 return fallback;
             }
@@ -662,7 +670,8 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
                1024);
     if (costKiB <= MODIFIER_FILTER_CACHE_KIB)
     {
-        cache.insert(key, new ModifierFilterFrame{result, {}},
+        cache.insert(key,
+                     new ModifierFilterFrame{.pixmap = result, .source = {}},
                      static_cast<int>(costKiB));
     }
     return result;
@@ -786,7 +795,7 @@ void LayeredImageLayoutElement::paintModified(QPainter &painter, qreal yOffset)
         return static_cast<qreal>(position % duration) /
                static_cast<qreal>(duration);
     };
-    constexpr qreal pi = 3.14159265358979323846;
+    constexpr qreal pi = std::numbers::pi;
     const auto colorFlags = this->modifierFlags_ & COLORS;
     const auto phase = colorPhase(animatedFlags, time);
 
@@ -838,22 +847,21 @@ void LayeredImageLayoutElement::paintModified(QPainter &painter, qreal yOffset)
     }
     if ((animatedFlags & (HYPER_RED | SHAKE)) != 0)
     {
-        static constexpr std::array<QPointF, 10> FFZ_SHAKE{
+        static constexpr std::array<QPointF, 10> ffzShake{
             QPointF{-2, 1}, QPointF{3, -2}, QPointF{-1, -3}, QPointF{2, 2},
             QPointF{-3, 0}, QPointF{1, 3},  QPointF{3, 1},   QPointF{-2, -1},
             QPointF{0, 2},  QPointF{1, -2},
         };
-        translation += FFZ_SHAKE.at((time / 10U) % FFZ_SHAKE.size());
+        translation += ffzShake.at((time / 10U) % ffzShake.size());
     }
     if ((animatedFlags & BTTV_SHAKE) != 0)
     {
-        static constexpr std::array<QPointF, 10> BTTV_SHAKE_STEPS{
+        static constexpr std::array<QPointF, 10> bttvShakeSteps{
             QPointF{-1, 0}, QPointF{2, -1},  QPointF{-2, 1}, QPointF{1, 2},
             QPointF{0, -2}, QPointF{-2, -1}, QPointF{2, 1},  QPointF{-1, 2},
             QPointF{1, -1}, QPointF{0, 0},
         };
-        translation +=
-            BTTV_SHAKE_STEPS.at((time / 50U) % BTTV_SHAKE_STEPS.size());
+        translation += bttvShakeSteps.at((time / 50U) % bttvShakeSteps.size());
     }
 
     qreal opacity = 1.0;

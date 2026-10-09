@@ -17,6 +17,7 @@
 #include "util/Helpers.hpp"
 
 #include <limits>
+#include <utility>
 
 namespace {
 
@@ -73,7 +74,8 @@ EmotePtr cachedOrMake(Emote &&emote, const EmoteId &id)
 uint32_t modifierFlags(const QJsonObject &jsonEmote)
 {
     const auto value = jsonEmote.value("modifier_flags").toInteger(-1);
-    if (value < 0 || value > std::numeric_limits<uint32_t>::max())
+    if (value < 0 ||
+        std::cmp_greater(value, std::numeric_limits<uint32_t>::max()))
     {
         return 0;
     }
@@ -173,7 +175,8 @@ EmoteMap parseGlobalEmotes(const QJsonObject &jsonRoot)
 
     // Some emote effects are in a set of their own that isn't a default
     // one; everyone can use them all the same.
-    for (const auto emoteSetRef : jsonRoot["sets"].toObject())
+    const auto sets = jsonRoot["sets"].toObject();
+    for (const auto emoteSetRef : sets)
     {
         const auto emoteSet = emoteSetRef.toObject();
         if (defaultSets.contains(emoteSet["id"].toInt()))

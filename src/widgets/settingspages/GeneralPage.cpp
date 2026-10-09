@@ -46,6 +46,8 @@
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
+#include <utility>
+
 namespace {
 
 using namespace chatterino;
@@ -690,7 +692,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                 auto *group = new QGroupBox(it.key(), &dialog);
                 auto *choices = new QVBoxLayout(group);
                 providers->addWidget(group);
-                for (const auto &name : it.value())
+                for (const auto &name : std::as_const(it.value()))
                 {
                     auto *check = new QCheckBox(name, group);
                     check->setChecked(!getSettings()
