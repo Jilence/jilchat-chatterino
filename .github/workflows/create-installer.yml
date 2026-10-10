@@ -27,18 +27,16 @@ jobs:
         qt-version: ["6.9.3"]
         os: [windows-latest, windows-11-arm]
     env:
-      # same as in build.yml
-      C2_ARCH: ${{ case(endsWith(matrix.os, '-arm'), 'arm', 'x86-64') }}
+      C2_ARCH: ${{ endsWith(matrix.os, '-arm') && 'arm' || 'x86-64' }}
     permissions:
-      # FIXME: this only needed for the nightly upload step (should split to another job)
       contents: write
       actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # allows for tags access
+          fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          persist-credentials: true # release action
+          persist-credentials: true 
 
       - name: Resolve Build workflow run
         id: resolve-build-run
