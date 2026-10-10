@@ -781,6 +781,7 @@ struct TokenizedText {
 struct TokenizedEmote {
     EmotePtr emote;
     bool trailingSpace = true;
+    bool gigantified = false;
 };
 struct TokenizedGif {
     QString id;
@@ -789,6 +790,8 @@ struct TokenizedGif {
 struct TokenizedEmoji {
     EmotePtr emote;
 };
+struct TokenizedBreak {
+};
 
 /// Tokenizes `text` into words and special Twitch items (emotes).
 ///
@@ -796,18 +799,24 @@ struct TokenizedEmoji {
 /// `TokenizedGif`.
 void tokenizeWords(QStringView text,
                    std::span<const TwitchSpecialOccurrence> specials,
-                   auto &&visitor)
+                   int gigantifiedEmoteStart, auto &&visitor)
 {
     const char16_t *const start = text.utf16();
     const char16_t *const end = text.utf16() + text.size();
 
     const char16_t *current = start;
     const char16_t *wordBegin = nullptr;
+    bool previousWasSpace = false;
     while (current != end)
     {
         bool isSpecial =
             !specials.empty() && (current - start) == specials[0].start;
         bool isSpace = *current == u' ';
+        if (isSpace && previousWasSpace)
+        {
+            visitor(TokenizedBreak{});
+        }
+        previousWasSpace = isSpace;
         // Eat the last word if there was one.
         if ((isSpecial || isSpace) && wordBegin)
         {
@@ -833,20 +842,22 @@ void tokenizeWords(QStringView text,
 
             // A special item at the end always has a trailing space.
             bool trailingSpace = current == end || *current == ' ';
-            std::visit(
-                variant::Overloaded{[&](const TwitchEmoteOccurrence &emote) {
-                                        visitor(TokenizedEmote{
-                                            .emote = emote.ptr,
-                                            .trailingSpace = trailingSpace,
-                                        });
-                                    },
-                                    [&](const TwitchGifOccurrence &gif) {
-                                        visitor(TokenizedGif{
-                                            .id = gif.id,
-                                            .originalText = originalText,
-                                        });
-                                    }},
-                special.data);
+            std::visit(variant::Overloaded{
+                           [&](const TwitchEmoteOccurrence &emote) {
+                               visitor(TokenizedEmote{
+                                   .emote = emote.ptr,
+                                   .trailingSpace = trailingSpace,
+                                   .gigantified =
+                                       special.start == gigantifiedEmoteStart,
+                               });
+                           },
+                           [&](const TwitchGifOccurrence &gif) {
+                               visitor(TokenizedGif{
+                                   .id = gif.id,
+                                   .originalText = originalText,
+                               });
+                           }},
+                       special.data);
 
             specials = specials.subspan(1);
             continue;
@@ -873,10 +884,10 @@ void tokenizeWords(QStringView text,
 /// `TokenizedGif`, `TokenizedEmoji`.
 void tokenizeWordsWithEmoji(QStringView text,
                             std::span<const TwitchSpecialOccurrence> emotes,
-                            auto &&visitor)
+                            int gigantifiedEmoteStart, auto &&visitor)
 {
     tokenizeWords(
-        text, emotes,
+        text, emotes, gigantifiedEmoteStart,
         variant::Overloaded{
             [&](TokenizedText tok) {
                 for (const auto &item :
@@ -902,6 +913,9 @@ void tokenizeWordsWithEmoji(QStringView text,
             },
             [&](const TokenizedGif &gif) {
                 visitor(gif);
+            },
+            [&](const TokenizedBreak &) {
+                visitor(TokenizedBreak{});
             }});
 }
 
@@ -1425,8 +1439,10 @@ Message &MessageBuilder::message()
 
 MessagePtrMut MessageBuilder::release()
 {
-    this->flushPendingModifiers();
-
+    if (this->message_ != nullptr)
+    {
+        this->flushPendingModifiers();
+    }
     std::shared_ptr<Message> ptr;
     this->message_.swap(ptr);
     return ptr;
@@ -2146,6 +2162,8 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder->flags.set(MessageFlag::Action);
     }
 
+    builder->flags.set(MessageFlag::GigantifiedEmote, args.isGigantifiedEmote);
+
     builder.parseUsername(ircMessage, twitchChannel,
                           args.trimSubscriberUsername);
 
@@ -2328,6 +2346,32 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
             builder->flags.set(MessageFlag::AsciiArt);
         }
 
+        int gigantifiedEmoteStart = -1;
+        if (args.isGigantifiedEmote)
+        {
+            for (auto it = twitchSpecials.rbegin(); it != twitchSpecials.rend();
+                 ++it)
+            {
+                const auto *emote =
+                    std::get_if<TwitchEmoteOccurrence>(&it->data);
+                if (emote == nullptr)
+                {
+                    continue;
+                }
+
+                const auto emoteEnd = it->start + it->length - 1;
+                const bool isFinalEmote =
+                    it->start >= 0 && it->length > 0 &&
+                    emoteEnd == static_cast<int>(content.size()) - 1 &&
+                    content.mid(it->start, it->length) == emote->name.string;
+                if (isFinalEmote)
+                {
+                    gigantifiedEmoteStart = it->start;
+                }
+                break;
+            }
+        }
+
         bool traditionalParsing = true;
         if (getSettings()->markdownParsing && !hasGif)
         {
@@ -2351,13 +2395,16 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
 
             if (!traditionalParsing)
             {
-                builder.addWordsFromAstNodes(ast, twitchSpecials, textState);
+                builder.addWordsFromAstNodes(ast, twitchSpecials, textState,
+                                             FontStyle::ChatMedium,
+                                             gigantifiedEmoteStart);
             }
         }
 
         if (traditionalParsing)
         {
-            builder.addWords(content, twitchSpecials, textState);
+            builder.addWords(content, twitchSpecials, textState,
+                             gigantifiedEmoteStart);
         }
 
         appendRepeatedMessageCounter(builder, channel, tags, content,
@@ -2424,19 +2471,16 @@ void MessageBuilder::addEmoji(const EmotePtr &emote)
 void MessageBuilder::addTextOrEmote(TextState &state, QString string,
                                     FontStyle style)
 {
-    // Emote effects can be written right in front of their emote, without
-    // a space: "w!h!Kappa".
     if (string.size() > 2)
     {
         QStringView remainder{string};
         std::vector<EmotePtr> directModifiers;
-        constexpr size_t maxModifiers = 16;
+        constexpr size_t MAX_MODIFIERS = 16;
         while (remainder.size() > 2 && remainder.at(1) == u'!' &&
-               directModifiers.size() < maxModifiers)
+               directModifiers.size() < MAX_MODIFIERS)
         {
-            const auto modifier =
-                parseEmote(state.twitchChannel, state.userID,
-                           EmoteNameView{remainder.first(2).toString()});
+            const auto modifier = parseEmote(state.twitchChannel, state.userID,
+                                             EmoteNameView{remainder.first(2)});
             if (modifier == nullptr ||
                 modifier->modifierPlacement != EmoteModifierPlacement::Prefix)
             {
@@ -2449,7 +2493,7 @@ void MessageBuilder::addTextOrEmote(TextState &state, QString string,
         if (!directModifiers.empty())
         {
             const auto base = parseEmote(state.twitchChannel, state.userID,
-                                         EmoteNameView{remainder.toString()});
+                                         EmoteNameView{remainder});
             if (base != nullptr &&
                 base->modifierPlacement == EmoteModifierPlacement::None)
             {
@@ -2457,7 +2501,7 @@ void MessageBuilder::addTextOrEmote(TextState &state, QString string,
                 {
                     this->appendModifier(modifier);
                 }
-                this->appendEmoteWithPendingModifiers(base);
+                this->appendParsedEmote(base);
                 return;
             }
         }
@@ -2470,7 +2514,6 @@ void MessageBuilder::addTextOrEmote(TextState &state, QString string,
         {
             return;
         }
-        // Not an emote: the effects have nothing to change.
         this->flushPendingModifiers();
     }
 
@@ -2599,6 +2642,7 @@ void MessageBuilder::addWordFromUserMessage(QStringView string,
 
 void MessageBuilder::addTwitchGif(const QString &id, QStringView originalText)
 {
+    this->flushPendingModifiers();
     QString link = u"https://i.giphy.com/" % id % u".webp";
     QString original = originalText.toString();
     if (getSettings()->showTwitchGifs)
@@ -3301,24 +3345,23 @@ Outcome MessageBuilder::tryAppendEmote(TwitchChannel *twitchChannel,
 
     if (emote->modifierPlacement != EmoteModifierPlacement::None)
     {
-        // An effect that can't be attached is shown as the emote it is.
         if (this->appendModifier(emote))
         {
             return Success;
         }
     }
 
-    this->appendEmoteWithPendingModifiers(emote);
+    this->appendParsedEmote(emote);
     return Success;
 }
 
 bool MessageBuilder::appendModifier(const EmotePtr &modifier)
 {
-    constexpr size_t maxModifiers = 16;
+    constexpr size_t MAX_MODIFIERS = 16;
 
     if (modifier->modifierPlacement == EmoteModifierPlacement::Prefix)
     {
-        if (this->pendingPrefixModifiers_.size() >= maxModifiers)
+        if (this->pendingPrefixModifiers_.size() >= MAX_MODIFIERS)
         {
             this->flushPendingModifiers();
             this->emplace<TextElement>(modifier->getCopyString(),
@@ -3346,7 +3389,7 @@ bool MessageBuilder::appendModifier(const EmotePtr &modifier)
 
     if (auto *layered = dynamic_cast<LayeredEmoteElement *>(&this->back()))
     {
-        if (layered->getModifiers().size() >= maxModifiers)
+        if (layered->getModifiers().size() >= MAX_MODIFIERS)
         {
             this->emplace<TextElement>(modifier->getCopyString(),
                                        MessageElementFlag::Text,
@@ -3357,11 +3400,10 @@ bool MessageBuilder::appendModifier(const EmotePtr &modifier)
         return true;
     }
 
-    // An effect after a plain emote: the emote becomes a layered one, which
-    // is what carries effects.
     auto *base = dynamic_cast<EmoteElement *>(&this->back());
     if (base == nullptr ||
-        !base->getFlags().has(MessageElementFlag::EmoteImage))
+        !base->getFlags().has(MessageElementFlag::EmoteImage) ||
+        base->isGigantified())
     {
         return false;
     }
@@ -3369,7 +3411,8 @@ bool MessageBuilder::appendModifier(const EmotePtr &modifier)
     const auto baseEmote = base->getEmote();
     const auto baseFlags = base->getFlags();
     const auto trailingSpace = base->hasTrailingSpace();
-    this->releaseBack();
+    auto oldBase = this->releaseBack();
+    (void)oldBase;
 
     std::vector<LayeredEmoteElement::Emote> layers{
         {baseEmote, baseFlags},
@@ -3384,33 +3427,29 @@ bool MessageBuilder::appendModifier(const EmotePtr &modifier)
 
 void MessageBuilder::flushPendingModifiers()
 {
-    if (this->pendingPrefixModifiers_.empty() || !this->message_)
+    for (const auto &modifier : this->pendingPrefixModifiers_)
     {
-        this->pendingPrefixModifiers_.clear();
-        return;
-    }
-
-    const auto modifiers = std::move(this->pendingPrefixModifiers_);
-    this->pendingPrefixModifiers_.clear();
-    for (const auto &modifier : modifiers)
-    {
-        if (!getSettings()->isEmoteModifierEnabled(modifier->name.string))
-        {
-            // Turned off, so it's an emote like any other.
-            this->appendEmote(modifier);
-            continue;
-        }
         this->emplace<TextElement>(modifier->getCopyString(),
                                    MessageElementFlag::Text, this->textColor_);
     }
+    this->pendingPrefixModifiers_.clear();
 }
 
-MessageElement *MessageBuilder::appendEmoteWithPendingModifiers(
-    const EmotePtr &emote)
+MessageElement *MessageBuilder::appendParsedEmote(const EmotePtr &emote,
+                                                  bool gigantified)
 {
-    if (emote->zeroWidth || this->pendingPrefixModifiers_.empty())
+    if (emote->zeroWidth || gigantified ||
+        this->pendingPrefixModifiers_.empty())
     {
-        this->flushPendingModifiers();
+        if (!this->pendingPrefixModifiers_.empty())
+        {
+            this->flushPendingModifiers();
+        }
+        if (gigantified)
+        {
+            return this->emplace<EmoteElement>(emote, MessageElementFlag::Emote,
+                                               this->textColor_, true);
+        }
         this->appendEmote(emote);
         return &this->back();
     }
@@ -3501,7 +3540,7 @@ bool doesWordContainATwitchEmote(
 void MessageBuilder::addWordsFromAstNodes(
     const QVector<ast::ASTNode> &nodes,
     const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-    TextState &state, FontStyle style)
+    TextState &state, FontStyle style, int gigantifiedEmoteStart)
 {
     for (auto node : nodes)
     {
@@ -3509,7 +3548,8 @@ void MessageBuilder::addWordsFromAstNodes(
             variant::Overloaded{
                 [&](const ast::TextASTNode &node) {
                     QStringList splits = node.data.split(' ');
-                    this->addWords(splits, twitchSpecials, state, style);
+                    this->addWords(splits, twitchSpecials, state, style,
+                                   gigantifiedEmoteStart);
                 },
                 [&](const ast::LinkASTNode &node) {
                     QString textStr;
@@ -3549,26 +3589,32 @@ void MessageBuilder::addWordsFromAstNodes(
                         out.append(linkStr);
                         out.append(")");
 
-                        this->addWords(out.split(' '), twitchSpecials, state);
+                        this->addWords(out.split(' '), twitchSpecials, state,
+                                       FontStyle::ChatMedium,
+                                       gigantifiedEmoteStart);
                     }
                 },
                 [&](const ast::ItalicASTNode &node) {
                     this->addWordsFromAstNodes(node.data, twitchSpecials, state,
-                                               FontStyle::ChatMediumItalic);
+                                               FontStyle::ChatMediumItalic,
+                                               gigantifiedEmoteStart);
                 },
                 [&](const ast::BoldASTNode &node) {
                     this->addWordsFromAstNodes(node.data, twitchSpecials, state,
-                                               FontStyle::ChatMediumBold);
+                                               FontStyle::ChatMediumBold,
+                                               gigantifiedEmoteStart);
                 },
                 [&](const ast::StrikethroughASTNode &node) {
                     this->addWordsFromAstNodes(
                         node.data, twitchSpecials, state,
-                        FontStyle::ChatMediumStrikethrough);
+                        FontStyle::ChatMediumStrikethrough,
+                        gigantifiedEmoteStart);
                 },
                 [&](const ast::CodeASTNode &node) {
                     // TODO: coloured box around code?
                     this->addWordsFromAstNodes(node.data, twitchSpecials, state,
-                                               FontStyle::ChatMediumMono);
+                                               FontStyle::ChatMediumMono,
+                                               gigantifiedEmoteStart);
                 },
             },
             node);
@@ -3578,7 +3624,7 @@ void MessageBuilder::addWordsFromAstNodes(
 void MessageBuilder::addWords(
     const QStringList &words,
     const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-    TextState &state, FontStyle style)
+    TextState &state, FontStyle style, int gigantifiedEmoteStart)
 {
     int cursor = 0;
     auto currentIt = twitchSpecials.begin();
@@ -3587,6 +3633,7 @@ void MessageBuilder::addWords(
     {
         if (word.isEmpty())
         {
+            this->flushPendingModifiers();
             cursor++;
             continue;
         }
@@ -3601,7 +3648,8 @@ void MessageBuilder::addWords(
 
             if (current.start == cursor)
             {
-                this->appendEmoteWithPendingModifiers(emote->ptr);
+                this->appendParsedEmote(emote->ptr,
+                                        current.start == gigantifiedEmoteStart);
 
                 auto len = current.length;
                 cursor += len;
@@ -3660,15 +3708,17 @@ void MessageBuilder::addWords(
 
         cursor += word.size() + 1;
     }
+
+    this->flushPendingModifiers();
 }
 
 void MessageBuilder::addWords(
     QStringView text,
     const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-    TextState &state)
+    TextState &state, int gigantifiedEmoteStart)
 {
     tokenizeWordsWithEmoji(
-        text, twitchSpecials,
+        text, twitchSpecials, gigantifiedEmoteStart,
         variant::Overloaded{
             [&](TokenizedText tok) {
                 this->addTextOrEmote(state, tok.text.toString());
@@ -3677,13 +3727,17 @@ void MessageBuilder::addWords(
                 this->addEmoji(tok.emote);
             },
             [&](const TokenizedEmote &tok) {
-                this->appendEmoteWithPendingModifiers(tok.emote)
+                this->appendParsedEmote(tok.emote, tok.gigantified)
                     ->setTrailingSpace(tok.trailingSpace);
             },
             [&](const TokenizedGif &gif) {
                 this->addTwitchGif(gif.id, gif.originalText);
             },
+            [&](const TokenizedBreak &) {
+                this->flushPendingModifiers();
+            },
         });
+    this->flushPendingModifiers();
 }
 
 void MessageBuilder::appendTwitchBadges(Communi::TagsRef tags,

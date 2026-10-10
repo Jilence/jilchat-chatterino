@@ -171,23 +171,6 @@ struct PredictionTemplate {
     int durationSeconds = 120;
 };
 
-/// Whether GIFs can be sent in a channel, and what to search them with.
-struct GqlGifPickerConfig {
-    bool enabled = false;
-    /// The key for Giphy's API.
-    QString apiKey;
-    /// The content rating allowed in the channel, like "G_PG" or "PG_13".
-    QString contentRating;
-};
-
-struct GqlSendGifResult {
-    /// The message Twitch made of the GIF; empty if it wasn't sent.
-    QString messageId;
-    /// Why it wasn't sent, like "TEMPORARILY_UNAVAILABLE".
-    QString error;
-    int secondsUntilCanSend = 0;
-};
-
 struct GqlBadge {
     QString id;
     QString setID;
@@ -210,6 +193,47 @@ struct GqlChatSettingsBadges {
     bool useCustomChannelBadge = false;
     bool isBadgeModifierHidden = false;
     int subscriptionTier = 0;  //(1000=T1, 2000=T2, 3000=T3)
+};
+
+struct GqlRewardQueueReward {
+    QString id;
+    QString title;
+    QString prompt;
+    QString backgroundColor;
+    QString imageUrl;
+    int cost = 0;
+    int count = 0;
+    bool isUserInputRequired = false;
+    bool isEnabled = true;
+    bool isPaused = false;
+};
+
+struct GqlRewardQueue {
+    QString channelId;
+    QVector<GqlRewardQueueReward> rewards;
+};
+
+struct GqlRewardRedemption {
+    QString id;
+    QString rewardId;
+    QString rewardTitle;
+    QString userId;
+    QString input;
+    QDateTime timestamp;
+};
+
+struct GqlRewardRedemptionPage {
+    QVector<GqlRewardRedemption> redemptions;
+    QString nextCursor;
+    bool hasNextPage = false;
+};
+
+struct GqlRewardQueueUser {
+    QString id;
+    QString login;
+    QString displayName;
+    QString color;
+    QVector<GqlBadge> badges;
 };
 
 #if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
@@ -474,7 +498,41 @@ void getChannelPointEmoteModifiers(
     const QString &oauthToken,
     std::function<void(QVector<GqlChannelPointEmoteModifier>)> successCallback,
     std::function<void(const QString &)> failureCallback);
+void sendGigantifiedChatEmote(
+    const QString &channelId, const QString &emoteId, const QString &message,
+    int bitsCost, const QString &oauthToken,
+    std::function<void()> successCallback,
+    std::function<void(const QString &)> failureCallback);
+void getAvailableGigantifyEmotes(
+    const QString &channelId, const QString &oauthToken,
+    std::function<void(QVector<GqlChannelPointEmote>)> successCallback,
+    std::function<void(const QString &)> failureCallback);
 #endif
+void getRewardQueue(const QString &channelLogin, const QString &oauthToken,
+                    std::function<void(GqlRewardQueue)> successCallback,
+                    std::function<void(const QString &)> failureCallback);
+void getRewardQueueRedemptions(
+    const QString &channelLogin, const QString &rewardId, const QString &cursor,
+    bool newestFirst, const QString &oauthToken,
+    std::function<void(GqlRewardRedemptionPage)> successCallback,
+    std::function<void(const QString &)> failureCallback);
+void getRewardQueueUsers(
+    const QString &channelLogin, const QStringList &userIds,
+    const QString &oauthToken,
+    std::function<void(QVector<GqlRewardQueueUser>)> successCallback,
+    std::function<void(const QString &)> failureCallback);
+void updateRewardRedemptionStatus(
+    const QString &channelId, const QString &redemptionId, bool fulfill,
+    const QString &oauthToken, std::function<void()> successCallback,
+    std::function<void(const QString &)> failureCallback);
+void pauseRewardRedemptions(
+    const QString &channelId, const QString &rewardId, bool paused,
+    const QString &oauthToken, std::function<void()> successCallback,
+    std::function<void(const QString &)> failureCallback);
+void updateRewardRedemptionStatuses(
+    const QString &channelId, const QStringList &redemptionIds, bool fulfill,
+    const QString &oauthToken, std::function<void()> successCallback,
+    std::function<void(const QString &)> failureCallback);
 void getChatWarningStatus(
     const QString &channelId, const QString &targetUserId,
     const QString &oauthToken,
@@ -524,21 +582,12 @@ void setBadgeModifierHidden(
     std::function<void(bool)> successCallback,
     std::function<void(const QString &)> failureCallback);
 /// Needs a device login token: the web client has to pass an integrity
-/// check for these.
-void getGifPickerConfig(
-    const QString &channelId, const QString &oauthToken,
-    const std::function<void(GqlGifPickerConfig)> &successCallback,
-    const std::function<void(const QString &)> &failureCallback);
+/// check for this.
 /// The tier (1 to 3) of the logged in user's subscription to the channel; 0
 /// without one.
 void getOwnSubscriptionTier(
     const QString &channelId, const QString &oauthToken,
     const std::function<void(int)> &successCallback,
-    const std::function<void(const QString &)> &failureCallback);
-void sendGifMessage(
-    const QString &channelId, const QString &gifId, const QString &gifUrl,
-    const QString &searchTerm, const QString &oauthToken,
-    const std::function<void(GqlSendGifResult)> &successCallback,
     const std::function<void(const QString &)> &failureCallback);
 void getChannelEditorStatus(
     const QString &channelLogin, const QString &expectedChannelId,

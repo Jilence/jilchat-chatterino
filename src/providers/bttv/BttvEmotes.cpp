@@ -23,6 +23,8 @@
 #include <QStringLiteral>
 #include <QThread>
 
+#include <tuple>
+
 namespace {
 
 using namespace chatterino;
@@ -40,7 +42,6 @@ const QSet<QStringView> ZERO_WIDTH_EMOTES{
 constexpr QStringView EMOTE_CDN_FORMAT =
     u"https://cdn.betterttv.net/emote/%1/%2.webp";
 
-/// What BetterTTV's modifier emote `name` does to the emote after it.
 uint32_t modifierFlags(QStringView name)
 {
     using namespace emote_modifiers;
@@ -83,13 +84,17 @@ uint32_t modifierFlags(QStringView name)
     return 0;
 }
 
-/// Marks the emote as a modifier if BetterTTV lists it as one.
-void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
+void setModifierMetadata(bool isModifier, Emote &emote)
 {
-    if (!jsonEmote.value("modifier").toBool())
+    emote.modifierFlags = 0;
+    emote.modifierPlacement = EmoteModifierPlacement::None;
+    emote.modifierSource = EmoteModifierSource::None;
+
+    if (!isModifier)
     {
         return;
     }
+
     const auto flags = modifierFlags(emote.name.string);
     if ((flags & emote_modifiers::SUPPORTED) == 0)
     {
@@ -100,6 +105,11 @@ void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
     emote.modifierPlacement = EmoteModifierPlacement::Prefix;
     emote.modifierSource = EmoteModifierSource::BetterTTV;
     emote.tooltip = Tooltip{emote.name.string + "<br>BetterTTV emote effect"};
+}
+
+void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
+{
+    setModifierMetadata(jsonEmote.value("modifier").toBool(), emote);
 }
 
 QSize emoteBaseSize(const QJsonObject &jsonEmote)
@@ -193,6 +203,7 @@ CreateEmoteResult createChannelEmote(const QString &channelDisplayName,
         .zeroWidth = false,
         .id = id,
     });
+    applyModifierMetadata(jsonEmote, emote);
 
     return {id, name, emote};
 }
@@ -201,6 +212,8 @@ bool updateChannelEmote(Emote &emote, const QString &channelDisplayName,
                         const QJsonObject &jsonEmote)
 {
     bool anyModifications = false;
+    const bool wasModifier =
+        emote.modifierSource == EmoteModifierSource::BetterTTV;
 
     if (jsonEmote.contains("code"))
     {
@@ -214,6 +227,19 @@ bool updateChannelEmote(Emote &emote, const QString &channelDisplayName,
         anyModifications = true;
     }
 
+    if (jsonEmote.contains("code") || jsonEmote.contains("modifier"))
+    {
+        const auto previous = std::tuple{
+            emote.modifierFlags, emote.modifierPlacement, emote.modifierSource};
+        setModifierMetadata(jsonEmote.contains("modifier")
+                                ? jsonEmote.value("modifier").toBool()
+                                : wasModifier,
+                            emote);
+        anyModifications |=
+            previous != std::tuple{emote.modifierFlags, emote.modifierPlacement,
+                                   emote.modifierSource};
+    }
+
     if (anyModifications)
     {
         emote.tooltip = Tooltip{
@@ -223,6 +249,11 @@ bool updateChannelEmote(Emote &emote, const QString &channelDisplayName,
                 .arg(emote.author.string.isEmpty() ? "Channel" : "Shared")
                 .arg(emote.author.string.isEmpty() ? channelDisplayName
                                                    : emote.author.string)};
+        if (emote.modifierSource == EmoteModifierSource::BetterTTV)
+        {
+            emote.tooltip =
+                Tooltip{emote.name.string + "<br>BetterTTV emote effect"};
+        }
     }
 
     return anyModifications;

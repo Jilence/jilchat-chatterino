@@ -302,18 +302,10 @@ private:
     Outcome tryAppendCheermote(TextState &state, const QString &string);
     Outcome tryAppendEmote(TwitchChannel *twitchChannel, const QString &userID,
                            EmoteNameView name);
-    /// Takes an emote effect: one that comes before its emote waits for it,
-    /// one that comes after is attached to the last emote. Returns whether
-    /// the modifier was dealt with.
     bool appendModifier(const EmotePtr &modifier);
-    /// Writes the effects that wait for an emote as text; none came.
     void flushPendingModifiers();
-    /// Appends an emote that isn't a modifier, with the effects waiting for
-    /// it. Returns the element it is in.
-    MessageElement *appendEmoteWithPendingModifiers(const EmotePtr &emote);
-
-    /// Emote effects that come before their emote, until it arrives.
-    std::vector<EmotePtr> pendingPrefixModifiers_;
+    MessageElement *appendParsedEmote(const EmotePtr &emote,
+                                      bool gigantified = false);
 
     bool isEmpty() const;
     MessageElement &back();
@@ -370,13 +362,15 @@ private:
     void addWordsFromAstNodes(
         const QVector<ast::ASTNode> &nodes,
         const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-        TextState &state, FontStyle style = FontStyle::ChatMedium);
+        TextState &state, FontStyle style = FontStyle::ChatMedium,
+        int gigantifiedEmoteStart = -1);
     void addWords(const QStringList &words,
                   const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-                  TextState &state, FontStyle style = FontStyle::ChatMedium);
+                  TextState &state, FontStyle style = FontStyle::ChatMedium,
+                  int gigantifiedEmoteStart = -1);
     void addWords(QStringView text,
                   const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-                  TextState &state);
+                  TextState &state, int gigantifiedEmoteStart = -1);
 
     void appendTwitchBadges(Communi::TagsRef tags,
                             TwitchChannel *twitchChannel);
@@ -399,6 +393,7 @@ private:
 
     std::shared_ptr<Message> message_;
     MessageColor textColor_ = MessageColor::Text;
+    std::vector<EmotePtr> pendingPrefixModifiers_;
 
     QColor usernameColor_ = {153, 153, 153};
 };

@@ -210,6 +210,8 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
         ShowModerationState::Never;
     bool hideSimilar = getSettings()->hideSimilar;
     bool hideReplies = !ctx.flags.has(MessageElementFlag::RepliedMessage);
+    const bool hideGigantifyReward =
+        this->message_->usesTwitchGigantifyPresentation();
 
     this->container_.beginLayout(ctx.width, this->scale_, this->imageScale_,
                                  this->emoteScale_, this->badgeScale_,
@@ -256,6 +258,12 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
             continue;
         }
 
+        if (hideGigantifyReward &&
+            element->getFlags().has(MessageElementFlag::ChannelPointReward))
+        {
+            continue;
+        }
+
         element->addToContainer(this->container_, ctx);
     }
 
@@ -292,7 +300,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
 
     ctx.painter.drawPixmap(QPoint{0, ctx.y}, *pixmap);
 
-    result.hasAnimatedElements = this->container_.paintAnimatedElements(
+    result.animatedRegion = this->container_.paintAnimatedElements(
         ctx.painter, ctx.y, ctx.isCollapsed);
 
     if (this->message_->flags.has(MessageFlag::Disabled))
@@ -321,7 +329,8 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
     }
 
     if (!ctx.isMentions &&
-        (this->message_->flags.has(MessageFlag::RedeemedChannelPointReward) ||
+        ((this->message_->flags.has(MessageFlag::RedeemedChannelPointReward) &&
+          !this->message_->usesTwitchGigantifyPresentation()) ||
          this->message_->flags.has(MessageFlag::RedeemedHighlight)) &&
         ctx.preferences.enableRedeemedHighlight)
     {
@@ -486,7 +495,8 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         addHighlight(*ctx.colorProvider.color(ColorType::Follow));
     }
     if ((flags.has(MessageFlag::RedeemedHighlight) ||
-         flags.has(MessageFlag::RedeemedChannelPointReward)) &&
+         (flags.has(MessageFlag::RedeemedChannelPointReward) &&
+          !this->message_->usesTwitchGigantifyPresentation())) &&
         prefs.enableRedeemedHighlight)
     {
         addHighlight(*ctx.colorProvider.color(ColorType::RedeemedHighlight));

@@ -33,6 +33,7 @@
 #include "util/MultiChannel.hpp"
 #include "util/StreamLink.hpp"
 #include "widgets/ChatterListWidget.hpp"
+#include "widgets/dialogs/RewardQueueDialog.hpp"
 #include "widgets/dialogs/SelectChannelDialog.hpp"
 #include "widgets/dialogs/SelectChannelFiltersDialog.hpp"
 #include "widgets/dialogs/UserInfoPopup.hpp"
@@ -516,6 +517,11 @@ void Split::addShortcuts()
         {"openModView",
          [this](const std::vector<QString> &) -> QString {
              this->openModViewInBrowser();
+             return "";
+         }},
+        {"openRewardQueue",
+         [this](const std::vector<QString> &) -> QString {
+             this->openRewardQueue();
              return "";
          }},
         {"createClip",
@@ -2511,6 +2517,16 @@ void Split::openModViewInBrowser()
     {
         QDesktopServices::openUrl("https://dashboard.kick.com/moderator/" +
                                   kc->slug());
+    }
+}
+
+void Split::openRewardQueue()
+{
+    auto channel = this->getSelectedChannel();
+
+    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
+    {
+        RewardQueueDialog::showDialog(twitchChannel, this);
     }
 }
 

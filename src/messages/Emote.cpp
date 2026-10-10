@@ -54,6 +54,26 @@ QJsonObject Emote::toJson() const
     {
         obj["baseName"_L1] = this->baseName->string;
     }
+    if (this->modifierPlacement != EmoteModifierPlacement::None)
+    {
+        obj["modifierFlags"_L1] = static_cast<qint64>(this->modifierFlags);
+        obj["modifierPlacement"_L1] =
+            this->modifierPlacement == EmoteModifierPlacement::Prefix
+                ? u"prefix"_s
+                : u"suffix"_s;
+        switch (this->modifierSource)
+        {
+            case EmoteModifierSource::BetterTTV:
+                obj["modifierSource"_L1] = u"betterttv"_s;
+                break;
+            case EmoteModifierSource::FrankerFaceZ:
+                obj["modifierSource"_L1] = u"frankerfacez"_s;
+                break;
+            case EmoteModifierSource::None:
+                obj["modifierSource"_L1] = u"unknown"_s;
+                break;
+        }
+    }
 
     return obj;
 }

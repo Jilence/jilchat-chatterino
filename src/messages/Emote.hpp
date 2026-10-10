@@ -20,8 +20,6 @@ class QJsonObject;
 
 namespace chatterino {
 
-/// Whether an emote changes the emote before or after it instead of being
-/// shown itself, like BetterTTV's "w!" and FrankerFaceZ's "ffzX".
 enum class EmoteModifierPlacement : uint8_t {
     None,
     Prefix,
@@ -34,8 +32,6 @@ enum class EmoteModifierSource : uint8_t {
     FrankerFaceZ,
 };
 
-/// What a modifier does to its emote. The lower values are FrankerFaceZ's
-/// own flags as its API gives them; BetterTTV's are placed above them.
 namespace emote_modifiers {
 
 constexpr uint32_t HIDDEN = 1U;
@@ -68,10 +64,6 @@ constexpr uint32_t SUPPORTED =
 
 constexpr uint32_t EFFECTS = SUPPORTED & ~HIDDEN;
 
-/// These change the colors of the emote.
-constexpr uint32_t COLORS = RAINBOW | HYPER_RED | CURSED | PARTY;
-
-/// These move, so the emote has to be drawn again in every frame.
 constexpr uint32_t ANIMATED = SLIDE | APPEAR | LEAVE | SPIN | RAINBOW |
                               HYPER_RED | SHAKE | JAM | BOUNCE | PARTY |
                               BTTV_SHAKE;
@@ -93,7 +85,6 @@ struct Emote {
     std::optional<EmoteName> baseName;
     QStringList tags;
 
-    /// Set for emotes that are modifiers, see EmoteModifierPlacement.
     uint32_t modifierFlags{};
     EmoteModifierPlacement modifierPlacement = EmoteModifierPlacement::None;
     EmoteModifierSource modifierSource = EmoteModifierSource::None;

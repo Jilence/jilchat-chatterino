@@ -148,8 +148,7 @@ constexpr QStringView SEVENTV_TWITCH_USER_API =
 constexpr QStringView SEVENTV_KICK_USER_API =
     u"https://7tv.io/v3/users/kick/%1";
 constexpr QStringView SEVENTV_USER_PAGE = u"https://7tv.app/users/";
-constexpr QStringView SUSGEE_PAINT_PAGE =
-    u"https://susgee.dev/paint/%1?utm_source=leafyrino";
+constexpr QStringView SEVENTV_PAINT_PAGE = u"https://7database.com/paint/";
 
 using namespace chatterino;
 
@@ -1721,8 +1720,10 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                             return;
                         }
 
-                        QDesktopServices::openUrl(QUrl(
-                            SUSGEE_PAINT_PAGE.arg(this->seventvPaint_->id)));
+                        const auto encodedID = QString::fromLatin1(
+                            QUrl::toPercentEncoding(this->seventvPaint_->id));
+                        QDesktopServices::openUrl(
+                            QUrl(SEVENTV_PAINT_PAGE.toString() + encodedID));
                     });
             }
             vbox.emplace<Label>("").assign(&this->ui_.statusLabel);
@@ -5812,8 +5813,8 @@ void UserInfoPopup::appendCommonProfileActions(QMenu *menu)
 
         menu->addAction("Open channel &logs in browser", this,
                         [username = this->userName_] {
-                            QDesktopServices::openUrl(
-                                QUrl("https://tv.supa.sh/logs?c=" + username));
+                            QDesktopServices::openUrl(QUrl(
+                                "https://lurkology.com/logs?c=" + username));
                         });
     }
 

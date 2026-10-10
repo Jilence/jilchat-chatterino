@@ -220,9 +220,9 @@ public:
         painter.drawText(rect, this->right_, rightOption);
     }
 
-    bool paintAnimated(QPainter &, qreal) override
+    QRegion paintAnimated(QPainter &, qreal) override
     {
-        return false;
+        return {};
     }
 
     int getMouseOverIndex(QPointF abs) const override
@@ -1243,7 +1243,7 @@ QString logs(const CommandContext &ctx)
         return "";
     }
 
-    QUrl url(QStringLiteral("https://tv.supa.sh/logs"));
+    QUrl url(QStringLiteral("https://lurkology.com/logs"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("c"), channelName);
     query.addQueryItem(QStringLiteral("u"), userName);
@@ -2457,7 +2457,7 @@ QString openLogs(const CommandContext &ctx)
     }
 
     QString urlStr =
-        "https://tv.supa.sh/logs?c=" + channelName + "&u=" + userName;
+        "https://lurkology.com/logs?c=" + channelName + "&u=" + userName;
     QUrl url = QUrl::fromUserInput(urlStr);
 
     bool res = false;

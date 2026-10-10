@@ -229,6 +229,12 @@ void _actuallyRegisterSetting(
     _settings.push_back(std::move(setting));
 }
 
+bool Settings::isEmoteModifierEnabled(const QString &name) const
+{
+    return this->enableEmoteModifiers.getValue() &&
+           !this->disabledEmoteModifiers.getValue().contains(name);
+}
+
 bool Settings::isHighlightedUser(const QString &username)
 {
     auto items = this->highlightedUsers.readOnly();
@@ -842,12 +848,6 @@ void Settings::restoreSnapshot()
 void Settings::disableSave()
 {
     this->disableSaving = true;
-}
-
-bool Settings::isEmoteModifierEnabled(const QString &name) const
-{
-    return this->enableEmoteModifiers.getValue() &&
-           !this->disabledEmoteModifiers.getValue().contains(name);
 }
 
 bool Settings::shouldSendHelixChat() const

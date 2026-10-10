@@ -1,100 +1,89 @@
-// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
-//
-// SPDX-License-Identifier: MIT
-
 #pragma once
 
-#include "widgets/BasePopup.hpp"
+#include "messages/Image.hpp"
+#include "providers/moltorino/MoltorinoAuth.hpp"
+#include "providers/twitch/api/TwitchGifs.hpp"
+#include "widgets/DraggablePopup.hpp"
 
-#include <QJsonArray>
-#include <QString>
-#include <QTimer>
+#include <boost/signals2.hpp>
+#include <QHash>
 
-#include <vector>
-
-class QBuffer;
 class QLabel;
 class QLineEdit;
-class QMovie;
+class QListWidget;
 class QPushButton;
-class QScrollArea;
 class QTabBar;
 
 namespace chatterino {
 
-class GifGrid;
-class Label;
 class TwitchChannel;
+class GifGridDelegate;
 
-/// Searches Giphy and sends a GIF to a Twitch channel with Twitch's own GIF
-/// messages. Twitch decides per channel whether GIFs can be sent and hands
-/// out the key for the search.
-class GifPickerDialog : public BasePopup
+class GifPickerDialog : public DraggablePopup
 {
 public:
-    /// Opens the picker for `channel`, or raises the one that is open for it.
-    /// A `searchTerm` is searched for right away.
+    ~GifPickerDialog() override;
+    /// Opens the picker for `channel`, or raises the one already open for it.
+    /// A non-empty `searchTerm` fills the search box and starts that search.
     static void showDialog(TwitchChannel *channel, const QString &searchTerm,
-                           QWidget *parent);
+                           QWidget *parent = nullptr);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void scaleChangedEvent(float scale) override;
+    void themeChangedEvent() override;
 
 private:
-    struct Gif {
-        QString id;
-        /// What Twitch is told to show.
-        QString url;
-    };
-
-    GifPickerDialog(TwitchChannel *channel, QWidget *parent);
-
-    /// Asks Twitch whether GIFs can be sent here, and for the search key.
-    void loadConfig();
-    /// Starts over with the search field's text, or the favorites.
-    void reload();
-    /// Loads the next results after the ones shown.
+    friend class GifGridDelegate;
+    explicit GifPickerDialog(TwitchChannel *channel, const QString &searchTerm,
+                             QWidget *parent);
+    void showSearch(const QString &searchTerm);
+    void refreshAccount();
+    void resetSearch();
     void loadPage();
-    void addGifs(const QJsonArray &gifs);
-    void loadThumbnail(const QString &gifId, int index);
-    /// Plays the selected GIF in its place in the grid.
-    void selectionChanged();
+    void selectGif();
     void toggleFavorite();
     void sendGif();
-    /// Tells why Twitch may have rejected a GIF with `error`.
-    void explainSendError(const QString &error);
+    void explainSendRejection(const QString &rejectionCode);
+    void showSendError(const QString &message);
+    void refreshSend();
     void setStatus(const QString &text);
-    void updateButtons();
-    /// Whether the favorites are shown instead of search results.
-    bool showingFavorites() const;
+    void updateViewport();
+    void updateHover(int row);
+    void releaseImages();
+    void updateCaption();
 
-    QString channelName_;
-    QString channelId_;
-    QString token_;
-    QString apiKey_;
-    QString rating_;
-
-    std::vector<Gif> gifs_;
-    /// How many results there are for the current search.
-    int total_ = 0;
-    bool loading_ = false;
-    bool sending_ = false;
-    /// Bumped with every reload, so answers to older ones are dropped.
+    std::shared_ptr<TwitchChannel> channel_;
+    MoltorinoAuthToken auth_;
+    twitchgifs::Config config_;
+    QVector<twitchgifs::Gif> gifs_;
+    QString searchTerm_;
+    QString sendError_;
     int generation_ = 0;
-    /// Seconds until Twitch accepts the next GIF.
-    int waitSeconds_ = 0;
-
-    QTimer searchTimer_;
-    QTimer waitTimer_;
-
-    QTabBar *tabs_{};
+    int accountGeneration_ = 0;
+    int nextOffset_ = 0;
+    bool loading_ = false;
+    bool configLoading_ = false;
+    QTimer debounce_;
+    QTimer cooldownTimer_;
+    QTimer viewportUpdate_;
+    QHash<int, ImagePtr> thumbnails_;
+    ImagePtr hoverImage_;
+    int hoveredRow_ = -1;
+    QVector<int> rowTops_;
+    int layoutWidth_ = -1;
+    int layoutCount_ = -1;
+    int columns_ = 1;
     QLineEdit *search_{};
-    QScrollArea *scroll_{};
-    GifGrid *grid_{};
-    Label *status_{};
-    /// The guidelines notice, or why the last GIF wasn't sent.
-    QLabel *notice_{};
+    QTabBar *tabs_{};
+    QListWidget *grid_{};
+    GifGridDelegate *delegate_{};
+    QLabel *status_{};
+    QLabel *caption_{};
+    QPushButton *retry_{};
     QPushButton *favorite_{};
     QPushButton *send_{};
-    QMovie *movie_{};
-    QBuffer *movieData_{};
+    std::vector<boost::signals2::scoped_connection> boostConnections_;
 };
 
 }  // namespace chatterino

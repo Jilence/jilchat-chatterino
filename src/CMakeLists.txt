@@ -101,8 +101,6 @@ set(SOURCE_FILES
         controllers/commands/builtin/twitch/BlockedTerms.hpp
         controllers/commands/builtin/twitch/ChannelPoints.cpp
         controllers/commands/builtin/twitch/ChannelPoints.hpp
-        controllers/commands/builtin/twitch/Gif.cpp
-        controllers/commands/builtin/twitch/Gif.hpp
         controllers/commands/builtin/twitch/ChatSettings.cpp
         controllers/commands/builtin/twitch/ChatSettings.hpp
         controllers/commands/builtin/twitch/Chatters.cpp
@@ -115,6 +113,8 @@ set(SOURCE_FILES
         controllers/commands/builtin/twitch/GetFounders.hpp
         controllers/commands/builtin/twitch/GetVIPs.cpp
         controllers/commands/builtin/twitch/GetVIPs.hpp
+        controllers/commands/builtin/twitch/Gif.cpp
+        controllers/commands/builtin/twitch/Gif.hpp
         controllers/commands/builtin/twitch/LowTrust.cpp
         controllers/commands/builtin/twitch/LowTrust.hpp
         controllers/commands/builtin/twitch/ModVipActions.cpp
@@ -296,6 +296,8 @@ set(SOURCE_FILES
         controllers/plugins/api/HTTPRequest.hpp
         controllers/plugins/api/HTTPResponse.cpp
         controllers/plugins/api/HTTPResponse.hpp
+        controllers/plugins/api/Images.cpp
+        controllers/plugins/api/Images.hpp
         controllers/plugins/api/IOWrapper.cpp
         controllers/plugins/api/IOWrapper.hpp
         controllers/plugins/api/JSON.cpp
@@ -310,6 +312,8 @@ set(SOURCE_FILES
         controllers/plugins/api/Message.hpp
         controllers/plugins/api/WebSocket.cpp
         controllers/plugins/api/WebSocket.hpp
+        controllers/plugins/api/WindowManager.cpp
+        controllers/plugins/api/WindowManager.hpp
         controllers/plugins/ConnectionManager.cpp
         controllers/plugins/ConnectionManager.hpp
         controllers/plugins/LuaAPI.cpp
@@ -673,6 +677,8 @@ set(SOURCE_FILES
         providers/twitch/api/HelixEnums.hpp
         providers/twitch/api/TwitchGql.cpp
         providers/twitch/api/TwitchGql.hpp
+        providers/twitch/api/TwitchGifs.cpp
+        providers/twitch/api/TwitchGifs.hpp
 
         singletons/CrashHandler.cpp
         singletons/CrashHandler.hpp
@@ -885,9 +891,9 @@ set(SOURCE_FILES
         widgets/dialogs/EditUserNotesDialog.cpp
         widgets/dialogs/EditUserNotesDialog.hpp
         widgets/dialogs/EmotePopup.cpp
+        widgets/dialogs/EmotePopup.hpp
         widgets/dialogs/GifPickerDialog.cpp
         widgets/dialogs/GifPickerDialog.hpp
-        widgets/dialogs/EmotePopup.hpp
 
         widgets/dialogs/font/FontDialog.cpp
         widgets/dialogs/font/FontDialog.hpp
@@ -920,6 +926,8 @@ set(SOURCE_FILES
         widgets/dialogs/PredictionDialog.hpp
         widgets/dialogs/PollDialog.cpp
         widgets/dialogs/PollDialog.hpp
+        widgets/dialogs/RewardQueueDialog.cpp
+        widgets/dialogs/RewardQueueDialog.hpp
         widgets/dialogs/ReplyThreadPopup.cpp
         widgets/dialogs/ReplyThreadPopup.hpp
         widgets/dialogs/RestoreBackupsDialog.cpp

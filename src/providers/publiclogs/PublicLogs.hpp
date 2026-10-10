@@ -24,7 +24,7 @@ class TwitchChannel;
 
 }  // namespace chatterino
 
-/// logs.zonian.dev: the public chat logs behind tv.supa.sh. Used to load older
+/// logs.zonian.dev: the public chat logs behind lurkology.com. Used to load older
 /// messages on usercards, at the top of the chat and in the search.
 namespace chatterino::publiclogs {
 
