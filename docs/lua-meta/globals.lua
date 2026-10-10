@@ -872,6 +872,7 @@ c2.MessageElementFlag = {
     BadgeFfzAp = 0,
     BadgeDankChat = 0,
     BadgeChatsen = 0,
+    BadgeBluzyrino = 0,
     Badges = 0,
     ChannelName = 0,
     BitsAmount = 0,
@@ -952,6 +953,7 @@ c2.MessageFlag = {
     RepeatedMessage = 0,
     Follow = 0,
     AsciiArt = 0,
+    GigantifiedEmote = 0,
 }
 
 -- End src/messages/MessageFlag.hpp
