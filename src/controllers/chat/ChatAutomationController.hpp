@@ -110,6 +110,9 @@ struct ChatAutomation {
     int maximumMessageLength = 0;
     int cooldownSeconds = 10;
     int userCooldownSeconds = 0;
+    /// Seconds to wait after the trigger before responding.
+    int responseDelaySeconds = 1;
+    bool delayResponse = false;
     bool enabled = true;
     bool allOpenTwitchChannels = false;
     bool respondToSelf = true;
@@ -313,6 +316,9 @@ struct Serialize<chatterino::ChatAutomation> {
                             a);
         chatterino::rj::set(object, "userCooldownSeconds",
                             value.userCooldownSeconds, a);
+        chatterino::rj::set(object, "delayResponse", value.delayResponse, a);
+        chatterino::rj::set(object, "responseDelaySeconds",
+                            value.responseDelaySeconds, a);
         chatterino::rj::set(object, "enabled", value.enabled, a);
         chatterino::rj::set(object, "allOpenTwitchChannels",
                             value.allOpenTwitchChannels, a);

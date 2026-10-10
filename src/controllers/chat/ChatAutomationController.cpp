@@ -188,6 +188,8 @@ void normalizeRule(ChatAutomation &rule)
         std::clamp(rule.cooldownSeconds, 0, MAX_COOLDOWN_SECONDS);
     rule.userCooldownSeconds =
         std::clamp(rule.userCooldownSeconds, 0, MAX_COOLDOWN_SECONDS);
+    rule.responseDelaySeconds =
+        std::clamp(rule.responseDelaySeconds, 1, MAX_COOLDOWN_SECONDS);
     rule.minimumMessageLength =
         std::clamp(rule.minimumMessageLength, 0, MAX_MESSAGE_LENGTH);
     rule.maximumMessageLength =
@@ -378,6 +380,8 @@ chatterino::ChatAutomation Deserialize<chatterino::ChatAutomation>::get(
     }
     rj::getSafe(value, "cooldownSeconds", rule.cooldownSeconds);
     rj::getSafe(value, "userCooldownSeconds", rule.userCooldownSeconds);
+    rj::getSafe(value, "delayResponse", rule.delayResponse);
+    rj::getSafe(value, "responseDelaySeconds", rule.responseDelaySeconds);
     rj::getSafe(value, "enabled", rule.enabled);
     rj::getSafe(value, "allOpenTwitchChannels", rule.allOpenTwitchChannels);
     rj::getSafe(value, "respondToSelf", rule.respondToSelf);
@@ -1553,36 +1557,60 @@ void ChatAutomationController::handleMessage(
         const bool directBotBadgeDelivery =
             action == ChatAutomationAction::SendMessage && rule.useBotBadge &&
             botBadgeConfigured();
-        if (action == ChatAutomationAction::RunCommand)
-        {
-            output = this->commands_->execCommand(output.simplified(), channel,
-                                                  false);
-            if (output.trimmed().isEmpty())
+        const auto send = [this, key, output, action, directBotBadgeDelivery,
+                           replyTo = message->id](
+                              const std::shared_ptr<TwitchChannel> &target) {
+            auto text = output;
+            if (action == ChatAutomationAction::RunCommand)
             {
-                return;
+                text = this->commands_->execCommand(text.simplified(), target,
+                                                    false);
+                if (text.trimmed().isEmpty())
+                {
+                    return;
+                }
             }
-        }
-        output = output.simplified();
-        const auto expectedEcho =
-            normalizeExpectedEcho(output, directBotBadgeDelivery);
-        if (action != ChatAutomationAction::RunCommand &&
-            (output.startsWith(u'.') || output.startsWith(u'/')))
+            text = text.simplified();
+            const auto expectedEcho =
+                normalizeExpectedEcho(text, directBotBadgeDelivery);
+            if (action != ChatAutomationAction::RunCommand &&
+                (text.startsWith(u'.') || text.startsWith(u'/')))
+            {
+                text.prepend(QStringLiteral(". "));
+            }
+            this->rememberOutput(key, expectedEcho, monotonicNowMs());
+            if (directBotBadgeDelivery)
+            {
+                target->sendBotMessage(text);
+            }
+            else if (action == ChatAutomationAction::ReplyToMessage)
+            {
+                target->sendReply(text, replyTo);
+            }
+            else
+            {
+                target->sendMessage(text);
+            }
+        };
+        if (!rule.delayResponse)
         {
-            output.prepend(QStringLiteral(". "));
+            send(channel);
+            return;
         }
-        this->rememberOutput(key, expectedEcho, now);
-        if (directBotBadgeDelivery)
-        {
-            channel->sendBotMessage(output);
-        }
-        else if (action == ChatAutomationAction::ReplyToMessage)
-        {
-            channel->sendReply(output, message->id);
-        }
-        else
-        {
-            channel->sendMessage(output);
-        }
+        // The timer is the context, so nothing is sent after the controller
+        // is gone. The response is dropped if the channel was closed or the
+        // automations were turned off in the meantime.
+        QTimer::singleShot(
+            std::chrono::seconds{rule.responseDelaySeconds},
+            this->counterSaveTimer_.get(),
+            [this, send, weak = std::weak_ptr<TwitchChannel>(channel)] {
+                const auto target = weak.lock();
+                if (!this->enabled_ || !target || !target->canSendMessage())
+                {
+                    return;
+                }
+                send(target);
+            });
         return;
     }
 }
