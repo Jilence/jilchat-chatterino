@@ -188,7 +188,7 @@ UsercardLogsView::UsercardLogsView(Split *split, QWidget *parent)
         {
             return;
         }
-        QUrl url("https://tv.supa.sh/logs");
+        QUrl url("https://lurkology.com/logs");
         QUrlQuery query;
         query.addQueryItem("c", this->channel_->getName());
         query.addQueryItem("u", this->user_);

@@ -143,12 +143,13 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
 
     layout.addTitle("Public logs");
     layout.addDescription("Older messages from logs.zonian.dev, the logs "
-                          "behind tv.supa.sh.");
+                          "behind lurkology.com.");
     SettingWidget::checkbox("Use public logs",
                             s.loadOlderMessagesFromPublicLogs)
         ->setTooltip("Load older messages from logs.zonian.dev. This sends "
                      "channel names and usernames to that service.")
-        ->addKeywords({"logs", "zonian", "supa", "history", "older", "public"})
+        ->addKeywords({"logs", "zonian", "lurkology", "supa", "history",
+                       "older", "public"})
         ->addTo(layout);
 
     layout.addTitle("Usercard");
