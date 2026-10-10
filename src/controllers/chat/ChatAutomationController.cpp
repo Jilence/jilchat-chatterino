@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <chrono>
 #include <unordered_set>
+#include <utility>
 
 namespace {
 
@@ -64,7 +65,7 @@ qint64 monotonicNowMs()
 QString channelKey(QString name)
 {
     name = name.trimmed().toCaseFolded();
-    if (name.startsWith(QLatin1Char('@')) || name.startsWith(QLatin1Char('#')))
+    if (name.startsWith(u'@') || name.startsWith(u'#'))
     {
         name.remove(0, 1);
     }
@@ -110,13 +111,13 @@ QDateTime dateTimeForRule(const ChatAutomation &rule, const QDateTime &instant)
 
 bool isWordCharacter(QChar character)
 {
-    return character.isLetterOrNumber() || character == QLatin1Char('_');
+    return character.isLetterOrNumber() || character == u'_';
 }
 
 int findWholePhrase(const QString &text, const QString &phrase,
                     Qt::CaseSensitivity sensitivity)
 {
-    int offset = 0;
+    qsizetype offset = 0;
     while (offset <= text.size() - phrase.size())
     {
         const auto found = text.indexOf(phrase, offset, sensitivity);
@@ -134,7 +135,7 @@ int findWholePhrase(const QString &text, const QString &phrase,
                                    !isWordCharacter(text.at(end));
         if (leftBoundary && rightBoundary)
         {
-            return found;
+            return static_cast<int>(found);
         }
         offset = found + 1;
     }
@@ -160,7 +161,8 @@ void preserveLegacyPrefixRule(ChatAutomation &rule)
 QRegularExpression automationPattern(const ChatAutomation &rule)
 {
     thread_local QCache<QString, QRegularExpression> cache(128);
-    const auto key = QString::number(rule.caseSensitive) + rule.trigger;
+    const auto key =
+        QString::number(static_cast<int>(rule.caseSensitive)) + rule.trigger;
     if (const auto *cached = cache.object(key))
     {
         return *cached;
@@ -261,10 +263,10 @@ QString expandTemplate(const ChatAutomation &rule,
     }
     context.insert_or_assign(QStringLiteral("args"), match.arguments);
     context.insert_or_assign(QStringLiteral("trigger"), match.trigger);
-    const auto argumentWords = match.arguments.simplified().split(
-        QLatin1Char(' '), Qt::SkipEmptyParts);
+    const auto argumentWords =
+        match.arguments.simplified().split(u' ', Qt::SkipEmptyParts);
     auto target = argumentWords.value(0);
-    if (target.startsWith(QLatin1Char('@')))
+    if (target.startsWith(u'@'))
     {
         target.remove(0, 1);
     }
@@ -276,7 +278,7 @@ QString expandTemplate(const ChatAutomation &rule,
     for (auto &[name, value] : ChatAutomationController::timeVariables(
              rule, QDateTime::currentDateTimeUtc()))
     {
-        context.insert_or_assign(std::move(name), std::move(value));
+        context.insert_or_assign(name, std::move(value));
     }
 
     QStringList words{match.trigger};
@@ -455,13 +457,14 @@ ChatAutomationController::ChatAutomationController(const Paths &paths,
     this->loadCounters(paths);
     this->counterSaveTimer_ = std::make_unique<QTimer>();
     this->counterSaveTimer_->setSingleShot(true);
-    this->counterSaveTimer_->setInterval(5000);
-    QObject::connect(this->counterSaveTimer_.get(), &QTimer::timeout, [this] {
-        if (!this->saveCounters())
-        {
-            this->counterSaveTimer_->start();
-        }
-    });
+    this->counterSaveTimer_->setInterval(std::chrono::seconds{5});
+    QObject::connect(this->counterSaveTimer_.get(), &QTimer::timeout,
+                     this->counterSaveTimer_.get(), [this] {
+                         if (!this->saveCounters())
+                         {
+                             this->counterSaveTimer_->start();
+                         }
+                     });
 }
 
 ChatAutomationController::~ChatAutomationController()
@@ -479,7 +482,8 @@ void ChatAutomationController::loadCounters(const Paths &paths)
         QFile file(
             this->counterFilePath_ +
             (backup == 0 ? QString{} : QStringLiteral(".bkp-%1").arg(backup)));
-        if (!file.open(QIODevice::ReadOnly) || file.size() > 4 * 1024 * 1024)
+        if (!file.open(QIODevice::ReadOnly) ||
+            file.size() > qint64{4} * 1024 * 1024)
         {
             continue;
         }
@@ -650,7 +654,8 @@ bool ChatAutomationController::save()
         [&](const auto &path, auto &writeError) {
             QSaveFile file(stdPathToQString(path));
             if (!file.open(QIODevice::WriteOnly) ||
-                file.write(buffer.GetString(), buffer.GetSize()) !=
+                file.write(buffer.GetString(),
+                           static_cast<qint64>(buffer.GetSize())) !=
                     static_cast<qint64>(buffer.GetSize()) ||
                 !file.commit())
             {
@@ -698,7 +703,7 @@ void ChatAutomationController::updateOpenChannels(
             this->removeChannel(key);
         }
     }
-    for (const auto &key : next)
+    for (const auto &key : std::as_const(next))
     {
         if (!previous.contains(key))
         {
@@ -814,7 +819,7 @@ std::unordered_map<QString, QString> ChatAutomationController::timeVariables(
     return {
         {QStringLiteral("time"), time},
         {QStringLiteral("date"), date},
-        {QStringLiteral("datetime"), date + QLatin1Char(' ') + time},
+        {QStringLiteral("datetime"), date + u' ' + time},
         {QStringLiteral("time.zone"), now.timeZoneAbbreviation()},
         {QStringLiteral("datetime.iso"), now.toString(Qt::ISODate)},
         {QStringLiteral("timestamp"), QString::number(now.toSecsSinceEpoch())},
@@ -824,7 +829,7 @@ std::unordered_map<QString, QString> ChatAutomationController::timeVariables(
 QStringList ChatAutomationController::responseChoices(
     const ChatAutomation &rule)
 {
-    auto choices = rule.response.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    auto choices = rule.response.split(u'\n', Qt::SkipEmptyParts);
     for (auto &choice : choices)
     {
         choice = choice.trimmed();
@@ -934,7 +939,8 @@ ChatAutomationMatchResult ChatAutomationController::matchMessage(
         {
             if (!names.at(i).isEmpty())
             {
-                result.namedCaptures.emplace(names.at(i), match.captured(i));
+                result.namedCaptures.emplace(
+                    names.at(i), match.captured(static_cast<int>(i)));
             }
         }
         return result;
@@ -1342,7 +1348,7 @@ ChatAutomationPreview ChatAutomationController::preview(
     }
     auto login =
         user.trimmed().isEmpty() ? QStringLiteral("viewer42") : user.trimmed();
-    if (login.startsWith(QLatin1Char('@')))
+    if (login.startsWith(u'@'))
     {
         login.remove(0, 1);
     }
@@ -1383,7 +1389,7 @@ void ChatAutomationController::handleMessage(
     const std::shared_ptr<const Message> &message)
 {
     if (!this->enabled_ || this->rules_.empty() || !message ||
-        !this->commands_ || !channel || !channel->canSendMessage() ||
+        this->commands_ == nullptr || !channel || !channel->canSendMessage() ||
         message->platform != MessagePlatform::AnyOrTwitch ||
         message->messageText.trimmed().isEmpty() ||
         message->loginName.trimmed().isEmpty())
@@ -1470,7 +1476,7 @@ void ChatAutomationController::handleMessage(
 
         const auto last = ruleLastRun.find(rule.id);
         if (last != ruleLastRun.end() &&
-            now - last->second < qint64{rule.cooldownSeconds} * 1000)
+            now - last->second < (qint64{rule.cooldownSeconds} * 1000))
         {
             return;
         }
@@ -1483,7 +1489,7 @@ void ChatAutomationController::handleMessage(
         }
         auto &userRuns = this->userRuns_[key];
         const auto userKey =
-            rule.id + QLatin1Char('\n') +
+            rule.id + u'\n' +
             (message->userID.isEmpty()
                  ? QStringLiteral("login:") + message->loginName.toCaseFolded()
                  : QStringLiteral("id:") + message->userID);
@@ -1516,7 +1522,7 @@ void ChatAutomationController::handleMessage(
                 return;
             }
             userRuns.expires.insert_or_assign(
-                userKey, now + qint64{rule.userCooldownSeconds} * 1000);
+                userKey, now + (qint64{rule.userCooldownSeconds} * 1000));
         }
 
         quint64 counter = 1;
@@ -1560,8 +1566,7 @@ void ChatAutomationController::handleMessage(
         const auto expectedEcho =
             normalizeExpectedEcho(output, directBotBadgeDelivery);
         if (action != ChatAutomationAction::RunCommand &&
-            (output.startsWith(QLatin1Char('.')) ||
-             output.startsWith(QLatin1Char('/'))))
+            (output.startsWith(u'.') || output.startsWith(u'/')))
         {
             output.prepend(QStringLiteral(". "));
         }

@@ -678,12 +678,11 @@ protected:
         QPlainTextEdit::keyPressEvent(event);
         const auto cursor = this->textCursor();
         const auto before = this->toPlainText().left(cursor.position());
-        const auto brace = before.lastIndexOf(QLatin1Char('{'));
+        const auto brace = before.lastIndexOf(u'{');
         const auto prefix = brace < 0 ? QString{} : before.mid(brace);
-        if (prefix.isEmpty() || prefix.contains(QLatin1Char('}')) ||
-            prefix.contains(QLatin1Char(' ')) ||
-            prefix.contains(QLatin1Char('\n')) ||
-            (brace > 0 && before.at(brace - 1) == QLatin1Char('{')))
+        if (prefix.isEmpty() || prefix.contains(u'}') ||
+            prefix.contains(u' ') || prefix.contains(u'\n') ||
+            (brace > 0 && before.at(brace - 1) == u'{'))
         {
             this->completer_->popup()->hide();
             return;
@@ -717,8 +716,7 @@ QStringList parseNames(const QString &text)
     auto names = text.toCaseFolded().split(separators, Qt::SkipEmptyParts);
     for (auto &name : names)
     {
-        if (name.startsWith(QLatin1Char('@')) ||
-            name.startsWith(QLatin1Char('#')))
+        if (name.startsWith(u'@') || name.startsWith(u'#'))
         {
             name.remove(0, 1);
         }
@@ -2440,8 +2438,7 @@ void ChatAutomationDialog::storeCurrentRule()
     rule.enabled = this->ruleEnabled_->isChecked();
     rule.name = this->name_->text().trimmed();
     rule.trigger = this->trigger_->text().trimmed();
-    rule.aliases =
-        this->aliases_->text().split(QLatin1Char(','), Qt::SkipEmptyParts);
+    rule.aliases = this->aliases_->text().split(u',', Qt::SkipEmptyParts);
     for (auto &alias : rule.aliases)
     {
         alias = alias.trimmed();
@@ -2857,7 +2854,7 @@ void ChatAutomationDialog::refreshEditorState()
         QStringLiteral("All rules share a limit of %1 actions per 30 seconds "
                        "in each channel, at least 1.5 seconds apart.")
             .arg(this->maxRuns_->value()));
-    this->cooldownHint_->setText(cooldowns.join(QLatin1Char(' ')));
+    this->cooldownHint_->setText(cooldowns.join(u' '));
     this->refreshVariableOptions();
     this->refreshChannelTools();
     if (hasRule)
@@ -3077,7 +3074,7 @@ void ChatAutomationDialog::refreshPreview()
         Message sample;
         sample.messageText = this->testMessage_->text();
         sample.loginName = this->testUser_->text().trimmed().toCaseFolded();
-        if (sample.loginName.startsWith(QLatin1Char('@')))
+        if (sample.loginName.startsWith(u'@'))
         {
             sample.loginName.remove(0, 1);
         }
@@ -3183,7 +3180,7 @@ void ChatAutomationDialog::refreshPreview()
         const auto numbered =
             rule.match == ChatAutomationMatch::RegularExpression
                 ? result.match.captures
-                : result.match.arguments.simplified().split(QLatin1Char(' '),
+                : result.match.arguments.simplified().split(u' ',
                                                             Qt::SkipEmptyParts);
         const auto count = std::min<qsizetype>(numbered.size(), 10);
         for (int i = 0; i < count; ++i)
@@ -3204,7 +3201,7 @@ void ChatAutomationDialog::refreshPreview()
                     .arg(name, result.match.namedCaptures.at(name)));
         }
     }
-    this->testArguments_->setPlainText(arguments.join(QLatin1Char('\n')));
+    this->testArguments_->setPlainText(arguments.join(u'\n'));
     this->testArguments_->setFixedHeight(
         std::clamp(this->testArguments_->document()->blockCount() *
                            this->testArguments_->fontMetrics().height() +
