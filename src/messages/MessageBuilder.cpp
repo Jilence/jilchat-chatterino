@@ -1425,8 +1425,6 @@ Message &MessageBuilder::message()
 
 MessagePtrMut MessageBuilder::release()
 {
-    this->flushPendingModifiers();
-
     std::shared_ptr<Message> ptr;
     this->message_.swap(ptr);
     return ptr;
@@ -2417,63 +2415,12 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
 
 void MessageBuilder::addEmoji(const EmotePtr &emote)
 {
-    this->flushPendingModifiers();
     this->emplace<EmoteElement>(emote, MessageElementFlag::EmojiAll);
 }
 
 void MessageBuilder::addTextOrEmote(TextState &state, QString string,
                                     FontStyle style)
 {
-    // Emote effects can be written right in front of their emote, without
-    // a space: "w!h!Kappa".
-    if (string.size() > 2)
-    {
-        QStringView remainder{string};
-        std::vector<EmotePtr> directModifiers;
-        constexpr size_t maxModifiers = 16;
-        while (remainder.size() > 2 && remainder.at(1) == u'!' &&
-               directModifiers.size() < maxModifiers)
-        {
-            const auto modifier =
-                parseEmote(state.twitchChannel, state.userID,
-                           EmoteNameView{remainder.first(2).toString()});
-            if (modifier == nullptr ||
-                modifier->modifierPlacement != EmoteModifierPlacement::Prefix)
-            {
-                break;
-            }
-            directModifiers.push_back(modifier);
-            remainder = remainder.sliced(2);
-        }
-
-        if (!directModifiers.empty())
-        {
-            const auto base = parseEmote(state.twitchChannel, state.userID,
-                                         EmoteNameView{remainder.toString()});
-            if (base != nullptr &&
-                base->modifierPlacement == EmoteModifierPlacement::None)
-            {
-                for (const auto &modifier : directModifiers)
-                {
-                    this->appendModifier(modifier);
-                }
-                this->appendEmoteWithPendingModifiers(base);
-                return;
-            }
-        }
-    }
-
-    if (!this->pendingPrefixModifiers_.empty())
-    {
-        if (this->tryAppendEmote(state.twitchChannel, state.userID,
-                                 EmoteNameView{string}))
-        {
-            return;
-        }
-        // Not an emote: the effects have nothing to change.
-        this->flushPendingModifiers();
-    }
-
     if (state.hasBits && this->tryAppendCheermote(state, string))
     {
         // This string was parsed as a cheermote
@@ -3299,133 +3246,8 @@ Outcome MessageBuilder::tryAppendEmote(TwitchChannel *twitchChannel,
         return Failure;
     }
 
-    if (emote->modifierPlacement != EmoteModifierPlacement::None)
-    {
-        // An effect that can't be attached is shown as the emote it is.
-        if (this->appendModifier(emote))
-        {
-            return Success;
-        }
-    }
-
-    this->appendEmoteWithPendingModifiers(emote);
+    this->appendEmote(emote);
     return Success;
-}
-
-bool MessageBuilder::appendModifier(const EmotePtr &modifier)
-{
-    constexpr size_t maxModifiers = 16;
-
-    if (modifier->modifierPlacement == EmoteModifierPlacement::Prefix)
-    {
-        if (this->pendingPrefixModifiers_.size() >= maxModifiers)
-        {
-            this->flushPendingModifiers();
-            this->emplace<TextElement>(modifier->getCopyString(),
-                                       MessageElementFlag::Text,
-                                       this->textColor_);
-            return true;
-        }
-        this->pendingPrefixModifiers_.push_back(modifier);
-        return true;
-    }
-
-    if (modifier->modifierPlacement != EmoteModifierPlacement::Suffix ||
-        this->isEmpty())
-    {
-        return false;
-    }
-
-    if (!this->pendingPrefixModifiers_.empty())
-    {
-        this->flushPendingModifiers();
-        this->emplace<TextElement>(modifier->getCopyString(),
-                                   MessageElementFlag::Text, this->textColor_);
-        return true;
-    }
-
-    if (auto *layered = dynamic_cast<LayeredEmoteElement *>(&this->back()))
-    {
-        if (layered->getModifiers().size() >= maxModifiers)
-        {
-            this->emplace<TextElement>(modifier->getCopyString(),
-                                       MessageElementFlag::Text,
-                                       this->textColor_);
-            return true;
-        }
-        layered->addModifier(modifier);
-        return true;
-    }
-
-    // An effect after a plain emote: the emote becomes a layered one, which
-    // is what carries effects.
-    auto *base = dynamic_cast<EmoteElement *>(&this->back());
-    if (base == nullptr ||
-        !base->getFlags().has(MessageElementFlag::EmoteImage))
-    {
-        return false;
-    }
-
-    const auto baseEmote = base->getEmote();
-    const auto baseFlags = base->getFlags();
-    const auto trailingSpace = base->hasTrailingSpace();
-    this->releaseBack();
-
-    std::vector<LayeredEmoteElement::Emote> layers{
-        {baseEmote, baseFlags},
-    };
-    auto *layered = this->emplace<LayeredEmoteElement>(
-        std::move(layers), baseFlags | MessageElementFlag::Emote,
-        this->textColor_);
-    layered->setTrailingSpace(trailingSpace);
-    layered->addModifier(modifier);
-    return true;
-}
-
-void MessageBuilder::flushPendingModifiers()
-{
-    if (this->pendingPrefixModifiers_.empty() || !this->message_)
-    {
-        this->pendingPrefixModifiers_.clear();
-        return;
-    }
-
-    const auto modifiers = std::move(this->pendingPrefixModifiers_);
-    this->pendingPrefixModifiers_.clear();
-    for (const auto &modifier : modifiers)
-    {
-        if (!getSettings()->isEmoteModifierEnabled(modifier->name.string))
-        {
-            // Turned off, so it's an emote like any other.
-            this->appendEmote(modifier);
-            continue;
-        }
-        this->emplace<TextElement>(modifier->getCopyString(),
-                                   MessageElementFlag::Text, this->textColor_);
-    }
-}
-
-MessageElement *MessageBuilder::appendEmoteWithPendingModifiers(
-    const EmotePtr &emote)
-{
-    if (emote->zeroWidth || this->pendingPrefixModifiers_.empty())
-    {
-        this->flushPendingModifiers();
-        this->appendEmote(emote);
-        return &this->back();
-    }
-
-    std::vector<LayeredEmoteElement::Emote> layers{
-        {emote, MessageElementFlag::Emote},
-    };
-    auto *layered = this->emplace<LayeredEmoteElement>(
-        std::move(layers), MessageElementFlag::Emote, this->textColor_);
-    for (const auto &modifier : this->pendingPrefixModifiers_)
-    {
-        layered->addModifier(modifier);
-    }
-    this->pendingPrefixModifiers_.clear();
-    return layered;
 }
 
 void MessageBuilder::appendEmote(const EmotePtr &emote)
@@ -3601,7 +3423,8 @@ void MessageBuilder::addWords(
 
             if (current.start == cursor)
             {
-                this->appendEmoteWithPendingModifiers(emote->ptr);
+                this->emplace<EmoteElement>(
+                    emote->ptr, MessageElementFlag::Emote, this->textColor_);
 
                 auto len = current.length;
                 cursor += len;
@@ -3677,7 +3500,8 @@ void MessageBuilder::addWords(
                 this->addEmoji(tok.emote);
             },
             [&](const TokenizedEmote &tok) {
-                this->appendEmoteWithPendingModifiers(tok.emote)
+                this->emplace<EmoteElement>(
+                        tok.emote, MessageElementFlag::Emote, this->textColor_)
                     ->setTrailingSpace(tok.trailingSpace);
             },
             [&](const TokenizedGif &gif) {

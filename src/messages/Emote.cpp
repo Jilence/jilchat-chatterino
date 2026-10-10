@@ -16,10 +16,8 @@ using namespace literals;
 
 bool operator==(const Emote &a, const Emote &b)
 {
-    return std::tie(a.homePage, a.name, a.tooltip, a.images, a.modifierFlags,
-                    a.modifierPlacement, a.modifierSource) ==
-           std::tie(b.homePage, b.name, b.tooltip, b.images, b.modifierFlags,
-                    b.modifierPlacement, b.modifierSource);
+    return std::tie(a.homePage, a.name, a.tooltip, a.images) ==
+           std::tie(b.homePage, b.name, b.tooltip, b.images);
 }
 
 bool operator!=(const Emote &a, const Emote &b)

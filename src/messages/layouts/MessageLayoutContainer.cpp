@@ -862,11 +862,7 @@ void MessageLayoutContainer::addElement(MessageLayoutElement *element,
         yOffset -= (MARGIN.top() * this->scale_);
     }
 
-    // BetterTTV's "z!" does for one emote what the setting does for all.
-    const auto *layeredImage =
-        dynamic_cast<const LayeredImageLayoutElement *>(element);
-    if ((getSettings()->removeSpacesBetweenEmotes ||
-         (layeredImage != nullptr && layeredImage->removesPreviousSpace())) &&
+    if (getSettings()->removeSpacesBetweenEmotes &&
         element->getFlags().hasAny({MessageElementFlag::EmoteImage}) &&
         shouldRemoveSpaceBetweenEmotes())
     {

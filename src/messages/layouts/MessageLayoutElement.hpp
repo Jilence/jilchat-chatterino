@@ -24,8 +24,6 @@ namespace chatterino {
 class MessageElement;
 class Image;
 using ImagePtr = std::shared_ptr<Image>;
-struct Emote;
-using EmotePtr = std::shared_ptr<const Emote>;
 enum class FontStyle : uint8_t;
 enum class MessageElementFlag : int64_t;
 struct MessageColors;
@@ -105,31 +103,12 @@ protected:
     ImagePtr image_;
 };
 
-/// An emote effect that is turned off and therefore shown as the emote it
-/// is, next to the emote it would have changed.
-class ModifierImageLayoutElement : public ImageLayoutElement
-{
-public:
-    ModifierImageLayoutElement(MessageElement &creator, EmotePtr modifier,
-                               ImagePtr image, QSizeF size);
-
-    const EmotePtr &modifier() const;
-
-private:
-    EmotePtr modifier_;
-};
-
 class LayeredImageLayoutElement : public MessageLayoutElement
 {
 public:
-    /// `modifierFlags` are emote effects, see emote_modifiers.
     LayeredImageLayoutElement(MessageElement &creator,
                               std::vector<ImagePtr> images,
-                              std::vector<QSizeF> sizes, QSizeF largestSize,
-                              uint32_t modifierFlags = 0);
-
-    /// Whether the emote moves up to the emote before it (BetterTTV's "z!").
-    bool removesPreviousSpace() const;
+                              std::vector<QSizeF> sizes, QSizeF largestSize);
 
 protected:
     void addCopyTextToString(QString &str, uint32_t from = 0,
@@ -142,16 +121,6 @@ protected:
 
     std::vector<ImagePtr> images_;
     std::vector<QSizeF> sizes_;
-
-private:
-    /// Whether the emote is drawn in every frame instead of once.
-    bool needsAnimatedPaint() const;
-    /// Draws the layers with the emote effects applied.
-    void paintModified(QPainter &painter, qreal yOffset);
-
-    /// The size of the layers without the effects.
-    QSizeF contentSize_;
-    uint32_t modifierFlags_ = 0;
 };
 
 class ImageWithBackgroundLayoutElement : public ImageLayoutElement

@@ -473,22 +473,6 @@ void LayeredEmoteElement::addEmoteLayer(const LayeredEmoteElement::Emote &emote)
     this->updateTooltips();
 }
 
-void LayeredEmoteElement::addModifier(const EmotePtr &modifier)
-{
-    if (modifier == nullptr ||
-        modifier->modifierPlacement == EmoteModifierPlacement::None)
-    {
-        return;
-    }
-    this->modifiers_.push_back(modifier);
-    this->updateTooltips();
-}
-
-const std::vector<EmotePtr> &LayeredEmoteElement::getModifiers() const
-{
-    return this->modifiers_;
-}
-
 void LayeredEmoteElement::addToContainer(MessageLayoutContainer &container,
                                          const MessageLayoutContext &ctx)
 {
@@ -515,55 +499,8 @@ void LayeredEmoteElement::addToContainer(MessageLayoutContainer &container,
                 individualSizes.push_back(img->size() * scale * emoteScale);
             }
 
-            // Effects that are turned off are shown as the emotes they
-            // are, where they were written.
-            std::vector<EmotePtr> before;
-            std::vector<EmotePtr> after;
-            for (const auto &modifier : this->modifiers_)
-            {
-                if (getSettings()->isEmoteModifierEnabled(
-                        modifier->name.string))
-                {
-                    continue;
-                }
-                if (modifier->modifierPlacement ==
-                    EmoteModifierPlacement::Prefix)
-                {
-                    before.push_back(modifier);
-                }
-                else
-                {
-                    after.push_back(modifier);
-                }
-            }
-            const auto addModifierImage = [&](const EmotePtr &modifier,
-                                              bool trailingSpace) {
-                auto image = modifier->images.getImageOrLoaded(
-                    container.getImageScale());
-                if (image->isEmpty())
-                {
-                    return;
-                }
-                container.addElement((new ModifierImageLayoutElement(
-                                          *this, modifier, image,
-                                          image->size() * scale * emoteScale))
-                                         ->setTrailingSpace(trailingSpace));
-            };
-
-            for (const auto &modifier : before)
-            {
-                addModifierImage(modifier, true);
-            }
-            container.addElement(
-                this->makeImageLayoutElement(images, individualSizes,
-                                             largestSize)
-                    ->setTrailingSpace(!after.empty() ||
-                                       this->hasTrailingSpace()));
-            for (size_t i = 0; i < after.size(); i++)
-            {
-                addModifierImage(
-                    after[i], i + 1 < after.size() || this->hasTrailingSpace());
-            }
+            container.addElement(this->makeImageLayoutElement(
+                images, individualSizes, largestSize));
         }
         else
         {
@@ -598,16 +535,7 @@ MessageLayoutElement *LayeredEmoteElement::makeImageLayoutElement(
     const std::vector<ImagePtr> &images, const std::vector<QSizeF> &sizes,
     QSizeF largestSize)
 {
-    uint32_t flags = 0;
-    for (const auto &modifier : this->modifiers_)
-    {
-        if (getSettings()->isEmoteModifierEnabled(modifier->name.string))
-        {
-            flags |= modifier->modifierFlags;
-        }
-    }
-    return new LayeredImageLayoutElement(*this, images, sizes, largestSize,
-                                         flags & emote_modifiers::EFFECTS);
+    return new LayeredImageLayoutElement(*this, images, sizes, largestSize);
 }
 
 void LayeredEmoteElement::updateTooltips()
@@ -627,10 +555,6 @@ void LayeredEmoteElement::updateTooltips()
     {
         result.push_back(emote.ptr->tooltip.string);
     }
-    for (const auto &modifier : this->modifiers_)
-    {
-        result.push_back(modifier->tooltip.string);
-    }
 
     this->emoteTooltips_ = std::move(result);
 }
@@ -642,33 +566,15 @@ const std::vector<QString> &LayeredEmoteElement::getEmoteTooltips() const
 
 QString LayeredEmoteElement::getCleanCopyString() const
 {
-    // As it was written: the effects that come before, the emotes, the
-    // effects that come after.
     QString result;
-    const auto add = [&result](const QString &code) {
-        if (!result.isEmpty())
+    for (size_t i = 0; i < this->emotes_.size(); ++i)
+    {
+        if (i != 0)
         {
             result += " ";
         }
-        result += TwitchEmotes::cleanUpEmoteCode(code);
-    };
-    for (const auto &modifier : this->modifiers_)
-    {
-        if (modifier->modifierPlacement == EmoteModifierPlacement::Prefix)
-        {
-            add(modifier->getCopyString());
-        }
-    }
-    for (const auto &emote : this->emotes_)
-    {
-        add(emote.ptr->getCopyString());
-    }
-    for (const auto &modifier : this->modifiers_)
-    {
-        if (modifier->modifierPlacement != EmoteModifierPlacement::Prefix)
-        {
-            add(modifier->getCopyString());
-        }
+        result += TwitchEmotes::cleanUpEmoteCode(
+            this->emotes_[i].ptr->getCopyString());
     }
     return result;
 }
@@ -676,30 +582,13 @@ QString LayeredEmoteElement::getCleanCopyString() const
 QString LayeredEmoteElement::getCopyString() const
 {
     QString result;
-    const auto add = [&result](const QString &code) {
-        if (!result.isEmpty())
+    for (size_t i = 0; i < this->emotes_.size(); ++i)
+    {
+        if (i != 0)
         {
             result += " ";
         }
-        result += code;
-    };
-    for (const auto &modifier : this->modifiers_)
-    {
-        if (modifier->modifierPlacement == EmoteModifierPlacement::Prefix)
-        {
-            add(modifier->getCopyString());
-        }
-    }
-    for (const auto &emote : this->emotes_)
-    {
-        add(emote.ptr->getCopyString());
-    }
-    for (const auto &modifier : this->modifiers_)
-    {
-        if (modifier->modifierPlacement != EmoteModifierPlacement::Prefix)
-        {
-            add(modifier->getCopyString());
-        }
+        result += this->emotes_[i].ptr->getCopyString();
     }
     return result;
 }
@@ -780,10 +669,6 @@ std::unique_ptr<MessageElement> LayeredEmoteElement::clone() const
     std::vector<Emote> emotesCopy = this->emotes_;
     auto elem = std::make_unique<LayeredEmoteElement>(
         std::move(emotesCopy), this->getFlags(), this->textElementColor_);
-    for (const auto &modifier : this->modifiers_)
-    {
-        elem->addModifier(modifier);
-    }
     elem->cloneFrom(*this);
     return elem;
 }

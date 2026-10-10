@@ -16,9 +16,6 @@
 #include "singletons/Settings.hpp"
 #include "util/Helpers.hpp"
 
-#include <limits>
-#include <utility>
-
 namespace {
 
 using namespace chatterino;
@@ -70,55 +67,12 @@ EmotePtr cachedOrMake(Emote &&emote, const EmoteId &id)
     return cachedOrMakeEmotePtr(std::move(emote), cache, mutex, id);
 }
 
-/// The flags FrankerFaceZ gives a modifier emote, see emote_modifiers.
-uint32_t modifierFlags(const QJsonObject &jsonEmote)
-{
-    const auto value = jsonEmote.value("modifier_flags").toInteger(-1);
-    if (value < 0 ||
-        std::cmp_greater(value, std::numeric_limits<uint32_t>::max()))
-    {
-        return 0;
-    }
-    return static_cast<uint32_t>(value);
-}
-
-/// Marks the emote as a modifier if FrankerFaceZ lists it as one.
-void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
-{
-    if (!jsonEmote.value("modifier").toBool())
-    {
-        return;
-    }
-    const auto providerFlags = modifierFlags(jsonEmote);
-    if ((providerFlags & emote_modifiers::EFFECTS) == 0)
-    {
-        return;
-    }
-
-    const bool isPrefix = jsonEmote.value("modifier_prefix").toBool(false);
-    emote.modifierFlags = providerFlags;
-    emote.modifierPlacement = isPrefix ? EmoteModifierPlacement::Prefix
-                                       : EmoteModifierPlacement::Suffix;
-    emote.modifierSource = EmoteModifierSource::FrankerFaceZ;
-    emote.tooltip =
-        Tooltip{emote.name.string + "<br>FrankerFaceZ emote effect"};
-}
-
-/// With `modifiersOnly`, only the modifier emotes of the set are taken, and
-/// they don't replace emotes of the same name.
 void parseEmoteSetInto(const QJsonObject &emoteSet, const QString &kind,
-                       EmoteMap &map, bool modifiersOnly = false)
+                       EmoteMap &map)
 {
     for (const auto emoteRef : emoteSet["emoticons"].toArray())
     {
         const auto emoteJson = emoteRef.toObject();
-
-        if (modifiersOnly &&
-            (!emoteJson.value("modifier").toBool() ||
-             (modifierFlags(emoteJson) & emote_modifiers::EFFECTS) == 0))
-        {
-            continue;
-        }
 
         auto id = EmoteId{QString::number(emoteJson["id"].toInt())};
         auto name = EmoteName{emoteJson["name"].toString()};
@@ -139,12 +93,8 @@ void parseEmoteSetInto(const QJsonObject &emoteSet, const QString &kind,
             Url{QString("https://www.frankerfacez.com/emoticon/%1-%2")
                     .arg(id.string)
                     .arg(name.string)};
-        applyModifierMetadata(emoteJson, emote);
 
-        if (!modifiersOnly || !map.contains(name))
-        {
-            map[name] = cachedOrMake(std::move(emote), id);
-        }
+        map[name] = cachedOrMake(std::move(emote), id);
     }
 }
 
@@ -171,20 +121,6 @@ EmoteMap parseGlobalEmotes(const QJsonObject &jsonRoot)
         }
 
         parseEmoteSetInto(emoteSet, "Global", emotes);
-    }
-
-    // Some emote effects are in a set of their own that isn't a default
-    // one; everyone can use them all the same.
-    const auto sets = jsonRoot["sets"].toObject();
-    for (const auto emoteSetRef : sets)
-    {
-        const auto emoteSet = emoteSetRef.toObject();
-        if (defaultSets.contains(emoteSet["id"].toInt()))
-        {
-            continue;
-        }
-
-        parseEmoteSetInto(emoteSet, "Global", emotes, true);
     }
 
     return emotes;

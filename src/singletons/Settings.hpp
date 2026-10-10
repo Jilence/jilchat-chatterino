@@ -666,13 +666,6 @@ public:
     BoolSetting enableEmoteImages = {"/emotes/enableEmoteImages", true};
     BoolSetting animateEmotes = {"/emotes/enableGifAnimations", true};
     BoolSetting enableZeroWidthEmotes = {"/emotes/enableZeroWidthEmotes", true};
-    /// BetterTTV's and FrankerFaceZ's emote effects, like "w!" and "ffzX".
-    BoolSetting enableEmoteModifiers = {"/emotes/enableModifiers", true};
-    /// The names of the emote effects that are turned off one by one.
-    ChatterinoSetting<QStringList> disabledEmoteModifiers = {
-        "/emotes/disabledModifiers",
-        {},
-    };
     FloatSetting emoteScale = {"/emotes/scale", 1.f};
     EnumStringSetting<EmoteTooltipScale> emoteTooltipScale = {
         "/emotes/tooltipScale",
@@ -1481,9 +1474,6 @@ public:
     bool isHighlightedUser(const QString &username);
     bool isBlacklistedUser(const QString &username);
     bool isMutedChannel(const QString &channelName);
-    /// Whether the emote effect `name` ("w!", "ffzX") changes its emote.
-    /// If not, it is shown as the emote it is.
-    bool isEmoteModifierEnabled(const QString &name) const;
     bool toggleMutedChannel(const QString &channelName);
     bool isAutoTranslateChannel(const QString &channelName);
     bool toggleAutoTranslateChannel(const QString &channelName);
