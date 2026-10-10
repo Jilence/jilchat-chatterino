@@ -143,6 +143,8 @@ public:
     ChatAutomationController(const ChatAutomationController &) = delete;
     ChatAutomationController &operator=(const ChatAutomationController &) =
         delete;
+    ChatAutomationController(ChatAutomationController &&) = delete;
+    ChatAutomationController &operator=(ChatAutomationController &&) = delete;
 
     [[nodiscard]] bool enabled() const;
     void setEnabled(bool enabled);

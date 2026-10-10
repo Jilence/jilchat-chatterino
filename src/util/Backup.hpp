@@ -21,7 +21,7 @@ class Paths;
 
 namespace pajlada::Settings {
 class SettingManager;
-}
+}  // namespace pajlada::Settings
 
 namespace chatterino::backup {
 
