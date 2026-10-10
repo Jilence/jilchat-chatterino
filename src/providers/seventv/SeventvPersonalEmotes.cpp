@@ -12,7 +12,7 @@
 
 namespace chatterino {
 
-using namespace Qt::Literals;
+using namespace Qt::Literals::StringLiterals;
 
 SeventvPersonalEmotes::SeventvPersonalEmotes()
 {
@@ -64,8 +64,6 @@ std::optional<std::shared_ptr<const EmoteMap>>
                        user);
         if (!changed)
         {
-            // checking for one is enough because we always update all
-            // ...unless the user changed their connections
             return std::nullopt;
         }
     }
@@ -78,7 +76,7 @@ std::optional<std::shared_ptr<const EmoteMap>>
     {
         return std::nullopt;
     }
-    return set->second.get();  // copy the shared_ptr
+    return set->second.get();
 }
 
 void SeventvPersonalEmotes::updateEmoteSet(
@@ -88,7 +86,6 @@ void SeventvPersonalEmotes::updateEmoteSet(
     auto emoteSet = this->emoteSets_.find(id);
     if (emoteSet != this->emoteSets_.end())
     {
-        // Make sure this emote is actually new to avoid copying the map
         if (emoteSet->second.get()->contains(
                 EmoteName{dispatch.emoteJson["name"].toString()}))
         {
@@ -197,7 +194,7 @@ QList<std::shared_ptr<const EmoteMap>>
 }
 
 EmotePtr SeventvPersonalEmotes::getEmoteForTwitchUser(
-    const QString &userID, const EmoteName &emoteName) const
+    const QString &userID, EmoteNameView emoteName) const
 {
     std::shared_lock<std::shared_mutex> lock(this->mutex_);
     if (!this->enabled_)
@@ -215,7 +212,7 @@ EmotePtr SeventvPersonalEmotes::getEmoteForTwitchUser(
 }
 
 EmotePtr SeventvPersonalEmotes::getEmoteForKickUser(
-    uint64_t userID, const EmoteName &emoteName) const
+    uint64_t userID, EmoteNameView emoteName) const
 {
     std::shared_lock<std::shared_mutex> lock(this->mutex_);
     if (!this->enabled_)
@@ -261,29 +258,29 @@ QList<std::shared_ptr<const EmoteMap>> SeventvPersonalEmotes::collectEmoteSets(
         {
             continue;
         }
-        sets.append(set->second.get());  // copy the shared_ptr
+        sets.append(set->second.get());
     }
     return sets;
 }
 
 EmotePtr SeventvPersonalEmotes::findInEmoteSets(
-    std::span<const QString> emoteSetIDs, const EmoteName &name) const
+    std::span<const QString> emoteSetIDs, EmoteNameView name) const
 {
     for (const auto &id : emoteSetIDs)
     {
         auto setIt = this->emoteSets_.find(id);
         if (setIt == this->emoteSets_.end())
         {
-            continue;  // set doesn't exist
+            continue;
         }
 
         const auto &set = setIt->second.get();
         auto it = set->find(name);
         if (it == set->end())
         {
-            continue;  // not in this set
+            continue;
         }
-        return it->second;  // found the emote
+        return it->second;
     }
 
     return {};

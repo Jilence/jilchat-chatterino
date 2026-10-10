@@ -15,12 +15,27 @@ public:
     virtual QBrush asBrush(QColor userColor, QRectF drawingRect) const = 0;
     virtual const std::vector<PaintDropShadow> &getDropShadows() const = 0;
     virtual bool animated() const = 0;
+    /// Whether the drop shadows are drawn; a setting of the paint's kind.
+    virtual bool shadowsEnabled() const;
+    /// How far the paint draws beyond the text on each side, for a paint
+    /// that takes `padding` in getPixmap without centering as well. The
+    /// chat then gives it that room around the name.
+    virtual qreal overflow() const;
+    /// Whose paint this is, to tell the user: "7TV" unless said otherwise.
+    virtual QString sourceName() const;
 
-    QPixmap getPixmap(const QString &text, const QFont &font, QColor userColor,
-                      QSizeF size, float scale, float dpr) const;
+    /// With `centerVertically`, `padding` adds room on all sides of the
+    /// text, so shadows and glows around it aren't cut off.
+    virtual QPixmap getPixmap(const QString &text, const QFont &font,
+                              QColor userColor, QSizeF size, float scale,
+                              float dpr, bool centerVertically = false,
+                              qreal padding = 0) const;
 
-    Paint(QString id)
-        : id(std::move(id)) {};
+    Paint(QString id, QString name = {})
+        : id(std::move(id))
+        , name(std::move(name))
+    {
+    }
     virtual ~Paint() = default;
 
     Paint(const Paint &) = default;
@@ -29,6 +44,7 @@ public:
     Paint &operator=(Paint &&) = delete;
 
     QString id;
+    QString name;
 
 protected:
     static QColor overlayColors(QColor background, QColor foreground);

@@ -5,6 +5,7 @@
 #include "providers/seventv/eventapi/Client.hpp"
 
 #include "Application.hpp"
+#include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
 #include "providers/seventv/eventapi/Message.hpp"
 #include "providers/seventv/eventapi/Subscription.hpp"
@@ -12,11 +13,19 @@
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
+#include "util/PostToThread.hpp"
 #include "util/QMagicEnum.hpp"
+#include "util/Variant.hpp"
 
 #include <QJsonArray>
 
 namespace chatterino::seventv::eventapi {
+
+namespace {
+
+constexpr int MIN_HEARTBEAT_INTERVAL_MS = 1000;
+
+}  // namespace
 
 Client::Client(SeventvEventAPI &manager,
                std::chrono::milliseconds heartbeatInterval)
@@ -48,9 +57,17 @@ void Client::onMessage(const QByteArray &msg)
     switch (message.op)
     {
         case Opcode::Hello: {
+            auto heartbeatIntervalMs =
+                message.data["heartbeat_interval"].toInt();
+            if (heartbeatIntervalMs < MIN_HEARTBEAT_INTERVAL_MS)
+            {
+                qCDebug(chatterinoSeventvEventAPI)
+                    << "Ignoring malformed heartbeat interval"
+                    << heartbeatIntervalMs;
+                return;
+            }
             this->heartbeatInterval_.store(
-                std::chrono::milliseconds{
-                    message.data["heartbeat_interval"].toInt()},
+                std::chrono::milliseconds{heartbeatIntervalMs},
                 std::memory_order::relaxed);
         }
         break;
@@ -75,7 +92,6 @@ void Client::onMessage(const QByteArray &msg)
         }
         break;
         case Opcode::Ack: {
-            // unhandled
         }
         break;
         default: {
@@ -157,7 +173,6 @@ void Client::handleDispatch(const Dispatch &dispatch)
         }
         break;
         case SubscriptionType::ResetEntitlement: {
-            // unhandled (not clear what we'd do here yet)
         }
         break;
         default: {
@@ -278,9 +293,6 @@ void Client::onEmoteSetUpdate(const Dispatch &dispatch)
 
 void Client::onUserUpdate(const Dispatch &dispatch)
 {
-    // dispatchBody: {
-    //   updated: Array<{ key, value: Array<{key, value}> }>
-    // }
     for (const auto updatedRef : dispatch.body["updated"].toArray())
     {
         auto updated = updatedRef.toObject();
@@ -318,7 +330,7 @@ void Client::onCosmeticCreate(const CosmeticCreateDispatch &cosmetic)
     auto *app = tryGetApp();
     if (!app)
     {
-        return;  // shutting down
+        return;
     }
 
     auto *badges = app->getSeventvBadges();
@@ -343,7 +355,36 @@ void Client::onEntitlementCreate(
     auto *app = tryGetApp();
     if (!app)
     {
-        return;  // shutting down
+        return;
+    }
+
+    if (entitlement.connections.size() >= 2)
+    {
+        QString twitchID;
+        uint64_t kickID = 0;
+        for (const auto &conn : entitlement.connections)
+        {
+            std::visit(variant::Overloaded{
+                           [&](const KickUser &kick) {
+                               kickID = kick.id;
+                           },
+                           [&](const TwitchUser &twitch) {
+                               twitchID = twitch.id;
+                           },
+                       },
+                       conn);
+        }
+        if (!twitchID.isEmpty() && kickID != 0)
+        {
+            postToThread([twitchID, kickID] {
+                auto *app = tryGetApp();
+                if (app)
+                {
+                    app->getChatterinoBadges()->setKickMapping(twitchID,
+                                                               kickID);
+                }
+            });
+        }
     }
 
     auto *badges = app->getSeventvBadges();
@@ -400,7 +441,7 @@ void Client::onEntitlementDelete(
     auto *app = tryGetApp();
     if (!app)
     {
-        return;  // shutting down
+        return;
     }
 
     auto *badges = app->getSeventvBadges();
@@ -434,10 +475,9 @@ void Client::onEmoteSetCreate(const Dispatch &dispatch)
     auto *app = tryGetApp();
     if (!app)
     {
-        return;  // shutting down
+        return;
     }
 
-    // other flags are "immutable" and "privileged"
     if (createDispatch.isPersonalOrCommercial)
     {
         qCDebug(chatterinoSeventvEventAPI)

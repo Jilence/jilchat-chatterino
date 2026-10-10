@@ -11,6 +11,7 @@
 #include "util/RapidJsonSerializeQString.hpp"  // IWYU pragma: keep
 #include "widgets/dialogs/ColorPickerDialog.hpp"
 #include "widgets/helper/color/ColorButton.hpp"
+#include "widgets/helper/SvgWidget.hpp"
 #include "widgets/settingspages/CustomWidgets.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 
@@ -22,7 +23,6 @@
 #include <QLineEdit>
 #include <QPixmap>
 #include <QSvgRenderer>
-#include <QSvgWidget>
 #include <Qt>
 
 #include <algorithm>
@@ -40,7 +40,7 @@ const QRegularExpression MAX_TOOLTIP_LINE_LENGTH_REGEX(
 namespace chatterino {
 
 SettingWidget::SettingWidget(const QString &mainKeyword)
-    : tooltipIcon(new QSvgWidget(this))
+    : tooltipIcon(new SvgWidget(this))
     , vLayout(new QVBoxLayout(this))
     , hLayout(new QHBoxLayout)
 {
@@ -252,16 +252,26 @@ template SettingWidget *SettingWidget::dropdown<StreamLinkPreferredQuality>(
     EnumStringSetting<StreamLinkPreferredQuality> &setting);
 template SettingWidget *SettingWidget::dropdown<ChatSendProtocol>(
     const QString &label, EnumStringSetting<ChatSendProtocol> &setting);
+template SettingWidget *SettingWidget::dropdown<RecentMessagesApi>(
+    const QString &label, EnumStringSetting<RecentMessagesApi> &setting);
 template SettingWidget *SettingWidget::dropdown<TabStyle>(
     const QString &label, EnumStringSetting<TabStyle> &setting);
+template SettingWidget *SettingWidget::dropdown<UsernamePaintSource>(
+    const QString &label, EnumStringSetting<UsernamePaintSource> &setting);
 template SettingWidget *SettingWidget::dropdown<ShowModerationState>(
     const QString &label, EnumStringSetting<ShowModerationState> &setting);
 template SettingWidget *SettingWidget::dropdown<EmojiStyle>(
     const QString &label, EnumStringSetting<EmojiStyle> &setting);
-template SettingWidget *SettingWidget::dropdown<BrowserManifestFormat>(
-    const QString &label, EnumStringSetting<BrowserManifestFormat> &setting);
 template SettingWidget *SettingWidget::dropdown<SplitMpsCorner>(
     const QString &label, EnumStringSetting<SplitMpsCorner> &setting);
+template SettingWidget *SettingWidget::dropdown<SplitMpsWindow>(
+    const QString &label, EnumStringSetting<SplitMpsWindow> &setting);
+template SettingWidget *SettingWidget::dropdown<BrowserManifestFormat>(
+    const QString &label, EnumStringSetting<BrowserManifestFormat> &setting);
+template SettingWidget *SettingWidget::dropdown<TwitchReadConnectionMode>(
+    const QString &label, EnumStringSetting<TwitchReadConnectionMode> &setting);
+template SettingWidget *SettingWidget::dropdown<KickConnectionPreference>(
+    const QString &label, EnumStringSetting<KickConnectionPreference> &setting);
 
 template <typename T>
 SettingWidget *SettingWidget::dropdown(const QString &label,

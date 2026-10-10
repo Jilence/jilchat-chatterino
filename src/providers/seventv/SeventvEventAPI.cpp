@@ -16,7 +16,7 @@
 namespace chatterino {
 using namespace seventv;
 using namespace seventv::eventapi;
-using namespace Qt::StringLiterals;
+using namespace Qt::Literals::StringLiterals;
 
 class SeventvEventAPIPrivate
     : public BasicPubSubManager<SeventvEventAPIPrivate,
@@ -34,11 +34,10 @@ public:
     std::shared_ptr<seventv::eventapi::Client> makeClient();
     void checkHeartbeats();
 
-    /** emote-set ids */
     std::unordered_set<QString> subscribedEmoteSets;
-    /** user ids */
+
     std::unordered_set<QString> subscribedUsers;
-    /** Twitch channel ids */
+
     std::unordered_set<QString> subscribedTwitchChannels;
 
     std::chrono::milliseconds heartbeatInterval;
@@ -80,7 +79,11 @@ void SeventvEventAPIPrivate::checkHeartbeats()
     for (const auto &[id, client] : this->clients())
     {
         client->checkHeartbeat();
-        minInterval = std::min(minInterval, client->heartbeatInterval());
+        const auto interval = client->heartbeatInterval();
+        if (interval > std::chrono::milliseconds::zero())
+        {
+            minInterval = std::min(minInterval, interval);
+        }
     }
     if (minInterval != std::chrono::milliseconds::max())
     {

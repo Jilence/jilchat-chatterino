@@ -41,7 +41,7 @@ public:
     /**
      * Returns the data. This is not guaranteed to be encoded using any
      * particular encoding scheme. It's just the bytes the server returned.
-     * 
+     *
      * @lua@return string
      * @lua@nodiscard
      * @exposed c2.HTTPResponse:data

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+//
+// SPDX-License-Identifier: MIT
+
 #include "controllers/plugins/api/Images.hpp"
 
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -7,6 +11,8 @@
 #    include "messages/Image.hpp"
 #    include "messages/ImageSet.hpp"
 #    include "util/Variant.hpp"
+
+#    include <QUrl>
 
 #    include <variant>
 

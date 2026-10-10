@@ -17,6 +17,7 @@ struct KickAccountData {
     uint64_t userID = 0;
     QString clientID;
     QString clientSecret;
+    QString publicProxy;
     QString authToken;
     QString refreshToken;
     QDateTime expiresAt;
@@ -32,7 +33,7 @@ public:
     KickAccount(const KickAccountData &args);
     ~KickAccount() override;
 
-    constexpr static std::chrono::minutes CHECK_REFRESH_INTERVAL{2};
+    constexpr static std::chrono::minutes CHECK_REFRESH_INTERVAL{5};
 
     Q_DISABLE_COPY_MOVE(KickAccount);
 
@@ -62,6 +63,10 @@ public:
     QString clientSecret() const
     {
         return this->clientSecret_;
+    }
+    QString publicProxy() const
+    {
+        return this->publicProxy_;
     }
     QString authToken() const
     {
@@ -104,6 +109,7 @@ private:
     uint64_t userID_ = 0;
     QString clientID_;
     QString clientSecret_;
+    QString publicProxy_;
     QString authToken_;
     QString refreshToken_;
     QDateTime expiresAt_;

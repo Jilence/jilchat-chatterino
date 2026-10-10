@@ -7,6 +7,8 @@
 #include "Application.hpp"
 #include "common/Channel.hpp"
 #include "common/Env.hpp"
+#include "common/network/NetworkResult.hpp"
+#include "controllers/accounts/AccountController.hpp"
 #include "controllers/commands/CommandContext.hpp"
 #include "controllers/notifications/NotificationController.hpp"
 #include "controllers/spellcheck/SpellChecker.hpp"
@@ -14,9 +16,16 @@
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
+#include "providers/kick/KickAccount.hpp"
+#include "providers/kick/KickApi.hpp"
+#include "providers/kick/KickChannel.hpp"
+#include "providers/recentmessages/Impl.hpp"
+#include "providers/seventv/SeventvAPI.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
+#include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/eventsub/Controller.hpp"
 #include "providers/twitch/PubSubManager.hpp"
+#include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/FileLogger.hpp"
@@ -33,7 +42,7 @@
 #include <QProcessEnvironment>
 #include <QString>
 
-using namespace Qt::StringLiterals;
+using namespace Qt::Literals::StringLiterals;
 
 namespace {
 
@@ -59,6 +68,16 @@ bool restartChatterino(const QProcessEnvironment &env)
     }
 
     return false;
+}
+
+QString dequoteFilePath(QString filePath)
+{
+    if (filePath.startsWith('"') && filePath.endsWith('"') &&
+        filePath.length() > 2)
+    {
+        return filePath.mid(1, filePath.length() - 2);
+    }
+    return filePath;
 }
 
 QProcessEnvironment setUpEnvironmentForLogging(const QStringList &loggingRules)
@@ -89,7 +108,7 @@ QString setLoggingRules(const CommandContext &ctx)
     {
         ctx.channel->addSystemMessage(
             "Usage: /c2-set-logging-rules <rules...>. To enable debug logging "
-            "for all categories from chatterino, use "
+            "for all categories from Chatterino, use "
             "'chatterino.*.debug=true'. For the format on the rules, see "
             "https://doc.qt.io/qt-6/"
             "qloggingcategory.html#configuring-categories");
@@ -142,7 +161,8 @@ QString listEnvironmentVariables(const CommandContext &ctx)
     auto env = Env::get();
 
     QStringList debugMessages{
-        "recentMessagesApiUrl: " + env.recentMessagesApiUrl,
+        "recentMessagesApiUrl: " +
+            recentmessages::detail::recentMessagesApiUrlTemplate(),
         "linkResolverUrl: " + env.linkResolverUrl,
         "proxyUrl: " + env.proxyUrl.value_or("N/A"),
         "twitchServerHost: " + env.twitchServerHost,
@@ -198,25 +218,25 @@ QString forceImageUnload(const CommandContext &ctx)
     return "";
 }
 
-QString forceLayoutChannelViews(const CommandContext & /*ctx*/)
+QString forceLayoutChannelViews(const CommandContext &)
 {
     getApp()->getWindows()->forceLayoutChannelViews();
     return {};
 }
 
-QString incrementImageGeneration(const CommandContext & /*ctx*/)
+QString incrementImageGeneration(const CommandContext &)
 {
     getApp()->getWindows()->incGeneration();
     return {};
 }
 
-QString invalidateBuffers(const CommandContext & /*ctx*/)
+QString invalidateBuffers(const CommandContext &)
 {
     getApp()->getWindows()->invalidateChannelViewBuffers();
     return {};
 }
 
-QString eventsub(const CommandContext & /*ctx*/)
+QString eventsub(const CommandContext &)
 {
     getApp()->getEventSub()->debug();
     return {};
@@ -335,6 +355,8 @@ QString disableLogfile(const CommandContext &ctx)
 {
     FileLogger::instance().disable();
 
+    ctx.channel->addSystemMessage("Logging to file disabled");
+
     return {};
 }
 
@@ -353,16 +375,26 @@ QString enableLogfile(const CommandContext &ctx)
         return {};
     }
 
-    QString logFilePath = ctx.words.mid(1).join(" ");
+    QString logFilePath = dequoteFilePath(ctx.words.mid(1).join(" "));
     auto result = FileLogger::instance().enable(logFilePath);
-    if (!result.has_value())
+    if (result.has_value())
+    {
+        ctx.channel->addSystemMessage("Logging to file enabled");
+    }
+    else
     {
         auto error = result.error();
 
-        ctx.channel->addSystemMessage(
+        MessageBuilder builder;
+        builder.emplace<TextElement>(
             QString("Unable to open log file '%1'. Error reported by "
-                    "the system was: %2")
-                .arg(error.absFilePath, error.errorDesc));
+                    "the system was: %2 (Hint: Do not quote the file path "
+                    "even if it contains spaces)")
+                .arg(error.absFilePath, error.errorDesc),
+            MessageElementFlags{MessageElementFlag::Text,
+                                MessageElementFlag::AlwaysShow},
+            MessageColor{QColor(230, 30, 30)});
+        ctx.channel->addMessage(builder.release(), MessageContext::Original);
     }
 
     return {};
@@ -391,6 +423,152 @@ QString relaunchWithLogfile(const CommandContext &ctx)
     if (!success)
     {
         ctx.channel->addSystemMessage("Failed to start process.");
+    }
+
+    return {};
+}
+
+QString seventvPresence(const CommandContext &ctx)
+{
+    if (!ctx.channel)
+    {
+        return {};
+    }
+    if (!ctx.kickChannel && !ctx.twitchChannel)
+    {
+        ctx.channel->addSystemMessage("/debug-seventv-presence must be used in "
+                                      "a Twitch or Kick channel.");
+        return {};
+    }
+
+    constinit static auto lastUse =
+        std::chrono::system_clock::time_point::min();
+    constexpr std::chrono::seconds cooldown(10);
+
+    auto now = std::chrono::system_clock::now();
+    if (lastUse > now - cooldown)
+    {
+        auto diff = std::chrono::duration_cast<std::chrono::seconds>(
+            cooldown - (now - lastUse));
+        ctx.channel->addSystemMessage("Command is on cooldown, try in " %
+                                      QString::number(diff.count()) %
+                                      "s again.");
+        return {};
+    }
+    lastUse = now;
+
+    QString userArg;
+    if (ctx.words.size() >= 2)
+    {
+        userArg = ctx.words.at(1);
+    }
+
+    auto reply = [weak = ctx.channel->weak_from_this()](const QString &msg) {
+        if (auto chan = weak.lock())
+        {
+            chan->addSystemMessage(msg);
+        }
+    };
+    QString platformID;
+    if (ctx.twitchChannel)
+    {
+        platformID = ctx.twitchChannel->roomId();
+    }
+    else if (ctx.kickChannel)
+    {
+        platformID = QString::number(ctx.kickChannel->userID());
+    }
+
+    auto run = [reply, platformID](const QString &platform,
+                                   const QString &stvID) {
+        getApp()->getSeventvAPI()->updatePresence(
+            platform, platformID, stvID,
+            [reply] {
+                reply(u"Updated presence."_s);
+            },
+            [reply](const NetworkResult &res) {
+                reply(u"Failed to update presence: " % res.formatError());
+            });
+    };
+
+    if (!userArg.isEmpty())
+    {
+        auto weak = ctx.channel->weak_from_this();
+        if (ctx.twitchChannel)
+        {
+            getHelix()->getUserByName(
+                userArg,
+                [run, reply](const auto &user) {
+                    getApp()->getSeventvAPI()->getUserByTwitchID(
+                        user.id,
+                        [run](const auto &obj, const auto & /*raw*/) {
+                            run(u"TWITCH"_s,
+                                obj["user"_L1]["id"_L1].toString());
+                        },
+                        [reply](const NetworkResult &err) {
+                            reply(u"Failed to find 7TV user: " %
+                                  err.formatError());
+                        });
+                },
+                [reply] {
+                    reply(u"Failed to find user."_s);
+                });
+        }
+        else if (ctx.kickChannel)
+        {
+            KickApi::privateChannelInfo(userArg, [run, reply](const auto &res) {
+                if (!res)
+                {
+                    reply(u"Failed to find user: " % res.error());
+                    return;
+                }
+                getApp()->getSeventvAPI()->getUserByKickID(
+                    res->user.userID,
+                    [run](const auto &obj, const auto & /*raw*/) {
+                        run(u"KICK"_s, obj["user"_L1]["id"_L1].toString());
+                    },
+                    [reply](const NetworkResult &err) {
+                        reply(u"Failed to find 7TV user: " % err.formatError());
+                    });
+            });
+        }
+
+        return {};
+    }
+
+    if (ctx.twitchChannel)
+    {
+        auto user = getApp()->getAccounts()->twitch.getCurrent();
+        if (user->isAnon())
+        {
+            ctx.channel->addSystemMessage(
+                u"You must be logged in to update your presence."_s);
+            return {};
+        }
+        if (user->getSeventvUserID().isEmpty())
+        {
+            ctx.channel->addSystemMessage(
+                u"Your Twitch account is not connected with 7TV"_s);
+            return {};
+        }
+        run(u"TWITCH"_s, user->getSeventvUserID());
+    }
+    else if (ctx.kickChannel)
+    {
+        auto user = getApp()->getAccounts()->kick.current();
+        if (user->isAnonymous())
+        {
+            ctx.channel->addSystemMessage(
+                u"You must be logged in to update your presence."_s);
+            return {};
+        }
+        if (user->seventvUserID().isEmpty())
+        {
+            ctx.channel->addSystemMessage(
+                u"Your Kick account is not connected with 7TV"_s);
+            return {};
+        }
+        run(u"KICK"_s, user->seventvUserID());
     }
 
     return {};

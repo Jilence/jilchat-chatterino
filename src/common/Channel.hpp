@@ -59,6 +59,7 @@ public:
         /// TwitchEnd
         TwitchEnd,
         Kick,
+        YouTube,
         /// Misc
         Misc,
         Multi,
@@ -78,6 +79,11 @@ public:
     pajlada::Signals::Signal<const std::vector<MessagePtr> &> filledInMessages;
     pajlada::Signals::NoArgSignal displayNameChanged;
     pajlada::Signals::NoArgSignal messagesCleared;
+    /// Invoked with the number of extra slots before the message limit grows
+    /// (see #growMessageLimit). Views grow their own buffers by the same amount.
+    pajlada::Signals::Signal<size_t> messageLimitGrown;
+    /// Invoked after the message limit was reset to its default.
+    pajlada::Signals::NoArgSignal messageLimitReset;
 
     Type getType() const;
     const QString &getName() const;
@@ -86,6 +92,7 @@ public:
     bool isTwitchChannel() const;
     bool isWatching() const;
     bool isKickChannel() const;
+    bool isYouTubeChannel() const;
     bool isTwitchOrKickChannel() const;
     virtual bool isEmpty() const;
 
@@ -110,6 +117,16 @@ public:
         MessagePtr message, MessageContext context,
         std::optional<MessageFlags> overridingFlags = std::nullopt) final;
     void addMessagesAtStart(const std::vector<MessagePtr> &messages_);
+
+    /// Raises the message limit by `by` so older messages can be added at the
+    /// start. While raised, new messages also raise it instead of pushing the
+    /// oldest ones out, so nothing disappears while someone reads the history.
+    void growMessageLimit(size_t by);
+    /// Shrinks the message limit back to its default, removing the oldest
+    /// messages. Does nothing if the limit wasn't raised.
+    void resetMessageLimit();
+    /// How many messages this channel keeps at most.
+    size_t messageLimit() const;
 
     void addSystemMessage(const QString &contents);
 
@@ -179,6 +196,9 @@ private:
 
     const QString name_;
     LimitedQueue<MessagePtr> messages_;
+    /// The limit messages_ was created with, see #resetMessageLimit.
+    size_t defaultMessageLimit_;
+    bool messageLimitRaised_ = false;
     Type type_;
     bool anythingLogged_ = false;
 
@@ -221,3 +241,45 @@ private:
 };
 
 }  // namespace chatterino
+
+// NOLINTBEGIN(readability-identifier-naming)
+template <>
+constexpr magic_enum::customize::customize_t
+    magic_enum::customize::enum_name<chatterino::Channel::Type>(
+        chatterino::Channel::Type value) noexcept
+{
+    using Type = chatterino::Channel::Type;
+
+    // These names are used for encoding channels in the window layout settings.
+    // They need to be stable across Chatterino versions.
+    switch (value)
+    {
+        case Type::Twitch:
+            return "twitch";
+        case Type::TwitchAutomod:
+            return "automod";
+        case Type::TwitchMentions:
+            return "mentions";
+        case Type::TwitchWatching:
+            return "watching";
+        case Type::TwitchWhispers:
+            return "whispers";
+        case Type::TwitchLive:
+            return "live";
+        case Type::Misc:
+            return "misc";
+        case Type::Kick:
+            return "kick";
+        case Type::YouTube:
+            return "youtube";
+        case Type::Multi:
+            return "multi";
+
+        case Type::None:
+        case Type::Direct:
+        case Type::TwitchEnd:
+            return default_tag;  // FIXME: Remove these (#5703)
+    }
+    return default_tag;
+}
+// NOLINTEND(readability-identifier-naming)

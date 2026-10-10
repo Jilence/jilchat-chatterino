@@ -2,6 +2,7 @@
 
 #include "Application.hpp"
 #include "common/Args.hpp"
+#include "common/Modes.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Updates.hpp"
 
@@ -41,6 +42,11 @@ public:
     const Args &getArgs() override
     {
         return this->args_;
+    }
+
+    const Modes &getModes() override
+    {
+        return this->modes_;
     }
 
     Theme *getThemes() override
@@ -188,6 +194,46 @@ public:
         return nullptr;
     }
 
+    FfzApBadges *getFfzApBadges() override
+    {
+        assert(!"getFfzApBadges was called without being initialized");
+        return nullptr;
+    }
+
+    DankChatBadges *getDankChatBadges() override
+    {
+        assert(!"getDankChatBadges was called without being initialized");
+        return nullptr;
+    }
+
+    ChatsenBadges *getChatsenBadges() override
+    {
+        assert(!"getChatsenBadges was called without being initialized");
+        return nullptr;
+    }
+
+    MoltorinoSupporterBadges *getMoltorinoSupporterBadges() override
+    {
+        return nullptr;
+    }
+
+    RepeatedMessageDetector *getRepeatedMessageDetector() override
+    {
+        return nullptr;
+    }
+
+    JilChatBadges *getJilChatBadges() override
+    {
+        assert(!"getJilChatBadges was called without being initialized");
+        return nullptr;
+    }
+
+    BluzyrinoBadges *getBluzyrinoBadges() override
+    {
+        assert(!"getBluzyrinoBadges was called without being initialized");
+        return nullptr;
+    }
+
     IUserDataController *getUserData() override
     {
         assert(false && "EmptyApplication::getUserData was called without "
@@ -326,9 +372,28 @@ public:
         return nullptr;
     }
 
+    YouTubeChatServer *getYouTubeChatServer() override
+    {
+        assert(false &&
+               "EmptyApplication::getYouTubeChatServer was called without "
+               "being initialized");
+        return nullptr;
+    }
+
+    PotatCommands *getPotatCommands() override
+    {
+        return nullptr;
+    }
+
+    SupibotCommands *getSupibotCommands() override
+    {
+        return nullptr;
+    }
+
     QTemporaryDir settingsDir;
-    Paths paths_;
     Args args_;
+    Modes modes_{args_};
+    Paths paths_ = {args_, modes_};
 };
 
 }  // namespace chatterino::mock

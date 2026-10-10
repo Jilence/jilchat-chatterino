@@ -6,8 +6,8 @@
 
 #include "common/ChatterinoSetting.hpp"
 #include "common/enums/MessageOverflow.hpp"
+#include "common/enums/UsernameDisplayMode.hpp"
 #include "common/LastMessageLineStyle.hpp"
-#include "common/Modes.hpp"
 #include "common/SignalVector.hpp"
 #include "common/StreamerModeSetting.hpp"
 #include "common/ThumbnailPreviewMode.hpp"
@@ -22,9 +22,9 @@
 #include "controllers/nicknames/Nickname.hpp"
 #include "controllers/sound/ISoundController.hpp"
 #include "providers/emoji/EmojiStyle.hpp"
-#include "singletons/NativeMessaging.hpp"
 #include "singletons/Toasts.hpp"
 #include "util/RapidJsonSerializeQString.hpp"  // IWYU pragma: keep
+#include "util/serialize/List.hpp"             // IWYU pragma: keep
 #include "widgets/NotebookEnums.hpp"
 
 #include <pajlada/settings/setting.hpp>
@@ -40,6 +40,7 @@ using TimeoutButton = std::pair<QString, int>;
 namespace chatterino {
 
 class Args;
+class Modes;
 
 #ifdef Q_OS_WIN32
 #    define DEFAULT_FONT_FAMILY "Segoe UI"
@@ -47,7 +48,7 @@ class Args;
 #else
 #    ifdef Q_OS_MACOS
 #        define DEFAULT_FONT_FAMILY "Helvetica Neue"
-#        define DEFAULT_FONT_SIZE 16
+#        define DEFAULT_FONT_SIZE 12
 #    else
 #        define DEFAULT_FONT_FAMILY "Arial"
 #        define DEFAULT_FONT_SIZE 11
@@ -56,12 +57,6 @@ class Args;
 
 void _actuallyRegisterSetting(
     std::weak_ptr<pajlada::Settings::SettingData> setting);
-
-enum UsernameDisplayMode : int {
-    Username = 1,                  // Username
-    LocalizedName = 2,             // Localized name
-    UsernameAndLocalizedName = 3,  // Username (Localized name)
-};
 
 enum UsernameRightClickBehavior : int {
     Reply = 0,
@@ -73,6 +68,13 @@ enum class ChatSendProtocol : int {
     Default = 0,
     IRC = 1,
     Helix = 2,
+};
+
+enum class RecentMessagesApi : int {
+    Robotty = 0,
+    Zneix = 1,
+    Lilb = 2,
+    Zonian = 3,
 };
 
 enum class ShowModerationState : int {
@@ -96,6 +98,15 @@ enum class TabStyle : std::uint8_t {
     Compact,
 };
 
+/// Whose paint names in the chat are drawn with.
+enum class UsernamePaintSource : std::uint8_t {
+    SevenTV,
+    BetterTTV,
+    /// What the user has; the 7TV paint if it's both.
+    Automatic,
+    Off,
+};
+
 enum class EmoteTooltipScale : std::uint8_t {
     Small,
     Medium,
@@ -103,11 +114,36 @@ enum class EmoteTooltipScale : std::uint8_t {
     Huge,
 };
 
+enum class BrowserManifestFormat {
+    Chrome,
+    Firefox,
+};
+
 enum class SplitMpsCorner : std::uint8_t {
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
+};
+
+enum class SplitMpsWindow : std::uint8_t {
+    Seconds1,
+    Seconds3,
+    Seconds5,
+    Seconds10,
+};
+
+enum class TwitchReadConnectionMode : uint8_t {
+    Authenticated,
+    Anonymous,
+    AnonymousParallel,
+};
+
+enum class KickConnectionPreference : uint8_t {
+    Default = 0,
+    Pusher = (1 << 0),
+    Centrifugo = (1 << 1),
+    Any = Pusher | Centrifugo,
 };
 
 constexpr std::optional<std::string_view> qmagicenumDisplayName(
@@ -142,6 +178,78 @@ constexpr std::optional<std::string_view> qmagicenumDisplayName(
     return {};
 }
 
+constexpr std::optional<std::string_view> qmagicenumDisplayName(
+    SplitMpsWindow value) noexcept
+{
+    switch (value)
+    {
+        case SplitMpsWindow::Seconds1:
+            return "1 second (instant)";
+        case SplitMpsWindow::Seconds3:
+            return "3 seconds";
+        case SplitMpsWindow::Seconds5:
+            return "5 seconds";
+        case SplitMpsWindow::Seconds10:
+            return "10 seconds";
+    }
+    return {};
+}
+
+constexpr std::optional<std::string_view> qmagicenumDisplayName(
+    RecentMessagesApi value) noexcept
+{
+    switch (value)
+    {
+        case RecentMessagesApi::Robotty:
+            return "Robotty - recent-messages.robotty.de";
+        case RecentMessagesApi::Zneix:
+            return "Zneix - recent-messages.zneix.eu";
+        case RecentMessagesApi::Lilb:
+            return "lilb - rm.lilb.dev";
+        case RecentMessagesApi::Zonian:
+            return "Zonian - logs.zonian.dev";
+    }
+    return {};
+}
+
+constexpr int splitMpsWindowSeconds(SplitMpsWindow window) noexcept
+{
+    switch (window)
+    {
+        case SplitMpsWindow::Seconds1:
+            return 1;
+        case SplitMpsWindow::Seconds3:
+            return 3;
+        case SplitMpsWindow::Seconds5:
+            return 5;
+        case SplitMpsWindow::Seconds10:
+            return 10;
+    }
+    return 5;
+}
+
+constexpr std::optional<std::string_view> qmagicenumDisplayName(
+    TwitchReadConnectionMode value) noexcept
+{
+    switch (value)
+    {
+        case TwitchReadConnectionMode::Authenticated:
+            return "Authenticated (default)";
+
+        case TwitchReadConnectionMode::Anonymous:
+            return {};
+
+        case TwitchReadConnectionMode::AnonymousParallel:
+            return "Anonymous (parallel)";
+    }
+    return {};
+}
+
+struct SettingsArgs {
+    bool isTest = false;
+    bool runMigrations = true;
+};
+
 /// Settings which are available for reading and writing on the gui thread.
 // These settings are still accessed concurrently in the code but it is bad practice.
 class Settings
@@ -152,8 +260,9 @@ class Settings
     bool disableSaving;
 
 public:
-    Settings(const Args &args, const QString &settingsDirectory,
-             bool isTest = false);
+    Settings(const Modes &modes, const Args &args,
+             const QString &settingsDirectory,
+             const SettingsArgs &settingsArgs = {});
     ~Settings();
 
     static Settings &instance();
@@ -178,11 +287,43 @@ public:
     BoolSetting useLegacyScaling = {"/appearance/useLegacyScaling", false};
     BoolSetting windowTopMost = {"/appearance/windowAlwaysOnTop", false};
 
+    // YouTube
+    BoolSetting highlightYouTubeSuperChats = {
+        "/appearance/youtube/highlightSuperChats", true};
+    BoolSetting youtubeSuperChatWhiteName = {
+        "/appearance/youtube/superChatWhiteName", true};
+    BoolSetting highlightYouTubeMemberships = {
+        "/appearance/youtube/highlightMemberships", true};
+    BoolSetting colorYouTubeUsernamesByRole = {
+        "/appearance/youtube/colorUsernamesByRole", true};
+    BoolSetting youtubeColorizeUsernames = {
+        "/appearance/youtube/colorizeUsernames", false};
+    BoolSetting youtubeStripAtPrefix = {"/appearance/youtube/stripAtPrefix",
+                                        false};
+    BoolSetting youtubeSplitHeaderUseHandle = {
+        "/appearance/youtube/splitHeaderUseHandle", false};
+
     float getClampedUiScale() const;
     void setClampedUiScale(float value);
 
     /// Appearance
     BoolSetting showTimestamps = {"/appearance/messages/showTimestamps", true};
+    BoolSetting showHeaderTimestamps = {
+        "/appearance/messages/header/showTimestamps",
+        false,
+    };
+    BoolSetting showAnnouncementHeader = {
+        "/appearance/messages/announcements/showHeader",
+        true,
+    };
+    BoolSetting showSubscriptionHeader = {
+        "/appearance/messages/subscriptions/showHeader",
+        true,
+    };
+    BoolSetting showWatchStreakHeader = {
+        "/appearance/messages/watchstreaks/showHeader",
+        true,
+    };
     BoolSetting animationsWhenFocused = {
         "/appearance/enableAnimationsWhenFocused", false};
     BoolSetting hideMessageTimestampsWhenLive = {
@@ -206,6 +347,16 @@ public:
                                      false};
     EnumSetting<MessageOverflow> messageOverflow = {
         "/appearance/messages/messageOverflow", MessageOverflow::Highlight};
+    BoolSetting wrapAsciiArt = {
+        "/appearance/messages/wrapAsciiArt",
+        false,
+    };
+    BoolSetting showTwitchGifs = {
+        "/appearance/messages/showTwitchGifs",
+        true,
+    };
+    /// Giphy IDs saved in the GIF picker, newest first, as a JSON array.
+    QStringSetting favoriteTwitchGifs{"/twitch/gifs/favorites", "[]"};
     BoolSetting separateMessages = {"/appearance/messages/separateMessages",
                                     false};
     BoolSetting fadeMessageHistory = {"/appearance/messages/fadeMessageHistory",
@@ -226,6 +377,10 @@ public:
     EnumSetting<NotebookTabVisibility> tabVisibility = {
         "/appearance/tabVisibility",
         NotebookTabVisibility::AllTabs,
+    };
+    BoolSetting growWrappedNotebookLines = {
+        "/appearance/growWrappedNotebookLines",
+        false,
     };
 
     //    BoolSetting collapseLongMessages =
@@ -250,11 +405,23 @@ public:
     BoolSetting alternateMessages = {
         "/appearance/messages/alternateMessageBackground", false};
     BoolSetting channelLinks = {"/appearance/messages/channelLinks", false};
+    /// Show further matching highlights as bands at the left of a message.
+    BoolSetting multipleHighlightBands = {
+        "/appearance/messages/multipleHighlightBands", false};
+    BoolSetting wrapLinksAtBreaks = {"/appearance/messages/wrapLinksAtBreaks",
+                                     false};
+    BoolSetting showTimestampDateTooltip = {
+        "/appearance/messages/showTimestampDateTooltip", false};
     FloatSetting boldScale = {"/appearance/boldScale", 63};
     BoolSetting showTabCloseButton = {"/appearance/showTabCloseButton", true};
     BoolSetting showTabLive = {"/appearance/showTabLiveButton", true};
-    BoolSetting tabHighlightsUseThemeColor = {
-        "/appearance/tabHighlightsUseThemeColor", false};
+    BoolSetting colorTabHighlightsByMessage = {
+        "/appearance/tabs/colorHighlightsByMessage",
+        false,
+    };
+    /// Show a color for each unseen highlight in the tab line (up to five).
+    BoolSetting multiColorTabHighlights = {
+        "/appearance/tabs/multiColorHighlights", false};
     EnumStringSetting<TabStyle> tabStyle = {
         "/appearance/tabStyle",
         TabStyle::Normal,
@@ -265,7 +432,14 @@ public:
     BoolSetting enableSmoothScrolling = {"/appearance/smoothScrolling", true};
     BoolSetting enableSmoothScrollingNewMessages = {
         "/appearance/smoothScrollingNewMessages", false};
-    BoolSetting displaySevenTVPaints = {"/misc/displaySevenTVPaints", true};
+    BoolSetting displayBttvUsernameEffectOutlines = {
+        "/misc/displayBttvUsernameEffectOutlines", true};
+    EnumStringSetting<UsernamePaintSource> usernamePaintSource = {
+        "/misc/usernamePaintSource",
+        UsernamePaintSource::SevenTV,
+    };
+    BoolSetting showSevenTVPaintTooltip = {"/misc/showSevenTVPaintTooltip",
+                                           false};
     BoolSetting displaySevenTVPaintShadows = {
         "/misc/displaySevenTVPaintShadows", true};
     BoolSetting largeSevenTVPaintShadows = {"/misc/largeSevenTVPaintShadows",
@@ -281,19 +455,17 @@ public:
                                      false};
     BoolSetting headerGame = {"/appearance/splitheader/showGame", false};
     BoolSetting headerUptime = {"/appearance/splitheader/showUptime", false};
-    BoolSetting showPredictionPanel = {"/appearance/splits/showPredictionPanel",
-                                       true};
-    BoolSetting showPinnedMessagePanel = {
-        "/appearance/splits/showPinnedMessagePanel", true};
     BoolSetting showSplitMps = {"/appearance/splits/showMps", false};
     EnumStringSetting<SplitMpsCorner> splitMpsCorner = {
         "/appearance/splits/mpsCorner",
         SplitMpsCorner::TopRight,
     };
+    EnumStringSetting<SplitMpsWindow> splitMpsWindow = {
+        "/appearance/splits/mpsWindow",
+        SplitMpsWindow::Seconds5,
+    };
     BoolSetting showSplitMpsWhenZero = {"/appearance/splits/showMpsWhenZero",
                                         false};
-    FloatSetting customThemeMultiplier = {"/appearance/customThemeMultiplier",
-                                          -0.5f};
     // BoolSetting useCustomWindowFrame = {"/appearance/useCustomWindowFrame",
     // false};
 
@@ -331,10 +503,25 @@ public:
         "/appearance/badges/useCustomFfzVipBadges", true};
     BoolSetting showBadgesBttv = {"/appearance/badges/bttv", true};
     BoolSetting showBadgesSevenTV = {"/appearance/badges/seventv", true};
+    BoolSetting showBadgesHomiesSupporter = {
+        "/appearance/badges/homies/supporter", true};
+    BoolSetting showBadgesHomiesCustom = {"/appearance/badges/homies/custom",
+                                          true};
+    BoolSetting showBadgesMoltorino = {"/appearance/badges/moltorino", true};
+    BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
+    BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
+    BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
+    BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
+    BoolSetting showSelectBadgeButton = {"/client/showSelectBadgeButton", true};
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
-    BoolSetting showBadgesHomies = {"/appearance/badges/homies", true};
-    BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
+    BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
+    BoolSetting showBadgesBluzyrino = {"/appearance/badges/bluzyrino", true};
+    BoolSetting bluzyrinoFounderVisible = {"/bluzyrino/badges/founder/visible",
+                                           true};
+    IntSetting jilChatVoiceVolume = {"/jilchat/voice/volume", 80};
+    QStringSetting jilChatVoiceVolumeOverrides = {
+        "/jilchat/voice/volumeOverrides", "{}"};
     BoolSetting showUserinfoPopupChatters = {
         "/appearance/userinfoPopup/showChatters", true};
     BoolSetting showUserinfoPopupLastLive = {
@@ -364,7 +551,6 @@ public:
     /// Behaviour
     BoolSetting allowDuplicateMessages = {"/behaviour/allowDuplicateMessages",
                                           true};
-    BoolSetting mentionUsersWithAt = {"/behaviour/mentionUsersWithAt", false};
     BoolSetting showJoins = {"/behaviour/showJoins", false};
     BoolSetting showParts = {"/behaviour/showParts", false};
     FloatSetting mouseScrollMultiplier = {"/behaviour/mouseScrollMultiplier",
@@ -418,6 +604,11 @@ public:
         50,
     };
 
+    BoolSetting showChatterListInAllTwitchChannels = {
+        "/behaviour/chatterList/showInAllTwitchChannels", true};
+    QStringSetting chatterListDataMode = {"/behaviour/chatterList/dataMode",
+                                          "best"};
+
     // Auto-completion
     BoolSetting onlyFetchChattersForSmallerStreamers = {
         "/behaviour/autocompletion/onlyFetchChattersForSmallerStreamers", true};
@@ -465,12 +656,21 @@ public:
         false,
     };
 
+    IntSetting sharedChatSessionRefreshInterval = {
+        "/behaviour/sharedChatSessionRefreshInterval", 60};
+
+    BoolSetting sharedChatAlwaysShowBadge = {
+        "/behaviour/sharedChatAlwaysShowBadge",
+        true,
+    };
+
     /// Emotes
-    BoolSetting scaleEmotesByLineHeight = {"/emotes/scaleEmotesByLineHeight",
-                                           false};
     BoolSetting enableEmoteImages = {"/emotes/enableEmoteImages", true};
     BoolSetting animateEmotes = {"/emotes/enableGifAnimations", true};
     BoolSetting enableZeroWidthEmotes = {"/emotes/enableZeroWidthEmotes", true};
+    BoolSetting enableEmoteModifiers = {"/emotes/enableModifiers", true};
+    ChatterinoSetting<QStringList> disabledEmoteModifiers = {
+        "/emotes/disabledModifiers", {}};
     FloatSetting emoteScale = {"/emotes/scale", 1.f};
     EnumStringSetting<EmoteTooltipScale> emoteTooltipScale = {
         "/emotes/tooltipScale",
@@ -495,6 +695,7 @@ public:
 
     BoolSetting enableBTTVGlobalEmotes = {"/emotes/bttv/global", true};
     BoolSetting enableBTTVChannelEmotes = {"/emotes/bttv/channel", true};
+    BoolSetting enableBTTVPersonalEmotes = {"/emotes/bttv/personal", true};
     BoolSetting enableBTTVLiveUpdates = {"/emotes/bttv/liveupdates", true};
     BoolSetting sendBTTVActivity = {"/emotes/bttv/sendActivity", true};
     BoolSetting enableFFZGlobalEmotes = {"/emotes/ffz/global", true};
@@ -507,6 +708,15 @@ public:
     BoolSetting sendSevenTVActivity = {"/emotes/seventv/sendActivity", true};
 
     BoolSetting allowAvifImages = {"/emotes/allowAvif", true};
+
+    ChatterinoSetting<QStringList> favouriteEmotes = {
+        "/emotes/favouriteEmotes",
+        {},
+    };
+    ChatterinoSetting<QStringList> favouriteEmojis = {
+        "/emotes/favouriteEmojis",
+        {},
+    };
 
     /// Links
     BoolSetting linksDoubleClickOnly = {"/links/doubleClickToOpen", false};
@@ -548,10 +758,6 @@ public:
         "/streamerMode/hideBlockedTermText",
         true,
     };
-    BoolSetting streamerModeHideUserNotes = {
-        "/streamerMode/hideUserNotes",
-        true,
-    };
 
     /// Blocked Users
     BoolSetting enableTwitchBlockedUsers = {"/ignore/enableTwitchBlockedUsers",
@@ -559,7 +765,6 @@ public:
     IntSetting showBlockedUsersMessages = {"/ignore/showBlockedUsers", 0};
 
     /// Moderation
-    QStringSetting timeoutAction = {"/moderation/timeoutAction", "Disable"};
     IntSetting timeoutStackStyle = {
         "/moderation/timeoutStackStyle",
         static_cast<int>(TimeoutStackStyle::Default)};
@@ -663,6 +868,15 @@ public:
         true,
     };
 
+    BoolSetting enableFollowHighlight = {"/highlighting/follow/enabled", true};
+    BoolSetting enableFollowHighlightSound = {
+        "/highlighting/follow/enableSound", false};
+    BoolSetting enableFollowHighlightTaskbar = {
+        "/highlighting/follow/enableTaskbarFlashing", false};
+    QStringSetting followHighlightSoundUrl = {"/highlighting/follow/soundUrl",
+                                              ""};
+    QStringSetting followHighlightColor = {"/highlighting/follow/color", ""};
+
     BoolSetting enableAutomodHighlight = {
         "/highlighting/automod/enabled",
         true,
@@ -750,26 +964,8 @@ public:
     BoolSetting suppressInitialLiveNotification = {
         "/notifications/suppressInitialLive", false};
 
-    BoolSetting predictionStartPlaySound = {
-        "/notifications/predictionStart/enablePlaySound",
-        false,
-    };
-    BoolSetting predictionStartCustomSound = {
-        "/notifications/predictionStart/customPlaySound",
-        false,
-    };
-    QStringSetting predictionStartSoundPath = {
-        "/notifications/predictionStart/soundPath",
-        "",
-    };
-
     BoolSetting notificationToast = {"/notifications/enableToast", false};
-    BoolSetting createShortcutForToasts = {
-        "/notifications/createShortcutForToasts",
-        (Modes::instance().isPortable || Modes::instance().isExternallyPackaged)
-            ? false
-            : true,
-    };
+    BoolSetting createShortcutForToasts;  // initialized in ctor
     IntSetting openFromToast = {"/notifications/openFromToast",
                                 static_cast<int>(ToastReaction::OpenInBrowser)};
 
@@ -813,17 +1009,19 @@ public:
     QStringSetting webchatColor = {"/misc/webchatColor", "#3FFFA30B"};
     QStringSetting androidColor = {"/misc/androidColor", "#3F25D300"};
     QStringSetting iosColor = {"/misc/iosColor", "#3FFF69B4"};
+    BoolSetting clientDetectionIcon = {"/misc/clientDetectionIcon", false};
     BoolSetting fakeWebChat = {"/misc/fakeWebChat", false};
 #ifdef Q_OS_LINUX
     BoolSetting useKeyring = {"/misc/useKeyring", true};
 #endif
 
-    IntSetting startUpNotification = {"/misc/startUpNotification", 0};
     QStringSetting currentVersion = {"/misc/currentVersion", ""};
     IntSetting overlayKnowledgeLevel = {"/misc/overlayKnowledgeLevel", 0};
 
     BoolSetting loadTwitchMessageHistoryOnConnect = {
         "/misc/twitch/loadMessageHistoryOnConnect", true};
+    EnumStringSetting<RecentMessagesApi> recentMessagesApi = {
+        "/misc/twitch/recentMessagesApi", RecentMessagesApi::Robotty};
     IntSetting twitchMessageHistoryLimit = {
         "/misc/twitch/messageHistoryLimit",
         800,
@@ -838,6 +1036,15 @@ public:
     };
     BoolSetting displaySevenTVAnimatedProfile = {
         "/misc/displaySevenTVAnimatedProfile", true};
+
+    EnumStringSetting<TwitchReadConnectionMode> twitchReadConnectionMode = {
+        "/misc/x-7tv/twitchReadConnectionMode",
+        TwitchReadConnectionMode::Authenticated};
+
+    EnumStringSetting<KickConnectionPreference> kickConnectionPreference = {
+        "/misc/x-7tv/kick/connectionPreference",
+        KickConnectionPreference::Default,
+    };
 
     EnumStringSetting<ChatSendProtocol> chatSendProtocol = {
         "/misc/chatSendProtocol", ChatSendProtocol::Default};
@@ -856,10 +1063,72 @@ public:
                                                true};
     BoolSetting lockNotebookLayout = {"/misc/lockNotebookLayout", false};
     BoolSetting showPronouns = {"/misc/showPronouns", false};
+    BoolSetting showUsercardFollowerCount = {"/usercard/showFollowerCount",
+                                             true};
+    BoolSetting showUsercardCreatedDate = {"/usercard/showCreatedDate", true};
+    BoolSetting showFollowButtonInUsercard{"/usercard/showFollowButton", true};
+    BoolSetting confirmUnfollowFromUsercard{"/usercard/confirmUnfollow", true};
+    BoolSetting showUsercardFollowage = {"/usercard/showFollowage", true};
+    BoolSetting showUsercardFollowageRelativeTime = {
+        "/usercard/showFollowageRelativeTime", true};
+    BoolSetting showUsercardSubage = {"/usercard/showSubage", true};
+    BoolSetting showUsercardSubageRelativeTime = {
+        "/usercard/showSubageRelativeTime", true};
+    BoolSetting showUsercardSubGiftGifter = {"/usercard/showSubGiftGifter",
+                                             true};
+    BoolSetting showUsercardChatterCount = {"/usercard/showChatterCount", true};
+    BoolSetting showUsercardLastLive = {"/usercard/showLastLive", true};
+    BoolSetting showUsercardLiveViewerCount = {"/usercard/showLiveViewerCount",
+                                               false};
+    BoolSetting showUsercardColor = {"/usercard/showColor", true};
+    BoolSetting showUsercardSevenTVPaint = {"/usercard/showSevenTVPaint", true};
+    BoolSetting showUsercardBadges = {"/usercard/showBadges", true};
+    BoolSetting showUsercardRolesButton = {"/usercard/showRolesButton", true};
+    BoolSetting showUsercardStatus = {"/usercard/showStatus", true};
+    BoolSetting showSevenTVUsercardButton = {"/usercard/showSevenTVButton",
+                                             true};
+    BoolSetting showUsercardNameHistoryButton = {
+        "/usercard/showNameHistoryButton", true};
+    BoolSetting showUsercardLoadMoreMessagesButton = {
+        "/usercard/showLoadMoreMessagesButton", true};
+    /// Where the user last moved a usercard to ("x,y") and the size they last
+    /// gave one ("width,height"). Empty until they did.
+    BoolSetting rememberUsercardGeometry = {"/usercard/rememberGeometry", true};
+    QStringSetting lastUsercardPosition = {"/usercard/lastPosition", ""};
+    QStringSetting lastUsercardSize = {"/usercard/lastSize", ""};
+    BoolSetting alwaysLoadMoreUsercardMessages = {
+        "/usercard/alwaysLoadMoreMessages", false};
+    BoolSetting loadOlderUsercardMessages = {"/usercard/loadOlderMessages",
+                                             true};
+    /// Messages loaded per request on usercards (10-100).
+    IntSetting usercardOlderMessagesPageSize = {
+        "/usercard/olderMessagesPageSize", 100};
+    BoolSetting showLeadModRoleButtons = {"/usercard/showLeadModRoleButtons",
+                                          true};
+    BoolSetting showUsercardRoleManagementMenu = {
+        "/usercard/showRoleManagementMenu", false};
+    BoolSetting showCrossActionsInUnmoderatedChannels = {
+        "/usercard/showCrossActionsInUnmoderatedChannels", false};
+    BoolSetting hideModActionsOnModUsercards = {
+        "/misc/hideModActionsOnModUsercards", true};
+    BoolSetting showModActionsOnModUsercardsAsLeadMod = {
+        "/usercard/showModActionsOnModUsercardsAsLeadMod", false};
+    /// Messages loaded per request at the top of the chat (10-100).
+    IntSetting publicLogsPageSize = {"/misc/publicLogs/pageSize", 100};
+    BoolSetting hideEmojiButton = {"/misc/hideEmojiButton", false};
+    /// Use the public logs from logs.zonian.dev for older messages.
+    BoolSetting loadOlderMessagesFromPublicLogs = {
+        "/misc/publicLogs/loadOlderMessages", true};
     BoolSetting showTitleInLiveMessage = {
         "/extraChannels/live/showTitle",
         false,
     };
+    /// Whether the search popup also searches the public logs (remembered
+    /// from the checkbox in the popup).
+    BoolSetting searchPublicLogs = {"/misc/publicLogs/searchPopup", false};
+    /// The same for "Search in all open channels".
+    BoolSetting searchPublicLogsAllChannels = {
+        "/misc/publicLogs/searchPopupAllChannels", false};
 
     /// UI
 
@@ -902,10 +1171,25 @@ public:
          {"h", 1},
          {"d", 1},
          {"w", 1}}};
+    ChatterinoSetting<std::vector<QString>> timeoutButtonReasons = {
+        "/timeouts/timeoutButtonReasons", {}};
+    QStringSetting timeoutBanReason = {"/timeouts/banReason", {}};
+    BoolSetting timeoutReasonPromptOnRightClick = {
+        "/timeouts/reasonPromptOnRightClick", true};
+    BoolSetting timeoutReasonPromptOnModifier = {
+        "/timeouts/reasonPromptOnModifier", true};
+    QStringSetting timeoutReasonPromptModifier = {
+        "/timeouts/reasonPromptModifier", "Shift"};
+    BoolSetting timeoutReasonPromptShowSendButton = {
+        "/timeouts/reasonPromptShowSendButton", false};
+    BoolSetting timeoutReasonPromptPrefillSavedReason = {
+        "/timeouts/reasonPromptPrefillSavedReason", true};
 
     BoolSetting pluginsEnabled = {"/plugins/supportEnabled", false};
-    ChatterinoSetting<std::vector<QString>> enabledPlugins = {
-        "/plugins/enabledPlugins", {}};
+    ChatterinoSetting<QStringList> enabledPlugins = {
+        "/plugins/enabledPlugins",
+        {},
+    };
 
     // Sound
     EnumStringSetting<SoundBackend> soundBackend = {
@@ -919,6 +1203,11 @@ public:
     };
 
     // Advanced
+    BoolSetting enableExperimentalEventSub = {
+        "/eventsub/enableExperimental",
+        true,
+    };
+
     QStringSetting additionalExtensionIDs{"/misc/additionalExtensionIDs", ""};
 
 #ifndef Q_OS_WIN
@@ -935,6 +1224,211 @@ public:
 
     BoolSetting xChatterino7NoHttp2{"/x-chatterino7/no-http2", false};
 
+    /// Moltorino Settings
+    BoolSetting enablePinnedMessages{"/moltorino/pinnedMessages/enabled", true};
+    BoolSetting alwaysExpandPinnedMessages{
+        "/moltorino/pinnedMessages/alwaysExpand", false};
+    /// Content text scale for the embedded pinned chat message.
+    FloatSetting pinnedMessageScale{"/moltorino/pinnedMessages/scale", 1.f};
+    /// Header controls and banner chrome scale, separate from message text.
+    FloatSetting pinnedContentScale{"/moltorino/pinnedMessages/contentScale",
+                                    1.1f};
+    BoolSetting showPinNotifications{
+        "/moltorino/pinnedMessages/showPinNotifications", true};
+    BoolSetting showUnpinNotifications{
+        "/moltorino/pinnedMessages/showUnpinNotifications", true};
+    IntSetting defaultPinDuration{"/moltorino/pinnedMessages/defaultDuration",
+                                  -1};
+    /// 0 = Dismiss (hide banner), 1 = Unpin message
+    IntSetting pinCloseButtonAction{
+        "/moltorino/pinnedMessages/closeButtonAction", 0};
+    BoolSetting enablePinCommandMessages{
+        "/moltorino/pinnedMessages/enablePinCommandMessages", true};
+    BoolSetting enablePinUserCommand{
+        "/moltorino/pinnedMessages/enablePinUserCommand", true};
+    BoolSetting requireAtForPinUserCommand{
+        "/moltorino/pinnedMessages/requireAtForPinUserCommand", false};
+    /// 0 = Time + Countdown, 1 = Time only, 2 = Countdown only, 3 = Hover only, 4 = Hidden
+    IntSetting pinTimerDisplay{"/moltorino/pinnedMessages/timerDisplay", 0};
+    /// "Relative" = "12m ago", or a QDateTime format like "h:mm a"
+    QStringSetting pinTimestampFormat{
+        "/moltorino/pinnedMessages/timestampFormat", "Relative"};
+    /// Custom banner background color (HexArgb). Empty = use theme default.
+    QStringSetting pinBannerBackgroundColor{
+        "/moltorino/pinnedMessages/customBackgroundColor", ""};
+    // Compatibility-only legacy master toggle. Pin/mod GQL actions now use
+    // their own feature settings and Moltorino auth directly.
+    BoolSetting enablePinUnpinning{
+        "/moltorino/pinnedMessages/enablePinUnpinning", true};
+    BoolSetting movePinToModerateMenu{
+        "/moltorino/pinnedMessages/movePinToModerateMenu", false};
+    /// 0 = Never, 1 = Only in moderation mode, 2 = Always
+    IntSetting showPinButtonOnModeratorsMode{
+        "/moltorino/pinnedMessages/showPinButtonOnModeratorsMode", 1};
+    QStringSetting customPinAuthToken{
+        "/moltorino/pinnedMessages/customAuthToken", ""};
+    QStringSetting moltorinoAuthAccounts{"/moltorino/auth/accounts", ""};
+
+    /// Bot badge / Helix chat message sender configuration
+    QStringSetting botBadgeClientID{"/moltorino/botBadge/clientId", ""};
+    QStringSetting botBadgeClientSecret{"/moltorino/botBadge/clientSecret", ""};
+    QStringSetting botBadgeAppAccessToken{"/moltorino/botBadge/appAccessToken",
+                                          ""};
+    QStringSetting botBadgeAppTokenExpiry{"/moltorino/botBadge/appTokenExpiry",
+                                          ""};
+    QStringSetting botBadgeUserID{"/moltorino/botBadge/userId", ""};
+    QStringSetting botBadgeUserLogin{"/moltorino/botBadge/userLogin", ""};
+    QStringSetting botBadgeUserName{"/moltorino/botBadge/userName", ""};
+
+    BoolSetting botBadgeAlwaysUse{"/moltorino/botBadge/alwaysUse", false};
+    BoolSetting botBadgeOverrideAllAccounts{
+        "/moltorino/botBadge/overrideAllAccounts", false};
+
+    /// Predictions and Polls
+    BoolSetting enablePredictions{"/moltorino/predictions/enabled", true};
+    BoolSetting enablePolls{"/moltorino/polls/enabled", true};
+    BoolSetting showPredictionButton{"/moltorino/predictions/showButton", true};
+    BoolSetting showPollButton{"/moltorino/polls/showButton", true};
+
+    /// Channel Points and Rewards
+    BoolSetting enableChannelPointsDisplay{
+        "/moltorino/predictions/showChannelPoints", true};
+    BoolSetting openRewardsWithChannelPointsClick{
+        "/moltorino/channelPoints/openRewardsWithBalanceClick", true};
+    BoolSetting rewardsCloseOnFocusLoss{
+        "/moltorino/channelPoints/closeOnFocusLoss", true};
+    BoolSetting rewardsCloseAfterRedeem{
+        "/moltorino/channelPoints/closeAfterRedeem", true};
+    BoolSetting rewardsReturnToListAfterRedeem{
+        "/moltorino/channelPoints/returnToListAfterRedeem", false};
+    BoolSetting enableGigantifyEmotes{
+        "/moltorino/channelPoints/enableGigantifyEmotes", true};
+
+    /// Banner content text scales. These intentionally do not scale banner
+    /// chrome, icons, timers, or progress bars.
+    FloatSetting predictionBannerContentScale{
+        "/moltorino/predictions/bannerContentScale", 1.f};
+    FloatSetting pollBannerContentScale{"/moltorino/polls/bannerContentScale",
+                                        1.f};
+    /// 0 = Open betting view (default), 1 = Open manage view
+    IntSetting predictionModAction{"/moltorino/predictions/modAction", 0};
+    BoolSetting showPredictionSystemMessages{
+        "/moltorino/predictions/showSystemMessages", true};
+    BoolSetting predictionAutoCloseDialog{
+        "/moltorino/predictions/autoCloseDialog", true};
+    BoolSetting pollAutoCloseDialog{"/moltorino/polls/autoCloseDialog", false};
+    /// 0 = Never, 10/30/60 = seconds after resolution to auto-dismiss banner
+    IntSetting predictionAutoDismissSeconds{
+        "/moltorino/predictions/autoDismissSeconds", 300};
+    BoolSetting limitPredictionDialogs{"/moltorino/predictions/limitPopups",
+                                       true};
+    BoolSetting predictionDialogsPerChannel{
+        "/moltorino/predictions/limitPerChannel", true};
+    BoolSetting predictionCloseOnFocusLoss{
+        "/moltorino/predictions/closeOnFocusLoss", false};
+    /// 0 = Stack all, 1 = Prefer pinned, 2 = Prefer prediction,
+    /// 3 = Intelligent, 4 = Prefer poll
+    ///
+    /// v2 intentionally resets older saved preferences so users land on the
+    /// scoring-based Intelligent mode by default.
+    IntSetting bannerStackMode{"/moltorino/banners/stackModeV2", 3};
+
+    /// Moderation
+    BoolSetting enableRepeatedMessageDetector{
+        "/moltorino/moderation/repeatedMessages/enabled", true};
+    BoolSetting repeatedMessagesShowOnlyModerationMode{
+        "/moltorino/moderation/repeatedMessages/showOnlyModerationMode", true};
+    BoolSetting repeatedMessagesShowInUsercards{
+        "/moltorino/moderation/repeatedMessages/showInUsercards", true};
+    BoolSetting repeatedMessagesOnlyModChannels{
+        "/moltorino/moderation/repeatedMessages/onlyModChannels", true};
+    BoolSetting repeatedMessagesIgnoreVips{
+        "/moltorino/moderation/repeatedMessages/ignoreVips", false};
+    /// 0 = Loose (60%), 1 = Soft (70%), 2 = Default (80%),
+    /// 3 = Strict (90%), 4 = Exact only (100%)
+    IntSetting repeatedMessagesSensitivity{
+        "/moltorino/moderation/repeatedMessages/sensitivity", 2};
+    IntSetting repeatedMessagesRepetitionThreshold{
+        "/moltorino/moderation/repeatedMessages/repetitionThreshold", 2};
+    QStringSetting repeatedMessagesCounterColor{
+        "/moltorino/moderation/repeatedMessages/counterColor", "#ff3b3b"};
+    /// 0 = Never, 1 = Only in moderation mode, 2 = Always
+    IntSetting showSelfDeleteButton{
+        "/moltorino/moderation/showSelfDeleteButton", 1};
+    BoolSetting nukePreviewEnabled{"/moltorino/moderation/nuke/previewEnabled",
+                                   true};
+    BoolSetting nukeShowSummary{"/moltorino/moderation/nuke/showSummary", true};
+    BoolSetting nukeSkipVips{"/moltorino/moderation/nuke/skipVips", false};
+    QStringSetting nukeModerationMessage{
+        "/moltorino/moderation/nuke/moderationMessage", ""};
+    BoolSetting showEditStreamInfoButtonInSplitHeader{
+        "/moltorino/showEditStreamInfoButtonInSplitHeader", true};
+    IntSetting defaultCommercialDuration{
+        "/moltorino/moderation/defaultCommercialDuration", 30};
+    BoolSetting showRaidStatusAboveInput{
+        "/moltorino/moderation/raid/showStatusAboveInput", true};
+
+    /// Client
+    BoolSetting showTranslateMessageContextAction{
+        "/moltorino/client/showTranslateMessageContextAction", true};
+    QStringSetting messageTranslationTargetLanguage{
+        "/moltorino/client/messageTranslationTargetLanguage", "en"};
+    BoolSetting showTranslatedMessageIndicator{
+        "/moltorino/client/showTranslatedMessageIndicator", true};
+    BoolSetting showOutgoingTranslationButton{
+        "/moltorino/client/showOutgoingTranslationButton", true};
+    QStringSetting outgoingTranslationMode{
+        "/moltorino/client/outgoingTranslationMode", "off"};
+    QStringSetting outgoingTranslationTargetLanguage{
+        "/moltorino/client/outgoingTranslationTargetLanguage", "en"};
+
+    /// Fun
+    IntSetting spamCommandIntervalMs{"/moltorino/fun/spam/intervalMs", 30};
+    BoolSetting spamCommandUseIrc{"/moltorino/fun/spam/useIrc", false};
+    BoolSetting showSpamPyramidStatusMessages{
+        "/moltorino/fun/spam/showStatusMessages", true};
+    BoolSetting sendMessageAsWarnings{"/moltorino/fun/sendMessageAsWarnings",
+                                      false};
+
+    /// Others
+    BoolSetting showCommandSuggestions{"/moltorino/showCommandSuggestions",
+                                       true};
+    BoolSetting includePotatCommands{"/moltorino/includePotatCommands", true};
+    BoolSetting showPotatCommandAliases{"/moltorino/showPotatCommandAliases",
+                                        true};
+    BoolSetting includeSupibotCommands{"/leafyrino/includeSupibotCommands",
+                                       true};
+    BoolSetting showSupibotCommandAliases{
+        "/leafyrino/showSupibotCommandAliases", true};
+    BoolSetting hideUnavailableModCommands{
+        "/moltorino/hideUnavailableModCommands", true};
+    BoolSetting showFollowButtonInSplitHeader{
+        "/moltorino/showFollowButtonInSplitHeader", true};
+    BoolSetting showFollowEventsInChat{"/moltorino/showFollowEventsInChat",
+                                       false};
+    BoolSetting confirmUnfollowFromSplitHeader{
+        "/moltorino/confirmUnfollowFromSplitHeader", true};
+    BoolSetting transmitPresence{"/moltorino/client/runtime", true};
+    BoolSetting sendActivityHeartbeats{
+        "/moltorino/client/sendActivityHeartbeats", true};
+    BoolSetting hideAccountInHeartbeats{
+        "/moltorino/client/hideAccountInHeartbeats", false};
+    BoolSetting trayHideOnClose{"/moltorino/tray/hideOnClose",
+#ifdef Q_OS_MACOS
+                                false
+#else
+                                true
+#endif
+    };
+    BoolSetting trayNotifyOnSoundHighlights{
+        "/moltorino/tray/notifyOnSoundHighlights",
+#ifdef Q_OS_MACOS
+        false
+#else
+        true
+#endif
+    };
+
 private:
     ChatterinoSetting<std::vector<HighlightPhrase>> highlightedMessagesSetting =
         {"/highlighting/highlights"};
@@ -948,6 +1442,11 @@ private:
         "/ignore/phrases"};
     ChatterinoSetting<std::vector<QString>> mutedChannelsSetting = {
         "/pings/muted"};
+    ChatterinoSetting<std::vector<QString>> autoTranslateChannelsSetting = {
+        "/moltorino/translation/autoTranslateChannels"};
+    ChatterinoSetting<std::vector<QString>>
+        outgoingTranslationChannelSettingsSetting = {
+            "/moltorino/translation/outgoingChannelSettings"};
     ChatterinoSetting<std::vector<FilterRecordPtr>> filterRecordsSetting = {
         "/filtering/filters"};
     ChatterinoSetting<std::vector<Nickname>> nicknamesSetting = {"/nicknames"};
@@ -956,6 +1455,14 @@ private:
     ChatterinoSetting<std::vector<ChannelLog>> loggedChannelsSetting = {
         "/logging/channels"};
     SignalVector<QString> mutedChannels;
+    SignalVector<QString> autoTranslateChannels;
+
+    IntSetting settingsVersion = {
+        "/misc/settingsVersion",
+        0,
+    };
+
+    void migrate(bool isTest);
 
 public:
     SignalVector<HighlightPhrase> highlightedMessages;
@@ -968,13 +1475,25 @@ public:
     SignalVector<ModerationAction> moderationActions;
     SignalVector<ChannelLog> loggedChannels;
 
+    bool isEmoteModifierEnabled(const QString &name) const;
     bool isHighlightedUser(const QString &username);
     bool isBlacklistedUser(const QString &username);
     bool isMutedChannel(const QString &channelName);
     bool toggleMutedChannel(const QString &channelName);
+    bool isAutoTranslateChannel(const QString &channelName);
+    bool toggleAutoTranslateChannel(const QString &channelName);
+    QString outgoingTranslationModeForChannel(const QString &channelName);
+    QString outgoingTranslationTargetLanguageForChannel(
+        const QString &channelName);
+    void setOutgoingTranslationModeForChannel(const QString &channelName,
+                                              const QString &mode);
+    void setOutgoingTranslationTargetLanguageForChannel(
+        const QString &channelName, const QString &targetLanguage);
     std::optional<QString> matchNickname(const QString &username);
     void mute(const QString &channelName);
     void unmute(const QString &channelName);
+    void enableAutoTranslateChannel(const QString &channelName);
+    void disableAutoTranslateChannel(const QString &channelName);
 
 private:
     void updateModerationActions();
@@ -987,6 +1506,24 @@ private:
 Settings *getSettings();
 
 }  // namespace chatterino
+
+template <>
+constexpr magic_enum::customize::customize_t
+    magic_enum::customize::enum_name<chatterino::UsernamePaintSource>(
+        chatterino::UsernamePaintSource value) noexcept
+{
+    switch (value)
+    {
+        case chatterino::UsernamePaintSource::SevenTV:
+            return "7TV";
+
+        case chatterino::UsernamePaintSource::BetterTTV:
+        case chatterino::UsernamePaintSource::Automatic:
+        case chatterino::UsernamePaintSource::Off:
+        default:
+            return default_tag;
+    }
+}
 
 template <>
 constexpr magic_enum::customize::customize_t

@@ -6,7 +6,7 @@
 
 #include "Application.hpp"
 #include "common/Channel.hpp"
-#include "common/network/NetworkResult.hpp"  // IWYU pragma: keep
+#include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/emotes/EmoteController.hpp"
@@ -20,7 +20,7 @@
 #include "providers/twitch/TwitchCommon.hpp"
 #include "providers/twitch/TwitchUsers.hpp"
 #include "util/CancellationToken.hpp"
-#include "util/QStringHash.hpp"  // IWYU pragma: keep
+#include "util/QStringHash.hpp"
 
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <QStringBuilder>
@@ -247,16 +247,14 @@ const std::unordered_set<QString> &TwitchAccount::blockedUserLogins() const
     return this->ignoresUserLogins_;
 }
 
-// AutoModActions
 void TwitchAccount::autoModAllow(const QString &msgID, ChannelPtr channel) const
 {
     getHelix()->manageAutoModMessages(
         this->getUserId(), msgID, "ALLOW",
         [] {
-            // success
+
         },
         [channel](auto error) {
-            // failure
             QString errorMessage("Failed to allow AutoMod message - ");
 
             switch (error)
@@ -282,7 +280,6 @@ void TwitchAccount::autoModAllow(const QString &msgID, ChannelPtr channel) const
                 }
                 break;
 
-                // This would most likely happen if the service is down, or if the JSON payload returned has changed format
                 case HelixAutoModMessageError::Unknown:
                 default: {
                     errorMessage += "an unknown error occurred.";
@@ -299,10 +296,9 @@ void TwitchAccount::autoModDeny(const QString &msgID, ChannelPtr channel) const
     getHelix()->manageAutoModMessages(
         this->getUserId(), msgID, "DENY",
         [] {
-            // success
+
         },
         [channel](auto error) {
-            // failure
             QString errorMessage("Failed to deny AutoMod message - ");
 
             switch (error)
@@ -328,7 +324,6 @@ void TwitchAccount::autoModDeny(const QString &msgID, ChannelPtr channel) const
                 }
                 break;
 
-                // This would most likely happen if the service is down, or if the JSON payload returned has changed format
                 case HelixAutoModMessageError::Unknown:
                 default: {
                     errorMessage += "an unknown error occurred.";
@@ -360,8 +355,7 @@ void TwitchAccount::loadSeventvUserID()
                                        const QString &emoteSetID) {
         SeventvEmotes::getEmoteSet(
             emoteSetID,
-            [twitchUserID, emoteSetID](auto &&emoteMap,
-                                       const auto & /*emoteSetName*/) {
+            [twitchUserID, emoteSetID](auto &&emoteMap, const auto &) {
                 getApp()->getSeventvPersonalEmotes()->addEmoteSetForTwitchUser(
                     emoteSetID, std::forward<decltype(emoteMap)>(emoteMap),
                     twitchUserID);
@@ -384,7 +378,7 @@ void TwitchAccount::loadSeventvUserID()
 
     seventv->getUserByTwitchID(
         this->getUserId(),
-        [this, loadPersonalEmotes](const auto &json) {
+        [this, loadPersonalEmotes](const auto &json, const auto & /*raw*/) {
             const auto user = json["user"].toObject();
             const auto id = user["id"].toString();
             if (id.isEmpty())
@@ -436,7 +430,7 @@ void TwitchAccount::setEmotes(std::shared_ptr<const EmoteMap> emotes)
     *this->emotes_.access() = std::move(emotes);
 }
 
-std::optional<EmotePtr> TwitchAccount::twitchEmote(const EmoteName &name) const
+std::optional<EmotePtr> TwitchAccount::twitchEmote(EmoteNameView name) const
 {
     auto emotes = this->emotes_.accessConst();
     auto it = (*emotes)->find(name);
@@ -473,8 +467,6 @@ void TwitchAccount::reloadEmotes(void *caller)
         auto emotePtr = twitchEmotes->getOrCreateEmote(id, name);
         if (!emoteMap->try_emplace(emotePtr->name, emotePtr).second)
         {
-            // if the emote already exists, we don't want to add it to a set as
-            // those are assumed to be disjoint
             return;
         }
 
@@ -502,7 +494,7 @@ void TwitchAccount::reloadEmotes(void *caller)
                                 })
                       .first;
         }
-        set->second.emotes.emplace_back(std::move(emotePtr));
+        set->second.emotes.emplace(emotePtr->name, std::move(emotePtr));
     };
 
     auto userID = this->getUserId();
@@ -530,14 +522,6 @@ void TwitchAccount::reloadEmotes(void *caller)
                 qDebug(chatterinoTwitch).nospace()
                     << "Loaded " << emoteMap->size() << " Twitch emotes ("
                     << *nCalls << " requests)";
-
-                for (auto &[id, set] : *sets)
-                {
-                    std::ranges::sort(
-                        set.emotes, [](const auto &l, const auto &r) {
-                            return l->name.string < r->name.string;
-                        });
-                }
 
                 *this->emotes_.access() = std::move(emoteMap);
                 *this->emoteSets_.access() = std::move(sets);

@@ -4,7 +4,9 @@
 
 #pragma once
 
+#include "controllers/completion/CommandUsage.hpp"
 #include "messages/Message.hpp"
+#include "providers/moltorino/MoltorinoFeatureFlags.hpp"
 #include "widgets/BaseWidget.hpp"
 
 #include <QHBoxLayout>
@@ -12,12 +14,22 @@
 #include <QLineEdit>
 #include <QPaintEvent>
 #include <QPointer>
+#include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QTextEdit>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+#    include <functional>
+#endif
+#include <array>
 #include <memory>
+#include <optional>
+#include <vector>
+
+class QMimeData;
 
 namespace chatterino {
 
@@ -31,6 +43,9 @@ class ResizingTextEdit;
 class ChannelView;
 class SvgButton;
 class SpellCheckHighlighter;
+class Channel;
+using ChannelPtr = std::shared_ptr<Channel>;
+class TwitchChannel;
 enum class CompletionKind;
 
 class SplitInput : public BaseWidget
@@ -49,7 +64,7 @@ public:
     QString getInputText() const;
     void insertText(const QString &text);
 
-    void setReply(MessagePtr target);
+    void setReply(MessagePtr target, std::weak_ptr<Channel> channel);
     void setPlaceholderText(const QString &text);
 
     /**
@@ -75,6 +90,8 @@ public:
      **/
     bool isHidden() const;
 
+    bool isInHistorySearch() const;
+
     /**
      * @brief Sets the text of this input
      *
@@ -87,17 +104,27 @@ public:
      *
      * This method is used to update the text of the timeout and slow mode timer
      */
-    void setSendWaitStatus(const QString &text) const;
+    void setSendWaitStatus(const QString &text);
 
     void triggerSelfMessageReceived();
+
+#if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+    void showChannelPointRewardPrompt(
+        const QString &title, const QString &placeholder, bool requireText,
+        std::function<void(const QString &)> submitCallback);
+    void hideChannelPointRewardPrompt();
+#endif
 
     std::optional<bool> checkSpellingOverride() const;
     void setCheckSpellingOverride(std::optional<bool> override);
 
     pajlada::Signals::Signal<const QString &> textChanged;
     pajlada::Signals::NoArgSignal selectionChanged;
+    pajlada::Signals::NoArgSignal historySearchStateChanged;
 
 protected:
+    QSize minimumSizeHint() const override;
+
     void scaleChangedEvent(float scale_) override;
     void themeChangedEvent() override;
 
@@ -121,13 +148,56 @@ protected:
     void installTextEditEvents();
     void onCursorPositionChanged();
     void onTextChanged();
+    void bindNukePreviewChannel();
+    void scheduleNukePreviewRefresh();
+    void updateNukePreview(const QString &text);
+    void applyNukePreview();
+    void bindRaidStatusChannel();
+    void updateRaidStatus();
+    bool trySendMessageAsWarning(const QString &message,
+                                 const ChannelPtr &channel);
+    bool maybeSendMessageAsWarning(const QString &message,
+                                   const std::vector<QString> &arguments,
+                                   const ChannelPtr &channel);
     void updateEmoteButton();
+    void bindChannelPoints(TwitchChannel *channel);
+    void clearChannelPointsDisplay();
+    void updateChannelPointsDisplay(TwitchChannel *channel);
+    void updateActionRowCompactness();
     void updateCompletionPopup();
+    void updateOutgoingTranslationPreview();
+    void scheduleOutgoingTranslationPreview(const QString &text);
+    void applyOutgoingTranslationPreview();
+    void clearOutgoingTranslationPreview();
+    void updateOutgoingTranslationButton();
+    void openOutgoingTranslationMenu();
+    QString outgoingTranslationChannelName() const;
+    QString outgoingTranslationMode() const;
+    QString outgoingTranslationTargetLanguage() const;
+    bool shouldTranslateOutgoingMessage(const QString &message) const;
+    QString currentOutgoingMessageBody() const;
+    bool maybeSendTranslatedMessage(const QString &message,
+                                    const std::vector<QString> &arguments,
+                                    const ChannelPtr &channel);
+    void postTranslatedMessageSend(const QString &message,
+                                   const std::vector<QString> &arguments);
+    bool updateCommandCompletion(const QString &query, int start, int end);
+    void showCommandCompletionStatus(const QString &text);
+    void updateCommandArgumentHint(const QString &text, int cursorPosition);
+    void renderCommandCompletion();
+    void hideCommandCompletion();
+    bool moveCommandCompletionSelection(int offset);
     void showCompletionPopup(const QString &text, CompletionKind kind);
     void hideCompletionPopup();
-    void insertCompletionText(const QString &input_) const;
+    void insertCompletionText(const QString &input_);
+    bool handleCommandCompletionKey(QKeyEvent *event);
+    void insertCommandCompletionText(const QString &completion, bool keepPopup);
+    void resetCommandCompletionSession();
     void openEmotePopup();
     void clearReplyTarget();
+#if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+    bool submitChannelPointRewardPrompt();
+#endif
 
     void updateCancelReplyButton();
 
@@ -142,6 +212,7 @@ protected:
     int marginForTheme() const;
 
     void applyOuterMargin();
+    void relayoutParentWidgets();
 
     int replyMessageWidth() const;
 
@@ -161,6 +232,20 @@ protected:
         MessageView *replyMessage;
         QLabel *replyLabel;
         SvgButton *cancelReplyButton;
+        QWidget *raidStatusWidget;
+        QVBoxLayout *raidStatusLayout;
+        QLabel *raidStatusLabel;
+        QProgressBar *raidStatusProgress;
+        QLabel *nukePreviewLabel;
+        QWidget *commandCompletionWidget;
+        QVBoxLayout *commandCompletionLayout;
+        std::array<QLabel *, 3> commandCompletionRows{};
+        QWidget *translationPreviewWidget;
+        QLabel *translationPreviewLabel;
+#if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+        QWidget *channelPointRewardPromptWidget;
+        QLabel *channelPointRewardPromptTitle;
+#endif
 
         // input widgets
         QWidget *inputWrapper;
@@ -169,17 +254,78 @@ protected:
         QLabel *textEditLength;
         LabelButton *sendButton;
         QLabel *sendWaitStatus;
+        QHBoxLayout *buttonsRow;
+        QLabel *channelPointsLabel;
+        SvgButton *predictionButton;
+        SvgButton *pollButton;
+        SvgButton *badgeButton;
+        SvgButton *outgoingTranslateButton;
         SvgButton *emoteButton;
-    } ui_;
+        QWidget *historySearchWrap;
+        QLineEdit *historySearchInput;
+        QLabel *historySearchLabel;
+    } ui_{};
 
     MessagePtr replyTarget_ = nullptr;
+    std::weak_ptr<Channel> replyChannel_;
     bool enableInlineReplying_;
 
     pajlada::Signals::SignalHolder managedConnections_;
     pajlada::Signals::SignalHolder channelConnections_;
+    pajlada::Signals::ScopedConnection channelPointSignal_;
+    pajlada::Signals::ScopedConnection modStateSignal_;
+    pajlada::Signals::ScopedConnection pollStateSignal_;
+    pajlada::Signals::ScopedConnection focusedPointsConnection_;
+    pajlada::Signals::ScopedConnection focusLostPointsConnection_;
     QStringList prevMsg_;
     QString currMsg_;
     int prevIndex_ = 0;
+    struct CommandCompletionSession {
+        bool active = false;
+        bool inserted = false;
+        bool selectionChanged = false;
+        QString query;
+        int start = 0;
+        int end = 0;
+    } commandCompletionSession_;
+    struct CommandCompletionSuggestion {
+        QString completion;
+        QString usage;
+    };
+    std::vector<CommandCompletionSuggestion> commandCompletionSuggestions_;
+    int commandCompletionSelectedIndex_ = 0;
+    bool updatingCommandCompletionText_ = false;
+    QString commandHintKey_;
+    std::weak_ptr<Channel> commandHintChannel_;
+    std::shared_ptr<const completion::CommandUsage> resolvedCommandHint_;
+    QString resolvedSupibotDescription_;
+    QTimer nukePreviewTimer_;
+    QTimer outgoingTranslationPreviewTimer_;
+    QString pendingNukePreviewText_;
+    QString pendingOutgoingTranslationText_;
+    QString outgoingTranslationPreviewSource_;
+    QString outgoingTranslationPreviewTarget_;
+    QString outgoingTranslationPreviewText_;
+    int outgoingTranslationGeneration_ = 0;
+    bool outgoingTranslationSendInFlight_ = false;
+    bool nukePreviewCommandActive_ = false;
+    pajlada::Signals::ScopedConnection nukePreviewMessageConnection_;
+    pajlada::Signals::ScopedConnection nukePreviewReplaceConnection_;
+    pajlada::Signals::ScopedConnection nukePreviewClearConnection_;
+    QTimer raidStatusTimer_;
+    QPropertyAnimation raidStatusProgressAnimation_;
+    pajlada::Signals::ScopedConnection raidStatusConnection_;
+    bool sendWaitStatusWanted_ = false;
+    bool channelPointsLabelWanted_ = false;
+    bool channelPointsManualRefreshLoading_ = false;
+    qint64 lastManualChannelPointsRefreshMs_ = 0;
+    bool predictionButtonWanted_ = false;
+    bool pollButtonWanted_ = false;
+    bool badgeButtonWanted_ = false;
+#if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+    bool channelPointRewardPromptRequiresText_ = false;
+    std::function<void(const QString &)> channelPointRewardPromptSubmit_;
+#endif
 
     // Hidden denotes whether this split input should be hidden or not
     // This is used instead of the regular QWidget::hide/show because
@@ -210,6 +356,49 @@ protected:
     InputHighlighter *inputHighlighter = nullptr;
 
     void updateFonts();
+
+    bool inHistorySearch = false;
+
+private:
+    void handleImagePaste(const QMimeData *source);
+
+    void startHistorySearch(bool backwards, bool loop);
+    void stopHistorySearchIfNecessary();
+
+    /// Search through all previous messages for `historySearchQuery`
+    void refreshHistorySearch(bool backwards, bool loop);
+
+    void cycleHistorySearch(bool backwards, bool loop);
+    void loopHistorySearchIfNeeded(bool backwards);
+
+    /// Show the currently selected message in the input box
+    void updateSelectedHistorySearchMatch();
+
+    void updateHistorySearchStatus(bool failed, const QString &message);
+
+    QString historySearchQuery;
+
+    struct HistorySearchResult {
+        /// Index of the message in `prevMsg_`
+        qsizetype messageIdx = 0;
+        QString message;
+    };
+    std::vector<HistorySearchResult> historySearchResults;
+
+    /// Index into `historySearchResults`
+    /// This might be out of bounds if there's no match.
+    qsizetype historySearchResultIndex = -1;
+
+    bool historySearchFailed = false;
+
+    bool lastHistorySearchBackwards = false;
+    bool lastHistorySearchLoop = false;
+
+    /// `prevIndex_` value before a history search was started.
+    ///
+    /// The history search modifies `prevIndex_`, but we need this anchor when
+    /// the user updates the query.
+    int prevIndexBeforeSearch = 0;
 
 private Q_SLOTS:
     void editTextChanged();

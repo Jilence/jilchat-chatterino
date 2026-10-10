@@ -35,7 +35,7 @@ public:
 
     MOCK_METHOD(
         void, getChannelFollowers,
-        (QString broadcasterID,
+        (QString broadcasterID, QString userID,
          ResultCallback<HelixGetChannelFollowersResponse> successCallback,
          std::function<void(QString)> failureCallback),
         (override));
@@ -124,7 +124,7 @@ public:
 
     MOCK_METHOD(
         void, updateChannel,
-        (QString broadcasterId, QString gameId, QString language, QString title,
+        (QString broadcasterId, const HelixChannelUpdate &update,
          std::function<void(NetworkResult)> successCallback,
          (FailureCallback<HelixUpdateChannelError, QString> failureCallback)),
         (override));
@@ -368,7 +368,8 @@ public:
     MOCK_METHOD(
         void, getChatters,
         (QString broadcasterID, QString moderatorID, size_t maxChattersToFetch,
-         ResultCallback<HelixChatters> successCallback,
+         const QObject *caller,
+         const ResultCallback<HelixChatters> &successCallback,
          (FailureCallback<HelixGetChattersError, QString> failureCallback)),
         (override));  // getChatters
 
@@ -377,7 +378,7 @@ public:
     // contains a comma
     MOCK_METHOD(
         void, getChannelVIPs,
-        (QString broadcasterID,
+        (const QString &broadcasterID, const QObject *caller,
          ResultCallback<std::vector<HelixVip>> successCallback,
          (FailureCallback<HelixListVIPsError, QString> failureCallback)),
         (override));  // /vips
@@ -397,7 +398,8 @@ public:
     // contains a comma
     MOCK_METHOD(
         void, getModerators,
-        (QString broadcasterID, int maxModeratorsToFetch,
+        (const QString &broadcasterID, int maxModeratorsToFetch,
+         const QObject *caller,
          ResultCallback<std::vector<HelixModerator>> successCallback,
          (FailureCallback<HelixGetModeratorsError, QString> failureCallback)),
         (override));  // /mods
@@ -490,18 +492,32 @@ public:
                  FailureCallback<QString> failureCallback),
                 (override));
 
-    MOCK_METHOD(void, createEventSubSubscription,
-                (const eventsub::SubscriptionRequest &request,
-                 const QString &sessionID,
-                 ResultCallback<HelixCreateEventSubSubscriptionResponse>
-                     successCallback,
-                 (FailureCallback<HelixCreateEventSubSubscriptionError, QString>
-                      failureCallback)),
-                (override));
+    MOCK_METHOD(
+        void, createEventSubSubscription,
+        (const eventsub::SubscriptionRequest &request, const QString &sessionID,
+         ResultCallback<HelixCreateEventSubSubscriptionResponse>
+             successCallback,
+         (FailureCallback<HelixCreateEventSubSubscriptionError, QString>
+              failureCallback),
+         (const QString &clientIdOverride, const QString &oauthTokenOverride)),
+        (override));
 
     MOCK_METHOD(void, deleteEventSubSubscription,
                 (const QString &request, ResultCallback<> successCallback,
                  (FailureCallback<QString> failureCallback)),
+                (override));
+
+    MOCK_METHOD(void, getSharedChatSession,
+                (QString broadcasterID,
+                 ResultCallback<HelixSharedChatSession> successCallback,
+                 (FailureCallback<HelixGetSharedChatSessionError, QString>
+                      failureCallback)),
+                (override));
+
+    MOCK_METHOD(void, getModeratedChannels,
+                (QString userID, ResultCallback<QSet<QString>> successCallback,
+                 (FailureCallback<QString> failureCallback),
+                 CancellationToken &&token),
                 (override));
 
     MOCK_METHOD(void, update, (QString clientId, QString oauthToken),

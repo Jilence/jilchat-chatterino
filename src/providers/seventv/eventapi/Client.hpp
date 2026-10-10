@@ -30,8 +30,8 @@ public:
     Client(SeventvEventAPI &manager,
            std::chrono::milliseconds heartbeatInterval);
 
-    void onOpen() /* override */;
-    void onMessage(const QByteArray &msg) /* override */;
+    void onOpen();
+    void onMessage(const QByteArray &msg);
 
     std::chrono::milliseconds heartbeatInterval() const;
     void checkHeartbeat();
@@ -59,9 +59,6 @@ private:
         std::shared_ptr<const EmoteMap> emoteSet;
     };
 
-    /// This is a workaround for 7TV sending `CreateEntitlement` before
-    /// `UpdateEmoteSet`. We only upsert emotes when a user gets assigned a
-    /// new emote set, but in this case, we're upserting after updating as well.
     std::optional<LastPersonalEmoteAssignment> lastPersonalEmoteAssignment_;
 };
 

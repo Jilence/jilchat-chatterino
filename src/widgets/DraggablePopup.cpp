@@ -6,6 +6,7 @@
 
 #include "buttons/SvgButton.hpp"
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWindow>
 
@@ -49,12 +50,10 @@ DraggablePopup::DraggablePopup(bool closeAutomatically, QWidget *parent)
         this->setAttribute(Qt::WA_DeleteOnClose);
     }
 
-    // Update the window position according to this->requestedDragPos_ on every trigger
     this->dragTimer_.callOnTimeout(
         [this, hack = std::weak_ptr<bool>(this->lifetimeHack_)] {
             if (!hack.lock())
             {
-                // Ensure this timer is never called after the object has been destroyed
                 return;
             }
 
@@ -65,6 +64,17 @@ DraggablePopup::DraggablePopup(bool closeAutomatically, QWidget *parent)
 
             this->move(this->requestedDragPos_);
         });
+}
+
+void DraggablePopup::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Escape)
+    {
+        this->close();
+        return;
+    }
+
+    BaseWindow::keyPressEvent(event);
 }
 
 void DraggablePopup::mousePressEvent(QMouseEvent *event)
@@ -86,10 +96,6 @@ void DraggablePopup::mouseReleaseEvent(QMouseEvent *event)
 
 void DraggablePopup::mouseMoveEvent(QMouseEvent *event)
 {
-    // Drag the window by the amount changed from inital position
-    // Note that we provide a few *units* of deadzone so people don't
-    // start dragging the window if they are slow at clicking.
-
     auto movePos = event->pos() - this->startPosDrag_;
     if (this->isMoving_ || movePos.manhattanLength() > 10.0)
     {
@@ -132,6 +138,23 @@ bool DraggablePopup::ensurePinned()
         return true;
     }
     return false;
+}
+
+bool DraggablePopup::pinParentIfNeeded(QWidget *parent)
+{
+    if (auto *popup = qobject_cast<DraggablePopup *>(parent))
+    {
+        return popup->ensurePinned();
+    }
+    return false;
+}
+
+void DraggablePopup::unpinParentIfNeeded(QWidget *parent)
+{
+    if (auto *popup = qobject_cast<DraggablePopup *>(parent))
+    {
+        popup->togglePinned();
+    }
 }
 
 }  // namespace chatterino

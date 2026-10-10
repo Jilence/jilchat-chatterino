@@ -56,7 +56,7 @@ QJsonValue getForArchitecture(const QJsonObject &obj, const QString &key)
     {
         val = obj[armKey];
     }
-#elifdef Q_PROCESSOR_X86
+#elif defined(Q_PROCESSOR_X86)
     QString x86Key = key % u"_x86";
     if (obj[x86Key].isString())
     {
@@ -71,8 +71,9 @@ QJsonValue getForArchitecture(const QJsonObject &obj, const QString &key)
 
 namespace chatterino {
 
-Updates::Updates(const Paths &paths_, Settings &settings)
+Updates::Updates(const Modes &modes_, const Paths &paths_, Settings &settings)
     : paths(paths_)
+    , modes(modes_)
     , currentVersion_(CHATTERINO_VERSION)
     , updateGuideLink_("https://chatterino.com")
 {
@@ -85,7 +86,6 @@ Updates::Updates(const Paths &paths_, Settings &settings)
         this->managedConnections, false);
 }
 
-/// Checks if the online version is newer or older than the current version.
 bool Updates::isDowngradeOf(const QString &online, const QString &current)
 {
     semver::version onlineVersion;
@@ -104,8 +104,11 @@ bool Updates::isDowngradeOf(const QString &online, const QString &current)
         return false;
     }
 
-    // TODO: remove once chatterino7's major version switches from `7` to `2`
-    if (currentVersion.major == 7 && onlineVersion.major == 2)
+    if (onlineVersion.major == 7)
+    {
+        onlineVersion.major = 2;
+    }
+    else if (currentVersion.major == 7 && onlineVersion.major == 2)
     {
         currentVersion = {2, currentVersion.minor, currentVersion.patch,
                           currentVersion.prerelease_type,
@@ -157,7 +160,7 @@ void Updates::installUpdates()
     {
         // Since Nightly builds can be installed in many different ways, we ask the user to download the update manually.
         QDesktopServices::openUrl(
-            QUrl("https://github.com/SevenTV/chatterino7/releases"));
+            QUrl("https://github.com/leafyzito/leafyrino/releases"));
         return;
     }
 
@@ -177,7 +180,7 @@ void Updates::installUpdates()
     box->open();
     QDesktopServices::openUrl(this->updateGuideLink_);
 #elif defined Q_OS_WIN
-    if (Modes::instance().isPortable)
+    if (this->modes.isPortable)
     {
         QMessageBox *box =
             new QMessageBox(QMessageBox::Information, "Chatterino Update",
@@ -236,7 +239,7 @@ void Updates::installUpdates()
                 file.flush();
                 file.close();
 
-                auto updaterPath = Updates::portableUpdaterPath();
+                auto updaterPath = Updates::portableUpdaterPath(this->paths);
                 if (!QFile::exists(updaterPath))
                 {
                     this->setStatus_(MissingPortableUpdater);
@@ -296,7 +299,7 @@ void Updates::installUpdates()
                     combinePath(this->paths.miscDirectory, "Update.exe");
 
                 QFile file(filePath);
-                // write() will fail if we couldn't open
+
                 std::ignore =
                     file.open(QIODevice::Truncate | QIODevice::WriteOnly);
 
@@ -346,6 +349,9 @@ void Updates::installUpdates()
 void Updates::checkForUpdates()
 {
 #ifndef CHATTERINO_DISABLE_UPDATER
+    this->setStatus_(NoUpdateAvailable);
+    return;
+
     auto version = Version::instance();
 
     if (!version.isSupportedOS())
@@ -356,7 +362,6 @@ void Updates::checkForUpdates()
         return;
     }
 
-    // Disable updates on Flatpak
     if (version.isFlatpak())
     {
         return;
@@ -368,10 +373,9 @@ void Updates::checkForUpdates()
         const auto object = result.parseJson();
         if (object.empty())
         {
-            return;  // this should only happen on the v4 url as it's not really mapped
+            return;
         }
 
-        /// Version available on every platform
         auto version = object["version"];
         if (object["v2_version"_L1].isString())
         {
@@ -387,7 +391,7 @@ void Updates::checkForUpdates()
         }
 
 #    if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
-        /// Downloads an installer for the new version
+
         auto updateExeUrl = getForArchitecture(object, u"updateexe"_s);
         if (!updateExeUrl.isString())
         {
@@ -400,7 +404,7 @@ void Updates::checkForUpdates()
         this->updateExe_ = updateExeUrl.toString();
 
 #        ifdef Q_OS_WIN
-        /// Windows portable
+
         auto portableUrl = getForArchitecture(object, "portable_download");
         if (!portableUrl.isString())
         {
@@ -423,11 +427,8 @@ void Updates::checkForUpdates()
         return;
 #    endif
 
-        /// Current version
         this->onlineVersion_ = version.toString();
 
-        /// Update available :)
-        // 7TV: Don't treat downgrades as updates.
         if (this->currentVersion_ != this->onlineVersion_ &&
             !Updates::isDowngradeOf(this->onlineVersion_,
                                     this->currentVersion_))
@@ -440,20 +441,15 @@ void Updates::checkForUpdates()
         }
     };
 
-    // We're trying v3, ~~and v4~~ to get updates.
-    // The first successful one will be used
     auto apiVersion = std::make_shared<uint8_t>(3);
-    constexpr auto maxApiVersion =
-        3;  // don't try v4 yet (we don't know the API scheme yet)
+    constexpr auto maxApiVersion = 3;
     auto fmtUrl = [apiVersion]() -> QString {
         return u"https://7tv.io/v" % QString::number(*apiVersion) %
                "/chatterino/version/" % CHATTERINO_OS % "/" % currentBranch();
     };
 
     auto onError = std::make_shared<std::function<void(NetworkResult)>>();
-    // We need to avoid cyclic ownership, so we pass onError as a weak pointer.
-    // During the request, it's kept alive by the finally handler, which will
-    // always be called after onError and onSuccess.
+
     auto makeRequest = [onSuccess,
                         onErrorWeak = std::weak_ptr(onError)](auto url) {
         auto onError = onErrorWeak.lock();
@@ -474,7 +470,7 @@ void Updates::checkForUpdates()
     *onError = [apiVersion, fmtUrl, makeRequest](const auto &) mutable {
         if (*apiVersion >= maxApiVersion)
         {
-            return;  // nothing returned a response, we're done
+            return;
         }
         (*apiVersion)++;
         makeRequest(fmtUrl());
@@ -490,9 +486,9 @@ Updates::Status Updates::getStatus() const
     return this->status_;
 }
 
-QString Updates::portableUpdaterPath()
+QString Updates::portableUpdaterPath(const Paths &paths)
 {
-    return combinePath(QCoreApplication::applicationDirPath(),
+    return combinePath(paths.rootAppDataDirectory,
                        "updater.1/ChatterinoUpdater.exe");
 }
 
@@ -542,15 +538,17 @@ QString Updates::buildUpdateAvailableText() const
         // Since Nightly builds can be installed in many different ways, we ask the user to download the update manually.
         if (this->isDowngrade())
         {
-            return QString("The version online (%1) seems to be lower than the "
-                           "current (%2).\nEither a version was reverted or "
-                           "you are running a newer build.\n\nDo you want to "
-                           "head to Chatterino.com to download it?")
+            return QString(
+                       "The version online (%1) seems to be lower than the "
+                       "current (%2).\nEither a version was reverted or "
+                       "you are running a newer build.\n\nDo you want to "
+                       "head to github.com/leafyzito/leafyrino to download it?")
                 .arg(this->getOnlineVersion(), this->getCurrentVersion());
         }
 
-        return QString("An update (%1) is available.\n\nDo you want to head to "
-                       "Chatterino.com to download the new update?")
+        return QString(
+                   "An update (%1) is available.\n\nDo you want to head to "
+                   "github.com/leafyzito/leafyrino to download the new update?")
             .arg(this->getOnlineVersion());
     }
 

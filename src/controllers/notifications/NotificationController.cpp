@@ -20,6 +20,7 @@
 
 #include <QUrl>
 
+#include <cassert>
 #include <ranges>
 
 namespace ranges = std::ranges;
@@ -33,8 +34,6 @@ NotificationController::NotificationController()
         this->channelMap[Platform::Twitch].append(channelName);
     }
 
-    // We can safely ignore this signal connection since channelMap will always be destroyed
-    // before the NotificationController
     std::ignore =
         this->channelMap[Platform::Twitch].delayedItemsChanged.connect([this] {
             this->twitchSetting_.setValue(
@@ -114,8 +113,22 @@ NotificationModel *NotificationController::createModel(QObject *parent,
 }
 
 void NotificationController::notifyTwitchChannelLive(
-    const NotificationPayload &payload) const
+    const NotificationPayload &payload)
 {
+    assert(!payload.channelId.isEmpty() && !payload.streamId.isEmpty());
+
+    auto [streamIt, inserted] = this->lastNotifiedStreamIds_.try_emplace(
+        payload.channelId, payload.streamId);
+    if (!inserted && streamIt->second == payload.streamId)
+    {
+        return;
+    }
+    if (!inserted)
+    {
+        this->notifyTwitchChannelOffline(payload.channelId);
+        streamIt->second = payload.streamId;
+    }
+
     bool showNotification =
         !(getSettings()->suppressInitialLiveNotification &&
           payload.isInitialUpdate) &&
@@ -142,24 +155,34 @@ void NotificationController::notifyTwitchChannelLive(
         }
     }
 
-    // Message in /live channel
     getApp()->getTwitch()->getLiveChannel()->addMessage(
-        MessageBuilder::makeLiveMessage(payload.displayName, payload.channelId,
-                                        payload.title),
+        MessageBuilder::makeLiveMessage(
+            {
+                .id = payload.channelId,
+                .login = payload.channelName,
+                .displayName = payload.displayName,
+            },
+            payload.title),
         MessageContext::Original);
 
-    // Notify on all channels with a ping sound
     if (showNotification && !playedSound &&
         getSettings()->notificationOnAnyChannel)
     {
-        this->playSound();
+        const auto watching = getApp()->getTwitch()->getWatchingChannel().get();
+        const bool suppressForWatchingTab =
+            watching && !watching->isEmpty() &&
+            watching->getName().compare(payload.channelName,
+                                        Qt::CaseInsensitive) == 0 &&
+            !getSettings()->watchingTabLiveSound;
+        if (!suppressForWatchingTab)
+        {
+            this->playSound();
+        }
     }
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void NotificationController::notifyTwitchChannelOffline(const QString &id) const
 {
-    // "delete" old 'CHANNEL is live' message
     auto snapshot =
         getApp()->getTwitch()->getLiveChannel()->getMessageSnapshot(200);
     for (const auto &s : snapshot | std::views::reverse)
@@ -218,12 +241,11 @@ void NotificationController::fetchFakeChannels()
                 }
             },
             [batch]() {
-                // we done fucked up.
                 qCWarning(chatterinoNotification)
                     << "Failed to fetch live status for " << batch;
             },
             []() {
-                // finally
+
             });
     }
 }
@@ -250,7 +272,7 @@ void NotificationController::updateFakeChannel(
     }
     if (channelIt->second.isLive == live && !isInitialUpdate)
     {
-        return;  // nothing changed
+        return;
     }
 
     if (live && channelIt->second.id.isNull())
@@ -260,18 +282,15 @@ void NotificationController::updateFakeChannel(
 
     channelIt->second.isLive = live;
 
-    // Similar code can be found in TwitchChannel::onLiveStatusChange.
-    // Since this is a fake channel, we don't send a live message in the
-    // TwitchChannel.
     if (!live)
     {
-        // Stream is offline
         this->notifyTwitchChannelOffline(channelIt->second.id);
         return;
     }
 
     this->notifyTwitchChannelLive({
         .channelId = stream->userId,
+        .streamId = stream->id,
         .channelName = channelName,
         .displayName = stream->userName,
         .title = stream->title,

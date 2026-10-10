@@ -38,7 +38,7 @@ enum class MessageFlag : std::int64_t {
     ShowInMentions = (1LL << 22),
     FirstMessage = (1LL << 23),
     ReplyMessage = (1LL << 24),
-    ElevatedMessage = (1LL << 25),
+    //
     SubscribedThread = (1LL << 26),
     CheerMessage = (1LL << 27),
     LiveUpdatesAdd = (1LL << 28),
@@ -78,6 +78,15 @@ enum class MessageFlag : std::int64_t {
     InvalidReplyTarget = (1LL << 42),
     WatchStreak = (1LL << 43),
     Announcement = (1LL << 44),
+    /// Notifications that do not yet have special handling/categorization
+    UncategorizedNotification = (1LL << 45),
+    ChatWarning = (1LL << 46),
+    RepeatedMessage = (1LL << 47),
+    Follow = (1LL << 48),
+    /// The message was detected as ASCII art and has its layout width limited to the default web chat width.
+    AsciiArt = (1LL << 49),
+    /// The message is a Twitch Gigantify reward. The trailing emote is enlarged.
+    GigantifiedEmote = (1LL << 50),
 };
 using MessageFlags = FlagsEnum<MessageFlag>;
 

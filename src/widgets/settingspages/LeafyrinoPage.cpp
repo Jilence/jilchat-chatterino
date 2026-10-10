@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+//
+// SPDX-License-Identifier: MIT
+
 #include "widgets/settingspages/LeafyrinoPage.hpp"
 
 #include "singletons/Settings.hpp"
@@ -5,11 +9,9 @@
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
 
-#include <QFileDialog>
+#include <QFrame>
 #include <QHBoxLayout>
-#include <QLabel>
-#include <QPushButton>
-#include <QUrl>
+#include <QVBoxLayout>
 
 namespace chatterino {
 
@@ -44,125 +46,218 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     auto &s = *getSettings();
 
     layout.addTitle("Badges");
-    SettingWidget::checkbox("Homies", s.showBadgesHomies)
-        ->addKeywords({"homies"})
-        ->setTooltip("Homies supporter badges and custom badges")
-        ->addTo(layout);
     SettingWidget::checkbox("Folhinha", s.showBadgesFolhinha)
         ->addKeywords({"folhinha", "folhinhabot"})
-        ->setTooltip("FolhinhaBot Plus and Founder badges")
+        ->setTooltip("FolhinhaBot Plus, Founder, and Supporter badges")
+        ->addTo(layout);
+    SettingWidget::checkbox("FFZ:AP", s.showBadgesFfzAp)
+        ->addKeywords({"ffz", "ffzap", "frankerfacez"})
+        ->setTooltip("FFZ:AP supporter and helper badges")
+        ->addTo(layout);
+    SettingWidget::checkbox("DankChat", s.showBadgesDankChat)
+        ->addKeywords({"dankchat", "dank"})
+        ->setTooltip("DankChat supporter badges")
+        ->addTo(layout);
+    SettingWidget::checkbox("Chatsen", s.showBadgesChatsen)
+        ->addKeywords({"chatsen"})
+        ->setTooltip("Chatsen supporter and developer badges")
+        ->addTo(layout);
+    SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
+        ->addKeywords({"jilchat", "jil", "badges"})
+        ->setTooltip("JilChat badges")
         ->addTo(layout);
 
-    layout.addTitle("Userinfo popup");
-    SettingWidget::checkbox("Show chatters", s.showUserinfoPopupChatters)
+    layout.addTitle("Client");
+    SettingWidget::checkbox("Show select badge button", s.showSelectBadgeButton)
+        ->addKeywords({"badge", "select", "button", "client", "picker"})
+        ->setTooltip("Show the badge picker button in the chat input bar.")
+        ->addTo(layout);
+
+    layout.addTitle("Voice messages");
+    SettingWidget::intInput("Default voice message volume",
+                            s.jilChatVoiceVolume,
+                            {
+                                .min = 0,
+                                .max = 100,
+                                .singleStep = 5,
+                                .suffix = QStringLiteral("%"),
+                            })
+        ->addKeywords({"jilchat", "voice", "volume", "sound"})
+        ->setTooltip("Controls the volume for JilChat voice messages.")
+        ->addTo(layout);
+
+    layout.addTitle("YouTube");
+    SettingWidget::checkbox("Highlight Super Chats",
+                            s.highlightYouTubeSuperChats)
         ->addKeywords(
-            {"userinfo", "user card", "usercard", "popup", "chatters"})
+            {"youtube", "superchat", "super chat", "highlight", "donation"})
+        ->setTooltip(
+            "Show Super Chats as a colored highlighted row (per tier).")
         ->addTo(layout);
-    SettingWidget::checkbox("Show last live date", s.showUserinfoPopupLastLive)
+    SettingWidget::checkbox("White username in Super Chats",
+                            s.youtubeSuperChatWhiteName)
         ->addKeywords(
-            {"userinfo", "user card", "usercard", "popup", "last live"})
+            {"youtube", "superchat", "super chat", "username", "white", "name"})
+        ->setTooltip(
+            "Render the author name in white on the colored Super Chat "
+            "row for readability.")
         ->addTo(layout);
-    SettingWidget::checkbox("Show color", s.showUserinfoPopupColor)
-        ->addKeywords({"userinfo", "user card", "usercard", "popup", "color"})
+    SettingWidget::checkbox("Highlight memberships && gifts",
+                            s.highlightYouTubeMemberships)
+        ->addKeywords(
+            {"youtube", "membership", "member", "gift", "highlight", "green"})
+        ->setTooltip(
+            "Give new memberships, milestones and gifted memberships a "
+            "green highlight.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Color usernames by role",
+                            s.colorYouTubeUsernamesByRole)
+        ->addKeywords({"youtube", "username", "color", "role", "moderator",
+                       "member", "owner"})
+        ->setTooltip("Color only moderators, members and the owner; regular "
+                     "chatters stay a neutral grey. Off = all names grey.\n"
+                     "Deleted messages follow the global \"hide moderated "
+                     "messages\" setting.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Colorize usernames", s.youtubeColorizeUsernames)
+        ->addKeywords(
+            {"youtube", "username", "colorize", "color", "nickname", "random"})
+        ->setTooltip(
+            "Give each YouTube chatter a stable color based on their "
+            "channel, like the Twitch colorize option. Roles still use "
+            "their role color first.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Remove @ from usernames", s.youtubeStripAtPrefix)
+        ->addKeywords({"youtube", "username", "handle", "at", "prefix"})
+        ->setTooltip("Hide the leading @ on YouTube handles in chat. Clicks, "
+                     "mentions and the user popup still work with the full "
+                     "name.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Show @username in the split header",
+                            s.youtubeSplitHeaderUseHandle)
+        ->addKeywords(
+            {"youtube", "split", "header", "handle", "username", "channel"})
+        ->setTooltip("Show the channel @handle in the split header instead of "
+                     "the display name. Hovering always shows the handle.")
         ->addTo(layout);
 
-    layout.addTitle("Panels");
-    SettingWidget::checkbox("Show pinned message panel in splits",
-                            s.showPinnedMessagePanel)
-        ->setTooltip("Polls Twitch for the current moderator-pinned chat "
-                     "message and shows it above chat.")
-        ->addTo(layout);
-    SettingWidget::checkbox("Show active prediction panel in splits",
-                            s.showPredictionPanel)
-        ->setTooltip("Polls Twitch for an active or locked channel points "
-                     "prediction and shows it above chat.")
-        ->addTo(layout);
-
-    SettingWidget::checkbox("Play sound when a new prediction starts",
-                            s.predictionStartPlaySound)
-        ->addKeywords({"prediction", "sound", "ping"})
-        ->addTo(layout);
-    SettingWidget::checkbox("Custom sound for prediction start",
-                            s.predictionStartCustomSound)
-        ->addKeywords({"prediction", "sound", "custom"})
-        ->conditionallyEnabledBy(s.predictionStartPlaySound)
+    layout.addTitle("Public logs");
+    layout.addDescription("Older messages from logs.zonian.dev, the logs "
+                          "behind lurkology.com.");
+    SettingWidget::checkbox("Use public logs",
+                            s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("Load older messages from logs.zonian.dev. This sends "
+                     "channel names and usernames to that service.")
+        ->addKeywords({"logs", "zonian", "lurkology", "supa", "history",
+                       "older", "public"})
         ->addTo(layout);
 
-    // Custom sound file picker row
-    {
-        auto *row = new QWidget(this);
-        auto *hl = new QHBoxLayout(row);
-        hl->setContentsMargins(0, 0, 0, 0);
-        hl->setSpacing(6);
+    layout.addTitle("Usercard");
+    layout.addDescription("Choose which extra details appear on usercards.");
 
-        auto *label = new QLabel(row);
-        label->setTextFormat(Qt::RichText);
-        label->setTextInteractionFlags(Qt::TextBrowserInteraction |
-                                       Qt::LinksAccessibleByKeyboard);
-        label->setOpenExternalLinks(true);
-
-        auto *clearBtn = new QPushButton(QStringLiteral("Clear"), row);
-        auto *changeBtn = new QPushButton(QStringLiteral("Change..."), row);
-
-        hl->addWidget(label, 1);
-        hl->addWidget(changeBtn, 0);
-        hl->addWidget(clearBtn, 0);
-
-        const auto updateUi = [label, changeBtn, clearBtn, &s] {
-            const bool enabled =
-                s.predictionStartPlaySound && s.predictionStartCustomSound;
-            label->setEnabled(enabled);
-            changeBtn->setEnabled(enabled);
-            clearBtn->setEnabled(enabled);
-
-            const QString value = s.predictionStartSoundPath.getValue();
-            if (value.trimmed().isEmpty())
-            {
-                label->setText(QStringLiteral(
-                    "Prediction start sound: Default (Chatterino Ping)"));
-                clearBtn->hide();
-                return;
-            }
-
-            const QUrl url = QUrl::fromLocalFile(value);
-            label->setText(
-                QStringLiteral("Prediction start sound: <a href=\"%1\">%2</a>")
-                    .arg(url.toString(QUrl::FullyEncoded), url.fileName()));
-            clearBtn->show();
-        };
-
-        QObject::connect(changeBtn, &QPushButton::clicked, this, [&s] {
-            const auto fileName = QFileDialog::getOpenFileName(
-                nullptr, QObject::tr("Open Sound"), "",
-                QObject::tr("Audio Files (*.mp3 *.wav)"));
-            s.predictionStartSoundPath = fileName;
-        });
-        QObject::connect(clearBtn, &QPushButton::clicked, this, [&s] {
-            s.predictionStartSoundPath = QString();
-        });
-
-        s.predictionStartPlaySound.connect(
-            [updateUi](const bool &, const auto &) {
-                updateUi();
-            });
-        s.predictionStartCustomSound.connect(
-            [updateUi](const bool &, const auto &) {
-                updateUi();
-            });
-        s.predictionStartSoundPath.connect(
-            [updateUi](const QString &, const auto &) {
-                updateUi();
-            });
-        updateUi();
-
-        layout.addWidget(row);
-    }
+    SettingWidget::checkbox("Show follower count", s.showUsercardFollowerCount)
+        ->addKeywords({"usercard", "follower", "count"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show account creation date",
+                            s.showUsercardCreatedDate)
+        ->addKeywords({"usercard", "created", "account", "date"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show last live", s.showUsercardLastLive)
+        ->setTooltip("Show when the user was last live. Hover the row to see "
+                     "the stream title.")
+        ->addKeywords({"usercard", "last", "live", "stream"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show live viewer count",
+                            s.showUsercardLiveViewerCount)
+        ->setTooltip("When enabled, replaces the red live dot next to the "
+                     "username with the live viewer count.")
+        ->addKeywords({"usercard", "live", "viewer", "count", "indicator"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show user color", s.showUsercardColor)
+        ->setTooltip("Show the user's Twitch chat color.")
+        ->addKeywords({"usercard", "color", "chat"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show badges", s.showUsercardBadges)
+        ->setTooltip("Show the user's badges below their name on the "
+                     "usercard. Which kinds of badges are shown follows the "
+                     "visible badges settings in General.")
+        ->addKeywords({"usercard", "badges", "badge"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show roles button", s.showUsercardRolesButton)
+        ->setTooltip("Show a button on usercards that lists where the user "
+                     "is moderator, VIP, founder or artist, and who has "
+                     "those roles in their channel. Looks the user up on "
+                     "roles.tv.")
+        ->addKeywords({"usercard", "roles", "roles.tv", "moderator", "vip"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show paint", s.showUsercardSevenTVPaint)
+        ->setTooltip("Show the user's 7TV paint or BetterTTV username "
+                     "effect on the usercard.")
+        ->addKeywords({"usercard", "7tv", "seventv", "paint", "cosmetic"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show Twitch status", s.showUsercardStatus)
+        ->setTooltip(
+            "Show whether the user is Staff, Partner, Affiliate, or Regular.")
+        ->addKeywords({"usercard", "status", "staff", "partner", "affiliate"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show chatter count", s.showUsercardChatterCount)
+        ->setTooltip("Show the current chatter count when available.")
+        ->addKeywords({"usercard", "chatter", "count"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show followage", s.showUsercardFollowage)
+        ->setTooltip("Show how long the user has followed this channel. Only "
+                     "available when you are the broadcaster or a moderator.")
+        ->addKeywords({"usercard", "followage", "follow"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show follow button", s.showFollowButtonInUsercard)
+        ->setTooltip("Show a follow/unfollow button on usercards. Requires "
+                     "Moltorino auth (Settings → Moltorino → Authentication).")
+        ->addKeywords({"usercard", "follow", "button"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Confirm before unfollowing from usercard",
+                            s.confirmUnfollowFromUsercard)
+        ->conditionallyEnabledBy(s.showFollowButtonInUsercard)
+        ->setTooltip("Ask before the usercard follow button unfollows a user. "
+                     "The /unfollow command still runs without a prompt.")
+        ->addKeywords({"usercard", "follow", "unfollow", "confirm"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show gift sub gifter", s.showUsercardSubGiftGifter)
+        ->setTooltip("When the user has an active gifted subscription in a "
+                     "channel, show who gifted it on the usercard.")
+        ->addKeywords({"usercard", "gift", "gifter", "subscription", "sub"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Load older messages", s.loadOlderUsercardMessages)
+        ->setTooltip("Load older messages of a user on the usercard, beyond "
+                     "what is in the chat. When disabled, the usercard only "
+                     "shows messages from the chat.")
+        ->addKeywords({"usercard", "messages", "history", "logs"})
+        ->addTo(layout);
+    SettingWidget::intInput("Messages per load",
+                            s.usercardOlderMessagesPageSize,
+                            {
+                                .min = 10,
+                                .max = 100,
+                                .singleStep = 10,
+                            })
+        ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
+        ->setTooltip("How many older messages the usercard loads from the "
+                     "public logs at a time. The Twitch moderator history "
+                     "loads in pages set by Twitch.")
+        ->addKeywords({"usercard", "messages", "logs", "page", "count"})
+        ->addTo(layout);
 
     layout.addTitle("Messages per second");
     SettingWidget::checkbox("Show messages-per-second (mps) overlay in splits",
                             s.showSplitMps)
-        ->setTooltip("Shows a faint overlay label (e.g. \"12 mps\") of how "
-                     "many messages are being sent per second.")
+        ->setTooltip("Shows a faint overlay label (e.g. \"12 mps\") with the "
+                     "average number of messages per second over the "
+                     "selected window.")
+        ->addTo(layout);
+
+    SettingWidget::dropdown("MPS averaging window", s.splitMpsWindow)
+        ->conditionallyEnabledBy(s.showSplitMps)
+        ->setTooltip("Longer windows smooth out Twitch burst delivery so the "
+                     "counter does not spike and drop to zero between bursts.")
         ->addTo(layout);
 
     SettingWidget::dropdown("MPS overlay position", s.splitMpsCorner)
@@ -173,11 +268,89 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->conditionallyEnabledBy(s.showSplitMps)
         ->addTo(layout);
 
-    layout.addTitle("Tabs");
-    SettingWidget::checkbox("Always use theme color for tab highlights",
-                            s.tabHighlightsUseThemeColor)
-        ->setTooltip("Use the theme's default highlighted tab color instead of "
-                     "per-highlight colors.")
+    layout.addTitle("Chat history");
+    SettingWidget::intInput("Messages per load", s.publicLogsPageSize,
+                            {
+                                .min = 10,
+                                .max = 100,
+                                .singleStep = 10,
+                            })
+        ->conditionallyEnabledBy(s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("How many older messages are loaded from the public "
+                     "logs each time you scroll to the top of a chat.")
+        ->addKeywords({"logs", "zonian", "scroll", "page", "count", "messages",
+                       "chat", "history", "older", "public"})
+        ->addTo(layout);
+
+    layout.addTitle("Events");
+    layout.addDescription(
+        "Channel event messages in chat. Requires Moltorino auth "
+        "(Settings → Moltorino → Authentication), experimental EventSub "
+        "enabled under Settings → General, and an app restart after turning "
+        "EventSub on.");
+
+    SettingWidget::checkbox("Show follow notifications in chat",
+                            s.showFollowEventsInChat)
+        ->setTooltip(
+            "Show a chat message when someone follows the channel. Only "
+            "available when you are the broadcaster or a moderator.")
+        ->addKeywords({"follow", "events", "eventsub", "chat", "moderator"})
+        ->addTo(layout);
+
+    layout.addTitle("Commands");
+    SettingWidget::checkbox("Include Supibot commands in suggestions",
+                            s.includeSupibotCommands)
+        ->addKeywords({"supibot", "supinic", "command", "suggestion"})
+        ->setTooltip("Suggest Supibot $ commands after you type $, in "
+                     "channels where Supibot is active.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Show Supibot command aliases",
+                            s.showSupibotCommandAliases)
+        ->addKeywords({"supibot", "alias", "command", "suggestion"})
+        ->setTooltip("Include built-in shortcuts such as $cf, and your own "
+                     "Supibot aliases.")
+        ->conditionallyEnabledBy(s.includeSupibotCommands)
+        ->addTo(layout);
+
+    layout.addTitle("Miscellaneous");
+    SettingWidget::checkbox("Use message colors for tab alerts",
+                            s.colorTabHighlightsByMessage)
+        ->setTooltip("When a message highlights a tab, use that highlight "
+                     "color for the tab alert line.")
+        // Also found when searching for the option below it.
+        ->addKeywords({"tab", "alert", "highlight", "color",
+                       "Show a color for each unseen highlight"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show a color for each unseen highlight",
+                            s.multiColorTabHighlights)
+        ->conditionallyEnabledBy(s.colorTabHighlightsByMessage)
+        ->setTooltip("With several unseen highlights in a tab, split the tab "
+                     "alert line into their colors, up to five, oldest on the "
+                     "left. When disabled, the line shows the newest "
+                     "highlight's color.")
+        ->addKeywords({"tab", "alert", "highlight", "color", "multiple",
+                       "Use message colors for tab alerts"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show a band for each matching highlight",
+                            s.multipleHighlightBands)
+        ->setTooltip("When a message matches more than one highlight, keep "
+                     "the first one as the background and show up to two "
+                     "more as full-color bands at the left edge. This "
+                     "includes highlights like channel point redemptions, "
+                     "first messages and subscriptions.")
+        ->addKeywords({"highlight", "multiple", "band", "color", "stripe"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Wrap links at breaks", s.wrapLinksAtBreaks)
+        ->setTooltip("Let URLs wrap at /, ?, &, #, and = instead of staying "
+                     "on one line.")
+        ->addKeywords({"url", "link", "wrap", "break"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show full date when hovering timestamps",
+                            s.showTimestampDateTooltip)
+        ->setTooltip("Show the full message date and time when hovering a "
+                     "timestamp. Uses your message timestamp format for the "
+                     "time portion.")
+        ->addKeywords({"timestamp", "date", "tooltip", "hover"})
         ->addTo(layout);
 
     layout.addStretch();

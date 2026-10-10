@@ -15,12 +15,19 @@
 #include "controllers/commands/builtin/twitch/Announce.hpp"
 #include "controllers/commands/builtin/twitch/Ban.hpp"
 #include "controllers/commands/builtin/twitch/Block.hpp"
+#include "controllers/commands/builtin/twitch/BlockedTerms.hpp"
+#include "controllers/commands/builtin/twitch/ChannelPoints.hpp"
 #include "controllers/commands/builtin/twitch/ChatSettings.hpp"
 #include "controllers/commands/builtin/twitch/Chatters.hpp"
 #include "controllers/commands/builtin/twitch/DeleteMessages.hpp"
+#include "controllers/commands/builtin/twitch/GetFounders.hpp"
 #include "controllers/commands/builtin/twitch/GetModerators.hpp"
 #include "controllers/commands/builtin/twitch/GetVIPs.hpp"
+#include "controllers/commands/builtin/twitch/Gif.hpp"
 #include "controllers/commands/builtin/twitch/LowTrust.hpp"
+#include "controllers/commands/builtin/twitch/ModVipActions.hpp"
+#include "controllers/commands/builtin/twitch/Nuke.hpp"
+#include "controllers/commands/builtin/twitch/Pin.hpp"
 #include "controllers/commands/builtin/twitch/Poll.hpp"
 #include "controllers/commands/builtin/twitch/Prediction.hpp"
 #include "controllers/commands/builtin/twitch/Raid.hpp"
@@ -51,10 +58,12 @@
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchCommon.hpp"
 #include "singletons/Paths.hpp"
+#include "singletons/Settings.hpp"
 #include "util/CombinePath.hpp"
 #include "util/QStringHash.hpp"
 
 #include <QString>
+#include <QStringBuilder>
 
 #include <unordered_map>
 
@@ -270,6 +279,7 @@ const std::unordered_map<QString, VariableReplacer> COMMAND_VARS{
     },
     // variables used in mod buttons and the like, these make no sense in normal commands, so they are left empty
     {"input.text", NO_OP_PLACEHOLDER},
+    {"element.copytext", NO_OP_PLACEHOLDER},
 };
 
 }  // namespace
@@ -352,6 +362,14 @@ CommandController::CommandController(const Paths &paths)
 
     /// Supported commands
 
+    this->registerCommand("/namehistory", &commands::nameHistory);
+    this->registerCommand("/logs", &commands::logs);
+    this->registerCommand("/modlogs", &commands::modLogs);
+    this->registerCommand("/translate", &commands::translate);
+    this->registerCommand("/translateto", &commands::translateTo);
+    this->registerCommand("/saytranslate", &commands::sayTranslate);
+    this->registerCommand("/tl", &commands::sayTranslate);
+
     this->registerCommand("/debug-args", &commands::listArgs);
 
     this->registerCommand("/debug-env", &commands::listEnvironmentVariables);
@@ -359,8 +377,10 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/uptime", &commands::uptime);
 
     this->registerCommand("/block", &commands::blockUser);
+    this->registerCommand("/blockterm", &commands::blockTerm);
 
     this->registerCommand("/unblock", &commands::unblockUser);
+    this->registerCommand("/unblockterm", &commands::unblockTerm);
 
     this->registerCommand("/user", &commands::user);
 
@@ -368,7 +388,8 @@ CommandController::CommandController(const Paths &paths)
 
     this->registerCommand("/requests", &commands::requests);
 
-    this->registerCommand("/logs", &commands::openLogs);
+    this->registerCommand("/crossban", &commands::crossBan);
+    this->registerCommand("/crossunban", &commands::crossUnban);
 
     this->registerCommand("/lowtrust", &commands::lowtrust);
 
@@ -377,6 +398,7 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/test-chatters", &commands::testChatters);
 
     this->registerCommand("/mods", &commands::getModerators);
+    this->registerCommand("/founders", &commands::getFounders);
 
     this->registerCommand("/clip", &commands::clip);
 
@@ -428,12 +450,19 @@ CommandController::CommandController(const Paths &paths)
 
     this->registerCommand("/unvip", &commands::removeVIP);
 
+    this->registerCommand("/leadmod", &commands::addLeadModerator);
+    this->registerCommand("/unleadmod", &commands::removeLeadModerator);
+    this->registerCommand("/editor", &commands::addEditor);
+    this->registerCommand("/uneditor", &commands::removeEditor);
+
     this->registerCommand("/unban", &commands::unbanUser);
     this->registerCommand("/untimeout", &commands::unbanUser);
 
     this->registerCommand("/raid", &commands::startRaid);
 
     this->registerCommand("/unraid", &commands::cancelRaid);
+    this->registerCommand("/raidcancel", &commands::cancelRaid);
+    this->registerCommand("/raidsend", &commands::sendRaidNow);
 
     this->registerCommand("/emoteonly", &commands::emoteOnly);
     this->registerCommand("/emoteonlyoff", &commands::emoteOnlyOff);
@@ -451,59 +480,6 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/r9kbeta", &commands::uniqueChat);
     this->registerCommand("/uniquechatoff", &commands::uniqueChatOff);
     this->registerCommand("/r9kbetaoff", &commands::uniqueChatOff);
-
-    this->registerCommand(
-        "/founders", [](const QStringList &words, auto channel) -> QString {
-            auto twitchChannel = dynamic_cast<TwitchChannel *>(channel.get());
-            QString target(words.value(1).toLower());
-
-            if (twitchChannel == nullptr)
-            {
-                channel->addSystemMessage(
-                    "The /founders command only works in Twitch Channels");
-                return "";
-            }
-
-            if (words.value(1).isEmpty())
-            {
-                target = channel->getName();
-            }
-
-            getIvr()->getFounders(
-                target,
-                [channel, twitchChannel, target](auto result) {
-                    std::vector<HelixModerator> founders;
-
-                    for (int i = 0; i < result.size(); i++)
-                    {
-                        QJsonObject founderJson;
-
-                        founderJson.insert("user_id",
-                                           result.at(i).toObject().value("id"));
-                        founderJson.insert(
-                            "user_name",
-                            result.at(i).toObject().value("displayName"));
-                        founderJson.insert(
-                            "user_login",
-                            result.at(i).toObject().value("login"));
-
-                        HelixModerator founder(founderJson);
-                        founders.push_back(founder);
-                    }
-
-                    channel->addMessage(
-                        MessageBuilder::makeListOfUsersMessage(
-                            QString("The founders (%1) of %2 are")
-                                .arg(founders.size())
-                                .arg(target),
-                            founders, twitchChannel),
-                        MessageContext::Original);
-                },
-                [channel]() {
-                    channel->addSystemMessage("Could not get founders list!");
-                });
-            return "";
-        });
 
     this->registerCommand("/timeout", &commands::sendTimeout);
 
@@ -561,22 +537,90 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/debug-relaunch-with-logfile",
                           &commands::relaunchWithLogfile);
 
+    this->registerCommand("/debug-seventv-presence",
+                          &commands::seventvPresence);
+
     this->registerCommand("/shield", &commands::shieldModeOn);
     this->registerCommand("/shieldoff", &commands::shieldModeOff);
 
     this->registerCommand("/shoutout", &commands::sendShoutout);
 
+    this->registerCommand("/pin", &commands::pinMessage);
+    this->registerCommand("/unpin", &commands::unpinMessage);
+    this->registerCommand("/spam", &commands::sendSpam);
+    this->registerCommand("/pyramid", &commands::sendPyramid);
+    this->registerCommand("/nuke", &commands::sendNuke);
+
     this->registerCommand("/poll", &commands::createPoll);
+    this->registerCommand("/redeem", &commands::openChannelPointRewards);
+    this->registerCommand("/gif", &commands::openGifPicker);
+    this->registerCommand("/gigantify", &commands::sendGigantifiedEmote);
+    this->registerCommand("/pointschart", &commands::openChannelPointsChart);
+    this->registerCommand("/rewardqueue", &commands::openRewardQueue);
     this->registerCommand("/cancelpoll", &commands::cancelPoll);
     this->registerCommand("/endpoll", &commands::endPoll);
 
-    this->registerCommand("/prediction", &commands::createPrediction);
+    this->registerCommand("/prediction", &commands::showPredictions);
     this->registerCommand("/lockprediction", &commands::lockPrediction);
     this->registerCommand("/cancelprediction", &commands::cancelPrediction);
     this->registerCommand("/completeprediction", &commands::completePrediction);
 
     this->registerCommand("/c2-set-logging-rules", &commands::setLoggingRules);
     this->registerCommand("/c2-theme-autoreload", &commands::toggleThemeReload);
+
+    this->registerCommand("/bot", [](const CommandContext &ctx) -> QString {
+        if (!ctx.twitchChannel)
+        {
+            ctx.channel->addSystemMessage(
+                "/bot only works in Twitch channels.");
+            return "";
+        }
+
+        auto &s = *getSettings();
+        const auto usage = QStringLiteral("Usage: /bot <message>");
+        const bool botBadgeConfigured =
+            !s.botBadgeAppAccessToken.getValue().trimmed().isEmpty() &&
+            !s.botBadgeClientID.getValue().trimmed().isEmpty() &&
+            !s.botBadgeUserID.getValue().trimmed().isEmpty();
+        const auto lockedMessage = [&usage] {
+            return QStringLiteral("Bot mode is locked. Ask Molto about it. ") +
+                   usage;
+        };
+
+        if (ctx.words.size() < 2)
+        {
+            const bool enabling = !s.botBadgeAlwaysUse.getValue();
+            if (enabling && !botBadgeConfigured)
+            {
+                ctx.channel->addSystemMessage(lockedMessage());
+                return "";
+            }
+
+            s.botBadgeAlwaysUse = enabling;
+            s.requestSave();
+
+            ctx.channel->addSystemMessage(
+                enabling
+                    ? (s.botBadgeOverrideAllAccounts.getValue()
+                           ? QStringLiteral(
+                                 "Bot mode enabled for all accounts.")
+                           : QStringLiteral(
+                                 "Bot mode enabled for the bot account only."))
+                    : QStringLiteral("Bot mode disabled."));
+            return "";
+        }
+
+        if (!botBadgeConfigured)
+        {
+            ctx.channel->addSystemMessage(lockedMessage());
+            return "";
+        }
+
+        auto message = ctx.words.mid(1).join(' ');
+        ctx.twitchChannel->sendBotMessage(message);
+
+        return "";
+    });
 }
 
 void CommandController::save()
@@ -639,10 +683,12 @@ QString CommandController::execCommand(const QString &textNoEmoji,
                     std::get_if<CommandFunctionWithContext>(&it->second))
             {
                 CommandContext ctx{
-                    words,
-                    channel,
-                    dynamic_cast<TwitchChannel *>(channel.get()),
-                    dynamic_cast<KickChannel *>(channel.get()),
+                    .words = words,
+                    .rawText = text,
+                    .channel = channel,
+                    .twitchChannel =
+                        dynamic_cast<TwitchChannel *>(channel.get()),
+                    .kickChannel = dynamic_cast<KickChannel *>(channel.get()),
                 };
                 return (*command)(ctx);
             }
@@ -702,7 +748,15 @@ bool CommandController::unregisterPluginCommand(const QString &commandName)
 void CommandController::registerCommand(const QString &commandName,
                                         CommandFunctionVariants commandFunction)
 {
-    assert(this->commands_.count(commandName) == 0);
+    if (this->userCommands_.contains(commandName))
+    {
+        return;
+    }
+
+    if (this->commands_.contains(commandName))
+    {
+        return;
+    }
 
     this->commands_[commandName] = std::move(commandFunction);
 

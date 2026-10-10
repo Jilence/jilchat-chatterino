@@ -41,16 +41,26 @@ public:
     void drawOutline(QPainter &painter) override;
 
 protected:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    using NativeResult = qintptr;
+    using EnterEvent = QEnterEvent;
+#else
+    using NativeResult = long;
+    using EnterEvent = QEvent;
+#endif
+
     bool eventFilter(QObject *object, QEvent *event) override;
-    void enterEvent(QEnterEvent *event) override;
+    void enterEvent(EnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
 #ifdef Q_OS_WIN
     bool nativeEvent(const QByteArray &eventType, void *message,
-                     qintptr *result) override;
+                     NativeResult *result) override;
 #endif
 
     void addShortcuts() override;
+
+    void wheelEvent(QWheelEvent *event) override;
 
     float desiredScale() const override;
 
@@ -64,7 +74,7 @@ private:
     void applyTheme();
 
 #ifdef Q_OS_WIN
-    void handleNCHITTEST(MSG *msg, qintptr *result);
+    void handleNCHITTEST(MSG *msg, NativeResult *result);
 
     HCURSOR sizeAllCursor_;
 #endif

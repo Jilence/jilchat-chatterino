@@ -1,13 +1,10 @@
-// SPDX-FileCopyrightText: 2018 Contributors to Chatterino <https://chatterino.com>
-//
-// SPDX-License-Identifier: MIT
-
 #include "providers/chatterino/ChatterinoBadges.hpp"
 
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -33,6 +30,27 @@ std::optional<EmotePtr> ChatterinoBadges::getBadge(const UserId &id)
     return std::nullopt;
 }
 
+EmotePtr ChatterinoBadges::getKickBadge(uint64_t kickID)
+{
+    auto it = this->kickMapping.find(kickID);
+    if (it != this->kickMapping.end())
+    {
+        return this->emotes[it->second];
+    }
+    return {};
+}
+
+void ChatterinoBadges::setKickMapping(const QString &twitchID, uint64_t kickID)
+{
+    // Lookup by Twitch ID first. Assume that most users don't have a Chatterino badge.
+    auto existing = this->badgeMap.find(twitchID);
+    if (existing == this->badgeMap.end())
+    {
+        return;
+    }
+    this->kickMapping.emplace(kickID, existing->second);
+}
+
 void ChatterinoBadges::loadChatterinoBadges()
 {
     static QUrl url("https://api.chatterino.com/badges");
@@ -49,8 +67,7 @@ void ChatterinoBadges::loadChatterinoBadges()
                  jsonRoot.value("badges").toArray())
             {
                 auto jsonBadge = jsonBadgeValue.toObject();
-                // The sizes for the images are only an estimation, there might
-                // be badges with different sizes.
+
                 constexpr QSize baseSize(18, 18);
                 auto tooltip = jsonBadge.value("tooltip").toString();
                 auto emote = Emote{
@@ -80,6 +97,8 @@ void ChatterinoBadges::loadChatterinoBadges()
                 }
                 ++index;
             }
+
+            WindowManager::notifyBadgesUpdated();
         })
         .execute();
 }

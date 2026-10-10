@@ -9,6 +9,7 @@
 #include "common/QLogging.hpp"
 #include "common/WindowDescriptors.hpp"
 #include "debug/AssertInGuiThread.hpp"
+#include "providers/twitch/TwitchChannel.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
@@ -816,7 +817,8 @@ void SplitContainer::applyFromDescriptor(const NodeDescriptor &rootNode)
 
 void SplitContainer::popup()
 {
-    Window &window = getApp()->getWindows()->createWindow(WindowType::Popup);
+    Window &window =
+        getApp()->getWindows()->createWindow(WindowType::Popup, {});
     auto *popupContainer = window.getNotebook().getOrAddSelectedPage();
 
     QJsonObject encodedTab;
@@ -841,44 +843,14 @@ void SplitContainer::popup()
     window.show();
 }
 
-QString channelTypeToString(Channel::Type value) noexcept
-{
-    using Type = chatterino::Channel::Type;
-    switch (value)
-    {
-        default:
-            assert(false && "value cannot be serialized");
-            return "never";
-
-        case Type::Twitch:
-            return "twitch";
-        case Type::TwitchWhispers:
-            return "whispers";
-        case Type::TwitchWatching:
-            return "watching";
-        case Type::TwitchMentions:
-            return "mentions";
-        case Type::TwitchLive:
-            return "live";
-        case Type::TwitchAutomod:
-            return "automod";
-        case Type::Misc:
-            return "misc";
-    }
-}
-
 NodeDescriptor SplitContainer::buildDescriptorRecursively(
     const Node *currentNode) const
 {
-    if (currentNode->children_.empty())
+    if (currentNode->children_.empty() && currentNode->split_)
     {
-        const auto channelType =
-            currentNode->split_->getIndirectChannel().getType();
-
-        SplitNodeDescriptor result;
-        result.type_ = channelTypeToString(channelType);
-        result.channelName_ = currentNode->split_->getChannel()->getName();
-        result.filters_ = currentNode->split_->getFilters();
+        SplitNodeDescriptor result(currentNode->split_->buildDescriptor());
+        result.flexH_ = currentNode->flexH_;
+        result.flexV_ = currentNode->flexV_;
         return result;
     }
 
@@ -890,6 +862,8 @@ NodeDescriptor SplitContainer::buildDescriptorRecursively(
         descriptor.items_.push_back(
             this->buildDescriptorRecursively(child.get()));
     }
+    descriptor.flexH_ = currentNode->flexH_;
+    descriptor.flexV_ = currentNode->flexV_;
 
     return descriptor;
 }
@@ -909,10 +883,13 @@ void SplitContainer::applyFromDescriptorRecursively(
         const auto &splitNode = *n;
 
         auto *split = new Split(this);
-        split->setChannel(WindowManager::decodeChannel(splitNode));
+        split->setChannel(splitNode.decodeChannel());
         split->setModerationMode(splitNode.moderationMode_);
         split->setFilters(splitNode.filters_);
         split->setCheckSpellingOverride(splitNode.spellCheckOverride);
+        split->loadPerSplitBannerHides(splitNode.perSplitHidePinnedMessage_,
+                                       splitNode.perSplitHidePrediction_,
+                                       splitNode.perSplitHidePoll_);
 
         this->insertSplit(split);
 
@@ -946,9 +923,13 @@ void SplitContainer::applyFromDescriptorRecursively(
                 const auto &splitNode = *inner;
                 auto *split = new Split(this);
                 split->setFilters(splitNode.filters_);
-                split->setChannel(WindowManager::decodeChannel(splitNode));
+                split->setChannel(splitNode.decodeChannel());
                 split->setModerationMode(splitNode.moderationMode_);
                 split->setCheckSpellingOverride(splitNode.spellCheckOverride);
+                split->loadPerSplitBannerHides(
+                    splitNode.perSplitHidePinnedMessage_,
+                    splitNode.perSplitHidePrediction_,
+                    splitNode.perSplitHidePoll_);
 
                 auto node = std::make_shared<Node>();
                 node->parent_ = baseNode;
@@ -993,6 +974,14 @@ void SplitContainer::refreshTabTitle()
     for (const auto &chatWidget : this->splits_)
     {
         auto channelName = chatWidget->getChannel()->getLocalizedName();
+        if (auto *twitchChannel =
+                dynamic_cast<TwitchChannel *>(chatWidget->getChannel().get()))
+        {
+            if (twitchChannel->isAnonymous() && !channelName.isEmpty())
+            {
+                channelName += " (anonymous)";
+            }
+        }
         if (channelName.isEmpty())
         {
             continue;
@@ -1244,7 +1233,7 @@ SplitContainer::Position SplitContainer::Node::releaseSplit()
 {
     assert(this->type_ == Type::Split);
 
-    if (this->parent_ == nullptr)
+    if (this->parent_ == nullptr || this->parent_->children_.empty())
     {
         this->type_ = Type::EmptyRoot;
         this->split_ = nullptr;
@@ -1302,7 +1291,10 @@ SplitContainer::Position SplitContainer::Node::releaseSplit()
                     ? SplitDirection::Below
                     : SplitDirection::Right;
             siblings.erase(it);
-            position.relativeNode_ = siblings.back().get();
+            if (!siblings.empty())
+            {
+                position.relativeNode_ = siblings.back().get();
+            }
         }
         else
         {

@@ -40,6 +40,7 @@
 #include <QShortcut>
 #include <QUrl>
 
+#include <algorithm>
 #include <climits>
 
 namespace {
@@ -107,10 +108,12 @@ MessageView::MessageView(QWidget *parent)
 
     this->signalHolder_.managedConnect(
         getApp()->getWindows()->gifRepaintRequested, [this] {
-            if (this->hasAnimatedElements_ && this->isVisible())
+            if (!this->isVisible() || this->animationRegion_.isEmpty())
             {
-                this->update();
+                return;
             }
+
+            this->update(this->animationRegion_);
         });
 }
 
@@ -136,7 +139,7 @@ void MessageView::setMessage(const MessagePtr &message)
     {
         this->message_.reset();
         this->messageLayout_.reset();
-        this->hasAnimatedElements_ = false;
+        this->animationRegion_ = {};
         this->tooltipWidget_->hide();
         this->update();
         return;
@@ -168,7 +171,7 @@ void MessageView::setFullMessage(const MessagePtr &message)
     {
         this->message_.reset();
         this->messageLayout_.reset();
-        this->hasAnimatedElements_ = false;
+        this->animationRegion_ = {};
         this->tooltipWidget_->hide();
         this->update();
         return;
@@ -283,10 +286,13 @@ void MessageView::updateHoverTooltip(QMouseEvent *event)
     auto *element = &hoverLayoutElement->getCreator();
     const bool isLinkValid = hoverLayoutElement->getLink().isValid();
     const auto *emoteElement = dynamic_cast<const EmoteElement *>(element);
+    const auto *emoteLinkElement =
+        dynamic_cast<const EmoteLinkElement *>(element);
     const auto *layeredEmoteElement =
         dynamic_cast<const LayeredEmoteElement *>(element);
-    const bool isNotEmote =
-        emoteElement == nullptr && layeredEmoteElement == nullptr;
+    const bool isNotEmote = emoteElement == nullptr &&
+                            emoteLinkElement == nullptr &&
+                            layeredEmoteElement == nullptr;
 
     if (element->getTooltip().isEmpty() ||
         (isLinkValid && isNotEmote && !getSettings()->linkInfoTooltip))
@@ -297,7 +303,8 @@ void MessageView::updateHoverTooltip(QMouseEvent *event)
     {
         const auto *badgeElement = dynamic_cast<const BadgeElement *>(element);
 
-        if (badgeElement || emoteElement || layeredEmoteElement)
+        if (badgeElement || emoteElement || emoteLinkElement ||
+            layeredEmoteElement)
         {
             const auto showThumbnailSetting =
                 getSettings()->emotesTooltipPreview.getEnum();
@@ -307,13 +314,13 @@ void MessageView::updateHoverTooltip(QMouseEvent *event)
                 (showThumbnailSetting == ThumbnailPreviewMode::ShowOnShift &&
                  event->modifiers() == Qt::ShiftModifier);
 
-            if (emoteElement)
+            if (emoteElement || emoteLinkElement)
             {
+                const auto emote = emoteElement ? emoteElement->getEmote()
+                                                : emoteLinkElement->getEmote();
                 const auto scale = getSettings()->emoteTooltipScale.getEnum();
                 this->tooltipWidget_->setOne(TooltipEntry::scaled(
-                    showThumbnail
-                        ? emoteElement->getEmote()->images.getImage(3.0)
-                        : nullptr,
+                    showThumbnail ? emote->images.getImage(3.0) : nullptr,
                     element->getTooltip(), getTooltipScale(scale)));
             }
             else if (layeredEmoteElement)
@@ -371,12 +378,24 @@ void MessageView::updateHoverTooltip(QMouseEvent *event)
             }
             else if (badgeElement)
             {
-                const auto scale = getSettings()->emoteTooltipScale.getEnum();
+                auto scale = getSettings()->emoteTooltipScale.getEnum();
+                auto tooltipScale = getTooltipScale(scale);
+                if (badgeElement->getFlags().has(
+                        MessageElementFlag::BadgeJilChat))
+                {
+                    // JilChat badges are autoscaled down to 18px for chat while
+                    // their source asset is 128px, so the preview may be shown
+                    // much larger than the badge itself. Cap it at the asset's
+                    // native resolution - scaling past that only produces a
+                    // blurry, pixelated preview.
+                    tooltipScale = std::min(tooltipScale * 4.0F,
+                                            std::max(tooltipScale, 1.0F));
+                }
                 this->tooltipWidget_->setOne(TooltipEntry::scaled(
                     showThumbnail
                         ? badgeElement->getEmote()->images.getImage(3.0)
                         : nullptr,
-                    element->getTooltip(), getTooltipScale(scale)));
+                    element->getTooltip(), tooltipScale));
             }
         }
         else if (auto *linkElement = dynamic_cast<LinkElement *>(element))
@@ -844,7 +863,7 @@ void MessageView::paintEvent(QPaintEvent * /*event*/)
 {
     if (this->messageLayout_ == nullptr)
     {
-        this->hasAnimatedElements_ = false;
+        this->animationRegion_ = {};
         return;
     }
 
@@ -867,7 +886,7 @@ void MessageView::paintEvent(QPaintEvent * /*event*/)
     };
 
     const auto result = this->messageLayout_->paint(ctx);
-    this->hasAnimatedElements_ = result.hasAnimatedElements;
+    this->animationRegion_ = result.animatedRegion.intersected(this->rect());
 }
 
 void MessageView::themeChangedEvent()

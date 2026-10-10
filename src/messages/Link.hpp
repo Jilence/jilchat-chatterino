@@ -27,6 +27,8 @@ public:
         ReplyToMessage,
         ViewThread,
         JumpToMessage,
+        AcknowledgeChatWarning,
+        JilVoiceMessage,
     };
 
     Link();

@@ -18,10 +18,13 @@
 #    include <semver/semver.hpp>
 #    include <sol/forward.hpp>
 
+#    include <cassert>
 #    include <memory>
 #    include <optional>
 #    include <unordered_map>
 #    include <unordered_set>
+#    include <utility>
+#    include <variant>
 #    include <vector>
 
 struct lua_State;
@@ -29,14 +32,33 @@ class QTimer;
 
 namespace chatterino::lua::api {
 enum class LogLevel;
-}  // namespace chatterino::lua::api
+}
 
 namespace chatterino::lua {
 struct SignalCallback;
-}  // namespace chatterino::lua
+}
 
 namespace chatterino {
 
+/// A plugin that hasn't been loaded.
+///
+/// Most likely, its metadata is invalid.
+class UnloadedPlugin
+{
+public:
+    QString id;
+    PluginMeta meta;
+    QDir loadDirectory;
+
+    UnloadedPlugin(QString id_, PluginMeta meta_, const QDir &loadDirectory_)
+        : id(std::move(id_))
+        , meta(std::move(meta_))
+        , loadDirectory(loadDirectory_)
+    {
+    }
+};
+
+/// A plugin with a valid lua state
 class Plugin
 {
 public:
@@ -49,8 +71,12 @@ public:
         , meta(std::move(meta))
         , loadDirectory_(loadDirectory)
         , state_(state)
-        , selfRef_(state ? this : nullptr)
+        , selfRef_(this)
     {
+        // The PluginMeta here must be valid, otherwise it should be initialized
+        // as an UnloadedPlugin
+        assert(this->meta.isValid());
+        assert(this->state_ != nullptr);
     }
 
     ~Plugin();
@@ -60,17 +86,8 @@ public:
     Plugin &operator=(const Plugin &) = delete;
     Plugin &operator=(Plugin &&) = delete;
 
-    /**
-     * @brief Perform all necessary tasks to bind a command name to this plugin
-     * @param name name of the command to create
-     * @param function the function that should be called when the command is executed
-     * @return true if addition succeeded, false otherwise (for example because the command name is already taken)
-     */
     bool registerCommand(const QString &name, sol::protected_function function);
 
-    /**
-     * @brief Get names of all commands belonging to this plugin
-     */
     std::unordered_set<QString> listRegisteredCommands();
 
     const QDir &loadDirectory() const
@@ -100,9 +117,6 @@ public:
 
     lua::SignalCallback createCallback(sol::main_protected_function pfn);
 
-    /**
-     * If the plugin crashes while evaluating the main file, this function will return the error
-     */
     QString error()
     {
         return this->error_;
@@ -124,8 +138,6 @@ public:
 
     std::map<lua::api::EventType, sol::protected_function> callbacks;
 
-    // In-flight HTTP Requests
-    // This is a lifetime hack to ensure they get deleted with the plugin. This relies on the Plugin getting deleted on reload!
     std::vector<std::shared_ptr<lua::api::HTTPRequest>> httpRequests;
 
     boost::signals2::signal<void()> onUnloaded;
@@ -140,13 +152,17 @@ private:
 
     QString error_;
 
-    // maps command name -> function
     std::unordered_map<QString, sol::protected_function> ownedCommands;
     std::vector<QTimer *> activeTimeouts;
     int lastTimerId = 0;
 
     friend class PluginController;
-    friend class PluginControllerAccess;  // this is for tests
+    friend class PluginControllerAccess;
 };
+
+using PluginPtr = std::unique_ptr<Plugin>;
+using AnyPlugin = std::variant<PluginPtr, UnloadedPlugin>;
+
 }  // namespace chatterino
+
 #endif

@@ -9,6 +9,7 @@
 #include "twitch-eventsub-ws/payloads/automod-message-hold-v2.hpp"
 #include "twitch-eventsub-ws/payloads/channel-chat-user-message-hold-v1.hpp"
 #include "twitch-eventsub-ws/payloads/channel-chat-user-message-update-v1.hpp"
+#include "twitch-eventsub-ws/payloads/channel-follow-v2.hpp"
 #include "twitch-eventsub-ws/payloads/channel-moderate-v2.hpp"
 #include "twitch-eventsub-ws/payloads/channel-suspicious-user-message-v1.hpp"
 #include "twitch-eventsub-ws/payloads/channel-suspicious-user-update-v1.hpp"
@@ -16,6 +17,7 @@
 #include <QDateTime>
 
 #include <concepts>
+#include <utility>
 
 namespace chatterino::eventsub::detail {
 
@@ -77,7 +79,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Untimeout &action);
 
-/// <MODERATOR> deleted message from <USER>[ in <CHANNEL>] saying: <MESSAGE>
+/// A message from <USER> was deleted: <MESSAGE>
 void makeModerateMessage(
     EventSubMessageBuilder &builder,
     const lib::payload::channel_moderate::v2::Event &event,
@@ -147,13 +149,13 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Unmod &action);
 
-/// <MODERATOR> initiated a raid to <CHANNEL>.
+/// <MODERATOR> initiated a raid to <CHANNEL>
 void makeModerateMessage(
     EventSubMessageBuilder &builder,
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Raid &action);
 
-/// <MODERATOR> canceled the raid to <CHANNEL>.
+/// <MODERATOR> canceled the raid to <CHANNEL>
 void makeModerateMessage(
     EventSubMessageBuilder &builder,
     const lib::payload::channel_moderate::v2::Event &event,
@@ -165,11 +167,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::UnbanRequest &action);
 
-MessagePtr makeAutomodHoldMessageHeader(
-    TwitchChannel *channel, const QDateTime &time,
-    const lib::payload::automod_message_hold::v2::Event &event);
-
-MessagePtr makeAutomodHoldMessageBody(
+std::pair<MessagePtr, HighlightAlert> makeAutomodHoldMessage(
     TwitchChannel *channel, const QDateTime &time,
     const lib::payload::automod_message_hold::v2::Event &event);
 
@@ -192,5 +190,9 @@ MessagePtr makeUserMessageHeldMessage(
 MessagePtr makeUserMessageUpdateMessage(
     TwitchChannel *channel, const QDateTime &time,
     const lib::payload::channel_chat_user_message_update::v1::Event &event);
+
+MessagePtrMut makeFollowMessage(
+    TwitchChannel *channel, const QDateTime &time,
+    const lib::payload::channel_follow::v2::Event &event);
 
 }  // namespace chatterino::eventsub

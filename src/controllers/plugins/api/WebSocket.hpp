@@ -42,6 +42,7 @@ public:
      * @exposed c2.WebSocket:close
      */
     void close();
+
     /**
      * Sends a text message on the socket.
      *
@@ -49,6 +50,7 @@ public:
      * @exposed c2.WebSocket:send_text
      */
     void sendText(const QByteArray &data);
+
     /**
      * Sends a binary message on the socket.
      *
@@ -62,20 +64,23 @@ private:
      * @lua@field on_close fun()|nil Handler called when the socket is closed.
      */
     sol::main_function onClose;
+
     /**
      * @lua@field on_text fun(data: string)|nil Handler called when the socket receives a text message.
      */
     sol::main_function onText;
+
     /**
      * @lua@field on_binary fun(data: string)|nil Handler called when the socket receives a binary message.
      */
     sol::main_function onBinary;
+
     /**
      * @lua@field on_open fun()|nil Handler called when the websocket handshake has been completed successfully.
      */
     sol::main_function onOpen;
     WebSocketHandle handle;
-    // Note: this class lives inside the plugin -> this pointer will be valid.
+
     Plugin *plugin = nullptr;
 
     friend class WebSocketListenerProxy;

@@ -32,6 +32,23 @@ TEST(Helpers, formatUserMention)
     EXPECT_EQ(formatUserMention(userName, false, false), "pajlada");
 }
 
+TEST(Helpers, formatCompactNumber)
+{
+    EXPECT_EQ(formatCompactNumber(999), "999");
+    EXPECT_EQ(formatCompactNumber(1000), "1k");
+    EXPECT_EQ(formatCompactNumber(1100), "1.1k");
+    EXPECT_EQ(formatCompactNumber(15'000), "15k");
+    EXPECT_EQ(formatCompactNumber(1'000'000), "1m");
+    EXPECT_EQ(formatCompactNumber(1'500'000), "1.5m");
+    EXPECT_EQ(formatCompactNumber(1'884'000, 2), "1.88m");
+    EXPECT_EQ(formatCompactNumber(10'000'000), "10m");
+    EXPECT_EQ(formatCompactNumber(1'500'000'000), "1.5b");
+    EXPECT_EQ(formatCompactNumber(1'000'000'000'000), "1T");
+    EXPECT_EQ(formatChannelPoints(-1), "...");
+    EXPECT_EQ(formatChannelPoints(99'999'999), "99,999,999");
+    EXPECT_EQ(formatChannelPoints(100'000'000), "100m");
+}
+
 TEST(Helpers, BatchTwoParts)
 {
     QStringList input{
@@ -581,6 +598,19 @@ TEST(Helpers, chronoToQDateTime)
               somePointSinceEpoch.count());
     ASSERT_EQ(qPointSinceEpoch.toString(Qt::ISODateWithMs),
               "2025-02-26T12:49:49.131Z");
+}
+
+TEST(Helpers, codepointLength)
+{
+    ASSERT_EQ(codepointLength(u""), 0);
+    ASSERT_EQ(codepointLength(u"abcd"), 4);
+    ASSERT_EQ(codepointLength(u"🦁"), 1);
+    ASSERT_EQ(codepointLength(u"a🍕b"), 3);
+    ASSERT_EQ(codepointLength(u"👁🦁🍕🐔"), 4);
+
+    // Unpaired surrogates still count as one codepoint
+    ASSERT_EQ(codepointLength(u"\xD83E"), 1);
+    ASSERT_EQ(codepointLength(u"\xD83E🐔"), 2);
 }
 
 TEST(Helpers, codepointSlice)

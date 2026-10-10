@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+// SPDX-FileCopyrightText: 2023 Contributors to Chatterino <https://chatterino.com>
 //
 // SPDX-License-Identifier: MIT
 
@@ -13,7 +13,6 @@
 
 namespace chatterino {
 
-// NOLINTBEGIN(clazy-reserve-candidates)
 PluginMeta::PluginMeta(const QJsonObject &obj)
 {
     auto homepageObj = obj.value("homepage");
@@ -139,7 +138,6 @@ PluginMeta::PluginMeta(const QJsonObject &obj)
             auto parsed = PluginPermission(t.toObject());
             if (parsed.isValid())
             {
-                // ensure no invalid permissions slip through this
                 this->permissions.push_back(parsed);
             }
             else
@@ -181,7 +179,6 @@ PluginMeta::PluginMeta(const QJsonObject &obj)
         }
     }
 }
-// NOLINTEND(clazy-reserve-candidates)
 
 }  // namespace chatterino
 

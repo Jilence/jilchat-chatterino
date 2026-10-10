@@ -5,25 +5,56 @@
 #include "messages/layouts/MessageLayoutElement.hpp"
 
 #include "Application.hpp"
+#include "controllers/emotes/EmoteController.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/MessageElement.hpp"
+#include "providers/bttv/BttvUsernameEffects.hpp"
+#include "providers/jilchat/JilChatVoice.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "providers/twitch/TwitchEmotes.hpp"
+#include "singletons/helper/GifTimer.hpp"
 #include "singletons/Settings.hpp"
 #include "util/DebugCount.hpp"
 
+#include <QCache>
+#include <QCoreApplication>
 #include <QDebug>
+#include <QFontMetricsF>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsPixmapItem>
 #include <QLabel>
+#include <QMetaObject>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QSet>
+#include <QThreadPool>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cmath>
+#include <limits>
+#include <ranges>
+#include <utility>
 
 namespace {
+
+QRectF snapRectToDevicePixels(const QRectF &rect, const QPainter &painter)
+{
+    const auto dpr =
+        painter.device() ? painter.device()->devicePixelRatioF() : 1.0;
+    const auto snap = [dpr](qreal value) {
+        return std::round(value * dpr) / dpr;
+    };
+
+    return QRectF(snap(rect.x()), snap(rect.y()),
+                  std::max(1.0 / dpr, snap(rect.width())),
+                  std::max(1.0 / dpr, snap(rect.height())));
+}
 
 const QChar RTL_EMBED(0x202B);
 
@@ -32,6 +63,461 @@ void alignRectBottomCenter(QRectF &rect, const QRectF &reference)
     QPointF newCenter(reference.center().x(),
                       reference.bottom() - (rect.height() / 2.0));
     rect.moveCenter(newCenter);
+}
+
+void drawPixmapWithOptionalSmoothing(
+    QPainter &painter, const QRectF &target, const QPixmap &pixmap,
+    chatterino::FlagsEnum<chatterino::MessageElementFlag> flags)
+{
+    const bool smooth =
+        flags.has(chatterino::MessageElementFlag::BadgeMoltorino) ||
+        flags.has(chatterino::MessageElementFlag::BadgeBluzyrino);
+    const bool wasSmooth =
+        painter.testRenderHint(QPainter::SmoothPixmapTransform);
+
+    if (smooth && !wasSmooth)
+    {
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    }
+
+    painter.drawPixmap(snapRectToDevicePixels(target, painter), pixmap,
+                       QRectF());
+
+    if (smooth && !wasSmooth)
+    {
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    }
+}
+
+constexpr int MODIFIER_FILTER_CACHE_KIB = 8 * 1024;
+
+struct ModifierFilterKey {
+    qint64 pixmapCacheKey{};
+    uint32_t flags{};
+    int phase{};
+
+    bool operator==(const ModifierFilterKey &) const = default;
+};
+
+size_t qHash(const ModifierFilterKey &key, size_t seed = 0) noexcept
+{
+    return qHashMulti(seed, key.pixmapCacheKey, key.flags, key.phase);
+}
+
+struct ModifierFilterFrame {
+    QPixmap pixmap;
+    std::weak_ptr<chatterino::Image> source;
+};
+
+QCache<ModifierFilterKey, ModifierFilterFrame> *modifierFilterCache = nullptr;
+QSet<ModifierFilterKey> *pendingModifierFilters = nullptr;
+QThreadPool *modifierFilterPool = nullptr;
+std::atomic_bool modifierFiltersShuttingDown{false};
+
+void clearModifierFilterCache()
+{
+    modifierFiltersShuttingDown.store(true, std::memory_order_release);
+    if (modifierFilterPool != nullptr)
+    {
+        modifierFilterPool->clear();
+        modifierFilterPool->waitForDone();
+        delete modifierFilterPool;
+        modifierFilterPool = nullptr;
+    }
+    delete pendingModifierFilters;
+    pendingModifierFilters = nullptr;
+    delete modifierFilterCache;
+    modifierFilterCache = nullptr;
+}
+
+QCache<ModifierFilterKey, ModifierFilterFrame> &getModifierFilterCache()
+{
+    if (modifierFilterCache == nullptr)
+    {
+        modifierFilterCache =
+            new QCache<ModifierFilterKey, ModifierFilterFrame>(
+                MODIFIER_FILTER_CACHE_KIB);
+        pendingModifierFilters = new QSet<ModifierFilterKey>;
+        modifierFilterPool = new QThreadPool;
+
+        modifierFilterPool->setMaxThreadCount(1);
+        modifierFilterPool->setExpiryTimeout(10'000);
+        modifierFiltersShuttingDown.store(false, std::memory_order_release);
+
+        qAddPostRoutine(clearModifierFilterCache);
+    }
+    return *modifierFilterCache;
+}
+
+struct ModifierLayoutGeometry {
+    QSizeF size;
+    QPointF contentCenter;
+};
+
+ModifierLayoutGeometry modifierLayoutGeometry(QSizeF contentSize,
+                                              uint32_t flags)
+{
+    using namespace chatterino::emote_modifiers;
+
+    auto transformedWidth = contentSize.width();
+    auto transformedHeight = contentSize.height();
+    if ((flags & BTTV_WIDE) != 0)
+    {
+        transformedWidth = contentSize.height() * 2.0;
+    }
+    else if ((flags & WIDE) != 0)
+    {
+        transformedWidth *= 2.0;
+    }
+    return {
+        .size = {transformedWidth, transformedHeight},
+        .contentCenter = {transformedWidth / 2.0, transformedHeight / 2.0},
+    };
+}
+
+QRectF modifierVisualEnvelope(const QRectF &layoutRect, QSizeF contentSize,
+                              uint32_t flags)
+{
+    using namespace chatterino::emote_modifiers;
+
+    qreal scaleX = 1.0;
+    if ((flags & BTTV_WIDE) != 0 && contentSize.width() > 0)
+    {
+        scaleX = contentSize.height() * 2.0 / contentSize.width();
+    }
+    else if ((flags & WIDE) != 0)
+    {
+        scaleX = 2.0;
+    }
+
+    qreal scaleY = 1.0;
+    if ((flags & BOUNCE) != 0)
+    {
+        scaleX *= 1.2;
+    }
+    if ((flags & JAM) != 0)
+    {
+        scaleX *= 1.08;
+        scaleY *= 1.12;
+    }
+    if ((flags & (APPEAR | LEAVE)) != 0)
+    {
+        scaleX *= 1.04;
+        scaleY *= 1.04;
+    }
+
+    auto width = contentSize.width() * std::abs(scaleX);
+    auto height = contentSize.height() * std::abs(scaleY);
+    if ((flags & (ROTATE_90 | ROTATE_LEFT | ROTATE_RIGHT)) != 0)
+    {
+        std::swap(width, height);
+    }
+    if ((flags & SPIN) != 0)
+    {
+        width = height = std::hypot(width, height);
+    }
+    else if ((flags & JAM) != 0)
+    {
+        constexpr auto MAX_ANGLE = 8.0 * 3.14159265358979323846 / 180.0;
+        const auto sine = std::sin(MAX_ANGLE);
+        const auto cosine = std::cos(MAX_ANGLE);
+        const auto rotatedWidth = width * cosine + height * sine;
+        const auto rotatedHeight = height * cosine + width * sine;
+        width = rotatedWidth;
+        height = rotatedHeight;
+    }
+
+    qreal left = 0.0;
+    qreal right = 0.0;
+    qreal top = 0.0;
+    qreal bottom = 0.0;
+    if ((flags & SLIDE) != 0)
+    {
+        left += contentSize.width() * 0.28;
+        right += contentSize.width() * 0.28;
+    }
+    if ((flags & (APPEAR | LEAVE)) != 0)
+    {
+        left += contentSize.width() * 0.65;
+    }
+    if ((flags & (HYPER_RED | SHAKE | BTTV_SHAKE)) != 0)
+    {
+        left += 3.0;
+        right += 3.0;
+        top += 3.0;
+        bottom += 3.0;
+    }
+    if ((flags & JAM) != 0)
+    {
+        left += 3.0;
+        right += 3.0;
+        top += 4.0;
+        bottom += 4.0;
+    }
+
+    QRectF envelope(QPointF{}, QSizeF(width, height));
+    envelope.moveCenter(layoutRect.center());
+    envelope.adjust(-left, -top, right, bottom);
+    return envelope.united(layoutRect);
+}
+
+int modifierColorPhase(uint32_t flags, unsigned long time)
+{
+    using namespace chatterino::emote_modifiers;
+    if ((flags & (RAINBOW | PARTY)) == 0)
+    {
+        return 0;
+    }
+    constexpr int PHASES = 12;
+    const auto duration = (flags & PARTY) != 0 ? 1500UL : 2000UL;
+    return static_cast<int>((time % duration) * PHASES / duration);
+}
+
+int clampColor(qreal value)
+{
+    return std::clamp(static_cast<int>(std::lround(value)), 0, 255);
+}
+
+void applySepia(qreal amount, int &red, int &green, int &blue)
+{
+    const auto sepiaRed = 0.393 * red + 0.769 * green + 0.189 * blue;
+    const auto sepiaGreen = 0.349 * red + 0.686 * green + 0.168 * blue;
+    const auto sepiaBlue = 0.272 * red + 0.534 * green + 0.131 * blue;
+    red = clampColor(red + (sepiaRed - red) * amount);
+    green = clampColor(green + (sepiaGreen - green) * amount);
+    blue = clampColor(blue + (sepiaBlue - blue) * amount);
+}
+
+void applySaturation(qreal amount, int &red, int &green, int &blue)
+{
+    const auto luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    red = clampColor(luminance + (red - luminance) * amount);
+    green = clampColor(luminance + (green - luminance) * amount);
+    blue = clampColor(luminance + (blue - luminance) * amount);
+}
+
+void applyContrast(qreal amount, int &red, int &green, int &blue)
+{
+    const auto adjust = [amount](int channel) {
+        return clampColor((channel - 127.5) * amount + 127.5);
+    };
+    red = adjust(red);
+    green = adjust(green);
+    blue = adjust(blue);
+}
+
+QImage filterModifierImage(QImage image, uint32_t filterFlags, int phase)
+{
+    using namespace chatterino::emote_modifiers;
+    image = image.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < image.height(); ++y)
+    {
+        auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x)
+        {
+            const auto pixel = line[x];
+            const auto alpha = qAlpha(pixel);
+            if (alpha == 0)
+            {
+                continue;
+            }
+
+            int red = qRed(pixel);
+            int green = qGreen(pixel);
+            int blue = qBlue(pixel);
+            if ((filterFlags & CURSED) != 0)
+            {
+                const auto gray =
+                    clampColor(0.2126 * red + 0.7152 * green + 0.0722 * blue);
+                red = green = blue = clampColor(gray * 0.7);
+                applyContrast(2.5, red, green, blue);
+            }
+            if ((filterFlags & HYPER_RED) != 0)
+            {
+                red = clampColor(red * 0.2);
+                green = clampColor(green * 0.2);
+                blue = clampColor(blue * 0.2);
+                applySepia(1.0, red, green, blue);
+                red = clampColor(red * 2.2);
+                green = clampColor(green * 2.2);
+                blue = clampColor(blue * 2.2);
+                applyContrast(3.0, red, green, blue);
+                applySaturation(8.0, red, green, blue);
+            }
+            if ((filterFlags & (RAINBOW | PARTY)) != 0)
+            {
+                if ((filterFlags & PARTY) != 0)
+                {
+                    applySepia(0.5, red, green, blue);
+                    applySaturation(2.5, red, green, blue);
+                }
+                QColor color(red, green, blue);
+                int hue = 0;
+                int saturation = 0;
+                int value = 0;
+                color.getHsv(&hue, &saturation, &value);
+                hue = (std::max(0, hue) + phase * 30) % 360;
+                color.setHsv(hue, saturation, value);
+                red = color.red();
+                green = color.green();
+                blue = color.blue();
+            }
+            line[x] = qRgba(red, green, blue, alpha);
+        }
+    }
+    return image;
+}
+
+void insertModifierFilterResult(const ModifierFilterKey &key, QImage image,
+                                qreal devicePixelRatio,
+                                const ModifierFilterKey &fallbackKey,
+                                const std::weak_ptr<chatterino::Image> &source)
+{
+    if (modifierFiltersShuttingDown.load(std::memory_order_acquire) ||
+        modifierFilterCache == nullptr || pendingModifierFilters == nullptr)
+    {
+        return;
+    }
+
+    pendingModifierFilters->remove(key);
+    auto result = QPixmap::fromImage(std::move(image));
+    result.setDevicePixelRatio(devicePixelRatio);
+    const auto costKiB = std::max<qsizetype>(
+        1,
+        (static_cast<qsizetype>(result.width()) * result.height() * 4 + 1023) /
+            1024);
+    if (costKiB <= MODIFIER_FILTER_CACHE_KIB)
+    {
+        modifierFilterCache->insert(key,
+                                    new ModifierFilterFrame{result, source},
+                                    static_cast<int>(costKiB));
+        if (!source.expired())
+        {
+            modifierFilterCache->insert(
+                fallbackKey, new ModifierFilterFrame{std::move(result), source},
+                static_cast<int>(costKiB));
+        }
+    }
+}
+
+QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
+                               const chatterino::ImagePtr &sourceImage)
+{
+    using namespace chatterino::emote_modifiers;
+    const auto filterFlags = flags & (RAINBOW | PARTY | HYPER_RED | CURSED);
+    if (filterFlags == 0 || source.isNull())
+    {
+        return source;
+    }
+
+    const ModifierFilterKey key{
+        .pixmapCacheKey = source.cacheKey(),
+        .flags = filterFlags,
+        .phase = phase,
+    };
+    auto &cache = getModifierFilterCache();
+    if (const auto *cached = cache.object(key))
+    {
+        return cached->pixmap;
+    }
+
+    const bool deferFiltering =
+        sourceImage->animated() || (filterFlags & (RAINBOW | PARTY)) != 0;
+    const ModifierFilterKey fallbackKey{
+        .pixmapCacheKey =
+            static_cast<qint64>(reinterpret_cast<quintptr>(sourceImage.get())),
+        .flags = filterFlags,
+        .phase = -1,
+    };
+    if (deferFiltering)
+    {
+        QPixmap fallback;
+        if (const auto *last = cache.object(fallbackKey);
+            last && last->source.lock() == sourceImage)
+        {
+            fallback = last->pixmap;
+        }
+        if (fallback.isNull())
+        {
+            constexpr int PREVIEW_DIMENSION = 128;
+            auto preview = source;
+            if (std::max(source.width(), source.height()) > PREVIEW_DIMENSION)
+            {
+                preview = source.scaled(PREVIEW_DIMENSION, PREVIEW_DIMENSION,
+                                        Qt::KeepAspectRatio);
+            }
+            fallback = QPixmap::fromImage(
+                filterModifierImage(preview.toImage(), filterFlags, phase));
+            fallback.setDevicePixelRatio(source.devicePixelRatio());
+            const auto costKiB = std::max(
+                1, (fallback.width() * fallback.height() * 4 + 1023) / 1024);
+            cache.insert(fallbackKey,
+                         new ModifierFilterFrame{fallback, sourceImage},
+                         costKiB);
+            if (preview.size() == source.size())
+            {
+                cache.insert(key,
+                             new ModifierFilterFrame{fallback, sourceImage},
+                             costKiB);
+                return fallback;
+            }
+        }
+        if (pendingModifierFilters == nullptr ||
+            modifierFilterPool == nullptr ||
+            pendingModifierFilters->contains(key) ||
+            pendingModifierFilters->size() >= 16 ||
+            modifierFilterPool->activeThreadCount() >=
+                modifierFilterPool->maxThreadCount())
+        {
+            return fallback;
+        }
+
+        pendingModifierFilters->insert(key);
+        const auto dpr = source.devicePixelRatio();
+        auto image = source.toImage();
+        std::weak_ptr<chatterino::Image> weakSource = sourceImage;
+        auto *context = QCoreApplication::instance();
+        const bool started =
+            context != nullptr &&
+            modifierFilterPool->tryStart([key, image = std::move(image),
+                                          filterFlags, phase, dpr, fallbackKey,
+                                          weakSource, context]() mutable {
+                auto filtered =
+                    filterModifierImage(std::move(image), filterFlags, phase);
+                if (modifierFiltersShuttingDown.load(std::memory_order_acquire))
+                {
+                    return;
+                }
+                QMetaObject::invokeMethod(
+                    context,
+                    [key, filtered = std::move(filtered), dpr, fallbackKey,
+                     weakSource]() mutable {
+                        insertModifierFilterResult(key, std::move(filtered),
+                                                   dpr, fallbackKey,
+                                                   weakSource);
+                    },
+                    Qt::QueuedConnection);
+            });
+        if (!started)
+        {
+            pendingModifierFilters->remove(key);
+        }
+        return fallback;
+    }
+
+    auto result = QPixmap::fromImage(
+        filterModifierImage(source.toImage(), filterFlags, phase));
+    result.setDevicePixelRatio(source.devicePixelRatio());
+    const auto costKiB = std::max<qsizetype>(
+        1,
+        (static_cast<qsizetype>(result.width()) * result.height() * 4 + 1023) /
+            1024);
+    if (costKiB <= MODIFIER_FILTER_CACHE_KIB)
+    {
+        cache.insert(key, new ModifierFilterFrame{result, {}},
+                     static_cast<int>(costKiB));
+    }
+    return result;
 }
 
 }  // namespace
@@ -154,6 +640,16 @@ void ImageLayoutElement::addCopyTextToString(QString &str, uint32_t from,
             str += ' ';
         }
     }
+    else if (const auto *imageElement =
+                 dynamic_cast<ScalingImageElement *>(&this->getCreator()))
+    {
+        str += imageElement->copyText();
+        if (!imageElement->copyText().isEmpty() && this->hasTrailingSpace() &&
+            to >= 2)
+        {
+            str += ' ';
+        }
+    }
 }
 
 size_t ImageLayoutElement::getSelectionIndexCount() const
@@ -172,16 +668,16 @@ void ImageLayoutElement::paint(QPainter &painter,
     auto pixmap = this->image_->pixmapOrLoad();
     if (pixmap && !this->image_->animated())
     {
-        // fourtf: make it use qreal values
-        painter.drawPixmap(QRectF(this->getRect()), *pixmap, QRectF());
+        drawPixmapWithOptionalSmoothing(painter, QRectF(this->getRect()),
+                                        *pixmap, this->getFlags());
     }
 }
 
-bool ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
+QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
 {
     if (this->image_ == nullptr)
     {
-        return false;
+        return {};
     }
 
     if (this->image_->animated())
@@ -190,15 +686,24 @@ bool ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
         {
             auto rect = this->getRect();
             rect.moveTop(rect.y() + yOffset);
-            painter.drawPixmap(QRectF(rect), *pixmap, QRectF());
-            return true;
+            const auto drawRect = QRectF(rect);
+            drawPixmapWithOptionalSmoothing(painter, drawRect, *pixmap,
+                                            this->getFlags());
+            return QRegion(rect.toAlignedRect()) |
+                   QRegion(snapRectToDevicePixels(drawRect, painter)
+                               .toAlignedRect());
         }
     }
-    return false;
+    return {};
 }
 
-int ImageLayoutElement::getMouseOverIndex(QPointF /*abs*/) const
+int ImageLayoutElement::getMouseOverIndex(QPointF abs) const
 {
+    if (abs.x() >= this->getRect().center().x())
+    {
+        return static_cast<int>(this->getSelectionIndexCount());
+    }
+
     return 0;
 }
 
@@ -225,13 +730,21 @@ qreal ImageLayoutElement::getXFromIndex(size_t index)
 
 LayeredImageLayoutElement::LayeredImageLayoutElement(
     MessageElement &creator, std::vector<ImagePtr> images,
-    std::vector<QSizeF> sizes, QSizeF largestSize)
-    : MessageLayoutElement(creator, largestSize)
+    std::vector<QSizeF> sizes, QSizeF largestSize, uint32_t modifierFlags)
+    : MessageLayoutElement(
+          creator, modifierLayoutGeometry(largestSize, modifierFlags).size)
     , images_(std::move(images))
     , sizes_(std::move(sizes))
+    , contentSize_(largestSize)
+    , modifierFlags_(modifierFlags)
 {
     assert(this->images_.size() == this->sizes_.size());
     this->trailingSpace = creator.hasTrailingSpace();
+}
+
+bool LayeredImageLayoutElement::removesPreviousSpace() const
+{
+    return (this->modifierFlags_ & emote_modifiers::ZERO_SPACE) != 0;
 }
 
 void LayeredImageLayoutElement::addCopyTextToString(QString &str, uint32_t from,
@@ -242,7 +755,9 @@ void LayeredImageLayoutElement::addCopyTextToString(QString &str, uint32_t from,
     if (layeredEmoteElement)
     {
         // cleaning is taken care in call
-        str += layeredEmoteElement->getCleanCopyString();
+        str += this->getText().isNull()
+                   ? layeredEmoteElement->getCleanCopyString()
+                   : this->getText();
         if (this->hasTrailingSpace() && to >= 2)
         {
             str += ' ';
@@ -258,6 +773,15 @@ size_t LayeredImageLayoutElement::getSelectionIndexCount() const
 void LayeredImageLayoutElement::paint(QPainter &painter,
                                       const MessageColors & /*messageColors*/)
 {
+    if (this->modifierFlags_ != 0)
+    {
+        if (!this->needsAnimatedPaint())
+        {
+            (void)this->paintModified(painter, 0);
+        }
+        return;
+    }
+
     auto fullRect = QRectF(this->getRect());
 
     for (size_t i = 0; i < this->images_.size(); ++i)
@@ -286,13 +810,24 @@ void LayeredImageLayoutElement::paint(QPainter &painter,
             QRectF destRect(0, 0, size.width(), size.height());
             alignRectBottomCenter(destRect, fullRect);
 
-            painter.drawPixmap(destRect, *pixmap, QRectF());
+            painter.drawPixmap(snapRectToDevicePixels(destRect, painter),
+                               *pixmap, QRectF());
         }
     }
 }
 
-bool LayeredImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
+QRegion LayeredImageLayoutElement::paintAnimated(QPainter &painter,
+                                                 qreal yOffset)
 {
+    if (this->modifierFlags_ != 0)
+    {
+        if (this->needsAnimatedPaint())
+        {
+            return this->paintModified(painter, yOffset);
+        }
+        return {};
+    }
+
     auto fullRect = QRectF(this->getRect());
     fullRect.moveTop(fullRect.y() + yOffset);
     bool animatedFlag = false;
@@ -318,16 +853,264 @@ bool LayeredImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
                 QRectF destRect(0, 0, size.width(), size.height());
                 alignRectBottomCenter(destRect, fullRect);
 
-                painter.drawPixmap(destRect, *pixmap, QRectF());
+                painter.drawPixmap(snapRectToDevicePixels(destRect, painter),
+                                   *pixmap, QRectF());
                 animatedFlag = true;
             }
         }
     }
-    return animatedFlag;
+    if (!animatedFlag)
+    {
+        return {};
+    }
+    return QRegion(fullRect.toAlignedRect());
 }
 
-int LayeredImageLayoutElement::getMouseOverIndex(QPointF /*abs*/) const
+bool LayeredImageLayoutElement::needsAnimatedPaint() const
 {
+    if (getSettings()->animateEmotes &&
+        (this->modifierFlags_ & emote_modifiers::ANIMATED) != 0)
+    {
+        return true;
+    }
+    return std::ranges::any_of(this->images_, [](const auto &image) {
+        return image != nullptr && image->animated();
+    });
+}
+
+QRegion LayeredImageLayoutElement::paintModified(QPainter &painter,
+                                                 qreal yOffset)
+{
+    using namespace emote_modifiers;
+
+    auto fullRect = QRectF(this->getRect());
+    fullRect.translate(0, yOffset);
+    QRectF contentRect(QPointF{}, this->contentSize_);
+    const auto geometry =
+        modifierLayoutGeometry(this->contentSize_, this->modifierFlags_);
+    contentRect.moveCenter(fullRect.topLeft() + geometry.contentCenter);
+
+    const bool animate = getSettings()->animateEmotes;
+    const auto animatedFlags = animate ? this->modifierFlags_ : 0;
+    const auto time =
+        animate ? getApp()->getEmotes()->getGIFTimer()->position() : 0UL;
+    const auto cycle = [](unsigned long position, unsigned long duration) {
+        return static_cast<qreal>(position % duration) /
+               static_cast<qreal>(duration);
+    };
+    constexpr qreal PI = 3.14159265358979323846;
+
+    qreal scaleX = 1.0;
+    if ((this->modifierFlags_ & BTTV_WIDE) != 0 &&
+        this->contentSize_.width() > 0)
+    {
+        scaleX = this->contentSize_.height() * 2.0 / this->contentSize_.width();
+    }
+    else if ((this->modifierFlags_ & WIDE) != 0)
+    {
+        scaleX = 2.0;
+    }
+    qreal scaleY = 1.0;
+    if ((this->modifierFlags_ & FLIP_X) != 0)
+    {
+        scaleX = -scaleX;
+    }
+    if ((this->modifierFlags_ & FLIP_Y) != 0)
+    {
+        scaleY = -scaleY;
+    }
+
+    qreal rotation = 0.0;
+    if ((this->modifierFlags_ & ROTATE_90) != 0)
+    {
+        rotation += 90.0;
+    }
+    if ((this->modifierFlags_ & ROTATE_LEFT) != 0)
+    {
+        rotation -= 90.0;
+    }
+    if ((this->modifierFlags_ & ROTATE_RIGHT) != 0)
+    {
+        rotation += 90.0;
+    }
+    if ((animatedFlags & SPIN) != 0)
+    {
+        rotation += cycle(time, 1500) * 360.0;
+    }
+
+    QPointF translation;
+    if ((animatedFlags & SLIDE) != 0)
+    {
+        const auto duration = static_cast<unsigned long>(
+            std::clamp(contentRect.width() / 32.0 * 500.0, 250.0, 2000.0));
+        translation.rx() += std::sin(cycle(time, duration) * PI * 2.0) *
+                            contentRect.width() * 0.28;
+    }
+    if ((animatedFlags & (HYPER_RED | SHAKE)) != 0)
+    {
+        static constexpr std::array<QPointF, 10> FFZ_SHAKE{
+            QPointF{-2, 1}, QPointF{3, -2}, QPointF{-1, -3}, QPointF{2, 2},
+            QPointF{-3, 0}, QPointF{1, 3},  QPointF{3, 1},   QPointF{-2, -1},
+            QPointF{0, 2},  QPointF{1, -2},
+        };
+        translation += FFZ_SHAKE[(time / 10U) % FFZ_SHAKE.size()];
+    }
+    if ((animatedFlags & BTTV_SHAKE) != 0)
+    {
+        static constexpr std::array<QPointF, 10> BTTV_SHAKE_STEPS{
+            QPointF{-1, 0}, QPointF{2, -1},  QPointF{-2, 1}, QPointF{1, 2},
+            QPointF{0, -2}, QPointF{-2, -1}, QPointF{2, 1},  QPointF{-1, 2},
+            QPointF{1, -1}, QPointF{0, 0},
+        };
+        translation += BTTV_SHAKE_STEPS[(time / 50U) % BTTV_SHAKE_STEPS.size()];
+    }
+
+    qreal opacity = 1.0;
+    qreal animatedScaleX = 1.0;
+    qreal animatedScaleY = 1.0;
+    const bool appears = (animatedFlags & APPEAR) != 0;
+    const bool leaves = (animatedFlags & LEAVE) != 0;
+    const auto enter = [&](qreal progress) {
+        progress = std::clamp(progress, 0.0, 1.0);
+        const auto eased = 1.0 - std::pow(1.0 - progress, 3.0);
+        opacity = progress;
+        animatedScaleX = animatedScaleY =
+            eased + std::sin(progress * PI) * 0.04;
+        translation.rx() -= (1.0 - eased) * contentRect.width() * 0.65;
+    };
+    const auto leave = [&](qreal progress) {
+        progress = std::clamp(progress, 0.0, 1.0);
+        const auto remaining = 1.0 - progress;
+        opacity = remaining;
+        animatedScaleX = remaining * std::cos(progress * PI);
+        animatedScaleY = remaining;
+        translation.rx() -= progress * contentRect.width() * 0.65;
+    };
+    if (appears && leaves)
+    {
+        const auto progress = cycle(time, 6000);
+        if (progress < 0.1 || progress >= 0.925)
+        {
+            opacity = 0.0;
+            animatedScaleX = animatedScaleY = 0.0;
+        }
+        else if (progress < 0.325)
+        {
+            enter((progress - 0.1) / 0.225);
+        }
+        else if (progress >= 0.7)
+        {
+            leave((progress - 0.7) / 0.225);
+        }
+    }
+    else if (appears)
+    {
+        const auto progress = cycle(time, 3000);
+        if (progress < 0.2)
+        {
+            opacity = 0.0;
+            animatedScaleX = animatedScaleY = 0.0;
+        }
+        else if (progress < 0.65)
+        {
+            enter((progress - 0.2) / 0.45);
+        }
+    }
+    else if (leaves)
+    {
+        const auto progress = cycle(time, 3000);
+        if (progress >= 0.85)
+        {
+            opacity = 0.0;
+            animatedScaleX = animatedScaleY = 0.0;
+        }
+        else if (progress >= 0.4)
+        {
+            leave((progress - 0.4) / 0.45);
+        }
+    }
+    if ((animatedFlags & JAM) != 0)
+    {
+        const auto beat = std::sin(cycle(time, 600) * PI * 2.0);
+        scaleX *= 1.0 + beat * 0.08;
+        scaleY *= 1.0 - beat * 0.12;
+        translation +=
+            QPointF(beat * 3.0, std::cos(cycle(time, 600) * PI * 2.0) * 4.0);
+        rotation += -2.5 + beat * 5.5;
+    }
+    if ((animatedFlags & BOUNCE) != 0)
+    {
+        const auto progress = cycle(time, 500);
+        const auto squash = std::sin(progress * PI);
+        scaleX *= 1.0 + squash * 0.2;
+        scaleY *= 1.0 - squash * 0.65;
+        if (progress >= 0.25 && progress < 0.75)
+        {
+            scaleX = -scaleX;
+        }
+    }
+    scaleX *= animatedScaleX;
+    scaleY *= animatedScaleY;
+
+    QTransform transform;
+    auto origin = contentRect.center();
+    if ((animatedFlags & BOUNCE) != 0)
+    {
+        origin.setY(contentRect.bottom());
+    }
+    transform.translate(origin.x() + translation.x(),
+                        origin.y() + translation.y());
+    transform.rotate(rotation);
+    transform.scale(scaleX, scaleY);
+    transform.translate(-origin.x(), -origin.y());
+
+    const auto phase = modifierColorPhase(this->modifierFlags_, time);
+    bool painted = false;
+    QRegion paintedRegion;
+    painter.save();
+    painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
+    painter.setWorldTransform(transform, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    for (size_t i = 0; i < this->images_.size(); ++i)
+    {
+        const auto &image = this->images_[i];
+        if (image == nullptr)
+        {
+            continue;
+        }
+        const auto pixmap = image->pixmapOrLoad();
+        if (!pixmap)
+        {
+            continue;
+        }
+        QRectF target(QPointF{}, this->sizes_[i]);
+        alignRectBottomCenter(target, contentRect);
+        const auto filtered =
+            filteredModifierPixmap(*pixmap, this->modifierFlags_, phase, image);
+        const auto snapped = snapRectToDevicePixels(target, painter);
+        painter.drawPixmap(snapped, filtered, QRectF());
+        paintedRegion += transform.mapRect(snapped).toAlignedRect();
+        painted = true;
+    }
+    painter.restore();
+    if (!painted)
+    {
+        return {};
+    }
+
+    paintedRegion += modifierVisualEnvelope(fullRect, this->contentSize_,
+                                            this->modifierFlags_)
+                         .toAlignedRect();
+    return paintedRegion;
+}
+
+int LayeredImageLayoutElement::getMouseOverIndex(QPointF abs) const
+{
+    if (abs.x() >= this->getRect().center().x())
+    {
+        return static_cast<int>(this->getSelectionIndexCount());
+    }
+
     return 0;
 }
 
@@ -462,18 +1245,16 @@ void TextLayoutElement::paint(QPainter &painter,
     }
 
     auto font = app->getFonts()->getFont(this->style_, this->scale_);
-    auto metrics = app->getFonts()->getFontMetrics(this->style_, this->scale_);
 
     bool isNametag = this->getLink().type == chatterino::Link::UserInfo ||
                      this->getLink().type == chatterino::Link::UserWhisper;
     bool drawPaint = isNametag && this->messageColor_ != MessageColor::System &&
-                     getSettings()->displaySevenTVPaints;
+                     usernamePaintsEnabled();
     if (drawPaint)
     {
-        auto paint = app->getSeventvPaints()->getPaint(
-            this->getLink().value.toLower(),
-            this->getCreator().getFlags().has(
-                MessageElementFlag::KickUsername));
+        auto paint = usernamePaint(this->getLink().value.toLower(),
+                                   this->getCreator().getFlags().has(
+                                       MessageElementFlag::KickUsername));
         if (paint)
         {
             if (paint->animated())
@@ -481,11 +1262,15 @@ void TextLayoutElement::paint(QPainter &painter,
                 return;
             }
 
+            // Some paints reach beyond the name, e.g. with an outline.
+            const auto overflow = paint->overflow();
             auto paintPixmap = paint->getPixmap(
                 this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_);
+                this->scale_, this->dpr_, false, overflow);
 
-            painter.drawPixmap(this->getRect().topLeft(), paintPixmap);
+            painter.drawPixmap(
+                this->getRect().topLeft() - QPointF(overflow, overflow),
+                paintPixmap);
             return;
         }
     }
@@ -493,15 +1278,25 @@ void TextLayoutElement::paint(QPainter &painter,
     painter.setPen(this->color_);
     painter.setFont(font);
 
-    QPointF pivot(this->getRect().x(), this->getRect().y() + metrics.ascent());
-    painter.drawText(pivot, text);
+    const QFontMetricsF metrics(font);
+    if (this->getRect().height() > std::ceil(metrics.height()))
+    {
+        const auto baseline = this->getRect().bottom() - metrics.descent();
+        painter.drawText(QPointF(this->getRect().x(), baseline), text);
+    }
+    else
+    {
+        painter.drawText(
+            QRectF(this->getRect().x(), this->getRect().y(), 10000, 10000),
+            text, QTextOption(Qt::AlignLeft | Qt::AlignTop));
+    }
 }
 
-bool TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
+QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
 {
     if (this->getRect().isEmpty())
     {
-        return false;
+        return {};
     }
 
     const auto font = getApp()->getFonts()->getFont(this->style_, this->scale_);
@@ -509,27 +1304,29 @@ bool TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
     const bool isNametag =
         this->getLink().type == chatterino::Link::UserInfo ||
         this->getLink().type == chatterino::Link::UserWhisper;
-    const bool drawPaint = isNametag && getSettings()->displaySevenTVPaints;
+    const bool drawPaint = isNametag && usernamePaintsEnabled();
     if (!drawPaint)
     {
-        return false;
+        return {};
     }
-    const auto paint = getApp()->getSeventvPaints()->getPaint(
+    const auto paint = usernamePaint(
         this->getLink().value.toLower(),
         this->getCreator().getFlags().has(MessageElementFlag::KickUsername));
     if (!paint || !paint->animated())
     {
-        return false;
+        return {};
     }
 
-    const auto paintPixmap =
-        paint->getPixmap(this->getText(), font, this->color_,
-                         this->getRect().size(), this->scale_, this->dpr_);
+    const auto overflow = paint->overflow();
+    const auto paintPixmap = paint->getPixmap(
+        this->getText(), font, this->color_, this->getRect().size(),
+        this->scale_, this->dpr_, false, overflow);
 
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
+    rect.adjust(-overflow, -overflow, overflow, overflow);
     painter.drawPixmap(rect, paintPixmap, QRectF());
-    return true;
+    return QRegion(rect.toAlignedRect());
 }
 
 int TextLayoutElement::getMouseOverIndex(QPointF abs) const
@@ -654,14 +1451,19 @@ void TextIconLayoutElement::paint(QPainter &painter,
     }
 }
 
-bool TextIconLayoutElement::paintAnimated(QPainter & /*painter*/,
-                                          qreal /*yOffset*/)
+QRegion TextIconLayoutElement::paintAnimated(QPainter & /*painter*/,
+                                             qreal /*yOffset*/)
 {
-    return false;
+    return {};
 }
 
-int TextIconLayoutElement::getMouseOverIndex(QPointF /*abs*/) const
+int TextIconLayoutElement::getMouseOverIndex(QPointF abs) const
 {
+    if (abs.x() >= this->getRect().center().x())
+    {
+        return static_cast<int>(this->getSelectionIndexCount());
+    }
+
     return 0;
 }
 
@@ -680,6 +1482,209 @@ qreal TextIconLayoutElement::getXFromIndex(size_t index)
     {
         return this->getRect().right();
     }
+}
+
+VoiceMessageLayoutElement::VoiceMessageLayoutElement(MessageElement &creator,
+                                                     QString voiceId,
+                                                     QSizeF size, float scale)
+    : MessageLayoutElement(creator, size)
+    , voiceId_(std::move(voiceId))
+    , scale_(scale)
+{
+    this->trailingSpace = creator.hasTrailingSpace();
+}
+
+QRectF VoiceMessageLayoutElement::playButtonRect() const
+{
+    const auto rect = this->getRect();
+    return QRectF(rect.left(), rect.top(), 28 * this->scale_, rect.height());
+}
+
+QRectF VoiceMessageLayoutElement::waveformRect() const
+{
+    const auto rect = this->getRect();
+    const qreal barsLeft = rect.left() + 30 * this->scale_;
+    const qreal barsRight = rect.right() - 54 * this->scale_;
+    return {barsLeft, rect.top(), std::max<qreal>(0, barsRight - barsLeft),
+            rect.height()};
+}
+
+bool VoiceMessageLayoutElement::isOverPlayButton(QPointF point) const
+{
+    return this->playButtonRect().contains(point);
+}
+
+std::optional<double> VoiceMessageLayoutElement::seekProgressAt(
+    QPointF point) const
+{
+    const auto wave = this->waveformRect();
+    if (!wave.contains(point) || wave.width() <= 0)
+    {
+        return std::nullopt;
+    }
+
+    return std::clamp((point.x() - wave.left()) / wave.width(), 0.0, 1.0);
+}
+
+void VoiceMessageLayoutElement::addCopyTextToString(QString &str,
+                                                    uint32_t /*from*/,
+                                                    uint32_t to) const
+{
+    str += QStringLiteral("https://jil.chat/v/%1").arg(this->voiceId_);
+    if (this->hasTrailingSpace() && to >= 2)
+    {
+        str += ' ';
+    }
+}
+
+size_t VoiceMessageLayoutElement::getSelectionIndexCount() const
+{
+    return this->trailingSpace ? 2 : 1;
+}
+
+void VoiceMessageLayoutElement::paint(QPainter &painter,
+                                      const MessageColors &messageColors)
+{
+    const auto rect = this->getRect();
+    const qreal radius = rect.height() / 2.0;
+    const QColor accent(145, 66, 255);
+    QColor bg = messageColors.regularText;
+    bg.setAlphaF(0.08);
+    QColor muted = messageColors.regularText;
+    muted.setAlphaF(0.24);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(bg);
+    painter.drawRoundedRect(rect, radius, radius);
+
+    const qreal iconX = rect.left() + 10 * this->scale_;
+    const qreal iconY = rect.center().y();
+    painter.setBrush(accent);
+    if (jilchat::isVoicePlaying(this->voiceId_))
+    {
+        // Playing: show a pause icon (two bars) in the same filled accent style.
+        const qreal barW = 2.5 * this->scale_;
+        const qreal barH = 10 * this->scale_;
+        const qreal gap = 3 * this->scale_;
+        const qreal top = iconY - barH / 2.0;
+        painter.drawRoundedRect(QRectF(iconX, top, barW, barH), barW / 2.0,
+                                barW / 2.0);
+        painter.drawRoundedRect(QRectF(iconX + barW + gap, top, barW, barH),
+                                barW / 2.0, barW / 2.0);
+    }
+    else
+    {
+        QPainterPath triangle;
+        triangle.moveTo(iconX, iconY - 5 * this->scale_);
+        triangle.lineTo(iconX, iconY + 5 * this->scale_);
+        triangle.lineTo(iconX + 8 * this->scale_, iconY);
+        triangle.closeSubpath();
+        painter.drawPath(triangle);
+    }
+
+    const qreal barWidth = 2 * this->scale_;
+    const qreal gap = 2 * this->scale_;
+    const auto wave = this->waveformRect();
+    const qreal barsLeft = wave.left();
+    const qreal barsRight = wave.right();
+    const int count = std::max(
+        1, static_cast<int>((barsRight - barsLeft) / (barWidth + gap)));
+    for (int i = 0; i < count; ++i)
+    {
+        const qreal height = this->barHeight(i, count) * this->scale_;
+        const QRectF bar(barsLeft + i * (barWidth + gap),
+                         rect.center().y() - (height / 2.0), barWidth, height);
+        painter.setBrush(muted);
+        painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
+    }
+
+    const auto volumeText =
+        QStringLiteral("%1%").arg(jilchat::getVoiceVolume(this->voiceId_));
+    auto volumeFont =
+        getApp()->getFonts()->getFont(FontStyle::ChatMediumBold, this->scale_);
+    if (volumeText.size() >= 4)
+    {
+        volumeFont.setPointSizeF(volumeFont.pointSizeF() * 0.82);
+    }
+    painter.setPen(messageColors.systemText);
+    painter.setFont(volumeFont);
+    painter.drawText(QRectF(rect.right() - 52 * this->scale_, rect.top(),
+                            43 * this->scale_, rect.height()),
+                     Qt::AlignVCenter | Qt::AlignRight, volumeText);
+    painter.restore();
+}
+
+QRegion VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
+                                                 qreal yOffset)
+{
+    auto rect = this->getRect();
+    rect.moveTop(rect.y() + yOffset);
+    // The whole element is asked for again, also while nothing plays: that
+    // is how the progress shows up once it starts.
+    const QRegion region(rect.toAlignedRect());
+
+    const auto progress = jilchat::getVoiceProgress(this->voiceId_);
+    if (progress <= 0.0)
+    {
+        return region;
+    }
+
+    auto wave = this->waveformRect();
+    wave.moveTop(wave.y() + yOffset);
+    const qreal barWidth = 2 * this->scale_;
+    const qreal gap = 2 * this->scale_;
+    const qreal filledRight = wave.left() + wave.width() * progress;
+    const int count =
+        std::max(1, static_cast<int>(wave.width() / (barWidth + gap)));
+    const QColor accent(145, 66, 255);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(accent);
+
+    for (int i = 0; i < count; ++i)
+    {
+        const qreal x = wave.left() + i * (barWidth + gap);
+        if (x > filledRight)
+        {
+            break;
+        }
+
+        const qreal height = this->barHeight(i, count) * this->scale_;
+        const QRectF bar(x, rect.center().y() - (height / 2.0), barWidth,
+                         height);
+        painter.drawRoundedRect(bar, barWidth / 2.0, barWidth / 2.0);
+    }
+
+    painter.restore();
+    return region;
+}
+
+int VoiceMessageLayoutElement::getMouseOverIndex(QPointF /*abs*/) const
+{
+    return 0;
+}
+
+qreal VoiceMessageLayoutElement::getXFromIndex(size_t index)
+{
+    return index <= 0 ? this->getRect().left() : this->getRect().right();
+}
+
+qreal VoiceMessageLayoutElement::barHeight(int index, int /*count*/) const
+{
+    uint h = uint(index) * 2654435761U;
+    for (const auto c : this->voiceId_)
+    {
+        h = (h * 31U) + uint(c.unicode());
+    }
+    h ^= h >> 16;
+    h *= 0x45d9f3bU;
+    h ^= h >> 16;
+    const qreal norm = qreal(h & 0xFFFFU) / qreal(0xFFFFU);
+    return 4 + norm * 12;
 }
 
 ReplyCurveLayoutElement::ReplyCurveLayoutElement(MessageElement &creator,
@@ -729,14 +1734,19 @@ void ReplyCurveLayoutElement::paint(QPainter &painter,
     painter.drawPath(path);
 }
 
-bool ReplyCurveLayoutElement::paintAnimated(QPainter & /*painter*/,
-                                            qreal /*yOffset*/)
+QRegion ReplyCurveLayoutElement::paintAnimated(QPainter & /*painter*/,
+                                               qreal /*yOffset*/)
 {
-    return false;
+    return {};
 }
 
-int ReplyCurveLayoutElement::getMouseOverIndex(QPointF /*abs*/) const
+int ReplyCurveLayoutElement::getMouseOverIndex(QPointF abs) const
 {
+    if (abs.x() >= this->getRect().center().x())
+    {
+        return static_cast<int>(this->getSelectionIndexCount());
+    }
+
     return 0;
 }
 

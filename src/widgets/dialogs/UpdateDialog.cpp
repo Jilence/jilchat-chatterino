@@ -82,35 +82,37 @@ void UpdateDialog::updateStatusChanged(Updates::Status status)
         break;
 
         case Updates::Downloading: {
-            this->ui_.label->setText(
-                "Downloading updates.\n\nChatterino will restart "
-                "automatically when the download is done.");
+            this->ui_.label->setText("Downloading update...");
         }
         break;
 
         case Updates::DownloadFailed: {
-            this->ui_.label->setText("Failed to download the update.");
+            this->ui_.label->setText("Failed to download update.");
         }
         break;
 
         case Updates::WriteFileFailed: {
-            this->ui_.label->setText("Failed to save the update to disk.");
+            this->ui_.label->setText("Failed to write update to disk.");
         }
         break;
 
         case Updates::MissingPortableUpdater: {
-            this->ui_.label->setText("The portable updater (expected in " %
-                                     Updates::portableUpdaterPath() %
-                                     ") was not found.");
+            this->ui_.label->setText(
+                "The portable updater (expected in " %
+                Updates::portableUpdaterPath(getApp()->getPaths()) %
+                ") was not found.");
         }
         break;
 
         case Updates::RunUpdaterFailed: {
-            this->ui_.label->setText("Failed to run the updater.");
+            this->ui_.label->setText("Failed to run updater.");
         }
         break;
 
-        default:;
+        default: {
+            this->ui_.label->setText("You shouldn't be seeing this dialog.");
+        }
+        break;
     }
 }
 

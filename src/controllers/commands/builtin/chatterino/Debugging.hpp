@@ -4,15 +4,13 @@
 
 #pragma once
 
-#include <QtGlobal>
-
 class QString;
 
 namespace chatterino {
 
 struct CommandContext;
 
-}  // namespace chatterino
+}
 
 namespace chatterino::commands {
 
@@ -45,5 +43,7 @@ QString relaunchWithConsole(const CommandContext &ctx);
 QString disableLogfile(const CommandContext &ctx);
 QString enableLogfile(const CommandContext &ctx);
 QString relaunchWithLogfile(const CommandContext &ctx);
+
+QString seventvPresence(const CommandContext &ctx);
 
 }  // namespace chatterino::commands

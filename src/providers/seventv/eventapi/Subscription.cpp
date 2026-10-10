@@ -45,6 +45,11 @@ bool Subscription::operator==(const Subscription &rhs) const
            std::tie(rhs.condition, rhs.type);
 }
 
+bool Subscription::operator!=(const Subscription &rhs) const
+{
+    return !(rhs == *this);
+}
+
 QByteArray Subscription::encodeSubscribe() const
 {
     auto typeName = typeToString(this->type);
@@ -90,6 +95,11 @@ QJsonObject ObjectIDCondition::encode() const
 bool ObjectIDCondition::operator==(const ObjectIDCondition &rhs) const
 {
     return this->objectID == rhs.objectID;
+}
+
+bool ObjectIDCondition::operator!=(const ObjectIDCondition &rhs) const
+{
+    return !(*this == rhs);
 }
 
 QDebug &operator<<(QDebug &dbg, const ObjectIDCondition &condition)

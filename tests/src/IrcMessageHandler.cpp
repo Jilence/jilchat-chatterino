@@ -16,6 +16,7 @@
 #include "mocks/ChatterinoBadges.hpp"
 #include "mocks/DisabledStreamerMode.hpp"
 #include "mocks/EmoteController.hpp"
+#include "mocks/Helix.hpp"
 #include "mocks/LinkResolver.hpp"
 #include "mocks/Logging.hpp"
 #include "mocks/TwitchIrcServer.hpp"
@@ -24,6 +25,7 @@
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
 #include "providers/twitch/api/Helix.hpp"
@@ -69,13 +71,8 @@ const QString IRC_CATEGORY = u"IrcMessageHandler"_s;
 class MockApplication : public mock::BaseApplication
 {
 public:
-    MockApplication()
-        : highlights(this->settings, &this->accounts)
-    {
-    }
-
     MockApplication(const QString &settingsData)
-        : mock::BaseApplication(settingsData)
+        : mock::BaseApplication(settingsData, /*runMigrations*/ true)
         , highlights(this->settings, &this->accounts)
     {
     }
@@ -130,6 +127,11 @@ public:
         return &this->homiesBadges;
     }
 
+    JilChatBadges *getJilChatBadges() override
+    {
+        return &this->jilChatBadges;
+    }
+
     HighlightController *getHighlights() override
     {
         return &this->highlights;
@@ -178,6 +180,7 @@ public:
     mock::EmptyLogging logging;
     AccountController accounts;
     mock::EmoteController emotes;
+    mock::Helix helix;
     mock::UserDataController userData;
     mock::MockTwitchIrcServer twitch;
     mock::ChatterinoBadges chatterinoBadges;
@@ -186,6 +189,7 @@ public:
     SeventvBadges seventvBadges;
     FolhinhaBadges folhinhaBadges;
     HomiesBadges homiesBadges;
+    JilChatBadges jilChatBadges;
     HighlightController highlights;
     SeventvPersonalEmotes personalEmotes;
     BttvEmotes bttvEmotes;
@@ -582,6 +586,21 @@ public:
 
         this->mockApplication->twitch.mockChannels.emplace(
             "twitchdev", this->twitchdevChannel);
+
+        const auto helixExpectations =
+            this->snapshot->param("helixExpectations").toObject();
+        if (!helixExpectations.isEmpty())
+        {
+            initializeHelix(&this->mockHelix);
+
+            int nCalls =
+                helixExpectations.value("getSharedChatSession").toInt();
+            if (nCalls > 0)
+            {
+                EXPECT_CALL(this->mockHelix, getSharedChatSession)
+                    .Times(nCalls);
+            }
+        }
     }
 
     void TearDown() override
@@ -594,6 +613,7 @@ public:
     std::shared_ptr<TwitchChannel> twitchdevChannel;
     std::unique_ptr<MockApplication> mockApplication;
     std::unique_ptr<testlib::Snapshot> snapshot;
+    testing::StrictMock<mock::Helix> mockHelix;
 };
 
 /// This tests the process of parsing IRC messages and emitting `MessagePtr`s.
@@ -614,6 +634,9 @@ public:
 /// - `findAllUsernames`: A boolean controlling the equally named setting
 ///   (default: false)
 /// - `nAdditional`: Include n additional built messages (from `prevMessages`)
+/// - `helixExpectations`: An object with names of Helix API methods that will
+///   be called during the test and the expected call count. Name of the method
+///   is the key and the number of calls its value.
 TEST_P(TestIrcMessageHandlerP, Run)
 {
     auto channel = makeMockTwitchChannel(u"pajlada"_s, *snapshot);
@@ -673,6 +696,46 @@ TEST(TestIrcMessageHandlerP, Integrity)
     ASSERT_FALSE(UPDATE_SNAPSHOTS);  // make sure fixtures are actually tested
 }
 
+TEST(IrcMessageHandler, RecentMessagesDoNotUpdateCurrentUserState)
+{
+    MockApplication app(QString::fromUtf8(SETTINGS_DEFAULT));
+    initializeHelix(&app.helix);
+    auto &accounts = app.getAccounts()->twitch;
+    accounts.accounts.append(
+        std::make_shared<TwitchAccount>("forsenwiki", "", "", "405330073"));
+    accounts.load();
+    accounts.currentUsername = "forsenwiki";
+    ASSERT_EQ(accounts.getCurrent()->getUserId(), "405330073");
+
+    auto channel = std::make_shared<TwitchChannel>("pajlada");
+    ASSERT_FALSE(channel->isVip());
+    const QByteArray data =
+        "@tmi-sent-ts=1790452460376;id=863f60c5-3de6-4ecf-b2ff-20cdd85c12e9;"
+        "room-id=11148817;user-id=405330073;display-name=forsenWiki;"
+        "badges=vip/1;badge-info=;flags=;user-type=;emotes= "
+        ":forsenwiki!forsenwiki@forsenwiki.tmi.twitch.tv "
+        "PRIVMSG #pajlada :peepoZ";
+
+    // A message that isn't from a live sink does not set vip status
+    auto *historyMessage = Communi::IrcMessage::fromData(data, nullptr);
+    ASSERT_NE(historyMessage, nullptr);
+    VectorMessageSink historySink({}, MessageFlag::RecentMessage);
+    IrcMessageHandler::parseMessageInto(historyMessage, historySink,
+                                        channel.get());
+    delete historyMessage;
+    ASSERT_EQ(historySink.messages().size(), 1);
+    EXPECT_FALSE(channel->isVip());
+
+    // The same message parsed from a live sink sets vip status
+    auto *liveMessage = Communi::IrcMessage::fromData(data, nullptr);
+    ASSERT_NE(liveMessage, nullptr);
+    VectorMessageSink liveSink(channel->sinkTraits());
+    IrcMessageHandler::parseMessageInto(liveMessage, liveSink, channel.get());
+    delete liveMessage;
+    ASSERT_EQ(liveSink.messages().size(), 1);
+    EXPECT_TRUE(channel->isVip());
+}
+
 TEST_P(TestIrcMessageHandlerP, CloneElements)
 {
     auto channel = makeMockTwitchChannel(u"pajlada"_s, *this->snapshot);
@@ -706,4 +769,62 @@ TEST_P(TestIrcMessageHandlerP, CloneElements)
                 << QJsonDocument(clonedObj).toJson();
         }
     }
+}
+
+TEST(IrcMessageHandler, DuplicateChannelPointRewardIrcMessageIgnored)
+{
+    MockApplication app;
+    auto channel = std::make_shared<TwitchChannel>("pajlada");
+    channel->setRoomId("11148817");
+
+    const auto rewardRedemption = QJsonObject{{
+        {u"channel_id"_s, u"11148817"_s},
+        {u"id"_s, u"redemption-1"_s},
+        {u"user"_s,
+         QJsonObject{
+             {u"id"_s, u"129546453"_s},
+             {u"login"_s, u"nerixyz"_s},
+             {u"display_name"_s, u"nerixyz"_s},
+         }},
+        {u"reward"_s,
+         {{
+             {u"channel_id"_s, u"11148817"_s},
+             {u"cost"_s, 1},
+             {u"id"_s, u"31a2344e-0fce-4229-9453-fb2e8b6dd02c"_s},
+             {u"is_user_input_required"_s, true},
+             {u"title"_s, u"my reward"_s},
+         }}},
+    }};
+
+    const QByteArray raw =
+        "@tmi-sent-ts=1726662938032;subscriber=1;"
+        "id=87af876f-5591-4a63-924f-46f465ecd3c4;"
+        "room-id=11148817;user-id=129546453;display-name=nerixyz;"
+        "badges=subscriber/24;badge-info=subscriber/27;color=#FF0000;"
+        "flags=;user-type=;emotes=;"
+        "custom-reward-id=31a2344e-0fce-4229-9453-fb2e8b6dd02c "
+        ":nerixyz!nerixyz@nerixyz.tmi.twitch.tv PRIVMSG #pajlada "
+        ":reward 1";
+
+    auto parse = [&] {
+        auto *ircMessage = Communi::IrcMessage::fromData(raw, nullptr);
+        ASSERT_NE(ircMessage, nullptr);
+        IrcMessageHandler::parseMessageInto(ircMessage, *channel,
+                                            channel.get());
+        delete ircMessage;
+    };
+
+    parse();
+    EXPECT_EQ(channel->countMessages(), 1);
+    ASSERT_NE(channel->getLastMessage(), nullptr);
+    EXPECT_EQ(channel->getLastMessage()->reward, nullptr);
+
+    parse();
+    EXPECT_EQ(channel->countMessages(), 1);
+
+    channel->addChannelPointReward(ChannelPointReward(rewardRedemption));
+    EXPECT_EQ(channel->countMessages(), 1);
+    ASSERT_NE(channel->getLastMessage(), nullptr);
+    ASSERT_NE(channel->getLastMessage()->reward, nullptr);
+    EXPECT_EQ(channel->getLastMessage()->reward->title, "my reward");
 }

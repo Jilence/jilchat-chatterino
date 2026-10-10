@@ -53,6 +53,7 @@ Channel::Channel(const QString &name, Type type, bool watching)
     , lastDate_(QDate::currentDate())
     , name_(name)
     , messages_(getSettings()->scrollbackSplitLimit)
+    , defaultMessageLimit_(this->messages_.limit())
     , type_(type)
     , watching_(watching)
 {
@@ -65,6 +66,10 @@ Channel::Channel(const QString &name, Type type, bool watching)
     {
         this->messagePlatform_ = MessagePlatform::Kick;
     }
+    else if (this->isYouTubeChannel())
+    {
+        this->messagePlatform_ = MessagePlatform::YouTube;
+    }
     else
     {
         this->messagePlatform_ = MessagePlatform::AnyOrTwitch;
@@ -74,7 +79,7 @@ Channel::Channel(const QString &name, Type type, bool watching)
 Channel::~Channel()
 {
     auto *app = tryGetApp();
-    if (app && !isAppAboutToQuit() && this->anythingLogged_)
+    if (app && this->anythingLogged_)
     {
         app->getChatLogger()->closeChannel(this->name_, this->platform_);
     }
@@ -113,6 +118,11 @@ bool Channel::isWatching() const
 bool Channel::isKickChannel() const
 {
     return this->type_ == Type::Kick;
+}
+
+bool Channel::isYouTubeChannel() const
+{
+    return this->type_ == Type::YouTube;
 }
 
 bool Channel::isTwitchOrKickChannel() const
@@ -165,12 +175,6 @@ MessagePtr Channel::getLastMessage() const
 void Channel::addMessage(MessagePtr message, MessageContext context,
                          std::optional<MessageFlags> overridingFlags)
 {
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
     message->freeze();
 
     MessagePtr deleted;
@@ -192,12 +196,52 @@ void Channel::addMessage(MessagePtr message, MessageContext context,
         }
     }
 
+    // Keep older messages loaded into the history instead of pushing them out.
+    if (this->messageLimitRaised_ &&
+        this->messages_.size() >= this->messages_.limit())
+    {
+        this->growMessageLimit(1);
+    }
+
     if (this->messages_.pushBack(message, deleted))
     {
         this->messageRemovedFromStart(deleted);
     }
 
     this->messageAppended.invoke(message, overridingFlags);
+}
+
+void Channel::growMessageLimit(size_t by)
+{
+    if (by == 0)
+    {
+        return;
+    }
+
+    this->messages_.setLimit(this->messages_.limit() + by);
+    this->messageLimitRaised_ = true;
+    this->messageLimitGrown.invoke(by);
+}
+
+void Channel::resetMessageLimit()
+{
+    if (!this->messageLimitRaised_)
+    {
+        return;
+    }
+
+    this->messageLimitRaised_ = false;
+    auto removed = this->messages_.setLimit(this->defaultMessageLimit_);
+    for (const auto &message : removed)
+    {
+        this->messageRemovedFromStart(message);
+    }
+    this->messageLimitReset.invoke();
+}
+
+size_t Channel::messageLimit() const
+{
+    return this->messages_.limit();
 }
 
 void Channel::addSystemMessage(const QString &contents)
@@ -247,12 +291,6 @@ void Channel::disableAllMessages()
 
 void Channel::addMessagesAtStart(const std::vector<MessagePtr> &_messages)
 {
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
     for (const auto &msg : _messages)
     {
         msg->freeze();
@@ -273,13 +311,6 @@ void Channel::fillInMissingMessages(const std::vector<MessagePtr> &messages)
     {
         return;
     }
-
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
     for (const auto &msg : messages)
     {
         msg->freeze();
@@ -368,12 +399,6 @@ void Channel::fillInMissingMessages(const std::vector<MessagePtr> &messages)
 void Channel::replaceMessage(const MessagePtr &message,
                              const MessagePtr &replacement)
 {
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
     replacement->freeze();
     int index = this->messages_.replaceItem(message, replacement);
 
@@ -385,12 +410,6 @@ void Channel::replaceMessage(const MessagePtr &message,
 
 void Channel::replaceMessage(size_t index, const MessagePtr &replacement)
 {
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
     replacement->freeze();
 
     MessagePtr prev;
@@ -403,12 +422,6 @@ void Channel::replaceMessage(size_t index, const MessagePtr &replacement)
 void Channel::replaceMessage(size_t hint, const MessagePtr &message,
                              const MessagePtr &replacement)
 {
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
     replacement->freeze();
 
     auto index = this->messages_.replaceItem(hint, message, replacement);
@@ -458,18 +471,18 @@ void Channel::mergeFrom(const std::span<std::span<const MessagePtr>> sources)
 
 void Channel::clearMessages()
 {
-    RecursionGuard g{&this->recursionCount_};
-    if (!this->canRecurse())
-    {
-        return;
-    }
-
+    this->resetMessageLimit();
     this->messages_.clear();
     this->messagesCleared.invoke();
 }
 
 MessagePtr Channel::findMessageByID(QStringView messageID)
 {
+    if (messageID.isEmpty())
+    {
+        return nullptr;
+    }
+
     MessagePtr res;
 
     if (auto msg = this->messages_.rfind([messageID](const MessagePtr &msg) {
@@ -493,6 +506,7 @@ MessageSinkTraits Channel::sinkTraits() const
     return {
         MessageSinkTrait::AddMentionsToGlobalChannel,
         MessageSinkTrait::RequiresKnownChannelPointReward,
+        MessageSinkTrait::UpdateCurrentUserState,
     };
 }
 

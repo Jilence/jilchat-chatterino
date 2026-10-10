@@ -17,41 +17,33 @@ namespace {
 
 const auto payload = "chatterino/" + CHATTERINO_VERSION;
 
-}  // namespace
+}
 
 IrcConnection::IrcConnection(QObject *parent)
     : Communi::IrcConnection(parent)
 {
-    // Log connection errors for ease-of-debugging
     QObject::connect(this, &Communi::IrcConnection::socketError, this,
                      [](QAbstractSocket::SocketError error) {
                          qCDebug(chatterinoIrc) << "Connection error:" << error;
                      });
 
-    QObject::connect(
-        this, &Communi::IrcConnection::socketStateChanged, this,
-        [this](QAbstractSocket::SocketState state) {
-            if (state == QAbstractSocket::UnconnectedState)
-            {
-                this->pingTimer_.stop();
+    QObject::connect(this, &Communi::IrcConnection::socketStateChanged, this,
+                     [this](QAbstractSocket::SocketState state) {
+                         if (state == QAbstractSocket::UnconnectedState)
+                         {
+                             this->pingTimer_.stop();
 
-                // The socket will enter unconnected state both in case of
-                // socket error (including failures to connect) and regular
-                // disconnects. We signal that the connection was lost if this
-                // was not the result of us calling `close`.
-                if (!this->expectConnectionLoss_.load())
-                {
-                    this->connectionLost.invoke(false);
-                }
-            }
-        });
+                             if (!this->expectConnectionLoss_.load())
+                             {
+                                 this->connectionLost.invoke(false);
+                             }
+                         }
+                     });
 
     this->reconnectTimer_.setSingleShot(true);
     QObject::connect(&this->reconnectTimer_, &QTimer::timeout, [this] {
         if (this->isConnected())
         {
-            // E.g. user manually reconnecting doesn't cancel this path, so
-            // just ignore
             qCDebug(chatterinoIrc) << "Reconnect: already reconnected";
         }
         else
@@ -61,7 +53,6 @@ IrcConnection::IrcConnection(QObject *parent)
         }
     });
 
-    // Send ping every x seconds
     this->pingTimer_.setInterval(5000);
     this->pingTimer_.start();
     this->lastPing_ = std::chrono::system_clock::now();
@@ -70,11 +61,9 @@ IrcConnection::IrcConnection(QObject *parent)
         {
             if (this->recentlyReceivedMessage_.load())
             {
-                // If we're still receiving messages, all is well
                 this->recentlyReceivedMessage_ = false;
                 this->waitingForPong_ = false;
 
-                // Check if we got invoked too late (e.g. due to a sleep)
                 auto now = std::chrono::system_clock::now();
                 auto elapsed = now - this->lastPing_;
                 if (elapsed < 3 * 5000ms)
@@ -97,8 +86,6 @@ IrcConnection::IrcConnection(QObject *parent)
 
             if (this->waitingForPong_.load())
             {
-                // The remote server did not send a PONG fast enough; close the
-                // connection
                 this->close();
                 this->connectionLost.invoke(true);
             }
@@ -126,7 +113,7 @@ IrcConnection::IrcConnection(QObject *parent)
                      [this](Communi::IrcMessage *message) {
                          this->recentlyReceivedMessage_ = true;
 
-                         if (message->command() == "372")  // MOTD
+                         if (message->command() == "372")
                          {
                              this->reconnectBackoff_.reset();
                          }
@@ -135,7 +122,6 @@ IrcConnection::IrcConnection(QObject *parent)
 
 IrcConnection::~IrcConnection()
 {
-    // Prematurely disconnect all QObject connections
     this->disconnect();
 }
 
@@ -143,7 +129,6 @@ void IrcConnection::smartReconnect()
 {
     if (this->reconnectTimer_.isActive())
     {
-        // Ignore this reconnect request, we already have a reconnect request queued up
         return;
     }
 

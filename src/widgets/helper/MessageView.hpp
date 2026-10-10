@@ -12,6 +12,7 @@
 
 #include <pajlada/signals/signal.hpp>
 #include <QPointer>
+#include <QRegion>
 #include <QTimer>
 #include <QWidget>
 
@@ -27,8 +28,6 @@ class MessageLayoutElement;
 class TooltipWidget;
 class LinkInfo;
 
-/// MessageView is a fixed-width widget that displays a single message.
-/// For the message to be rendered, you must call setWidth.
 class MessageView : public BaseWidget
 {
     Q_OBJECT
@@ -83,7 +82,7 @@ private:
     void selectWholeMessage();
 
     bool layoutUsesChatWordFlags_{false};
-    bool hasAnimatedElements_{false};
+    QRegion animationRegion_;
     MessagePtr message_;
     std::unique_ptr<MessageLayout> messageLayout_;
 

@@ -12,6 +12,7 @@
 #include "common/UniqueAccess.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/eventsub/SubscriptionHandle.hpp"
 #include "providers/twitch/TwitchEmotes.hpp"
 #include "util/QStringHash.hpp"
@@ -22,10 +23,13 @@
 #include <IrcMessage>
 #include <pajlada/signals/signalholder.hpp>
 #include <QColor>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QRegularExpression>
 
 #include <atomic>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -35,10 +39,13 @@ class TestEventSubMessagesP;
 
 namespace chatterino {
 
+class TwitchChannelTestAccess;
+
 enum class HighlightState;
 
 struct Emote;
 using EmotePtr = std::shared_ptr<const Emote>;
+struct LiveUpdateEmote;
 class EmoteMap;
 
 class TwitchBadges;
@@ -67,6 +74,7 @@ class TwitchIrcServer;
 class TwitchAccount;
 
 const int MAX_QUEUED_REDEMPTIONS = 16;
+const int MAX_RECENT_CHANNEL_POINT_REDEMPTIONS = 1024;
 
 namespace detail {
 
@@ -163,7 +171,103 @@ public:
         int slowMode = 0;
     };
 
-    explicit TwitchChannel(const QString &channelName, bool isWatching = false);
+    struct PinnedMessage {
+        QString pinId;
+        QString messageId;
+        QString text;
+        QString authorId;
+        QString authorName;
+        QString authorLogin;
+        QString authorColor;
+        QString authorBadges;
+        QString pinnerName;
+        QString pinnerLogin;
+        std::optional<QDateTime> endsAt;
+        std::optional<QDateTime> pinnedAt;
+    };
+
+    struct PredictionOutcome {
+        QString id;
+        QString title;
+        QString color;  // "BLUE", "PINK", "GREEN"
+        qlonglong totalPoints = 0;
+        int totalUsers = 0;
+        qlonglong topPoints = 0;
+        QString topPredictorName;
+    };
+
+    struct PredictionEvent {
+        QString id;
+        QString title;
+        QString status;  // "ACTIVE", "LOCKED", "RESOLVED", "CANCELED"
+        std::vector<PredictionOutcome> outcomes;  // 2-10
+        int predictionWindowSeconds = 0;
+        QDateTime createdAt;
+        std::optional<QDateTime> lockedAt;
+        QString winningOutcomeId;
+        QString createdByName;
+        QString lockedByName;
+        QString endedByName;  // mod who resolved/canceled
+        QString selfOutcomeId;
+        int selfPoints = 0;
+    };
+
+    struct PollChoice {
+        QString id;
+        QString title;
+        int totalVotes = 0;
+        int freeVotes = 0;
+        int channelPointsVotes = 0;
+        int totalVoters = 0;
+        int topChannelPointsContribution = 0;
+        QString topChannelPointsContributorName;
+    };
+
+    struct PollSelfVote {
+        QString choiceId;
+        int freeVotes = 0;
+        int channelPointsVotes = 0;
+    };
+
+    struct PollEvent {
+        QString id;
+        QString title;
+        QString status;  // "ACTIVE", "COMPLETED", "TERMINATED", "ARCHIVED"
+        std::vector<PollChoice> choices;  // 2-5
+        int durationSeconds = 0;
+        int remainingDurationMilliseconds = 0;
+        int totalVotes = 0;
+        QDateTime createdAt;
+        std::optional<QDateTime> endsAt;
+        QString createdByName;
+        QString endedByName;  // mod who terminated/archived
+        QString currentUserId;
+        bool channelPointsVotingEnabled = false;
+        int pointsPerVote = 0;
+        std::vector<PollSelfVote> selfVotes;
+    };
+
+    struct ChatWarning {
+        QString id;
+        QString channelId;
+        QString reason;
+        QDateTime createdAt;
+    };
+
+    struct RaidEvent {
+        QString id;
+        QString sourceId;
+        QString targetId;
+        QString targetLogin;
+        QString targetDisplayName;
+        QString targetProfileImage;
+        int viewerCount = 0;
+        int forceRaidNowSeconds = 90;
+        QDateTime raidCreatedAt;
+        QDateTime receivedAt;
+    };
+
+    explicit TwitchChannel(const QString &channelName, bool anonymous = false);
     ~TwitchChannel() override;
 
     TwitchChannel(const TwitchChannel &) = delete;
@@ -171,16 +275,28 @@ public:
     TwitchChannel &operator=(const TwitchChannel &) = delete;
     TwitchChannel &operator=(TwitchChannel &&) = delete;
 
+    std::shared_ptr<TwitchChannel> sharedFromThis();
+    std::weak_ptr<TwitchChannel> weakFromThis();
+
     void initialize();
 
     // Channel methods
     bool isEmpty() const override;
     bool canSendMessage() const override;
+    bool isAnonymous() const;
     void sendMessage(const QString &message) override;
+    bool sendMessageViaIrc(const QString &message, int duplicateNonce = 0);
+    bool sendSpamMessageViaHelix(
+        const QString &message, int duplicateNonce,
+        std::function<void(bool sent, QString error)> callback);
+    void sendBotMessage(const QString &message);
     void sendReply(const QString &message, const QString &replyId);
     bool isMod() const override;
+    bool isLeadMod() const;
     bool isVip() const;
     bool isStaff() const;
+    bool isFollowing() const;
+    bool isFollowingStatusKnown() const;
     bool isBroadcaster() const override;
     bool hasHighRateLimit() const override;
     bool canReconnect() const override;
@@ -204,6 +320,51 @@ public:
     QString roomId() const;
     SharedAccessGuard<const RoomModes> accessRoomModes() const;
     SharedAccessGuard<const StreamStatus> accessStreamStatus() const;
+    SharedAccessGuard<const std::optional<PinnedMessage>> accessPinnedMessage()
+        const;
+    void setPinnedMessage(std::optional<PinnedMessage> pin);
+    void refreshPinnedMessage();
+    void pinMessage(const QString &messageId, int durationSeconds = 1200);
+    void unpinMessage();
+    void keepPinned();
+    void refreshFollowingStatus(bool force = false);
+    void setFollowingStatus(bool following,
+                            std::optional<QDateTime> followedAt = std::nullopt);
+    void refreshActivePrediction();
+    void refreshLeadModStatus(bool force = false);
+    void refreshChannelPoints();
+    void refreshChatters();
+    void refreshChannelPointsIfStale(bool force = false);
+    void handlePinnedChatUpdate(const QJsonObject &data);
+    void tryEmitPinnedChatPinSystemMessage(const QJsonObject &innerData);
+
+    // Predictions & Points
+    SharedAccessGuard<const std::optional<PredictionEvent>> accessPrediction()
+        const;
+    void setActivePrediction(std::optional<PredictionEvent> prediction);
+    void handlePredictionUpdate(const QJsonObject &data);
+    void handleUserPointsUpdate(const QJsonObject &payload);
+    void refreshPrediction(bool force = false);
+    SharedAccessGuard<const std::optional<PollEvent>> accessPoll() const;
+    void setActivePoll(std::optional<PollEvent> poll);
+    void handlePollUpdate(const QJsonObject &payload);
+    void refreshActivePoll();
+    void refreshPollIfStale(bool force = false);
+    void tryEmitPollCreatedSystemMessage(const PollEvent &poll);
+    qint64 channelPointBalance() const;
+    bool isChannelPointsFetchInFlight() const;
+    bool shouldShowChannelPoints() const;
+    void setChannelPointBalance(qint64 balance);
+    void handleChatWarningPubSub(const QJsonObject &payload);
+    void handleChatWarningNotice();
+    void refreshChatWarningIfStale(bool force = false,
+                                   bool notifyOnError = false);
+    void acknowledgeChatWarning();
+    void showPendingChatWarningIfVisible();
+    SharedAccessGuard<const std::optional<RaidEvent>> accessRaid() const;
+    void setActiveRaid(std::optional<RaidEvent> raid);
+    void clearActiveRaid();
+    void handleRaidUpdate(const QJsonObject &payload);
 
     /**
      * Records that the channel is no longer joined.
@@ -216,10 +377,10 @@ public:
     void markConnected();
 
     // Emotes
-    std::optional<EmotePtr> twitchEmote(const EmoteName &name) const;
-    std::optional<EmotePtr> bttvEmote(const EmoteName &name) const;
-    std::optional<EmotePtr> ffzEmote(const EmoteName &name) const;
-    std::optional<EmotePtr> seventvEmote(const EmoteName &name) const;
+    std::optional<EmotePtr> twitchEmote(EmoteNameView name) const;
+    std::optional<EmotePtr> bttvEmote(EmoteNameView name) const;
+    std::optional<EmotePtr> ffzEmote(EmoteNameView name) const;
+    std::optional<EmotePtr> seventvEmote(EmoteNameView name) const;
 
     std::shared_ptr<const EmoteMap> localTwitchEmotes() const;
     std::shared_ptr<const EmoteMap> bttvEmotes() const;
@@ -283,9 +444,9 @@ public:
 
     // Replies
     /**
-     * Stores the given thread in this channel. 
-     * 
-     * Note: This method not take ownership of the MessageThread; this 
+     * Stores the given thread in this channel.
+     *
+     * Note: This method not take ownership of the MessageThread; this
      * TwitchChannel instance will store a weak_ptr to the thread.
      */
     void addReplyThread(const std::shared_ptr<MessageThread> &thread);
@@ -336,6 +497,17 @@ public:
     pajlada::Signals::NoArgSignal streamStatusChanged;
 
     pajlada::Signals::NoArgSignal roomModesChanged;
+    pajlada::Signals::NoArgSignal pinnedMessageChanged;
+    pajlada::Signals::NoArgSignal predictionChanged;
+    pajlada::Signals::NoArgSignal pollChanged;
+    pajlada::Signals::NoArgSignal channelPointsChanged;
+    pajlada::Signals::NoArgSignal followingStatusChanged;
+    pajlada::Signals::NoArgSignal raidChanged;
+
+    const QString &lastChannelPointsError() const
+    {
+        return this->lastChannelPointsError_;
+    }
 
     /// Fires when IRC room-id is first set or changes for this channel.
     pajlada::Signals::NoArgSignal roomIdAssigned;
@@ -343,6 +515,9 @@ public:
     pajlada::Signals::NoArgSignal destroyed;
 
     pajlada::Signals::Signal<const QString &> sendWaitUpdate;
+
+    pajlada::Signals::Signal<const std::vector<HelixMinimalUser> &>
+        sharedChatStatusChanged;
 
     // Channel point rewards
     void addQueuedRedemption(const QString &rewardId,
@@ -360,11 +535,13 @@ public:
     bool isChannelPointRewardKnown(const QString &rewardId);
     std::optional<ChannelPointReward> channelPointReward(
         const QString &rewardId) const;
+    bool markChannelPointRedemptionSeen(const QString &key);
 
     // Live status
     void updateStreamStatus(const std::optional<HelixStream> &helixStream,
                             bool isInitialUpdate);
     void updateStreamTitle(const QString &title);
+    void updateStreamGame(const QString &gameName, const QString &gameId);
 
     /**
      * Returns the display name of the user
@@ -389,6 +566,15 @@ public:
 
     bool isLoadingRecentMessages() const;
 
+    /// Loads a page of messages (see Settings::publicLogsPageSize) older than
+    /// the oldest shown one from the public logs and adds them at the start,
+    /// raising the message limit if they wouldn't fit.
+    /// @return true if a request was started
+    bool loadOlderMessagesFromLogs();
+
+    const std::vector<HelixMinimalUser> &getSharedChatSessionParticipants()
+        const;
+
 private:
     struct NameOptions {
         // displayName is the non-CJK-display name for this user
@@ -410,18 +596,26 @@ private:
         QObjectPtr<Communi::IrcMessage> message;
     };
 
+    bool anonymous_ = false;
+
     void refreshPubSub();
-    void refreshChatters();
     void refreshBadges();
     void refreshCheerEmotes();
     void loadRecentMessages();
     void loadRecentMessagesReconnect();
+    /// Fetches the page before the cursor and keeps going to older days until
+    /// `wanted` messages were added or `pagesLeft` requests were used.
+    void fetchOlderLogPage(int pagesLeft, int wanted);
     void cleanUpReplyThreads();
     void showLoginMessage();
+    void showAnonymousReadOnlyMessage();
 
     /// roomIdChanged is called whenever this channel's ID has been changed
     /// This should only happen once per channel, whenever the ID goes from unset to set
     void roomIdChanged();
+
+    void probeSharedChatSession();
+    void refreshSharedChatSessionState();
 
     /** Joins (subscribes to) a Twitch channel for updates on BTTV. */
     void joinBttvChannel() const;
@@ -442,6 +636,7 @@ private:
      **/
     bool setLive(bool newLiveStatus);
     void setMod(bool value);
+    void setLeadMod(bool value, bool known = true);
     void setVIP(bool value);
     void setStaff(bool value);
     void setRoomId(const QString &id);
@@ -456,7 +651,13 @@ private:
      **/
     const QString &getLocalizedName() const override;
 
-    QString prepareMessage(const QString &message) const;
+    QString prepareMessage(const QString &message,
+                           int duplicateNonce = 0) const;
+    void setActiveChatWarning(std::optional<ChatWarning> warning,
+                              bool showIfVisible);
+    void clearChatWarning();
+    void showChatWarningMessage(const ChatWarning &warning);
+    void showChatWarningAuthFallback();
 
     /**
      * Either adds a message mentioning the updated emotes
@@ -466,12 +667,17 @@ private:
      * @param isEmoteAdd true if the emote was added, false if it was removed.
      * @param platform The platform the emote was updated on ("7TV", "BTTV", "FFZ")
      * @param actor The actor performing the update (possibly empty)
-     * @param emoteName The emote's name
+     * @param emote The emote that was added or removed
+     * @param now The time the update was received
      */
-    void addOrReplaceLiveUpdatesAddRemove(bool isEmoteAdd,
-                                          const QString &platform,
-                                          const QString &actor,
-                                          const QString &emoteName);
+    void addOrReplaceLiveUpdatesAddRemove(
+        bool isEmoteAdd, const QString &platform, const QString &actor,
+        const LiveUpdateEmote &emote,
+        const QDateTime &now = QDateTime::currentDateTime());
+    void addOrReplaceLiveUpdatesAddRemove(
+        bool isEmoteAdd, const QString &platform, const QString &actor,
+        const QString &emoteName,
+        const QDateTime &now = QDateTime::currentDateTime());
 
     /**
      * Tries to replace the last emote update message.
@@ -485,25 +691,74 @@ private:
      * @param op The emote operation (LiveUpdatesAdd or LiveUpdatesRemove)
      * @param platform The emote platform  ("7TV", "BTTV", "FFZ")
      * @param actor The actor performing the action (possibly empty)
-     * @param emoteName The updated emote's name
+     * @param emote The updated emote
+     * @param now The time the update was received
      * @return true, if the last message was replaced
      */
     bool tryReplaceLastLiveUpdateAddOrRemove(MessageFlag op,
                                              const QString &platform,
                                              const QString &actor,
-                                             const QString &emoteName);
+                                             const LiveUpdateEmote &emote,
+                                             const QDateTime &now);
 
     // Data
     const QString subscriptionUrl_;
     const QString channelUrl_;
     const QString popoutPlayerUrl_;
     int chatterCount_{};
+    std::atomic<bool> chatterFetchInFlight_{false};
+    QDateTime lastChatterRefreshAt_;
+
     UniqueAccess<StreamStatus> streamStatus_;
     UniqueAccess<RoomModes> roomModes;
+    UniqueAccess<std::optional<PinnedMessage>> currentPin_;
+    std::atomic<int> pinnedMessageRefreshFailures_{0};
+    UniqueAccess<std::optional<PredictionEvent>> activePrediction_;
+    std::atomic<bool> predictionFetchInFlight_{false};
+    QDateTime lastPredictionRefreshAt_;
+    QDateTime lastPredictionUpdateAt_;
+    QString lastPredictionSystemMessageKey_;
+    UniqueAccess<std::optional<PollEvent>> activePoll_;
+    std::atomic<bool> pollFetchInFlight_{false};
+    QDateTime lastPollRefreshAt_;
+    QDateTime lastPollUpdateAt_;
+    QString lastPollSystemMessageKey_;
+    QString lastPinSystemMessageKey_;
+    UniqueAccess<std::optional<ChatWarning>> activeChatWarning_;
+    UniqueAccess<std::optional<RaidEvent>> activeRaid_;
+    QString locallyClearedRaidId_;
+    QDateTime locallyClearedRaidAt_;
+    std::atomic<bool> chatWarningFetchInFlight_{false};
+    std::atomic<bool> chatWarningFetchNotifyOnError_{false};
+    std::atomic<bool> chatWarningAckInFlight_{false};
+    QDateTime lastChatWarningRefreshAt_;
+    QDateTime lastChatWarningUpdateAt_;
+    QDateTime lastChatWarningAuthPromptAt_;
+    QString shownChatWarningMessageId_;
+    std::atomic<qint64> channelPoints_{-1};
+    std::atomic<bool> channelPointsFetchInFlight_{false};
+    QDateTime lastChannelPointsRefreshAt_;
+    QDateTime lastChannelPointsUpdateAt_;
+    QString lastChannelPointsError_;
     bool disconnected_{};
     std::optional<std::chrono::time_point<std::chrono::system_clock>>
         lastConnectedAt_{};
     std::atomic_flag loadingRecentMessages_ = ATOMIC_FLAG_INIT;
+
+    /// State of loadOlderMessagesFromLogs
+    struct OlderLogs {
+        bool loading = false;
+        bool exhausted = false;
+        bool daysLoaded = false;
+        /// UTC days that have logs, newest first.
+        std::vector<QDate> days;
+        /// Days from this one on (and newer) are fully loaded.
+        QDate doneFrom;
+        /// Where the next page ends, valid while `anchorId` is still the
+        /// oldest shown message.
+        QDateTime cursor;
+        QString anchorId;
+    } olderLogs_;
     std::unordered_map<QString, std::weak_ptr<MessageThread>> threads_;
 
 protected:
@@ -528,8 +783,21 @@ private:
     UniqueAccess<std::map<QString, ChannelPointReward>> channelPointRewards_;
     boost::circular_buffer_space_optimized<QueuedRedemption>
         waitingRedemptions_{MAX_QUEUED_REDEMPTIONS};
+    boost::circular_buffer_space_optimized<QString>
+        recentChannelPointRedemptions_{MAX_RECENT_CHANNEL_POINT_REDEMPTIONS};
 
     bool mod_ = false;
+    bool leadMod_ = false;
+    bool leadModStatusKnown_ = false;
+    std::atomic<bool> leadModFetchInFlight_{false};
+    bool leadModLookupAttempted_ = false;
+    QDateTime lastLeadModRefreshAt_;
+    bool following_ = false;
+    bool followingStatusKnown_ = false;
+    std::atomic<bool> followingStatusFetchInFlight_{false};
+    QDateTime lastFollowingStatusRefreshAt_;
+    QString followingStatusUserId_;
+    std::optional<QDateTime> followedAt_;
     bool vip_ = false;
     bool staff_ = false;
     UniqueAccess<QString> roomID_;
@@ -573,8 +841,37 @@ private:
     QString lastLiveUpdateEmoteActor_;
     /** A weak reference to the last live emote update message. */
     std::weak_ptr<const Message> lastLiveUpdateMessage_;
-    /** A list of the emotes listed in the lat live emote update message. */
-    std::vector<QString> lastLiveUpdateEmoteNames_;
+    /** A list of the emotes listed in the last live emote update message. */
+    std::vector<LiveUpdateEmote> lastLiveUpdateEmotes_;
+
+    /**
+     * List of display names of  broadcasters participating in a
+     * shared chat session on this channel. The list does not include
+     * the broadcaster who owns the channel.
+     * This list is passed to the UI for display.
+     */
+    std::vector<HelixMinimalUser> sharedChatSessionParticipants_;
+
+    /**
+     * Set of broadcasterIDs of broadcasters participating in a
+     * shared chat session on this channel. The set does not include
+     * the broadcaster who owns the channel.
+     * This set is used to quickly determine if the participants have
+     * changed since the last query of the shared chat session state.
+     */
+    QSet<QString> sharedChatSessionParticipantIds_;
+
+    /**
+     * Timer scheduling the next check of the shared chat session state.
+     */
+    QTimer nextSharedChatSessionUpdateTimer_;
+
+    /**
+     * Time when the next probe of shared chat session state triggered
+     * by reception of a shared chat message is allowed.
+     * Used to rate-limit Twitch API queries.
+     */
+    QDateTime nextSharedChatSessionProbe_;
 
     pajlada::Signals::SignalHolder signalHolder_;
     std::vector<boost::signals2::scoped_connection> bSignals_;
@@ -586,11 +883,15 @@ private:
     eventsub::SubscriptionHandle eventSubSuspiciousUserUpdateHandle;
     eventsub::SubscriptionHandle eventSubChannelChatUserMessageHoldHandle;
     eventsub::SubscriptionHandle eventSubChannelChatUserMessageUpdateHandle;
+    eventsub::SubscriptionHandle eventSubChannelFollowHandle;
 
     friend class TwitchIrcServer;
     friend class MessageBuilder;
     friend class IrcMessageHandler;
     friend class Commands_E2E_Test;
+    friend class TwitchChannelTestAccess;
+    friend class TwitchChannel_LiveUpdateGrouping_Test;
+    friend class NotificationController_StatusMessagesRespectUsernameStyle_Test;
     friend class ::TestIrcMessageHandlerP;
     friend class ::TestEventSubMessagesP;
 

@@ -15,8 +15,6 @@ namespace chatterino {
 class BoostJsonObject;
 class NetworkRequest;
 
-// Private API
-
 struct KickPrivateUserInfo {
     KickPrivateUserInfo(BoostJsonObject obj);
 
@@ -36,6 +34,13 @@ struct KickPrivateChatroomInfo {
     std::optional<std::chrono::minutes> followersModeDuration;
 };
 
+struct KickPrivateChannelSubBadge {
+    KickPrivateChannelSubBadge(BoostJsonObject obj);
+
+    unsigned months;
+    QString badgeImageUrl;
+};
+
 struct KickPrivateChannelInfo {
     KickPrivateChannelInfo(BoostJsonObject obj);
 
@@ -44,6 +49,15 @@ struct KickPrivateChannelInfo {
     QString slug;
     KickPrivateUserInfo user;
     KickPrivateChatroomInfo chatroom;
+    std::vector<KickPrivateChannelSubBadge> subBadges;
+};
+
+struct KickPrivateChannelInfoSmall {
+    KickPrivateChannelInfoSmall(BoostJsonObject obj);
+
+    /// This doesn't include the user-id but usually includes the default
+    /// profile picture URL (unlike `KickPrivateChannelInfo`).
+    KickPrivateUserInfo user;
 };
 
 struct KickPrivateUserInChannelInfo {
@@ -66,12 +80,9 @@ struct KickPrivateEmoteInfo {
 struct KickPrivateEmoteSetInfo {
     KickPrivateEmoteSetInfo(BoostJsonObject obj);
 
-    // if this is set, it's a user set - otherwise it's global
     std::optional<uint64_t> userID;
     std::vector<KickPrivateEmoteInfo> emotes;
 };
-
-// Public API
 
 struct KickCategoryInfo {
     KickCategoryInfo(BoostJsonObject obj);
@@ -95,6 +106,7 @@ struct KickChannelInfo {
     KickCategoryInfo category;
     KickStreamInfo stream;
     QString streamTitle;
+    QString slug;
 };
 
 class KickApi
@@ -105,8 +117,13 @@ public:
 
     static KickApi *instance();
 
+    static QString slugify(const QString &usernameOrSlug);
+
     static void privateChannelInfo(const QString &username,
                                    Callback<KickPrivateChannelInfo> cb);
+
+    static void privateChannelInfoSmall(
+        const QString &slug, Callback<KickPrivateChannelInfoSmall> cb);
 
     static void privateUserInChannelInfo(
         const QString &userUsername, const QString &channelUsername,
@@ -115,6 +132,9 @@ public:
     static void privateEmotesInChannel(
         const QString &username,
         Callback<std::vector<KickPrivateEmoteSetInfo>> cb);
+
+    static void privateChannelHistory(uint64_t channelID,
+                                      Callback<BoostJsonObject> cb);
 
     void sendMessage(uint64_t broadcasterUserID, const QString &message,
                      const QString &replyToMessageID, Callback<void> cb);

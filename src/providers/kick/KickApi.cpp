@@ -11,7 +11,7 @@
 namespace {
 
 using namespace chatterino;
-using namespace Qt::Literals;
+using namespace Qt::Literals::StringLiterals;
 
 template <typename T>
 struct IsCollectionS : std::false_type {
@@ -55,7 +55,7 @@ void callDeserialize(auto &&cb, BoostJsonValue data)
 }
 
 template <std::same_as<void> T>
-void callDeserialize(auto &&cb, BoostJsonValue /* data */)
+void callDeserialize(auto &&cb, BoostJsonValue)
 {
     cb(ExpectedStr<void>{});
 }
@@ -121,7 +121,7 @@ void getJsonNoAuth(
                     else
                     {
                         cb(makeUnexpected(std::pair(
-                            0, std::forward<decltype(res)>(res).error())));
+                            0U, std::forward<decltype(res)>(res).error())));
                     }
                 },
                 ref);
@@ -173,8 +173,7 @@ void autoSlugifyImpl(const QString &baseUrl, auto &&cb, bool shouldSlug,
 }
 
 template <typename T>
-void autoSlugify(const QString &baseUrl,
-                 std::function<void(Expected<T, QString>)> cb,
+void autoSlugify(const QString &baseUrl, std::function<void(ExpectedStr<T>)> cb,
                  auto &&...segments)
 {
     autoSlugifyImpl<T>(
@@ -228,12 +227,36 @@ KickPrivateChatroomInfo::KickPrivateChatroomInfo(BoostJsonObject obj)
     }
 }
 
+KickPrivateChannelSubBadge::KickPrivateChannelSubBadge(BoostJsonObject obj)
+    : months(static_cast<unsigned>(obj["months"].toUint64()))
+    , badgeImageUrl(obj["badge_image"]["src"].toQString())
+{
+}
+
 KickPrivateChannelInfo::KickPrivateChannelInfo(BoostJsonObject obj)
     : channelID(obj["id"].toUint64())
-    , followersCount(obj["followers_count"].toUint64())
     , slug(obj["slug"].toQString())
     , user(obj["user"].toObject())
     , chatroom(obj["chatroom"].toObject())
+{
+    for (auto badge : obj["subscriber_badges"].toArray())
+    {
+        this->subBadges.emplace_back(badge.toObject());
+    }
+    auto followers = obj["followers_count"];
+    if (followers.isInt64())
+    {
+        this->followersCount = followers.toUint64();
+    }
+    else if (followers.isString())
+    {
+        this->followersCount =
+            QLatin1StringView(followers.toStringView()).toULongLong();
+    }
+}
+
+KickPrivateChannelInfoSmall::KickPrivateChannelInfoSmall(BoostJsonObject obj)
+    : user(obj["user"].toObject())
 {
 }
 
@@ -280,6 +303,7 @@ KickChannelInfo::KickChannelInfo(BoostJsonObject obj)
     , category(obj["category"].toObject())
     , stream(obj["stream"].toObject())
     , streamTitle(obj["stream_title"].toQString())
+    , slug(obj["slug"].toQString())
 {
 }
 
@@ -315,11 +339,25 @@ KickApi *KickApi::instance()
     return api.get();
 }
 
+QString KickApi::slugify(const QString &usernameOrSlug)
+{
+    auto slugified = usernameOrSlug;
+    slugified.replace('_', '-');
+    return slugified;
+}
+
 void KickApi::privateChannelInfo(const QString &username,
                                  Callback<KickPrivateChannelInfo> cb)
 {
     autoSlugify<KickPrivateChannelInfo>(u"https://kick.com/api/v2/channels"_s,
                                         std::move(cb), username);
+}
+
+void KickApi::privateChannelInfoSmall(const QString &slug,
+                                      Callback<KickPrivateChannelInfoSmall> cb)
+{
+    autoSlugify<KickPrivateChannelInfoSmall>(
+        u"https://kick.com/api/v2/channels"_s, std::move(cb), slug, "info");
 }
 
 void KickApi::privateUserInChannelInfo(
@@ -328,13 +366,21 @@ void KickApi::privateUserInChannelInfo(
 {
     autoSlugify<KickPrivateUserInChannelInfo>(
         u"https://kick.com/api/v2/channels"_s, std::move(cb), channelUsername,
-        "users", userUsername);
+        u"users"_s, userUsername);
 }
 
 void KickApi::privateEmotesInChannel(
     const QString &username, Callback<std::vector<KickPrivateEmoteSetInfo>> cb)
 {
     autoSlugify(u"https://kick.com/emotes"_s, std::move(cb), username);
+}
+
+void KickApi::privateChannelHistory(uint64_t channelID,
+                                    Callback<BoostJsonObject> cb)
+{
+    autoSlugify(u"https://web.kick.com/api/v1/chat/" %
+                    QString::number(channelID) % "/history",
+                std::move(cb));
 }
 
 void KickApi::sendMessage(uint64_t broadcasterUserID, const QString &message,
@@ -360,14 +406,18 @@ void KickApi::sendMessage(uint64_t broadcasterUserID, const QString &message,
     this->postJson<Response>(
         u"chat"_s, json,
         [cb = std::move(cb)](const ExpectedStr<Response> &res) {
-            cb(res.and_then([](Response res) {
-                if (res.isSent)
-                {
-                    return ExpectedStr<void>{};
-                }
-                return ExpectedStr<void>{
-                    makeUnexpected(u"Message was not sent"_s)};
-            }));
+            if (!res)
+            {
+                cb(ExpectedStr<void>{makeUnexpected(res.error())});
+                return;
+            }
+            if (!res->isSent)
+            {
+                cb(ExpectedStr<void>{
+                    makeUnexpected(u"Message was not sent"_s)});
+                return;
+            }
+            cb(ExpectedStr<void>{});
         });
 }
 
@@ -377,7 +427,7 @@ void KickApi::getChannels(std::span<uint64_t> userIDs,
     QString path = u"channels?"_s;
     for (auto id : userIDs)
     {
-        path += u"broadcaster_user_id=";
+        path += QStringLiteral("broadcaster_user_id=");
         path += QString::number(id);
         path += '&';
     }
@@ -389,7 +439,8 @@ void KickApi::getChannels(std::span<uint64_t> userIDs,
 void KickApi::getChannelByName(const QString &usernameOrSlug,
                                Callback<KickChannelInfo> cb)
 {
-    QString path = u"channels?slug=" % QUrl::toPercentEncoding(usernameOrSlug);
+    QString path =
+        u"channels?slug=" % QUrl::toPercentEncoding(slugify(usernameOrSlug));
     this->getJson(path, std::move(cb));
 }
 

@@ -16,6 +16,8 @@
 #include <QShortcut>
 #include <QWidget>
 
+#include <algorithm>
+
 namespace {
 
 using namespace chatterino;
@@ -437,6 +439,10 @@ void HotkeyController::addDefaults(std::set<QString> &addedHotkeys)
         this->tryAddDefault(
             addedHotkeys, HotkeyCategory::Split, QKeySequence("Ctrl+Shift+U"),
             "toggleOverlayInertia", {"all"}, "toggle overlay click-through");
+        this->tryAddDefault(addedHotkeys, HotkeyCategory::Split,
+                            QKeySequence("Ctrl+F6"),
+                            "changeMultichannelContext", {"next"},
+                            "select next multi channel context");
     }
 
     // split input
@@ -485,6 +491,10 @@ void HotkeyController::addDefaults(std::set<QString> &addedHotkeys)
         this->tryAddDefault(addedHotkeys, HotkeyCategory::SplitInput,
                             QKeySequence("Down"), "nextMessage",
                             std::vector<QString>(), "next message");
+
+        this->tryAddDefault(addedHotkeys, HotkeyCategory::SplitInput,
+                            QKeySequence("Ctrl+L"), "toggleTranslateOnSend",
+                            std::vector<QString>(), "toggle translate on send");
     }
 
     // window
@@ -578,6 +588,33 @@ void HotkeyController::resetToDefaults()
 
 void HotkeyController::clearRemovedDefaults()
 {
+    // The user-facing name changed, but default hotkey names are persisted keys.
+    // Remove the accidental duplicate from early cross-tab search builds.
+    if (this->tryRemoveDefault(HotkeyCategory::Split,
+                               QKeySequence("Ctrl+Shift+F"), "showGlobalSearch",
+                               {}, "search all open tabs"))
+    {
+        auto addedDefaults =
+            pajlada::Settings::Setting<std::vector<QString>>::get(
+                "/hotkeys/addedDefaults");
+        const auto oldSize = addedDefaults.size();
+        addedDefaults.erase(
+            std::remove(addedDefaults.begin(), addedDefaults.end(),
+                        QStringLiteral("search all open tabs")),
+            addedDefaults.end());
+        if (addedDefaults.size() != oldSize)
+        {
+            pajlada::Settings::Setting<std::vector<QString>>::set(
+                "/hotkeys/addedDefaults", addedDefaults,
+                pajlada::Settings::SettingOption::CompareBeforeSet);
+        }
+        this->saveHotkeys();
+    }
+
+    this->tryRemoveDefault(HotkeyCategory::PopupWindow, QKeySequence("M"),
+                           "openProfilePictureMenu", {},
+                           "usercard open avatar menu");
+
     // The "toggleLiveOnly" argument was removed 2024-08-04
     this->tryRemoveDefault(HotkeyCategory::Window, QKeySequence("Ctrl+Shift+L"),
                            "setTabVisibility", {"toggleLiveOnly"},
@@ -585,6 +622,11 @@ void HotkeyController::clearRemovedDefaults()
 
     this->warnForRemovedHotkeyActions(HotkeyCategory::Window,
                                       "setTabVisibility", {"toggleLiveOnly"});
+
+    this->warnForRemovedHotkeyActions(HotkeyCategory::Window,
+                                      "selectTabHistory", {"previous"});
+    this->warnForRemovedHotkeyActions(HotkeyCategory::Window,
+                                      "selectTabHistory", {"next"});
 }
 
 void HotkeyController::tryAddDefault(std::set<QString> &addedHotkeys,

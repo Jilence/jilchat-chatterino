@@ -56,12 +56,6 @@ void MessagePreferences::connectSettings(Settings *settings,
         },
         holder);
 
-    settings->enableElevatedMessageHighlight.connect(
-        [this](const auto &newValue) {
-            this->enableElevatedMessageHighlight = newValue;
-        },
-        holder);
-
     settings->enableFirstMessageHighlight.connect(
         [this](const auto &newValue) {
             this->enableFirstMessageHighlight = newValue;
@@ -74,15 +68,15 @@ void MessagePreferences::connectSettings(Settings *settings,
         },
         holder);
 
-    settings->enableWatchStreakHighlight.connect(
+    settings->enableFollowHighlight.connect(
         [this](const auto &newValue) {
-            this->enableWatchStreakHighlight = newValue;
+            this->enableFollowHighlight = newValue;
         },
         holder);
 
-    settings->enableAutomodHighlight.connect(
+    settings->enableWatchStreakHighlight.connect(
         [this](const auto &newValue) {
-            this->enableAutomodHighlight = newValue;
+            this->enableWatchStreakHighlight = newValue;
         },
         holder);
 
@@ -94,6 +88,42 @@ void MessagePreferences::connectSettings(Settings *settings,
     settings->enableColoredAnnouncementHighlight.connect(
         [this](const auto &newValue) {
             this->enableColoredAnnouncementHighlight = newValue;
+        },
+        holder);
+
+    settings->enableAutomodHighlight.connect(
+        [this](const auto &newValue) {
+            this->enableAutomodHighlight = newValue;
+        },
+        holder);
+
+    settings->multipleHighlightBands.connect(
+        [this](const auto &newValue) {
+            this->multipleHighlightBands = newValue;
+        },
+        holder);
+
+    settings->normalNonceDetection.connect(
+        [this](const auto &newValue) {
+            this->enableClientDetectionHighlight = newValue;
+        },
+        holder);
+
+    settings->webchatColor.connect(
+        [this](const auto &newValue) {
+            this->clientDetectionWebColor = QColor(newValue);
+        },
+        holder);
+
+    settings->androidColor.connect(
+        [this](const auto &newValue) {
+            this->clientDetectionAndroidColor = QColor(newValue);
+        },
+        holder);
+
+    settings->iosColor.connect(
+        [this](const auto &newValue) {
+            this->clientDetectionIosColor = QColor(newValue);
         },
         holder);
 

@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2025 Contributors to Chatterino <https://chatterino.com>
-//
-// SPDX-License-Identifier: MIT
-
 #pragma once
 
 #include "common/Aliases.hpp"
@@ -28,18 +24,15 @@ class BadgeRegistry
 public:
     virtual ~BadgeRegistry() = default;
 
-    /// Return the badge, if any, that is assigned to the user
     std::optional<EmotePtr> getBadge(const UserId &id) const;
 
     std::optional<EmotePtr> getKickBadge(uint64_t id) const;
 
-    /// Assign the given badge to the user
     void assignBadgeToUser(const QString &badgeID, const UserId &userID);
 
     void assignBadgeToUsers(const QString &badgeID,
                             std::span<const seventv::eventapi::User> users);
 
-    /// Remove the given badge from the user
     void clearBadgeFromUser(const QString &badgeID, const UserId &userID);
 
     void clearBadgeFromUsers(const QString &badgeID,
@@ -58,10 +51,8 @@ protected:
                                  const QJsonObject &badgeJson) const = 0;
 
 private:
-    /// Mutex for both `badgeMap_` and `knownBadges_`
     mutable std::shared_mutex mutex_;
 
-    /// user-id => badge
     std::unordered_map<QString, EmotePtr> badgeMap_;
     /// user-id => badge
     std::unordered_map<uint64_t, EmotePtr> kickBadgeMap_;

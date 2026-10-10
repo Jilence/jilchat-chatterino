@@ -14,6 +14,9 @@
 #include "mocks/UserData.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
+#include "providers/folhinha/FolhinhaBadges.hpp"
+#include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
 #include "providers/twitch/TwitchBadges.hpp"
@@ -65,6 +68,21 @@ public:
     SeventvBadges *getSeventvBadges() override
     {
         return &this->seventvBadges;
+    }
+
+    HomiesBadges *getHomiesBadges() override
+    {
+        return &this->homiesBadges;
+    }
+
+    FolhinhaBadges *getFolhinhaBadges() override
+    {
+        return &this->folhinhaBadges;
+    }
+
+    JilChatBadges *getJilChatBadges() override
+    {
+        return &this->jilChatBadges;
     }
 
     HighlightController *getHighlights() override
@@ -122,6 +140,9 @@ public:
     FfzBadges ffzBadges;
     BttvBadges bttvBadges;
     SeventvBadges seventvBadges;
+    HomiesBadges homiesBadges;
+    FolhinhaBadges folhinhaBadges;
+    JilChatBadges jilChatBadges;
     HighlightController highlights;
     TwitchBadges twitchBadges;
     BttvEmotes bttvEmotes;

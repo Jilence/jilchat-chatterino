@@ -2,14 +2,17 @@
 
 #include "Application.hpp"
 #include "common/WindowDescriptors.hpp"
+#include "messages/Message.hpp"
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
+#include "providers/youtube/YouTubeChatServer.hpp"
 #include "util/QCompareTransparent.hpp"
 #include "util/QMagicEnum.hpp"
 
 #include <QUuid>
 #include <QVarLengthArray>
 
+#include <algorithm>
 #include <set>
 
 namespace {
@@ -75,6 +78,8 @@ ChannelPtr resolveChannel(const MultiChannel::Spec &spec)
             return getApp()->getTwitch()->getOrAddChannel(spec.name);
         case MultiChannel::Platform::Kick:
             return getApp()->getKickChatServer()->getOrCreate(spec.name);
+        case MultiChannel::Platform::YouTube:
+            return getApp()->getYouTubeChatServer()->getOrCreate(spec.name);
     }
     return Channel::getEmpty();
 }
@@ -133,9 +138,14 @@ ChildChannelDescriptor MultiChannel::ChildChannel::descriptor() const
 }
 
 MultiChannel::MultiChannel(std::span<const Spec> channels,
-                           MultiChannelIndicatorMode indicatorMode)
+                           MultiChannelIndicatorMode indicatorMode,
+                           bool tintByPlatform, bool showTwitchOverlays,
+                           bool combinedViewerCount)
     : Channel(makeChannelName(channels, false), Type::Multi)
     , indicatorMode_(indicatorMode)
+    , tintByPlatform_(tintByPlatform)
+    , showTwitchOverlays_(showTwitchOverlays)
+    , combinedViewerCount_(combinedViewerCount)
 {
     for (const auto &spec : channels)
     {
@@ -147,7 +157,14 @@ MultiChannel::MultiChannel(std::span<const Spec> channels,
             }));
         connections.emplace_back(
             channel->messagesAddedAtStart.connect([this](const auto &msgs) {
-                this->addMessagesAtStart(msgs);
+                if (this->hasMessages())
+                {
+                    this->fillInMissingMessages(msgs);
+                }
+                else
+                {
+                    this->addMessagesAtStart(msgs);
+                }
             }));
         connections.emplace_back(channel->messageReplaced.connect(
             [this](size_t idx, const MessagePtr &prev,
@@ -161,8 +178,6 @@ MultiChannel::MultiChannel(std::span<const Spec> channels,
         connections.emplace_back(channel->displayNameChanged.connect([this] {
             this->refreshDisplayName();
         }));
-        // Ignore messagesCleared - we'd need to figure out which messages to clear.
-
         this->channels_.emplace_back(ChildChannel{
             .platform = spec.platform,
             .channel = std::move(channel),
@@ -170,6 +185,15 @@ MultiChannel::MultiChannel(std::span<const Spec> channels,
         });
     }
     this->refreshDisplayName();
+
+    for (size_t i = 0; i < this->channels_.size(); i++)
+    {
+        if (this->channels_[i].channel->isWritable())
+        {
+            this->activeChannel_ = i;
+            break;
+        }
+    }
 
     QVarLengthArray<std::vector<MessagePtr>, 4> snapshots;
     QVarLengthArray<std::span<const MessagePtr>, 4> snapshotViews;
@@ -212,11 +236,16 @@ size_t MultiChannel::activeChannelIndex() const
 
 void MultiChannel::setActiveChannelIndex(size_t index)
 {
-    if (this->activeChannel_ == index)
+    const auto boundedIndex = this->channels_.empty()
+                                  ? size_t{0}
+                                  : std::min(index, this->channels_.size() - 1);
+
+    if (this->activeChannel_ == boundedIndex)
     {
         return;
     }
-    this->activeChannel_ = std::clamp<size_t>(index, 0, this->channels_.size());
+
+    this->activeChannel_ = boundedIndex;
     this->activeChannelChanged.invoke();
 }
 
@@ -296,22 +325,16 @@ bool MultiChannel::hasHighRateLimit() const
 
 bool MultiChannel::isLive() const
 {
-    const auto *active = this->activeChannel();
-    if (active)
-    {
-        return active->channel->isLive();
-    }
-    return false;
+    return std::ranges::any_of(this->channels_, [](const auto &c) {
+        return c.channel->isLive();
+    });
 }
 
 bool MultiChannel::isRerun() const
 {
-    const auto *active = this->activeChannel();
-    if (active)
-    {
-        return active->channel->isRerun();
-    }
-    return false;
+    return std::ranges::any_of(this->channels_, [](const auto &c) {
+        return c.channel->isRerun();
+    });
 }
 
 bool MultiChannel::shouldIgnoreHighlights() const
@@ -352,6 +375,21 @@ MultiChannelIndicatorMode MultiChannel::indicatorMode() const
     return this->indicatorMode_;
 }
 
+bool MultiChannel::tintByPlatform() const
+{
+    return this->tintByPlatform_;
+}
+
+bool MultiChannel::showTwitchOverlays() const
+{
+    return this->showTwitchOverlays_;
+}
+
+bool MultiChannel::combinedViewerCount() const
+{
+    return this->combinedViewerCount_;
+}
+
 void MultiChannel::refreshDisplayName()
 {
     if (this->channels_.empty())
@@ -370,6 +408,20 @@ void MultiChannel::setComputedName(const QString &name)
     }
     this->computedName = name;
     this->displayNameChanged.invoke();
+}
+
+bool platformMatches(MessagePlatform lhs, MultiChannel::Platform rhs) noexcept
+{
+    switch (lhs)
+    {
+        case MessagePlatform::AnyOrTwitch:
+            return rhs == MultiChannel::Platform::Twitch;
+        case MessagePlatform::Kick:
+            return rhs == MultiChannel::Platform::Kick;
+        case MessagePlatform::YouTube:
+            return rhs == MultiChannel::Platform::YouTube;
+    }
+    return false;
 }
 
 }  // namespace chatterino

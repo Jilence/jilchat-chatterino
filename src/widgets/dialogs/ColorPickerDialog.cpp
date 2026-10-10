@@ -4,7 +4,6 @@
 
 #include "widgets/dialogs/ColorPickerDialog.hpp"
 
-#include "common/Literals.hpp"
 #include "providers/colors/ColorProvider.hpp"
 #include "widgets/helper/color/AlphaSlider.hpp"
 #include "widgets/helper/color/ColorButton.hpp"
@@ -14,6 +13,8 @@
 
 #include <QDialogButtonBox>
 #include <QSet>
+
+using namespace Qt::StringLiterals;
 
 namespace {
 
@@ -28,7 +29,6 @@ QGridLayout *makeColorGrid(const auto &items, auto *self,
 {
     auto *layout = new QGridLayout;
 
-    // TODO(nerix): use std::ranges::views::enumerate (C++ 23)
     for (std::size_t i = 0; auto color : items)
     {
         auto *button = new ColorButton(color);
@@ -48,9 +48,6 @@ QGridLayout *makeColorGrid(const auto &items, auto *self,
     return layout;
 }
 
-/// All color inputs have the same two signals and slots:
-/// `colorChanged` and `setColor`.
-/// `colorChanged` is emitted when the user changed the color (not after calling `setColor`).
 template <typename D, typename W>
 void connectSignals(D *dialog, W *widget)
 {
@@ -62,19 +59,18 @@ void connectSignals(D *dialog, W *widget)
 
 namespace chatterino {
 
-using namespace literals;
-
 ColorPickerDialog::ColorPickerDialog(QColor color, QWidget *parent)
     : BasePopup(
           {
               BaseWindow::EnableCustomFrame,
               BaseWindow::DisableLayoutSave,
               BaseWindow::BoundsCheckOnShow,
+              BaseWindow::UseSettingsStylesheet,
           },
           parent)
     , color_(color)
 {
-    this->setWindowTitle(u"Chatterino - Color picker"_s);
+    this->setWindowTitle(u"Leafyrino - Color picker"_s);
     this->setAttribute(Qt::WA_DeleteOnClose);
 
     auto *dialogContents = new QHBoxLayout;

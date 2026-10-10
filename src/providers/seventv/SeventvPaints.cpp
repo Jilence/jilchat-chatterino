@@ -14,9 +14,13 @@
 
 #include <QUrlQuery>
 
+#include <chrono>
+
 namespace {
 using namespace chatterino;
-using namespace Qt::Literals;
+using namespace Qt::Literals::StringLiterals;
+
+constexpr std::chrono::minutes SEVENTV_PAINT_FRAME_CACHE_LIFETIME{4};
 
 QColor rgbaToQColor(const uint32_t color)
 {
@@ -43,17 +47,13 @@ QGradientStops parsePaintStops(const QJsonArray &stops)
     QGradientStops parsedStops;
     double lastStop = -1;
 
-    for (const auto &stop : stops)
+    for (const auto stop : stops)
     {
         const auto stopObject = stop.toObject();
 
         const auto rgbaColor = stopObject["color"].toInt();
         auto position = stopObject["at"].toDouble();
 
-        // HACK: qt does not support hard edges in gradients like css does
-        // Setting a different color at the same position twice just overwrites
-        // the previous color. So we have to shift the second point slightly
-        // ahead, simulating an actual hard edge
         if (position <= lastStop)
         {
             position = lastStop + 0.0000001;
@@ -70,7 +70,7 @@ std::vector<PaintDropShadow> parseDropShadows(const QJsonArray &dropShadows)
 {
     std::vector<PaintDropShadow> parsedDropShadows;
 
-    for (const auto &shadow : dropShadows)
+    for (const auto shadow : dropShadows)
     {
         const auto shadowObject = shadow.toObject();
 
@@ -120,6 +120,7 @@ std::optional<std::shared_ptr<Paint>> parsePaint(const QJsonObject &paintJson)
         {
             return std::nullopt;
         }
+        image->setFrameCacheLifetime(SEVENTV_PAINT_FRAME_CACHE_LIFETIME);
 
         return std::make_shared<UrlPaint>(name, id, image, shadows);
     }
@@ -155,6 +156,13 @@ std::shared_ptr<Paint> SeventvPaints::getPaint(const QString &userName,
         }
     }
     return nullptr;
+}
+
+std::shared_ptr<Paint> SeventvPaints::getPaintById(const QString &paintID) const
+{
+    std::shared_lock lock(this->mutex_);
+    const auto it = this->knownPaints_.find(paintID);
+    return it == this->knownPaints_.end() ? nullptr : it->second;
 }
 
 void SeventvPaints::addPaint(const QJsonObject &paintJson)

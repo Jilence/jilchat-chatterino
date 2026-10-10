@@ -35,6 +35,9 @@ public:
     WindowType getType();
     SplitNotebook &getNotebook();
 
+    void setPopupID(size_t id);
+    std::optional<size_t> popupID() const;
+
     pajlada::Signals::NoArgSignal closed;
 
 protected:
@@ -61,9 +64,10 @@ private:
     pajlada::Signals::SignalHolder signalHolder_;
     std::vector<boost::signals2::scoped_connection> bSignals_;
 
-    // this is only used on Windows and only on the main window, for the one used otherwise, see SplitNotebook in Notebook.hpp
     PixmapButton *streamerModeTitlebarIcon_ = nullptr;
     void updateStreamerModeIcon();
+
+    std::optional<size_t> popupID_;
 
     friend class Notebook;
 };

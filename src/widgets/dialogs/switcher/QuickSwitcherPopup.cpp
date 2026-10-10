@@ -19,6 +19,8 @@
 #include "widgets/splits/SplitContainer.hpp"
 #include "widgets/Window.hpp"
 
+#include <QShowEvent>
+
 namespace {
 
 using namespace chatterino;
@@ -60,7 +62,7 @@ QuickSwitcherPopup::QuickSwitcherPopup(Window *parent)
     this->initWidgets();
 
     const QRect geom = parent->geometry();
-    // This places the popup in the middle of the parent widget
+
     this->setGeometry(QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter,
                                           this->size(), geom));
 
@@ -98,40 +100,52 @@ void QuickSwitcherPopup::updateSuggestions(const QString &text)
 {
     this->switcherModel_.clear();
 
-    // Add items for navigating to different splits
-    for (auto *sc : openPages(this->window))
+    if (text.isEmpty())
     {
-        const QString &tabTitle = sc->getTab()->getTitle();
-        const auto splits = sc->getSplits();
-
-        // First, check for splits on this page
-        for (auto *split : splits)
+        for (auto *page : this->window->getNotebook().getVisitHistoryPages())
         {
-            if (split->getChannel()->getName().contains(text,
-                                                        Qt::CaseInsensitive))
+            auto *sc = dynamic_cast<SplitContainer *>(page);
+            if (sc != nullptr)
             {
-                auto item = std::make_unique<SwitchSplitItem>(sc, split);
+                auto item = std::make_unique<SwitchSplitItem>(sc);
                 this->switcherModel_.addItem(std::move(item));
-
-                // We want to continue the outer loop so we need a goto
-                goto nextPage;
             }
         }
-
-        // Then check if tab title matches
-        if (tabTitle.contains(text, Qt::CaseInsensitive))
+    }
+    else
+    {
+        // Add items for navigating to different splits
+        for (auto *sc : openPages(this->window))
         {
-            auto item = std::make_unique<SwitchSplitItem>(sc);
-            this->switcherModel_.addItem(std::move(item));
-            continue;
+            const QString &tabTitle = sc->getTab()->getTitle();
+            const auto splits = sc->getSplits();
+
+            // First, check for splits on this page
+            for (auto *split : splits)
+            {
+                if (split->getChannel()->getName().contains(
+                        text, Qt::CaseInsensitive))
+                {
+                    auto item = std::make_unique<SwitchSplitItem>(sc, split);
+                    this->switcherModel_.addItem(std::move(item));
+
+                    // We want to continue the outer loop so we need a goto
+                    goto nextPage;
+                }
+            }
+
+            // Then check if tab title matches
+            if (tabTitle.contains(text, Qt::CaseInsensitive))
+            {
+                auto item = std::make_unique<SwitchSplitItem>(sc);
+                this->switcherModel_.addItem(std::move(item));
+                continue;
+            }
+
+        nextPage:;
         }
 
-    nextPage:;
-    }
-
-    // Add item for opening a channel in a new tab or new popup
-    if (!text.isEmpty())
-    {
+        // Add item for opening a channel in a new tab or new popup
         auto newTabItem = std::make_unique<NewTabItem>(this->window, text);
         this->switcherModel_.addItem(std::move(newTabItem));
 
@@ -142,13 +156,18 @@ void QuickSwitcherPopup::updateSuggestions(const QString &text)
     const auto &startIdx = this->switcherModel_.index(0);
     this->ui_.list->setCurrentIndex(startIdx);
 
-    /*
-     * Timeout interval 0 means the call will be delayed until all window events
-     * have been processed (cf. https://doc.qt.io/qt-5/qtimer.html#interval-prop).
-     */
     QTimer::singleShot(0, this, [this] {
         this->adjustSize();
+        QTimer::singleShot(0, this, [this] {
+            this->ui_.list->doItemsLayout();
+        });
     });
+}
+
+void QuickSwitcherPopup::showEvent(QShowEvent *event)
+{
+    BasePopup::showEvent(event);
+    this->updateSuggestions(this->ui_.searchEdit->text());
 }
 
 void QuickSwitcherPopup::themeChangedEvent()

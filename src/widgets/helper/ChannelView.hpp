@@ -15,21 +15,25 @@
 #include "widgets/TooltipWidget.hpp"
 
 #include <pajlada/signals/signal.hpp>
+#include <QColor>
 #include <QGestureEvent>
 #include <QMenu>
 #include <QPaintEvent>
 #include <QPointer>
+#include <QRegion>
 #include <QScroller>
+#include <QSet>
 #include <QTimer>
 #include <QVariantAnimation>
 #include <QWheelEvent>
 #include <QWidget>
 
+#include <functional>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 
 namespace chatterino {
-enum class HighlightState;
 
 class Channel;
 using ChannelPtr = std::shared_ptr<Channel>;
@@ -50,6 +54,7 @@ class LabelButton;
 struct Link;
 class MessageLayoutElement;
 class Split;
+class TwitchChannel;
 class FilterSet;
 using FilterSetPtr = std::shared_ptr<FilterSet>;
 
@@ -104,6 +109,12 @@ public:
                          Context context = Context::None,
                          size_t messagesLimit = 1000);
 
+    ~ChannelView() override;
+    ChannelView(const ChannelView &) = delete;
+    ChannelView(ChannelView &&) = delete;
+    ChannelView &operator=(const ChannelView &) = delete;
+    ChannelView &operator=(ChannelView &&) = delete;
+
     void queueUpdate();
     void queueUpdate(const QRect &area);
     Scrollbar &getScrollBar();
@@ -121,6 +132,8 @@ public:
     void setEnableScrollingToBottom(bool);
     bool getEnableScrollingToBottom() const;
     void setOverrideFlags(std::optional<MessageElementFlags> value);
+    void setCollapseMessages(bool value);
+    void setOverrideSeparateMessages(std::optional<bool> value);
     const std::optional<MessageElementFlags> &getOverrideFlags() const;
     void updateLastReadMessage();
 
@@ -135,6 +148,9 @@ public:
      */
     bool scrollToMessageId(const QString &id);
 
+    void setNukePreviewMessageIds(QSet<QString> messageIds);
+    void clearNukePreview();
+
     /// Pausing
     bool pausable() const;
     void setPausable(bool value);
@@ -144,6 +160,25 @@ public:
     void unpause(PauseReason reason);
 
     MessageElementFlags getFlags() const;
+
+    void setTransparentBackground(bool transparent);
+    bool getTransparentBackground() const;
+
+    void setOverrideImageScale(std::optional<float> value);
+    std::optional<float> getOverrideImageScale() const;
+    void setVerticalOffset(int offset);
+
+    void performLayout(bool causedByScrollbar = false,
+                       bool disableAnimation = false);
+    void layoutVisibleMessages(const std::vector<MessageLayoutPtr> &messages);
+
+    void setOverrideEmoteScale(std::optional<float> value);
+    std::optional<float> getOverrideEmoteScale() const;
+
+    void setOverrideBadgeScale(std::optional<float> value);
+    std::optional<float> getOverrideBadgeScale() const;
+
+    void setCenterBadges(bool value);
 
     /// @brief The virtual channel used to display messages
     ///
@@ -165,6 +200,18 @@ public:
     /// Same as #underlyingChannel() except that it returns the active channel
     /// for MultiChannels.
     ChannelPtr selectedChannel() const;
+
+    enum class InferChannel : uint8_t {
+        UnderlyingOnly,
+        SourceChannelIfAvailable,
+        SearchParentIfAvailable,
+    };
+
+    /// Infer the channel this message originates from.
+    /// In MultiChannels, this uses the best matching channel.
+    ChannelPtr inferChannel(
+        const Message &msg,
+        InferChannel mode = InferChannel::SourceChannelIfAvailable) const;
 
     /// @brief Set the channel this view is displaying
     ///
@@ -188,9 +235,16 @@ public:
     /// Checks if this view has a #sourceChannel
     bool hasSourceChannel() const;
 
+    /// The platform channel this view derives its messages from.
+    ///
+    /// The currently active non-virtual source channel. In case of nested
+    /// views, this uses the #sourceChannel(), otherwise it uses the
+    /// #underlyingChannel().
+    ChannelPtr effectiveSourceChannel() const;
+
     std::vector<MessageLayoutPtr> &getMessagesSnapshot();
 
-    void queueLayout();
+    void queueLayout(bool disableAnimation = false);
     void invalidateBuffers();
 
     void clearMessages();
@@ -223,6 +277,8 @@ public:
 
     Scrollbar *scrollbar();
 
+    Split *findParentSplit() const;
+
     using ChannelViewID = std::size_t;
     ///
     /// \brief Get the ID of this ChannelView
@@ -235,9 +291,14 @@ public:
     pajlada::Signals::NoArgSignal selectionChanged;
     pajlada::Signals::Signal<TabHighlight> tabHighlightRequested;
     pajlada::Signals::NoArgSignal liveStatusChanged;
-    pajlada::Signals::Signal<const Link &> linkClicked;
+    pajlada::Signals::Signal<const MessageLayoutElement *,
+                             Qt::KeyboardModifiers>
+        elementClicked;
+    pajlada::Signals::Signal<const Link &, Qt::KeyboardModifiers> linkClicked;
     pajlada::Signals::Signal<QString, FromTwitchLinkOpenChannelIn>
         openChannelIn;
+    pajlada::Signals::Signal<QMenu *, const MessageLayoutElement *>
+        messageMenuCreated;
 
     /// This signal fires when a message passed filters and was added to the channel view
     Q_SIGNAL void messageAddedToChannel(MessagePtr &message);
@@ -251,7 +312,11 @@ protected:
     void paintEvent(QPaintEvent * /*event*/) override;
     void wheelEvent(QWheelEvent *event) override;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     void enterEvent(QEnterEvent * /*event*/) override;
+#else
+    void enterEvent(QEvent * /*event*/) override;
+#endif
     void leaveEvent(QEvent * /*event*/) override;
 
     bool event(QEvent *event) override;
@@ -266,7 +331,9 @@ protected:
     void showEvent(QShowEvent *event) override;
 
     void handleLinkClick(QMouseEvent *event, const Link &link,
-                         MessageLayout *layout);
+                         MessageLayout *layout,
+                         const MessageLayoutElement *hoveredElement = nullptr,
+                         QPointF relativePos = {});
 
     bool tryGetMessageAt(QPointF p, std::shared_ptr<MessageLayout> &message,
                          QPointF &relativePos, int &index);
@@ -285,33 +352,49 @@ private:
     void messageAppended(MessagePtr &message,
                          std::optional<MessageFlags> overridingFlags);
     void messageAddedAtStart(std::vector<MessagePtr> &messages);
+    void messageLimitGrown(size_t by);
+    void messageLimitReset();
+
+    /// The Twitch channel whose public logs this view may load when scrolled
+    /// to the top, or nullptr.
+    TwitchChannel *olderLogsChannel() const;
+    /// Loads older messages from the public logs at the top of the view, and
+    /// drops them again once the view is back at the bottom.
+    void updateOlderLogMessages();
+    /// Loads older logs once when the whole chat fits without a scrollbar,
+    /// since then there is no top to scroll to.
+    void loadOlderLogsIfChatFits();
+    /// Resets the message limit this view raised on its channel, so it doesn't
+    /// stay raised after the view stops showing the channel.
+    void releaseRaisedMessageLimit();
     void messageRemoveFromStart(MessagePtr &message);
     void messageReplaced(size_t hint, const MessagePtr &prev,
                          const MessagePtr &replacement);
     void messagesUpdated();
 
-    void performLayout(bool causedByScrollbar = false,
-                       bool causedByShow = false);
-    void layoutVisibleMessages(const std::vector<MessageLayoutPtr> &messages);
     void updateScrollbar(const std::vector<MessageLayoutPtr> &messages,
-                         bool causedByScrollbar, bool causedByShow);
+                         bool causedByScrollbar, bool disableAnimation);
+    void updateScrollWidgetGeometries();
 
-    void drawMessages(QPainter &painter, const QRect &area);
+    void drawMessages(QPainter &painter, const QRegion &area);
     void setSelection(const SelectionItem &start, const SelectionItem &end);
     void setSelection(const Selection &newSelection);
     void selectWholeMessage(MessageLayout *layout, int &messageIndex);
 
     void handleMouseClick(QMouseEvent *event,
                           const MessageLayoutElement *hoveredElement,
-                          MessageLayoutPtr layout);
+                          const MessageLayoutPtr &layout, QPointF relativePos);
     void addContextMenuItems(const MessageLayoutElement *hoveredElement,
                              MessageLayoutPtr layout, QMouseEvent *event);
     void addMessageContextMenuItems(QMenu *menu,
                                     const MessageLayoutPtr &layout);
     void addTwitchLinkContextMenuItems(
         QMenu *menu, const MessageLayoutElement *hoveredElement);
-    void addCommandExecutionContextMenuItems(QMenu *menu,
-                                             const MessageLayoutPtr &layout);
+    void addCommandExecutionContextMenuItems(
+        QMenu *menu, const MessageLayoutElement *hoveredElement,
+        const MessageLayoutPtr &layout);
+    void translateMessage(const MessagePtr &message);
+    void maybeAutoTranslateMessage(const MessagePtr &message);
 
     int getLayoutWidth() const;
     void updatePauses();
@@ -344,9 +427,9 @@ private:
     bool lastMessageHasAlternateBackground_ = false;
     bool lastMessageHasAlternateBackgroundReverse_ = true;
 
-    /// Tracks the area of animated elements in the last full repaint.
-    /// If this is empty (QRect::isEmpty()), no animated element is shown.
-    QRect animationArea_;
+    /// Rectangles of animated elements painted in the view.
+    /// Empty when nothing animated is on screen.
+    QRegion animationRegion_;
 
     bool pausable_ = false;
     QTimer pauseTimer_;
@@ -359,6 +442,7 @@ private:
     uint32_t pauseSelectionOffset_ = 0;
 
     std::optional<MessageElementFlags> overrideFlags_;
+    bool collapseMessages_{false};
     MessageLayoutPtr lastReadMessage_;
 
     ThreadGuard snapshotGuard_;
@@ -403,6 +487,7 @@ private:
 
     // Returns whether the scrollbar should have highlights
     bool showScrollbarHighlights() const;
+    void refreshScrollbarHighlights();
 
     // This variable can be used to decide whether or not we should render the
     // "Show latest messages" button
@@ -412,6 +497,14 @@ private:
     bool onlyUpdateEmotes_ = false;
 
     bool isOverlay_ = false;
+    bool transparentBackground_ = false;
+    std::optional<float> overrideImageScale_;
+    std::optional<float> overrideEmoteScale_;
+    std::optional<float> overrideBadgeScale_;
+    std::optional<bool> overrideSeparateMessages_;
+    bool centerBadges_ = false;
+
+    int verticalOffset_ = 0;
 
     // Mouse event variables
     bool isLeftMouseDown_ = false;
@@ -432,6 +525,7 @@ private:
     MessageLayout *highlightedMessage_ = nullptr;
     QVariantAnimation highlightAnimation_;
     void setupHighlightAnimationColors();
+    QSet<QString> nukePreviewMessageIds_;
 
     struct {
         QCursor neutral;
@@ -445,6 +539,15 @@ private:
     const Context context_;
 
     LimitedQueue<MessageLayoutPtr> messages_;
+    /// The limit messages_ was created with, see #messageLimitReset.
+    size_t defaultMessagesLimit_;
+    /// Whether this view raised the message limit by loading older logs, so it
+    /// is the one to reset it when scrolled back to the bottom.
+    bool ownsRaisedMessageLimit_ = false;
+    /// Whether older logs were already loaded because the chat fit.
+    bool loadedOlderLogsBecauseChatFits_ = false;
+    /// A retry of loadOlderLogsIfChatFits is scheduled.
+    bool olderLogsRetryPending_ = false;
 
     pajlada::Signals::SignalHolder signalHolder_;
 
@@ -459,6 +562,12 @@ private:
     void scrollUpdateRequested();
 
     TooltipWidget *const tooltipWidget_{};
+
+    /// Redraws the tooltip of an animated 7TV paint while it is shown.
+    QTimer paintTooltipTimer_;
+    /// Makes the next frame of that tooltip; empty while another tooltip, or
+    /// none, is shown.
+    std::function<QString()> paintTooltipSource_;
 
     /// Pointer to a link info that hasn't loaded yet
     QPointer<LinkInfo> pendingLinkInfo_;

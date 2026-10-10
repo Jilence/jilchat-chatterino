@@ -14,8 +14,9 @@
 namespace chatterino {
 
 NetworkResult::NetworkResult(NetworkError error, const QVariant &httpStatusCode,
-                             QByteArray data)
+                             QByteArray data, QByteArray etag)
     : data_(std::move(data))
+    , etag_(std::move(etag))
     , error_(error)
 {
     if (httpStatusCode.isValid())
@@ -61,7 +62,7 @@ QJsonValue NetworkResult::parseJsonValue() const
         return jsonDoc.object();
     }
 
-    return {};  // undefined
+    return {};
 #endif
 }
 
@@ -88,9 +89,13 @@ const QByteArray &NetworkResult::getData() const
     return this->data_;
 }
 
+const QByteArray &NetworkResult::etag() const
+{
+    return this->etag_;
+}
+
 QString NetworkResult::formatError() const
 {
-    // Print the status for errors that mirror HTTP status codes (=0 || >99)
     if (this->status_ && (this->error_ == QNetworkReply::NoError ||
                           this->error_ > QNetworkReply::UnknownNetworkError))
     {

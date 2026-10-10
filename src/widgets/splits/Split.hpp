@@ -11,9 +11,14 @@
 
 #include <boost/signals2.hpp>
 #include <pajlada/signals/signalholder.hpp>
+#include <QDateTime>
 #include <QFont>
 #include <QPointer>
+#include <QSet>
 #include <QShortcut>
+#include <QShowEvent>
+#include <QString>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -22,14 +27,19 @@ namespace chatterino {
 class ChannelView;
 class MessageView;
 class SplitHeader;
+class PinnedMessageBanner;
+class PollBanner;
+class PredictionBanner;
 class SplitInput;
-class SplitPinnedMessagePanel;
-class SplitPredictionPanel;
+class SplitVoiceMessagePanel;
 class SplitContainer;
 class SplitOverlay;
 class SplitMpsOverlay;
 class SelectChannelDialog;
 class OverlayWindow;
+class TwitchChannel;
+
+struct SplitDescriptor;
 
 // Each ChatWidget consists of three sub-elements that handle their own part of
 // the chat widget: ChatWidgetHeader
@@ -63,7 +73,7 @@ public:
     /// Expanded pinned-message preview, or nullptr if unavailable.
     MessageView *pinnedExpandedMessageView() const;
 
-    IndirectChannel getIndirectChannel();
+    IndirectChannel getIndirectChannel() const;
     ChannelPtr getChannel() const;
     ChannelPtr getSelectedChannel() const;
     void setChannel(IndirectChannel newChannel);
@@ -77,15 +87,27 @@ public:
     std::optional<bool> checkSpellingOverride() const;
     void setCheckSpellingOverride(std::optional<bool> override);
 
+    bool perSplitHidePinnedMessage() const;
+    void setPerSplitHidePinnedMessage(bool hide);
+    bool perSplitHidePrediction() const;
+    void setPerSplitHidePrediction(bool hide);
+    bool perSplitHidePoll() const;
+    void setPerSplitHidePoll(bool hide);
+    void setPerSplitHideAllBanners(bool hide);
+    void loadPerSplitBannerHides(bool hidePinned, bool hidePrediction,
+                                 bool hidePoll);
+
     void insertTextToInput(const QString &text);
 
     void showChangeChannelPopup(const char *dialogTitle, bool empty,
                                 std::function<void(bool)> callback);
     void updateGifEmotes();
-    /// Clears dismiss state for pinned-message and prediction strips, then refreshes.
-    void recoverDismissedPanels();
+    /// Clears dismiss state for the pinned-message, prediction, and poll banners,
+    /// re-applies the channel's current data, then refreshes visibility.
+    void recoverDismissedBanners();
     void updateLastReadMessage();
     void setIsTopRightSplit(bool value);
+    void scheduleDeferredTwitchRefresh(bool interactive = false);
 
     void drag();
 
@@ -93,7 +115,9 @@ public:
 
     void setContainer(SplitContainer *container);
 
-    void setInputReply(const MessagePtr &reply);
+    void setInputReply(const MessagePtr &reply, std::weak_ptr<Channel> channel);
+
+    SplitDescriptor buildDescriptor() const;
 
     // This is called on window focus lost
     void unpause();
@@ -123,6 +147,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void showEvent(QShowEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
@@ -139,7 +164,7 @@ private:
     void handleModifiers(Qt::KeyboardModifiers modifiers);
     void updateInputPlaceholder();
     void addShortcuts() override;
-    void updateMpsOverlayAnchor();
+    void syncPerSplitBannerHidesToBanners();
 
     /**
      * @brief Opens a Twitch channel's stream in your default browser's player (opens a formatted link)
@@ -166,18 +191,43 @@ private:
      **/
     void refreshModerationMode();
 
+    void updateBannerVisibility();
+    void updateMpsOverlayAnchor();
+    void noteBannerStateChanged(TwitchChannel *channel, int bannerId);
+
+    TwitchChannel *twitchOverlayChannel() const;
+    void wireTwitchBanners(TwitchChannel *tc);
+    void clearBannerAttention();
+    void runDeferredTwitchRefresh();
+    void refreshInputState(const QString &inputText);
+
+    void updateChannelConnections();
+
     IndirectChannel channel_;
 
     bool moderationMode_{};
+    bool perSplitHidePinnedMessage_{};
+    bool perSplitHidePrediction_{};
+    bool perSplitHidePoll_{};
     bool isTopRightSplit_{};
 
     bool isMouseOver_{};
     bool isDragging_{};
 
+    int bannerToggleOverride_{-1};
+    int bannerAttentionOverride_{-1};
+    QDateTime bannerAttentionUntil_;
+    QString lastPinBannerKey_;
+    QString lastPredictionBannerKey_;
+    QString lastPollBannerKey_;
+    bool primingBannerState_{false};
+
     QVBoxLayout *const vbox_;
     SplitHeader *const header_;
-    SplitPinnedMessagePanel *const pinnedMessagePanel_;
-    SplitPredictionPanel *const predictionPanel_;
+    PinnedMessageBanner *const pinnedBanner_;
+    PredictionBanner *const predictionBanner_;
+    PollBanner *const pollBanner_;
+    SplitVoiceMessagePanel *const voiceMessagePanel_;
     ChannelView *const view_;
     SplitInput *const input_;
     SplitOverlay *const overlay_;
@@ -190,14 +240,23 @@ private:
     pajlada::Signals::Connection channelIDChangedConnection_;
     pajlada::Signals::Connection usermodeChangedConnection_;
     pajlada::Signals::Connection roomModeChangedConnection_;
+    pajlada::Signals::ScopedConnection sendWaitConnection_;
+    pajlada::Signals::ScopedConnection sharedChatConnection_;
 
     pajlada::Signals::Connection indirectChannelChangedConnection_;
 
     // This signal-holder is cleared whenever this split changes the underlying channel
     pajlada::Signals::SignalHolder channelSignalHolder_;
+    pajlada::Signals::SignalHolder twitchBannerSignalHolder_;
 
     pajlada::Signals::SignalHolder signalHolder_;
     std::vector<boost::signals2::scoped_connection> bSignals_;
+    QTimer *deferredTwitchRefreshTimer_{};
+    int deferredTwitchRefreshRetries_{};
+    bool deferredTwitchRefreshInteractive_{};
+    bool deferredTwitchForcePersonalRefresh_{};
+    bool deferredTwitchWarningStartupSeen_{};
+    QSet<QString> editorAccessProbedChannels_;
 
 public Q_SLOTS:
     void addSibling();
@@ -210,6 +269,7 @@ public Q_SLOTS:
     void clear();
     void openInBrowser();
     void openModViewInBrowser();
+    void openRewardQueue();
     void openWhispersInBrowser();
     void openBrowserPlayer();
     void openInStreamlink();

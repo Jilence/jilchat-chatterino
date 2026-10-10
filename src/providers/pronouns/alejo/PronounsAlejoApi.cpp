@@ -4,24 +4,28 @@
 
 #include "providers/pronouns/alejo/PronounsAlejoApi.hpp"
 
+#include "Application.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "providers/pronouns/UserPronouns.hpp"
+#include "util/PostToThread.hpp"
 
 #include <QStringBuilder>
+#include <QTimer>
 
 #include <mutex>
 #include <unordered_map>
 
 namespace {
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 const auto &LOG = chatterinoPronouns;
 
 constexpr QStringView API_URL = u"https://api.pronouns.alejo.io/v1";
 constexpr QStringView API_USERS_ENDPOINT = u"/users";
 constexpr QStringView API_PRONOUNS_ENDPOINT = u"/pronouns";
+constexpr int API_TIMEOUT_MS = 5 * 1000;
+constexpr int MAX_PRONOUN_LIST_RETRIES = 5;
 
 }  // namespace
 
@@ -40,8 +44,25 @@ void AlejoApi::fetch(
         std::shared_lock lock(this->mutex);
         if (this->pronouns.empty())
         {
-            // Pronoun list not available yet, fail and try again next time.
-            onDone({});
+            this->loadAvailablePronouns();
+            runInGuiThread([this, username, onDone] {
+                QTimer::singleShot(750, [this, username, onDone] {
+                    if (isAppAboutToQuit())
+                    {
+                        return;
+                    }
+
+                    {
+                        std::shared_lock retryLock(this->mutex);
+                        if (this->pronouns.empty())
+                        {
+                            onDone({});
+                            return;
+                        }
+                    }
+                    this->fetch(username, onDone);
+                });
+            });
             return;
         }
     }
@@ -51,18 +72,17 @@ void AlejoApi::fetch(
     QString endpoint = API_URL % API_USERS_ENDPOINT % "/" % username;
 
     NetworkRequest(endpoint)
+        .timeout(API_TIMEOUT_MS)
         .concurrent()
         .onSuccess([this, username, onDone](const auto &result) {
             auto object = result.parseJson();
             auto parsed = this->parsePronoun(object);
             onDone({parsed});
         })
-        .onError([onDone, username](auto result) {
+        .onError([onDone, username](const auto &result) {
             auto status = result.status();
             if (status.has_value() && status == 404)
             {
-                // Alejo returns 404 if the user has no pronouns set.
-                // Return unspecified.
                 onDone({UserPronouns()});
                 return;
             }
@@ -75,20 +95,28 @@ void AlejoApi::fetch(
 
 void AlejoApi::loadAvailablePronouns()
 {
+    if (this->pronounsLoadInFlight_.exchange(true))
+    {
+        return;
+    }
+
     qCDebug(LOG) << "Fetching available pronouns for alejo.io";
 
     QString endpoint = API_URL % API_PRONOUNS_ENDPOINT;
 
     NetworkRequest(endpoint)
+        .timeout(API_TIMEOUT_MS)
         .concurrent()
         .onSuccess([this](const auto &result) {
             auto root = result.parseJson();
             if (root.isEmpty())
             {
+                this->pronounsLoadInFlight_ = false;
+                this->scheduleAvailablePronounsRetry();
                 return;
             }
 
-            std::unordered_map<QString, QString> newPronouns;
+            std::unordered_map<QString, PronounEntry> newPronouns;
 
             for (auto it = root.begin(); it != root.end(); ++it)
             {
@@ -105,51 +133,87 @@ void AlejoApi::loadAvailablePronouns()
                                    << "was malformed:" << pronounObj;
                     continue;
                 }
-
-                if (singular)
-                {
-                    newPronouns[pronounId] = subject;
-                }
-                else
-                {
-                    newPronouns[pronounId] = subject % "/" % object;
-                }
+                newPronouns[pronounId] =
+                    PronounEntry{subject, object, singular};
             }
 
             {
                 std::unique_lock lock(this->mutex);
                 this->pronouns = newPronouns;
             }
+            this->pronounsLoadRetryCount_ = 0;
+            this->pronounsLoadInFlight_ = false;
         })
-        .onError([](const NetworkResult &result) {
+        .onError([this](const NetworkResult &result) {
             qCWarning(LOG) << "Failed to load pronouns from alejo.io"
                            << result.formatError();
+            this->pronounsLoadInFlight_ = false;
+            this->scheduleAvailablePronounsRetry();
         })
         .execute();
 }
 
-UserPronouns AlejoApi::parsePronoun(const QJsonObject &object)
+void AlejoApi::scheduleAvailablePronounsRetry()
 {
-    if (this->pronouns.empty())
+    const auto retryCount = this->pronounsLoadRetryCount_.fetch_add(1);
+    if (retryCount >= MAX_PRONOUN_LIST_RETRIES)
     {
-        return {};
+        return;
     }
 
-    const auto &pronoun = object["pronoun_id"];
+    const auto delayMs = (retryCount + 1) * 5000;
+    runInGuiThread([this, delayMs] {
+        QTimer::singleShot(delayMs, [this] {
+            if (isAppAboutToQuit())
+            {
+                return;
+            }
 
-    if (!pronoun.isString())
-    {
-        return {};
-    }
-
-    auto pronounStr = pronoun.toString();
-    std::shared_lock lock(this->mutex);
-    auto iter = this->pronouns.find(pronounStr);
-    if (iter != this->pronouns.end())
-    {
-        return {iter->second};
-    }
-    return {};
+            {
+                std::shared_lock lock(this->mutex);
+                if (!this->pronouns.empty())
+                {
+                    return;
+                }
+            }
+            this->loadAvailablePronouns();
+        });
+    });
 }
 
+UserPronouns AlejoApi::parsePronoun(const QJsonObject &object)
+{
+    const QJsonValue pronounMain = object["pronoun_id"];
+    const QJsonValue pronounAlt = object["alt_pronoun_id"];
+
+    if (!pronounMain.isString())
+    {
+        return {};
+    }
+
+    std::shared_lock lock(this->mutex);
+
+    const auto iterMain = this->pronouns.find(pronounMain.toString());
+    if (iterMain == this->pronouns.end())
+    {
+        return {};
+    }
+
+    if (!pronounAlt.isString())
+    {
+        if (iterMain->second.singular)
+        {
+            return {iterMain->second.subject};
+        }
+        return {iterMain->second.subject + "/" + iterMain->second.object};
+    }
+
+    const auto iterAlt = this->pronouns.find(pronounAlt.toString());
+    if (iterAlt != this->pronouns.end())
+    {
+        return {iterMain->second.subject + "/" + iterAlt->second.subject};
+    }
+
+    return {};
+}
 }  // namespace chatterino::pronouns

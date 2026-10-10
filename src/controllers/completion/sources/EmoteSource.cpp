@@ -8,7 +8,9 @@
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/completion/sources/Helpers.hpp"
 #include "controllers/emotes/EmoteController.hpp"
+#include "messages/Emote.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
+#include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/kick/KickAccount.hpp"
@@ -30,11 +32,21 @@ void addEmotes(std::vector<EmoteItem> &out, const EmoteMap &map,
 {
     for (auto &&emote : map)
     {
+        auto sourceName = providerName;
+        if (emote.second->modifierSource == EmoteModifierSource::BetterTTV)
+        {
+            sourceName = QStringLiteral("BetterTTV modifier");
+        }
+        else if (emote.second->modifierSource ==
+                 EmoteModifierSource::FrankerFaceZ)
+        {
+            sourceName = QStringLiteral("FrankerFaceZ modifier");
+        }
         out.push_back({.emote = emote.second,
                        .searchName = emote.first.string,
                        .tabCompletionName = emote.first.string,
                        .displayName = emote.second->name.string,
-                       .providerName = providerName,
+                       .providerName = std::move(sourceName),
                        .isEmoji = false});
     }
 }
@@ -87,7 +99,7 @@ void EmoteSource::addToListModel(GenericListModel &model, size_t maxCount) const
 }
 
 void EmoteSource::addToStringList(QStringList &list, size_t maxCount,
-                                  bool /* isFirstWord */) const
+                                  bool) const
 {
     addVecToStringList(this->output_, list, maxCount, [](const EmoteItem &e) {
         return e.tabCompletionName + " ";
@@ -100,7 +112,7 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
 
     std::vector<EmoteItem> emotes;
     const auto *tc = dynamic_cast<const TwitchChannel *>(channel);
-    // returns true also for special Twitch channels (/live, /mentions, /whispers, etc.)
+
     if (channel->isTwitchChannel())
     {
         if (tc)
@@ -118,6 +130,11 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
                      app->getAccounts()->twitch.getCurrent()->getUserId()))
             {
                 addEmotes(emotes, *map, "Personal 7TV");
+            }
+            if (auto bttvPersonal = BttvPersonalEmotes::instance().getEmotes(
+                    app->getAccounts()->twitch.getCurrent()->getUserId()))
+            {
+                addEmotes(emotes, *bttvPersonal, "Personal BetterTTV");
             }
 
             // TODO extract "Channel {BetterTTV,7TV,FrankerFaceZ}" text into a #define.

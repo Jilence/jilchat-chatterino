@@ -14,6 +14,7 @@ generate_json_impls(
         include/twitch-eventsub-ws/payloads/channel-chat-notification-v1.hpp
         include/twitch-eventsub-ws/payloads/channel-chat-user-message-hold-v1.hpp
         include/twitch-eventsub-ws/payloads/channel-chat-user-message-update-v1.hpp
+        include/twitch-eventsub-ws/payloads/channel-follow-v2.hpp
         include/twitch-eventsub-ws/payloads/channel-moderate-v2.hpp
         include/twitch-eventsub-ws/payloads/channel-suspicious-user-message-v1.hpp
         include/twitch-eventsub-ws/payloads/channel-suspicious-user-update-v1.hpp
@@ -65,13 +66,9 @@ target_link_libraries(${PROJECT_NAME}
         )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
-    $<$<AND:$<BOOL:${MSVC}>,$<NOT:$<BOOL:${VCPKG_TARGET_TRIPLET}>>>:BOOST_JSON_NO_LIB>
+    $<$<BOOL:${MSVC}>:BOOST_JSON_NO_LIB>
     $<$<BOOL:${MSVC}>:BOOST_CONTAINER_NO_LIB>
     QT_NO_KEYWORDS
-    $<$<BOOL:${VCPKG_TARGET_TRIPLET}>:CHATTERINO_EXPECT_BOOST_JSON_FROM_DLL>
-    # Don't allow the use of deprecated Boost.Asio functionality
-    # https://www.boost.org/doc/libs/latest/doc/html/boost_asio/using.html#boost_asio.using.macros
-    BOOST_ASIO_NO_DEPRECATED
 )
 
 if (MSVC)

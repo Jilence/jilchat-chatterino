@@ -7,11 +7,12 @@
 namespace chatterino {
 
 PaintDropShadow::PaintDropShadow(float xOffset, float yOffset, float radius,
-                                 QColor color)
+                                 QColor color, bool exactRadius)
     : xOffset_(xOffset)
     , yOffset_(yOffset)
     , radius_(radius)
     , color_(color)
+    , exactRadius_(exactRadius)
 {
 }
 
@@ -20,20 +21,29 @@ bool PaintDropShadow::isValid() const
     return radius_ > 0;
 }
 
+float PaintDropShadow::extentBelow() const
+{
+    auto radius = this->radius_;
+    if (!this->exactRadius_ && getSettings()->largeSevenTVPaintShadows)
+    {
+        radius *= 3;
+    }
+
+    return this->yOffset_ + radius;
+}
+
 PaintDropShadow PaintDropShadow::scaled(float scale) const
 {
     return {this->xOffset_ * scale, this->yOffset_ * scale,
-            this->radius_ * scale, this->color_};
+            this->radius_ * scale, this->color_, this->exactRadius_};
 }
 
 void PaintDropShadow::apply(QPixmapDropShadowFilter &effect) const
 {
     effect.setOffset({this->xOffset_, this->yOffset_});
     auto radius = this->radius_;
-    if (getSettings()->largeSevenTVPaintShadows)
+    if (!this->exactRadius_ && getSettings()->largeSevenTVPaintShadows)
     {
-        // Multiplied by 3 to match the appearance from the extension.
-        // Best value found through manual testing.
         radius *= 3;
     }
     effect.setBlurRadius(radius);

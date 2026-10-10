@@ -18,6 +18,15 @@ namespace chatterino::ws::detail {
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 
+// Use a long ping probe interval when there is regular traffic
+// going through the socket
+static constexpr std::chrono::seconds HEALTH_CHECK_INTERVAL_LONG =
+    std::chrono::seconds{60};
+// Use a short ping probe interval when we suspect that the connection
+// might be stuck so that we can fail and try to recover quickly
+static constexpr std::chrono::seconds HEALTH_CHECK_INTERVAL_SHORT =
+    std::chrono::seconds{5};
+
 // MARK: WebSocketConnectionHelper
 
 template <typename Derived, typename Inner>
@@ -28,6 +37,7 @@ WebSocketConnectionHelper<Derived, Inner>::WebSocketConnectionHelper(
     : WebSocketConnection(std::move(options), id, std::move(listener), pool,
                           ioc)
     , stream(std::move(stream))
+    , healthCheckTimer(this->stream.get_executor())
 {
 }
 
@@ -156,7 +166,6 @@ void WebSocketConnectionHelper<Derived, Inner>::onTcpHandshake(
         << *this << "TCP handshake done" << ep.address().to_string();
     this->options.url.setPort(ep.port());
 
-    // We are done with the endpoints, we can clear the range.
     this->resolvedEndpoints = {};
 
     this->derived()->afterTcpHandshake();
@@ -173,7 +182,6 @@ void WebSocketConnectionHelper<Derived, Inner>::doWsHandshake()
             bool hasUa = false;
             for (const auto &[key, value] : this->options.headers)
             {
-                // TODO(Qt 6.5): Use QUtf8StringView
                 QLatin1StringView keyView(key.c_str());
                 if (QLatin1StringView("user-agent")
                         .compare(keyView, Qt::CaseInsensitive) == 0)
@@ -183,7 +191,6 @@ void WebSocketConnectionHelper<Derived, Inner>::doWsHandshake()
 
                 try
                 {
-                    // this can fail if the key or value exceed the maximum size
                     req.set(key, value);
                 }
                 catch (const boost::system::system_error &err)
@@ -195,7 +202,6 @@ void WebSocketConnectionHelper<Derived, Inner>::doWsHandshake()
                 }
             }
 
-            // default UA
             if (!hasUa)
             {
                 auto ua = QStringLiteral("Chatterino/%1 (%2)")
@@ -247,6 +253,50 @@ void WebSocketConnectionHelper<Derived, Inner>::onWsHandshake(
         this->readBuffer,
         beast::bind_front_handler(&WebSocketConnectionHelper::onReadDone,
                                   this->shared_from_this()));
+
+    this->stream.control_callback([this](auto frame_type, auto payload) {
+        this->onControlFrame(frame_type, payload);
+    });
+    this->scheduleHealthCheck(HEALTH_CHECK_INTERVAL_LONG);
+}
+
+template <typename Derived, typename Inner>
+void WebSocketConnectionHelper<Derived, Inner>::onHealthCheck(
+    const boost::system::error_code &ec)
+{
+    if (ec == boost::asio::error::operation_aborted || this->isClosing)
+    {
+        return;
+    }
+
+    if (this->pingProbesTried >= 3)
+    {
+        this->fail(boost::asio::error::network_down, u"ping");
+        return;
+    }
+
+    this->stream.async_ping({}, [](auto ec) {
+        (void)ec;
+    });
+    this->pingProbesTried++;
+
+    // Since we needed to issue a ping check, there is a chance that the
+    // connection might be stuck. Use the short check interval so that
+    // we can fail quickly and try to recover
+    this->scheduleHealthCheck(HEALTH_CHECK_INTERVAL_SHORT);
+}
+
+template <typename Derived, typename Inner>
+void WebSocketConnectionHelper<Derived, Inner>::onControlFrame(
+    boost::beast::websocket::frame_type frame_type, std::string_view payload)
+{
+    (void)payload;
+
+    if (frame_type == boost::beast::websocket::frame_type::pong)
+    {
+        this->pingProbesTried = 0;
+        this->scheduleHealthCheck(HEALTH_CHECK_INTERVAL_LONG);
+    }
 }
 
 template <typename Derived, typename Inner>
@@ -263,7 +313,6 @@ void WebSocketConnectionHelper<Derived, Inner>::onReadDone(
         return;
     }
 
-    // XXX: this copies - we could read directly into a QByteArray
     QByteArray data{
         static_cast<const char *>(this->readBuffer.cdata().data()),
         static_cast<QByteArray::size_type>(bytesRead),
@@ -279,6 +328,11 @@ void WebSocketConnectionHelper<Derived, Inner>::onReadDone(
         this->listener->onBinaryMessage(std::move(data));
     }
 
+    // We got data, push the health check back because the socket
+    // is obviously alive
+    this->scheduleHealthCheck(HEALTH_CHECK_INTERVAL_LONG);
+    this->pingProbesTried = 0;
+
     this->stream.async_read(
         this->readBuffer,
         beast::bind_front_handler(&WebSocketConnectionHelper::onReadDone,
@@ -287,7 +341,7 @@ void WebSocketConnectionHelper<Derived, Inner>::onReadDone(
 
 template <typename Derived, typename Inner>
 void WebSocketConnectionHelper<Derived, Inner>::onWriteDone(
-    boost::system::error_code ec, size_t /*bytesWritten*/)
+    boost::system::error_code ec, size_t)
 {
     if (!this->queuedMessages.empty())
     {
@@ -306,6 +360,18 @@ void WebSocketConnectionHelper<Derived, Inner>::onWriteDone(
     }
 
     this->trySend();
+}
+
+template <typename Derived, typename Inner>
+template <typename Duration>
+void WebSocketConnectionHelper<Derived, Inner>::scheduleHealthCheck(
+    std::chrono::duration<Duration> timeout)
+{
+    this->healthCheckTimer.expires_after(timeout);
+    this->healthCheckTimer.async_wait(
+        [self{this->shared_from_this()}](auto ec) {
+            self->onHealthCheck(ec);
+        });
 }
 
 template <typename Derived, typename Inner>
@@ -336,9 +402,9 @@ void WebSocketConnectionHelper<Derived, Inner>::closeImpl()
 
     qCDebug(chatterinoWebsocket) << *this << "Closing...";
 
-    // cancel all pending operations
     this->resolver.cancel();
     beast::get_lowest_layer(this->stream).cancel();
+    this->healthCheckTimer.cancel();
 
     this->stream.async_close(
         beast::websocket::close_code::normal,
@@ -347,7 +413,7 @@ void WebSocketConnectionHelper<Derived, Inner>::closeImpl()
             {
                 qCWarning(chatterinoWebsocket) << *this << "Failed to close"
                                                << QUtf8StringView(ec.message());
-                // make sure we cancel all operations
+
                 beast::get_lowest_layer(this->stream).close();
             }
             else
@@ -378,8 +444,6 @@ void WebSocketConnectionHelper<Derived, Inner>::fail(std::string_view ec,
     this->detach();
 }
 
-// MARK: TlsWebSocketConnection
-
 TlsWebSocketConnection::TlsWebSocketConnection(
     WebSocketOptions options, int id,
     std::unique_ptr<WebSocketListener> listener, WebSocketPoolImpl *pool,
@@ -391,7 +455,6 @@ TlsWebSocketConnection::TlsWebSocketConnection(
 
 bool TlsWebSocketConnection::setupStream(const std::string &host)
 {
-    // Set SNI Hostname (many hosts need this to handshake successfully)
     if (::SSL_set_tlsext_host_name(this->stream.next_layer().native_handle(),
                                    host.c_str()) == 0)
     {
@@ -423,8 +486,6 @@ void TlsWebSocketConnection::afterTcpHandshake()
             this->doWsHandshake();
         });
 }
-
-// MARK: TcpWebSocketConnection
 
 TcpWebSocketConnection::TcpWebSocketConnection(
     WebSocketOptions options, int id,

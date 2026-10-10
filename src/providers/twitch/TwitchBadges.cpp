@@ -31,42 +31,53 @@
 
 namespace {
 
-// From Twitch docs - expected size for a badge (1x)
 constexpr QSize BADGE_BASE_SIZE(18, 18);
 
-}  // namespace
+}
 
 namespace chatterino {
 
 void TwitchBadges::loadTwitchBadges(std::optional<ChannelPtr> messageChannel)
 {
-    assert(this->loaded_ == false);
+    if (this->loaded_)
+    {
+        {
+            auto badgeSets = this->badgeSets_.access();
+            badgeSets->clear();
+        }
+        {
+            std::unique_lock lock(this->badgesMutex_);
+            this->badgesMap_.clear();
+        }
+    }
 
     getHelix()->getGlobalBadges(
         [this, messageChannel](auto globalBadges) {
-            auto badgeSets = this->badgeSets_.access();
-
-            for (const auto &badgeSet : globalBadges.badgeSets)
             {
-                const auto &setID = badgeSet.setID;
-                for (const auto &version : badgeSet.versions)
+                auto badgeSets = this->badgeSets_.access();
+
+                for (const auto &badgeSet : globalBadges.badgeSets)
                 {
-                    const auto &emote = Emote{
-                        .name = EmoteName{},
-                        .images =
-                            ImageSet{
-                                Image::fromUrl(version.imageURL1x, 1,
-                                               BADGE_BASE_SIZE),
-                                Image::fromUrl(version.imageURL2x, .5,
-                                               BADGE_BASE_SIZE * 2),
-                                Image::fromUrl(version.imageURL4x, .25,
-                                               BADGE_BASE_SIZE * 4),
-                            },
-                        .tooltip = Tooltip{version.title},
-                        .homePage = version.clickURL,
-                    };
-                    (*badgeSets)[setID][version.id] =
-                        std::make_shared<Emote>(emote);
+                    const auto &setID = badgeSet.setID;
+                    for (const auto &version : badgeSet.versions)
+                    {
+                        const auto &emote = Emote{
+                            .name = EmoteName{},
+                            .images =
+                                ImageSet{
+                                    Image::fromUrl(version.imageURL1x, 1,
+                                                   BADGE_BASE_SIZE),
+                                    Image::fromUrl(version.imageURL2x, .5,
+                                                   BADGE_BASE_SIZE * 2),
+                                    Image::fromUrl(version.imageURL4x, .25,
+                                                   BADGE_BASE_SIZE * 4),
+                                },
+                            .tooltip = Tooltip{version.title},
+                            .homePage = version.clickURL,
+                        };
+                        (*badgeSets)[setID][version.id] =
+                            std::make_shared<Emote>(emote);
+                    }
                 }
             }
 
@@ -88,7 +99,6 @@ void TwitchBadges::loadTwitchBadges(std::optional<ChannelPtr> messageChannel)
                 }
                 break;
 
-                // This would most likely happen if the service is down, or if the JSON payload returned has changed format
                 case HelixGetGlobalBadgesError::Unknown: {
                     errorMessage += "An unknown error has occurred.";
                 }
@@ -104,8 +114,6 @@ void TwitchBadges::loadLocalBadges()
     QFile file(":/twitch-badges.json");
     if (!file.open(QFile::ReadOnly))
     {
-        // Despite erroring out, we still want to reach the same point
-        // Loaded should still be set to true to not build up an endless queue, and the quuee should still be flushed.
         qCWarning(chatterinoTwitch)
             << "Error loading Twitch Badges from the local backup file";
         this->loaded();
@@ -154,14 +162,16 @@ void TwitchBadges::loaded()
 {
     std::unique_lock loadedLock(this->loadedMutex_);
 
-    assert(this->loaded_ == false);
-
+    const bool firstLoad = !this->loaded_;
     this->loaded_ = true;
 
-    // Flush callback queue
+    if (!firstLoad)
+    {
+        return;
+    }
+
     std::unique_lock queueLock(this->queueMutex_);
 
-    // Once we have gained unique access of the queue, we can release our unique access of the loaded mutex allowing future calls to read locked_
     loadedLock.unlock();
 
     while (!this->callbackQueue_.empty())
@@ -210,7 +220,6 @@ void TwitchBadges::getBadgeIcon(const QString &name, BadgeIconCallback callback)
 
         if (!this->loaded_)
         {
-            // Badges have not been loaded yet, store callback in a queue
             std::unique_lock queueLock(this->queueMutex_);
             this->callbackQueue_.emplace(name, std::move(callback));
             return;
@@ -226,8 +235,6 @@ void TwitchBadges::getBadgeIcon(const QString &name, BadgeIconCallback callback)
         }
     }
 
-    // Split string in format "name1/version1,name2/version2" to "name1", "version1"
-    // If not in list+version form, name will remain the same
     auto targetBadge = name.split(",").at(0).split("/");
 
     const auto badge = targetBadge.size() == 2

@@ -11,6 +11,7 @@
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/kick/KickAccount.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "singletons/Settings.hpp"
@@ -96,6 +97,13 @@ ReplyThreadPopup::ReplyThreadPopup(bool closeAutomatically, Split *split)
     std::ignore =
         this->ui_.threadView->mouseDown.connect([this](QMouseEvent *) {
             this->giveFocus(Qt::MouseFocusReason);
+        });
+
+    // Let the parent split handle twitch link actions
+    std::ignore = this->ui_.threadView->openChannelIn.connect(
+        [this](QString channelName, FromTwitchLinkOpenChannelIn openIn) {
+            this->split_->getChannelView().openChannelIn.invoke(
+                std::move(channelName), openIn);
         });
 
     // Create SplitInput with inline replying disabled
@@ -193,10 +201,11 @@ ReplyThreadPopup::ReplyThreadPopup(bool closeAutomatically, Split *split)
     }
 }
 
-void ReplyThreadPopup::setThread(std::shared_ptr<MessageThread> thread)
+void ReplyThreadPopup::setThread(std::shared_ptr<MessageThread> thread,
+                                 std::weak_ptr<Channel> channel)
 {
     this->thread_ = std::move(thread);
-    this->ui_.replyInput->setReply(this->thread_->root());
+    this->ui_.replyInput->setReply(this->thread_->root(), std::move(channel));
     this->addMessagesFromThread();
     this->updateInputUI();
 
@@ -282,30 +291,41 @@ void ReplyThreadPopup::addMessagesFromThread()
 
 void ReplyThreadPopup::updateInputUI()
 {
-    auto channel = this->split_->getChannel();
+    auto channel = this->split_->getSelectedChannel();
     // Bail out if not a twitch channel.
     // Special twitch channels will hide their reply input box.
-    if (!channel || !channel->isTwitchChannel())
+    if (!channel || !channel->isTwitchOrKickChannel())
     {
         return;
     }
 
     this->ui_.replyInput->setVisible(channel->isWritable());
 
-    auto user = getApp()->getAccounts()->twitch.getCurrent();
+    QString name;
+    if (channel->isTwitchChannel())
+    {
+        auto user = getApp()->getAccounts()->twitch.getCurrent();
+        if (!user->isAnon())
+        {
+            name = user->getUserName();
+        }
+    }
+    else
+    {
+        auto user = getApp()->getAccounts()->kick.current();
+        if (!user->isAnonymous())
+        {
+            name = user->username();
+        }
+    }
     QString placeholderText;
-
-    if (user->isAnon())
+    if (name.isEmpty())
     {
         placeholderText = QStringLiteral("Log in to send messages...");
     }
     else
     {
-        placeholderText = QStringLiteral("Reply as %1...")
-                              .arg(getApp()
-                                       ->getAccounts()
-                                       ->twitch.getCurrent()
-                                       ->getUserName());
+        placeholderText = QStringLiteral("Reply as %1...").arg(name);
     }
 
     this->ui_.replyInput->setPlaceholderText(placeholderText);

@@ -15,17 +15,15 @@ namespace chatterino {
 
 class Paths;
 class Settings;
+class Modes;
 
-/**
- * To check for updates, use the `checkForUpdates` method.
- * The class by itself does not start any automatic updates.
- */
 class Updates
 {
     const Paths &paths;
+    const Modes &modes;
 
 public:
-    Updates(const Paths &paths_, Settings &settings);
+    Updates(const Modes &modes_, const Paths &paths_, Settings &settings);
 
     enum Status {
         None,
@@ -42,9 +40,6 @@ public:
 
     static bool isDowngradeOf(const QString &online, const QString &current);
 
-    /**
-     * @brief Delete old files that belong to the update process
-     */
     void deleteOldFiles();
 
     void checkForUpdates();
@@ -53,7 +48,7 @@ public:
     void installUpdates();
     Status getStatus() const;
 
-    static QString portableUpdaterPath();
+    static QString portableUpdaterPath(const Paths &paths);
 
     bool shouldShowUpdateButton() const;
     bool isError() const;

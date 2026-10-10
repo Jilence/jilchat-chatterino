@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 
 #if __has_include(<gtest/gtest_prod.h>)
 #    include <gtest/gtest_prod.h>
@@ -23,13 +24,6 @@ namespace chatterino {
 
 class PubSubManagerPrivate;
 
-/**
- * This handles the Twitch PubSub connection
- *
- * Known issues:
- *  - Upon closing a channel, we don't unsubscribe to its pubsub connections
- *  - Stop is never called, meaning we never do a clean shutdown
- */
 class PubSub
 {
     template <typename T>
@@ -47,7 +41,36 @@ public:
 
     struct {
         Signal<const QJsonObject &> redeemed;
+        Signal<const QJsonObject &> statusUpdated;
+        Signal<const QJsonObject &> bulkUpdateProgressed;
+        Signal<const QJsonObject &> bulkUpdateFinished;
     } pointReward;
+
+    struct {
+        /// leafyrino: full pin payload for system messages / GQL pin state
+        Signal<const QJsonObject &> updated;
+    } pinnedChat;
+
+    struct {
+        Signal<const QJsonObject &> updated;
+        Signal<const QJsonObject &> userResult;
+    } prediction;
+
+    struct {
+        Signal<const QJsonObject &> updated;
+    } poll;
+
+    struct {
+        Signal<const QJsonObject &> updated;
+    } userPoints;
+
+    struct {
+        Signal<const QJsonObject &> updated;
+    } chatWarning;
+
+    struct {
+        Signal<const QJsonObject &> updated;
+    } raid;
 
     /**
      * Listen to incoming channel point redemptions in the given channel.
@@ -56,6 +79,25 @@ public:
      * PubSub topic: community-points-channel-v1.{channelID}
      */
     void listenToChannelPointRewards(const QString &channelID);
+
+    /**
+     * Listen to real time pin/unpin events in the given channel.
+     * This topic is relevant for everyone.
+     *
+     * PubSub topic: pinned-chat-updates-v1.{channelID}
+     */
+    void listenToPinnedChatUpdates(const QString &channelID);
+
+    void listenToPredictions(const QString &channelID);
+    void listenToPolls(const QString &channelID);
+    void listenToRaids(const QString &channelID);
+    void listenToUserPredictions(const QString &userID,
+                                 const QString &authToken);
+    void listenToUserChannelPoints(const QString &userID,
+                                   const QString &authToken);
+    void listenToChatWarnings(const QString &userID, const QString &authToken);
+    void forgetUserAuthenticatedTopics(const QString &userID);
+    void forgetOtherUserAuthenticatedTopics(const QString &activeUserID);
 
     void reconnect();
 
@@ -67,15 +109,14 @@ public:
         std::atomic<uint32_t> unlistenResponses{0};
     } diag;
 
-    /// Statistics about the opened/closed connections and received messages
-    ///
-    /// Used in tests.
     const liveupdates::Diag &wsDiag() const;
 
 private:
     void stop();
+    void listenToAuthenticatedTopic(QString topic, const QString &authToken);
 
     std::unique_ptr<PubSubManagerPrivate> private_;
+    std::unordered_map<QString, QString> authenticatedTopicTokens_;
 
 #ifdef FRIEND_TEST
     friend class FTest;

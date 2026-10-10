@@ -1,11 +1,8 @@
-// SPDX-FileCopyrightText: 2022 Contributors to Chatterino <https://chatterino.com>
-//
-// SPDX-License-Identifier: MIT
-
 #include "util/BadgeRegistry.hpp"
 
 #include "messages/Emote.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
+#include "singletons/WindowManager.hpp"
 #include "util/Variant.hpp"
 
 #include <QJsonArray>
@@ -60,6 +57,7 @@ void BadgeRegistry::assignBadgeToUser(const QString &badgeID,
     if (badgeIt != this->knownBadges_.end())
     {
         this->badgeMap_[userID.string] = badgeIt->second;
+        WindowManager::notifyBadgesUpdated(userID.string);
     }
 }
 
@@ -78,6 +76,7 @@ void BadgeRegistry::assignBadgeToUsers(
         std::visit(variant::Overloaded{
                        [&](const seventv::eventapi::TwitchUser &u) {
                            this->badgeMap_[u.id] = badgeIt->second;
+                           WindowManager::notifyBadgesUpdated(u.id);
                        },
                        [&](const seventv::eventapi::KickUser &u) {
                            this->kickBadgeMap_[u.id] = badgeIt->second;
@@ -93,6 +92,7 @@ void BadgeRegistry::clearBadgeFromUser(const QString &badgeID,
     const std::unique_lock lock(this->mutex_);
 
     clearIfEquals(this->badgeMap_, userID.string, badgeID);
+    WindowManager::notifyBadgesUpdated(userID.string);
 }
 
 void BadgeRegistry::clearBadgeFromUsers(
@@ -105,6 +105,7 @@ void BadgeRegistry::clearBadgeFromUsers(
         std::visit(variant::Overloaded{
                        [&](const seventv::eventapi::TwitchUser &u) {
                            clearIfEquals(this->badgeMap_, u.id, badgeID);
+                           WindowManager::notifyBadgesUpdated(u.id);
                        },
                        [&](const seventv::eventapi::KickUser &u) {
                            clearIfEquals(this->kickBadgeMap_, u.id, badgeID);

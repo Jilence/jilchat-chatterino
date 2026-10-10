@@ -6,6 +6,7 @@
 
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
+#include "common/network/RetryingGet.hpp"
 #include "common/QLogging.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
@@ -15,18 +16,17 @@
 #include "singletons/Settings.hpp"
 #include "util/Helpers.hpp"
 
+#include <limits>
+
 namespace {
 
 using namespace chatterino;
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 const auto &LOG = chatterinoFfzemotes;
 
 const QString CHANNEL_HAS_NO_EMOTES(
     "This channel has no FrankerFaceZ channel emotes.");
 
-// FFZ doesn't provide any data on the size for room badges,
-// so we assume 18x18 (same as a Twitch badge)
 constexpr QSize BASE_BADGE_SIZE(18, 18);
 
 Url getEmoteLink(const QJsonObject &urls, const QString &emoteScale)
@@ -51,7 +51,6 @@ void fillInEmoteData(const QJsonObject &emote, const QJsonObject &urls,
     auto url3x = getEmoteLink(urls, "4");
     QSize baseSize(emote["width"].toInt(28), emote["height"].toInt(28));
 
-    //, code, tooltip
     emoteData.name = name;
     emoteData.images = ImageSet{
         Image::fromUrl(url1x, 1, baseSize),
@@ -60,6 +59,38 @@ void fillInEmoteData(const QJsonObject &emote, const QJsonObject &urls,
         url3x.string.isEmpty() ? Image::getEmpty()
                                : Image::fromUrl(url3x, 0.25, baseSize * 4)};
     emoteData.tooltip = {tooltip};
+}
+
+uint32_t modifierFlags(const QJsonObject &jsonEmote)
+{
+    const auto value = jsonEmote.value("modifier_flags").toInteger(-1);
+    if (value < 0 || value > std::numeric_limits<uint32_t>::max())
+    {
+        return 0;
+    }
+    return static_cast<uint32_t>(value);
+}
+
+void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
+{
+    if (!jsonEmote.value("modifier").toBool())
+    {
+        return;
+    }
+
+    const auto providerFlags = modifierFlags(jsonEmote);
+    if ((providerFlags & emote_modifiers::EFFECTS) == 0)
+    {
+        return;
+    }
+
+    const bool isPrefix = jsonEmote.value("modifier_prefix").toBool(false);
+    emote.modifierFlags = providerFlags;
+    emote.modifierPlacement = isPrefix ? EmoteModifierPlacement::Prefix
+                                       : EmoteModifierPlacement::Suffix;
+    emote.modifierSource = EmoteModifierSource::FrankerFaceZ;
+    emote.tooltip =
+        Tooltip{emote.name.string + "<br>FrankerFaceZ emote effect"};
 }
 
 EmotePtr cachedOrMake(Emote &&emote, const EmoteId &id)
@@ -71,13 +102,22 @@ EmotePtr cachedOrMake(Emote &&emote, const EmoteId &id)
 }
 
 void parseEmoteSetInto(const QJsonObject &emoteSet, const QString &kind,
-                       EmoteMap &map)
+                       EmoteMap &map, bool modifiersOnly = false)
 {
     for (const auto emoteRef : emoteSet["emoticons"].toArray())
     {
         const auto emoteJson = emoteRef.toObject();
 
-        // margins
+        if (modifiersOnly)
+        {
+            const auto providerFlags = modifierFlags(emoteJson);
+            if (!emoteJson.value("modifier").toBool() ||
+                (providerFlags & emote_modifiers::EFFECTS) == 0)
+            {
+                continue;
+            }
+        }
+
         auto id = EmoteId{QString::number(emoteJson["id"].toInt())};
         auto name = EmoteName{emoteJson["name"].toString()};
         auto author =
@@ -85,7 +125,6 @@ void parseEmoteSetInto(const QJsonObject &emoteSet, const QString &kind,
         auto urls = emoteJson["urls"].toObject();
         if (emoteJson["animated"].isObject())
         {
-            // prefer animated images if available
             urls = emoteJson["animated"].toObject();
         }
 
@@ -98,14 +137,17 @@ void parseEmoteSetInto(const QJsonObject &emoteSet, const QString &kind,
             Url{QString("https://www.frankerfacez.com/emoticon/%1-%2")
                     .arg(id.string)
                     .arg(name.string)};
+        applyModifierMetadata(emoteJson, emote);
 
-        map[name] = cachedOrMake(std::move(emote), id);
+        if (!modifiersOnly || !map.contains(name))
+        {
+            map[name] = cachedOrMake(std::move(emote), id);
+        }
     }
 }
 
 EmoteMap parseGlobalEmotes(const QJsonObject &jsonRoot)
 {
-    // Load default sets from the `default_sets` object
     std::unordered_set<int> defaultSets{};
     auto jsonDefaultSets = jsonRoot["default_sets"].toArray();
     for (auto jsonDefaultSet : jsonDefaultSets)
@@ -127,6 +169,17 @@ EmoteMap parseGlobalEmotes(const QJsonObject &jsonRoot)
         }
 
         parseEmoteSetInto(emoteSet, "Global", emotes);
+    }
+
+    for (const auto emoteSetRef : jsonRoot["sets"].toObject())
+    {
+        const auto emoteSet = emoteSetRef.toObject();
+        if (defaultSets.contains(emoteSet["id"].toInt()))
+        {
+            continue;
+        }
+
+        parseEmoteSetInto(emoteSet, "Global", emotes, true);
     }
 
     return emotes;
@@ -189,10 +242,8 @@ FfzChannelBadgeMap ffz::detail::parseChannelBadges(const QJsonObject &badgeRoot)
     {
         const auto badgeID = it.key().toInt();
         const auto &jsonUserIDs = it.value().toArray();
-        for (const auto jsonUserID : jsonUserIDs)
+        for (const auto &jsonUserID : jsonUserIDs)
         {
-            // NOTE: The Twitch User IDs come through as ints right now, the code below
-            // tries to parse them as strings first since that's how we treat them anyway.
             if (jsonUserID.isString())
             {
                 channelBadges[jsonUserID.toString()].emplace_back(badgeID);
@@ -223,7 +274,7 @@ std::shared_ptr<const EmoteMap> FfzEmotes::emotes() const
     return this->global_.get();
 }
 
-std::optional<EmotePtr> FfzEmotes::emote(const EmoteName &name) const
+std::optional<EmotePtr> FfzEmotes::emote(EmoteNameView name) const
 {
     auto emotes = this->global_.get();
     auto it = emotes->find(name);
@@ -280,14 +331,13 @@ void FfzEmotes::loadChannel(
 {
     qCDebug(LOG) << "Reload FFZ Channel Emotes for channel" << channelID;
 
-    NetworkRequest("https://api.frankerfacez.com/v1/room/id/" + channelID)
-
-        .timeout(20000)
-        .onSuccess([emoteCallback = std::move(emoteCallback),
-                    modBadgeCallback = std::move(modBadgeCallback),
-                    vipBadgeCallback = std::move(vipBadgeCallback),
-                    channelBadgesCallback = std::move(channelBadgesCallback),
-                    channel, channelID, manualRefresh](const auto &result) {
+    network::fetchWithBackoff(
+        "https://api.frankerfacez.com/v1/room/id/" + channelID,
+        [emoteCallback = std::move(emoteCallback),
+         modBadgeCallback = std::move(modBadgeCallback),
+         vipBadgeCallback = std::move(vipBadgeCallback),
+         channelBadgesCallback = std::move(channelBadgesCallback), channel,
+         channelID, manualRefresh](const auto &result) {
             writeProviderEmotesCache(channelID, "frankerfacez",
                                      result.getData());
             const auto json = result.parseJson();
@@ -318,41 +368,40 @@ void FfzEmotes::loadChannel(
                     shared->addSystemMessage(CHANNEL_HAS_NO_EMOTES);
                 }
             }
-        })
-        .onError(
-            [channelID, channel, manualRefresh, cacheHit](const auto &result) {
-                auto shared = channel.lock();
-                if (!shared)
-                {
-                    return;
-                }
+        },
+        [channelID, channel, manualRefresh, cacheHit](const auto &result) {
+            auto shared = channel.lock();
+            if (!shared)
+            {
+                return;
+            }
 
-                if (result.status() == 404)
+            if (result.status() == 404)
+            {
+                // User does not have any FFZ emotes
+                if (manualRefresh)
                 {
-                    // User does not have any FFZ emotes
-                    if (manualRefresh)
-                    {
-                        shared->addSystemMessage(CHANNEL_HAS_NO_EMOTES);
-                    }
+                    shared->addSystemMessage(CHANNEL_HAS_NO_EMOTES);
                 }
-                else
+            }
+            else
+            {
+                // TODO: Auto retry in case of a timeout, with a delay
+                auto errorString = result.formatError();
+                qCWarning(LOG) << "Error fetching FFZ emotes for channel"
+                               << channelID << ", error" << errorString;
+                shared->addSystemMessage(
+                    QStringLiteral("Failed to fetch FrankerFaceZ channel "
+                                   "emotes. (Error: %1)")
+                        .arg(errorString));
+                if (cacheHit)
                 {
-                    // TODO: Auto retry in case of a timeout, with a delay
-                    auto errorString = result.formatError();
-                    qCWarning(LOG) << "Error fetching FFZ emotes for channel"
-                                   << channelID << ", error" << errorString;
                     shared->addSystemMessage(
-                        QStringLiteral("Failed to fetch FrankerFaceZ channel "
-                                       "emotes. (Error: %1)")
-                            .arg(errorString));
-                    if (cacheHit)
-                    {
-                        shared->addSystemMessage(
-                            "Using cached FrankerFaceZ emotes as fallback.");
-                    }
+                        "Using cached FrankerFaceZ emotes as fallback.");
                 }
-            })
-        .execute();
+            }
+        },
+        20000);
 }
 
 }  // namespace chatterino

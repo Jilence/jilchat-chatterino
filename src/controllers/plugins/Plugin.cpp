@@ -71,7 +71,6 @@ Plugin::~Plugin()
     this->activeTimeouts.clear();
     if (this->state_ != nullptr)
     {
-        // clearing this after the state is gone is not safe to do
         this->ownedCommands.clear();
         this->callbacks.clear();
         lua_close(this->state_);
@@ -83,6 +82,12 @@ Plugin::~Plugin()
            "This must be empty or destructor of sol::protected_function would "
            "explode malloc structures later");
 }
+
+lua::PluginWeakRef Plugin::weakRef() const
+{
+    return this->selfRef_.weak();
+}
+
 int Plugin::addTimeout(QTimer *timer)
 {
     this->activeTimeouts.push_back(timer);
@@ -140,7 +145,7 @@ void Plugin::log(lua_State *L, lua::api::LogLevel level, QDebug stream,
     stream.noquote();
     stream << "[" + this->id + ":" + this->meta.name + "]";
     QString fullMessage;
-    for (const auto arg : args)
+    for (const auto &arg : args)
     {
         auto s = lua::toString(L, arg.stack_index());
         stream << s;
@@ -151,7 +156,6 @@ void Plugin::log(lua_State *L, lua::api::LogLevel level, QDebug stream,
         }
         fullMessage.append(s);
 
-        // Remove this from our stack
         lua_pop(L, 1);
     }
 

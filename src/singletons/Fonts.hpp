@@ -37,10 +37,8 @@ enum class FontStyle : uint8_t {
     UiMediumBold,
     UiTabs,
 
-    // don't remove this value
     EndType,
 
-    // make sure to update these values accordingly!
     ChatStart = ChatSmall,
     ChatEnd = ChatVeryLarge,
 };
@@ -49,8 +47,6 @@ class Fonts final
 {
 public:
     explicit Fonts(Settings &settings);
-
-    // font data gets set in createFontData(...)
 
     QFont getFont(FontStyle type, float scale);
     QFontMetricsF getFontMetrics(FontStyle type, float scale);

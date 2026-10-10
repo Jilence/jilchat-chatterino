@@ -8,12 +8,11 @@
 
 namespace chatterino {
 
-/**
- * @brief This sound backend does nothing
- **/
 class NullBackend final : public ISoundController
 {
 public:
+    using ISoundController::play;
+
     NullBackend();
     ~NullBackend() override = default;
     NullBackend(const NullBackend &) = delete;
@@ -24,7 +23,7 @@ public:
     // Play a sound from the given url
     // If the url points to something that isn't a local file, it will play
     // the default sound initialized in the initialize method
-    void play(const QUrl &sound) final;
+    void play(const QUrl &sound, float volume) final;
 };
 
 }  // namespace chatterino

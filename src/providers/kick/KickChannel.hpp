@@ -7,6 +7,7 @@
 #include <pajlada/signals/signal.hpp>
 
 #include <chrono>
+#include <map>
 #include <queue>
 #include <unordered_map>
 
@@ -24,10 +25,12 @@ class EmoteMap;
 
 struct Emote;
 using EmotePtr = std::shared_ptr<const Emote>;
+struct LiveUpdateEmote;
 
 struct EmoteName;
 
 struct KickChannelInfo;
+struct KickPrivateChannelSubBadge;
 
 class KickChannel : public Channel, public ChannelChatters
 {
@@ -78,16 +81,13 @@ public:
         return this->channelID_;
     }
 
-    /// Get the thread for the given message.
-    /// If no thread can be found for the message, create one.
-    /// Additionally, this returns the reply parent.
     std::pair<std::shared_ptr<MessageThread>, MessagePtr> getOrCreateThread(
         const QString &messageID);
 
     void reloadSeventvEmotes(bool manualRefresh);
 
     std::shared_ptr<const EmoteMap> seventvEmotes() const;
-    EmotePtr seventvEmote(const EmoteName &name) const;
+    EmotePtr seventvEmote(EmoteNameView name) const;
 
     void addSeventvEmote(const seventv::eventapi::EmoteAddDispatch &dispatch);
 
@@ -142,13 +142,14 @@ public:
     pajlada::Signals::Signal<const QString &> sendWaitUpdate;
     void setSendWait(std::chrono::seconds waitTime);
 
+    EmotePtr getSubBadge(unsigned months);
+
     friend QDebug operator<<(QDebug dbg, const KickChannel &chan);
 
 protected:
     void messageRemovedFromStart(const MessagePtr &msg) override;
 
 private:
-    /// Message ID -> thread
     std::unordered_map<QString, std::weak_ptr<MessageThread>> threads_;
 
     uint64_t roomID_ = 0;
@@ -170,15 +171,19 @@ private:
     void updateSeventvData(const QString &newUserID,
                            const QString &newEmoteSetID);
     void addOrReplaceSeventvAddRemove(bool isEmoteAdd, const QString &actor,
-                                      const QString &emoteName);
+                                      const LiveUpdateEmote &emote);
     bool tryReplaceLastSeventvAddOrRemove(MessageFlag op, const QString &actor,
-                                          const QString &emoteName);
+                                          const LiveUpdateEmote &emote);
 
     void emitSendWait();
 
+    void initSubBadges(std::span<const KickPrivateChannelSubBadge> infos);
+
+    void loadChannelHistory();
+
     // Kick usually calls this username
     QString displayName_;
-    // The name in the URL (replaces non-alphanumeric characters with dashes)
+
     QString slug_;
 
     Atomic<std::shared_ptr<const EmoteMap>> seventvEmotes_;
@@ -186,12 +191,12 @@ private:
     QString seventvUserID_;
     QString seventvEmoteSetID_;
     size_t seventvKickConnectionIndex_ = 0;
-    /// The actor name of the last 7TV emote update.
+
     QString lastSeventvEmoteActor_;
-    /// A weak reference to the last 7TV emote update message.
+
     std::weak_ptr<const Message> lastSeventvMessage_;
-    /// A list of the emotes listed in the lat 7TV emote update message.
-    std::vector<QString> lastSeventvEmoteNames_;
+
+    std::vector<LiveUpdateEmote> lastSeventvEmotes_;
     QDateTime nextSeventvActivity_;
 
     std::queue<std::chrono::steady_clock::time_point> lastMessageTimestamps_;
@@ -199,7 +204,7 @@ private:
     std::chrono::steady_clock::time_point lastMessageAmountErrorTs_;
 
     QTimer sendWaitTimer_;
-    // Timepoint at which the user can send messages again
+
     std::optional<std::chrono::steady_clock::time_point> sendWaitEnd_;
 
     RoomModes roomModes_;
@@ -208,6 +213,9 @@ private:
     bool isVip_ = false;
 
     StreamData streamData_;
+
+    std::map<unsigned, ImagePtr> subBadgeImages_;
+    std::unordered_map<unsigned, EmotePtr> subBadges_;
 };
 
 }  // namespace chatterino

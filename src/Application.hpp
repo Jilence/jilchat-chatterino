@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2017 Contributors to Chatterino <https://chatterino.com>
-//
-// SPDX-License-Identifier: MIT
-
 #pragma once
 
 #include <cassert>
@@ -31,6 +27,7 @@ class TwitchBadges;
 class PluginController;
 #endif
 
+class Modes;
 class Theme;
 class WindowManager;
 class ILogging;
@@ -48,6 +45,8 @@ class BttvBadges;
 class SeventvBadges;
 class HomiesBadges;
 class FolhinhaBadges;
+class JilChatBadges;
+class BluzyrinoBadges;
 class SeventvPersonalEmotes;
 class ImageUploader;
 class SeventvAPI;
@@ -58,18 +57,31 @@ class FfzEmotes;
 class SeventvEmotes;
 class SeventvEventAPI;
 class ILinkResolver;
+class HomiesBadges;
+class FolhinhaBadges;
+class FfzApBadges;
+class DankChatBadges;
+class ChatsenBadges;
+class MoltorinoSupporterBadges;
+class RepeatedMessageDetector;
 class IStreamerMode;
 class ITwitchUsers;
 class NativeMessagingServer;
 namespace pronouns {
 class Pronouns;
-}  // namespace pronouns
+}
 namespace eventsub {
 class IController;
-}  // namespace eventsub
+}
 class SpellChecker;
 
 class KickChatServer;
+
+class YouTubeChatServer;
+
+class PotatCommands;
+
+class SupibotCommands;
 
 class IApplication
 {
@@ -86,6 +98,7 @@ public:
 
     virtual const Paths &getPaths() = 0;
     virtual const Args &getArgs() = 0;
+    virtual const Modes &getModes() = 0;
     virtual Theme *getThemes() = 0;
     virtual Fonts *getFonts() = 0;
     virtual EmoteController *getEmotes() = 0;
@@ -106,6 +119,13 @@ public:
     virtual SeventvBadges *getSeventvBadges() = 0;
     virtual HomiesBadges *getHomiesBadges() = 0;
     virtual FolhinhaBadges *getFolhinhaBadges() = 0;
+    virtual FfzApBadges *getFfzApBadges() = 0;
+    virtual DankChatBadges *getDankChatBadges() = 0;
+    virtual ChatsenBadges *getChatsenBadges() = 0;
+    virtual MoltorinoSupporterBadges *getMoltorinoSupporterBadges() = 0;
+    virtual RepeatedMessageDetector *getRepeatedMessageDetector() = 0;
+    virtual JilChatBadges *getJilChatBadges() = 0;
+    virtual BluzyrinoBadges *getBluzyrinoBadges() = 0;
     virtual IUserDataController *getUserData() = 0;
     virtual ISoundController *getSound() = 0;
     virtual ITwitchLiveController *getTwitchLiveController() = 0;
@@ -131,6 +151,9 @@ public:
     virtual eventsub::IController *getEventSub() = 0;
     virtual SpellChecker *getSpellChecker() = 0;
     virtual KickChatServer *getKickChatServer() = 0;
+    virtual YouTubeChatServer *getYouTubeChatServer() = 0;
+    virtual PotatCommands *getPotatCommands() = 0;
+    virtual SupibotCommands *getSupibotCommands() = 0;
 
     int monoFontId;
 };
@@ -139,12 +162,13 @@ class Application : public IApplication
 {
     const Paths &paths_;
     const Args &args_;
+    const Modes &modes_;
     int argc_{};
     char **argv_{};
 
 public:
     Application(Settings &_settings, const Paths &paths, const Args &_args,
-                Updates &_updates);
+                const Modes &modes, Updates &_updates);
     ~Application() override;
 
     Application(const Application &) = delete;
@@ -161,6 +185,8 @@ public:
     void load();
     void aboutToQuit();
     void stop();
+
+    void connect();
 
     int run();
 
@@ -188,6 +214,13 @@ private:
     std::unique_ptr<SeventvBadges> seventvBadges;
     std::unique_ptr<HomiesBadges> homiesBadges;
     std::unique_ptr<FolhinhaBadges> folhinhaBadges;
+    std::unique_ptr<FfzApBadges> ffzApBadges;
+    std::unique_ptr<DankChatBadges> dankChatBadges;
+    std::unique_ptr<ChatsenBadges> chatsenBadges;
+    std::unique_ptr<MoltorinoSupporterBadges> moltorinoSupporterBadges;
+    std::unique_ptr<RepeatedMessageDetector> repeatedMessageDetector;
+    std::unique_ptr<JilChatBadges> jilChatBadges;
+    std::unique_ptr<BluzyrinoBadges> bluzyrinoBadges;
     std::unique_ptr<SeventvPaints> seventvPaints;
     std::unique_ptr<SeventvPersonalEmotes> seventvPersonalEmotes;
     std::unique_ptr<UserDataController> userData;
@@ -207,6 +240,9 @@ private:
     std::unique_ptr<pronouns::Pronouns> pronouns;
     std::unique_ptr<SpellChecker> spellChecker;
     std::unique_ptr<KickChatServer> kickChatServer;
+    std::unique_ptr<YouTubeChatServer> youTubeChatServer;
+    std::unique_ptr<PotatCommands> potatCommands;
+    std::unique_ptr<SupibotCommands> supibotCommands;
 #ifdef CHATTERINO_HAVE_PLUGINS
     std::unique_ptr<PluginController> plugins;
 #endif
@@ -219,6 +255,10 @@ public:
     const Args &getArgs() override
     {
         return this->args_;
+    }
+    const Modes &getModes() override
+    {
+        return this->modes_;
     }
     Theme *getThemes() override;
     Fonts *getFonts() override;
@@ -239,6 +279,13 @@ public:
     SeventvBadges *getSeventvBadges() override;
     HomiesBadges *getHomiesBadges() override;
     FolhinhaBadges *getFolhinhaBadges() override;
+    FfzApBadges *getFfzApBadges() override;
+    DankChatBadges *getDankChatBadges() override;
+    ChatsenBadges *getChatsenBadges() override;
+    MoltorinoSupporterBadges *getMoltorinoSupporterBadges() override;
+    RepeatedMessageDetector *getRepeatedMessageDetector() override;
+    JilChatBadges *getJilChatBadges() override;
+    BluzyrinoBadges *getBluzyrinoBadges() override;
     IUserDataController *getUserData() override;
     ISoundController *getSound() override;
     ITwitchLiveController *getTwitchLiveController() override;
@@ -267,9 +314,12 @@ public:
     ITwitchUsers *getTwitchUsers() override;
     SpellChecker *getSpellChecker() override;
     KickChatServer *getKickChatServer() override;
+    YouTubeChatServer *getYouTubeChatServer() override;
+    PotatCommands *getPotatCommands() override;
+    SupibotCommands *getSupibotCommands() override;
 
 private:
-    void initNm(const Paths &paths);
+    void initNm(const Modes &modes, const Paths &paths);
 
     std::unique_ptr<NativeMessagingServer> nmServer;
     Updates &updates;
@@ -279,7 +329,6 @@ private:
 
 IApplication *getApp();
 
-/// Might return `nullptr` if the app is being destroyed
 IApplication *tryGetApp();
 
 bool isAppAboutToQuit();

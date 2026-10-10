@@ -9,23 +9,12 @@
 
 #include <boost/asio/ssl/context.hpp>
 #include <boost/asio/ssl/stream.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/websocket/stream.hpp>
 
 namespace chatterino::ws::detail {
 
-/// A CRTP helper to share code between the TLS and TCP connections.
-///
-/// `Derived` must have a `void afterTcpHandshake()` method, which is called if
-/// the TCP handshake was successful. Subclasses can call `doWsHandshake` after
-/// the intermediate handshake (i.e. TLS) is done.
-///
-/// `Derived` must have a constant `DEFAULT_PORT` which specifies the TCP port
-/// to connect to if the specified URL doesn't have one set.
-///
-/// `Derived` can contain a method `bool setupStream(const std::string&)` which
-/// is called from `run()`. The return value indicates if an error happened. An
-/// implementation must've called `fail()` in case of errors.
 template <typename Derived, typename Inner>
 class WebSocketConnectionHelper : public WebSocketConnection,
                                   public std::enable_shared_from_this<
@@ -55,7 +44,6 @@ protected:
     Stream stream;
 
 private:
-    // This is private to ensure only `Derived` can construct this class.
     WebSocketConnectionHelper(WebSocketOptions options, int id,
                               std::unique_ptr<WebSocketListener> listener,
                               WebSocketPoolImpl *pool,
@@ -64,12 +52,6 @@ private:
     void onResolve(boost::system::error_code ec,
                    const boost::asio::ip::tcp::resolver::results_type &results);
 
-    /// Initialize a TCP connection to the given endpoint iterator in `resolvedEndpoints`.
-    ///
-    /// If we failed to connect, try the next iterator.
-    ///
-    /// If the iterator is invalid, we have run out of endpoints to try, and deem this
-    /// connection a failure.
     void tryConnect(std::optional<BalancedResolverResults::Entry> entry);
     void onTcpHandshake(const BalancedResolverResults::Entry &entry,
                         boost::system::error_code ec);
@@ -77,17 +59,20 @@ private:
 
     void onReadDone(boost::system::error_code ec, size_t bytesRead);
     void onWriteDone(boost::system::error_code ec, size_t bytesWritten);
+    void onHealthCheck(const boost::system::error_code &ec);
+    void onControlFrame(boost::beast::websocket::frame_type frame_type,
+                        std::string_view payload);
+    template <typename Duration>
+    void scheduleHealthCheck(std::chrono::duration<Duration> timeout);
 
     friend Derived;
 
-    /// A range of endpoints from the `onResolve` function.
-    ///
-    /// When we successfully resolve the host, we try to connect by
-    /// iterating over these results.
     BalancedResolverResults resolvedEndpoints;
+
+    boost::asio::steady_timer healthCheckTimer;
+    unsigned int pingProbesTried = 0;
 };
 
-/// A WebSocket connection over TLS (wss://).
 class TlsWebSocketConnection
     : public WebSocketConnectionHelper<
           TlsWebSocketConnection,
@@ -111,7 +96,6 @@ protected:
         boost::asio::ssl::stream<boost::beast::tcp_stream>>;
 };
 
-/// A WebSocket connection over TCP (ws://).
 class TcpWebSocketConnection
     : public WebSocketConnectionHelper<TcpWebSocketConnection,
                                        boost::beast::tcp_stream>

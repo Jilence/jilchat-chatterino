@@ -25,6 +25,7 @@
 namespace {
 
 using namespace chatterino;
+using namespace chatterino::eventsub;
 
 std::tuple<std::string, std::string, std::string> getEventSubHost()
 {
@@ -57,12 +58,16 @@ public:
 
     void debug(std::string_view msg) override
     {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
         qCDebug(this->loggingCategory).noquote() << msg;
+#endif
     }
 
     void warn(std::string_view msg) override
     {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
         qCWarning(this->loggingCategory).noquote() << msg;
+#endif
     }
 
 private:
@@ -171,6 +176,9 @@ void Controller::removeRef(const SubscriptionRequest &request)
                 << "but we had no subscription ID attached - a "
                    "successful subscription was never made. From state "
                 << qmagicenum::enumName(subscription.state);
+            subscription.state = Subscription::State::Unsubscribed;
+            subscription.backoff.reset();
+            this->subscriptions.erase(request);
             return;
         }
 
@@ -398,8 +406,8 @@ void Controller::subscribe(const SubscriptionRequest &request, bool isRetry)
     uint32_t openButNotReadyConnections = 0;
 
     // 2. Check if any currently open connection can handle this subscription
-    auto viableConnection = this->getViableConnection(
-        request.ownerTwitchUserID, openButNotReadyConnections);
+    auto viableConnection =
+        this->getViableConnection(request, openButNotReadyConnections);
 
     if (viableConnection.has_value())
     {
@@ -408,6 +416,8 @@ void Controller::subscribe(const SubscriptionRequest &request, bool isRetry)
 
         assert(listener != nullptr && "Something goofy has gone wrong, Session "
                                       "listener must be our Connection type");
+
+        listener->claimHelixAuthMode(!request.helixOAuthToken.isEmpty());
 
         qCDebug(LOG) << "Make helix request for" << request;
         getHelix()->createEventSubSubscription(
@@ -436,7 +446,7 @@ void Controller::subscribe(const SubscriptionRequest &request, bool isRetry)
 
                     case Error::Forbidden:
                         qCDebug(LOG) << "Forbidden" << errorString << request;
-                        return;
+                        break;
 
                     case Error::Conflict:
                         // This session ID is already subscribed to this request, some logic of ours is wrong
@@ -472,7 +482,8 @@ void Controller::subscribe(const SubscriptionRequest &request, bool isRetry)
                 {
                     this->markRequestFailed(request);
                 }
-            });
+            },
+            request.helixClientId, request.helixOAuthToken);
 
         return;
     }
@@ -480,7 +491,7 @@ void Controller::subscribe(const SubscriptionRequest &request, bool isRetry)
     if (openButNotReadyConnections == 0)
     {
         // No connection was available to handle this subscription request, create a new connection
-        this->createConnection();
+        this->createConnection(!request.helixOAuthToken.isEmpty());
     }
     else if (openButNotReadyConnections > 1)
     {
@@ -493,7 +504,7 @@ void Controller::subscribe(const SubscriptionRequest &request, bool isRetry)
 }
 
 std::optional<std::shared_ptr<lib::Session>> Controller::getViableConnection(
-    const QString &ownerTwitchUserID, uint32_t &openButNotReadyConnections)
+    const SubscriptionRequest &request, uint32_t &openButNotReadyConnections)
 {
     for (const auto &weakConnection : this->connections)
     {
@@ -511,16 +522,16 @@ std::optional<std::shared_ptr<lib::Session>> Controller::getViableConnection(
             continue;  // dead connection
         }
 
+        if (!listener->canHandleSubscription(request))
+        {
+            continue;
+        }
+
         if (listener->getSessionID().isEmpty())
         {
             // This connection is open but it's not ready (i.e. no welcome has been posted yet)
             ++openButNotReadyConnections;
             continue;
-        }
-
-        if (!listener->canHandleSubscriptionFrom(ownerTwitchUserID))
-        {
-            continue;  // Connection is active with another Twitch User's subscriptions
         }
 
         // TODO: Check if this listener has room for another subscription
@@ -531,10 +542,12 @@ std::optional<std::shared_ptr<lib::Session>> Controller::getViableConnection(
     return {};
 }
 
-void Controller::createConnection()
+void Controller::createConnection(bool alternateHelixAuth)
 {
+    auto listener = std::make_unique<Connection>();
+    listener->claimHelixAuthMode(alternateHelixAuth);
     this->createConnection(this->eventSubHost, this->eventSubPort,
-                           this->eventSubPath, std::make_unique<Connection>());
+                           this->eventSubPath, std::move(listener));
 }
 
 void Controller::createConnection(std::string host, std::string port,
@@ -664,6 +677,25 @@ void Controller::markRequestSubscribed(const SubscriptionRequest &request,
 
     std::lock_guard lock(this->subscriptionsMutex);
 
+    auto it = this->subscriptions.find(request);
+    if (it == this->subscriptions.end())
+    {
+        return;
+    }
+
+    auto &subscription = it->second;
+
+    if (subscription.state == Subscription::State::Subscribed)
+    {
+        return;
+    }
+
+    if (subscription.state != Subscription::State::Subscribing &&
+        subscription.state != Subscription::State::Retrying)
+    {
+        return;
+    }
+
     auto strong = connection.lock();
     if (!strong)
     {
@@ -677,13 +709,6 @@ void Controller::markRequestSubscribed(const SubscriptionRequest &request,
         return;
     }
     listener->markRequestSubscribed(request);
-
-    auto &subscription = this->subscriptions[request];
-
-    assert((subscription.state == Subscription::State::Subscribing ||
-            subscription.state == Subscription::State::Retrying) &&
-           "A subscription can only be marked subscribed from the Subscribing "
-           "or Retrying state");
 
     subscription.connection = std::move(connection);
     subscription.subscriptionID = subscriptionID;
@@ -761,6 +786,13 @@ void Controller::clearConnections()
         auto conn = it.lock();
         return !conn || !conn->getListener();
     });
+}
+
+void DummyController::reconnectConnection(
+    std::unique_ptr<lib::Listener> /* connection */,
+    const std::optional<std::string> & /* reconnectURL */,
+    const std::unordered_set<SubscriptionRequest> & /* subs */)
+{
 }
 
 }  // namespace chatterino::eventsub

@@ -10,6 +10,8 @@
 
 #include <QObject>
 
+#include <memory>
+
 namespace chatterino {
 
 class Account;
@@ -17,24 +19,25 @@ class Settings;
 class Paths;
 
 class AccountModel;
+class DesktopPresenceController;
 
 class AccountController final
 {
 public:
     AccountController();
+    ~AccountController();
 
     AccountModel *createModel(QObject *parent);
 
-    /**
-     * Load current user & send off a signal to subscribers about any potential changes
-     */
     void load();
+    DesktopPresenceController &desktopPresence();
 
     TwitchAccountManager twitch;
     KickAccountManager kick;
 
 private:
     SignalVector<std::shared_ptr<Account>> accounts_;
+    std::unique_ptr<DesktopPresenceController> desktopPresence_;
 };
 
 }  // namespace chatterino

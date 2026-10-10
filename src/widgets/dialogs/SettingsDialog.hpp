@@ -33,9 +33,9 @@ enum class SettingsDialogPreference {
     NoPreference,
     StreamerMode,
     Accounts,
-    Highlights,
     ModerationActions,
     About,
+    Moltorino,
 };
 
 class SettingsDialog : public BaseWindow
@@ -49,7 +49,6 @@ public:
 
 protected:
     void scaleChangedEvent(float newDpi) override;
-    void themeChangedEvent() override;
     void showEvent(QShowEvent *) override;
 
 private:

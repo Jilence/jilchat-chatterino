@@ -30,16 +30,16 @@ public:
                              std::span<const seventv::eventapi::User> users);
 
     std::shared_ptr<Paint> getPaint(const QString &userName, bool kick) const;
+    /// A paint added with addPaint, or nullptr.
+    std::shared_ptr<Paint> getPaintById(const QString &paintID) const;
 
 private:
-    // Mutex for both `paintMap_` and `knownPaints_`
     mutable std::shared_mutex mutex_;
 
-    // user-name => paint
     std::unordered_map<QString, std::shared_ptr<Paint>> kickPaintMap_;
-    // user-name => paint
+
     std::unordered_map<QString, std::shared_ptr<Paint>> twitchPaintMap_;
-    // paint-id => paint
+
     std::unordered_map<QString, std::shared_ptr<Paint>> knownPaints_;
 };
 

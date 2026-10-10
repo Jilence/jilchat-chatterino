@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <QJsonArray>
 #include <QJsonObject>
 
 namespace chatterino {
@@ -20,8 +21,6 @@ struct BttvLiveUpdateEmoteUpdateAddMessage {
     bool validate() const;
 
 private:
-    // true if the channel id is malformed
-    // (e.g. doesn't start with "twitch:")
     bool badChannelID_;
 };
 
@@ -34,8 +33,6 @@ struct BttvLiveUpdateEmoteRemoveMessage {
     bool validate() const;
 
 private:
-    // true if the channel id is malformed
-    // (e.g. doesn't start with "twitch:")
     bool badChannelID_;
 };
 
@@ -43,6 +40,11 @@ struct BttvLiveUpdateUserUpdateMessage {
     BttvLiveUpdateUserUpdateMessage(const QJsonObject &json);
 
     QString userID;
+    QString userName;
+    /// The id of the user's username effect; empty for none.
+    QString usernameEffect;
+    /// The user's personal emotes.
+    QJsonArray emotes;
     QJsonObject badgeObject;
 
     bool validate() const;

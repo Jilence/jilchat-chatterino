@@ -7,7 +7,9 @@
 #include "Application.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
+#include "providers/youtube/YouTubeChatServer.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/Theme.hpp"
 #include "util/MultiChannel.hpp"
@@ -57,6 +59,8 @@ public:
             "Twitch", QVariant::fromValue(MultiChannel::Platform::Twitch));
         this->platform->addItem(
             "Kick", QVariant::fromValue(MultiChannel::Platform::Kick));
+        this->platform->addItem(
+            "YouTube", QVariant::fromValue(MultiChannel::Platform::YouTube));
         layout->addWidget(this->platform);
 
         this->name->setPlaceholderText("Name");
@@ -129,6 +133,9 @@ QListWidgetItem *makeMultiChannelItem(const MultiChannel::Spec &spec)
         case MultiChannel::Platform::Kick:
             name += u"[K] ";
             break;
+        case MultiChannel::Platform::YouTube:
+            name += u"[Y] ";
+            break;
     }
     name += spec.name;
     auto *item = new QListWidgetItem(name);
@@ -186,11 +193,19 @@ SelectChannelDialog::SelectChannelDialog(QWidget *parent)
     ui.channelName->setVisible(false);
     layout->addWidget(ui.channelName);
 
+    ui.channelAnonymous = new QCheckBox("Join anonymously (read only)");
+    ui.channelAnonymous->setVisible(false);
+    ui.channelAnonymous->setToolTip(
+        "Connect with a Twitch anonymous chat session. You can read chat, but "
+        "you can't send messages from this split.");
+    layout->addWidget(ui.channelAnonymous);
+
     QObject::connect(ui.channel, &AutoCheckedRadioButton::toggled, this,
                      [this](bool enabled) {
                          auto &ui = this->ui_;
                          ui.channelName->setVisible(enabled);
                          ui.channelLabel->setVisible(enabled);
+                         ui.channelAnonymous->setVisible(enabled);
 
                          if (enabled)
                          {
@@ -314,11 +329,39 @@ SelectChannelDialog::SelectChannelDialog(QWidget *parent)
 
         ui.notebook->addPage(ui.kickPage, "Kick");
     }
+    // YouTube
+    {
+        ui.youtubePage = new QWidget;
+        auto *layout = new QVBoxLayout(ui.youtubePage);
+
+        auto *youtubeLabel = new QLabel(
+            "Join a YouTube channel by its handle or name (e.g. "
+            "<b>@youtube</b>).<br>Opens the channel's current live chat. "
+            "This is <b>read-only</b> and <b>experimental</b>.");
+        youtubeLabel->setOpenExternalLinks(true);
+        youtubeLabel->setWordWrap(true);
+        layout->addWidget(youtubeLabel);
+
+        ui.youtubeName = new QLineEdit();
+        ui.youtubeName->setPlaceholderText(
+            "Handle, channel ID, or URL (e.g. @youtube)");
+        layout->addWidget(ui.youtubeName);
+
+        layout->addStretch(1);
+
+        ui.notebook->addPage(ui.youtubePage, "YouTube");
+    }
     // Multi
     {
         ui.multiPage = new QWidget;
         ui.multiView = new QListWidget;
         ui.multiIndicatorMode = new QComboBox;
+        ui.multiTintByPlatform =
+            new QCheckBox("Tint message background by platform");
+        ui.multiShowTwitchOverlays =
+            new QCheckBox("Show Twitch pins, polls && predictions");
+        ui.multiCombinedViewerCount =
+            new QCheckBox("Show combined viewer count in the split header");
         auto *layout = new QVBoxLayout(ui.multiPage);
         {
             auto *descriptionLabel = new QLabel(
@@ -329,6 +372,8 @@ SelectChannelDialog::SelectChannelDialog(QWidget *parent)
                 "a>.");
             descriptionLabel->setWordWrap(true);
             descriptionLabel->setOpenExternalLinks(true);
+            descriptionLabel->setSizePolicy(QSizePolicy::Preferred,
+                                            QSizePolicy::Minimum);
             layout->addWidget(descriptionLabel);
 
             auto *header = new QWidget;
@@ -379,6 +424,22 @@ SelectChannelDialog::SelectChannelDialog(QWidget *parent)
         }
         layout->addWidget(ui.multiIndicatorMode);
 
+        ui.multiTintByPlatform->setToolTip(
+            "Give each message a faint background tint in its platform's color "
+            "(Twitch purple, YouTube red, Kick green) so the chats are easy to "
+            "tell apart.");
+        layout->addWidget(ui.multiTintByPlatform);
+
+        ui.multiShowTwitchOverlays->setToolTip(
+            "Show the Twitch pinned message, poll and prediction banners from "
+            "the Twitch channel in this multi split.");
+        layout->addWidget(ui.multiShowTwitchOverlays);
+
+        ui.multiCombinedViewerCount->setToolTip(
+            "Show the summed live viewer count of all channels in this multi "
+            "split's header.");
+        layout->addWidget(ui.multiCombinedViewerCount);
+
         ui.notebook->addPage(ui.multiPage, "Multi");
     }
 
@@ -412,6 +473,7 @@ void SelectChannelDialog::setSelectedChannel(
     if (!channel_.has_value())
     {
         this->ui_.channel->setChecked(true);
+        this->ui_.channelAnonymous->setChecked(false);
 
         this->hasSelectedChannel_ = false;
         return;
@@ -428,36 +490,60 @@ void SelectChannelDialog::setSelectedChannel(
     {
         case Channel::Type::Twitch: {
             this->ui_.channelName->setText(channel->getName());
+            if (auto *twitchChannel =
+                    dynamic_cast<TwitchChannel *>(channel.get()))
+            {
+                this->ui_.channelAnonymous->setChecked(
+                    twitchChannel->isAnonymous());
+            }
+            else
+            {
+                this->ui_.channelAnonymous->setChecked(false);
+            }
             this->ui_.channel->setChecked(true);
         }
         break;
         case Channel::Type::TwitchWatching: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.watching->setFocus();
         }
         break;
         case Channel::Type::TwitchMentions: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.mentions->setFocus();
         }
         break;
         case Channel::Type::TwitchWhispers: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.whispers->setFocus();
         }
         break;
         case Channel::Type::TwitchLive: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.live->setFocus();
         }
         break;
         case Channel::Type::TwitchAutomod: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.automod->setFocus();
         }
         break;
         case Channel::Type::Kick: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.kickName->setText(channel->getName());
             this->ui_.kickName->selectAll();
             this->ui_.notebook->select(this->ui_.kickPage);
         }
         break;
+        case Channel::Type::YouTube: {
+            this->ui_.channelAnonymous->setChecked(false);
+            this->ui_.youtubeName->setText(channel->getName());
+            this->ui_.youtubeName->selectAll();
+            this->ui_.notebook->select(this->ui_.youtubePage);
+        }
+        break;
         case Channel::Type::Multi: {
+            this->ui_.channelAnonymous->setChecked(false);
             const auto *mc = dynamic_cast<const MultiChannel *>(channel.get());
             if (mc)
             {
@@ -471,12 +557,18 @@ void SelectChannelDialog::setSelectedChannel(
                 {
                     this->ui_.multiIndicatorMode->setCurrentIndex(indicatorIdx);
                 }
+                this->ui_.multiTintByPlatform->setChecked(mc->tintByPlatform());
+                this->ui_.multiShowTwitchOverlays->setChecked(
+                    mc->showTwitchOverlays());
+                this->ui_.multiCombinedViewerCount->setChecked(
+                    mc->combinedViewerCount());
                 this->mcChannelIndex = mc->activeChannelIndex();
             }
             this->ui_.notebook->select(this->ui_.multiPage);
         }
         break;
         default: {
+            this->ui_.channelAnonymous->setChecked(false);
             this->ui_.channel->setChecked(true);
         }
     }
@@ -497,6 +589,12 @@ IndirectChannel SelectChannelDialog::getSelectedChannel() const
             this->ui_.kickName->text().trimmed());
     }
 
+    if (this->ui_.notebook->isSelected(this->ui_.youtubePage))
+    {
+        return getApp()->getYouTubeChatServer()->getOrCreate(
+            this->ui_.youtubeName->text().trimmed());
+    }
+
     if (this->ui_.notebook->isSelected(this->ui_.multiPage))
     {
         QVarLengthArray<MultiChannel::Spec, 4> specs;
@@ -515,16 +613,25 @@ IndirectChannel SelectChannelDialog::getSelectedChannel() const
             }
         }
         auto ptr = std::make_shared<MultiChannel>(
-            specs, this->ui_.multiIndicatorMode->currentData()
-                       .value<MultiChannelIndicatorMode>());
+            specs,
+            this->ui_.multiIndicatorMode->currentData()
+                .value<MultiChannelIndicatorMode>(),
+            this->ui_.multiTintByPlatform->isChecked(),
+            this->ui_.multiShowTwitchOverlays->isChecked(),
+            this->ui_.multiCombinedViewerCount->isChecked());
         ptr->setActiveChannelIndex(this->mcChannelIndex);
         return {std::move(ptr)};
     }
 
     if (this->ui_.channel->isChecked())
     {
-        return getApp()->getTwitch()->getOrAddChannel(
-            this->ui_.channelName->text().trimmed());
+        const auto channelName = this->ui_.channelName->text().trimmed();
+        if (this->ui_.channelAnonymous->isChecked())
+        {
+            return getApp()->getTwitch()->getOrAddAnonymousChannel(channelName);
+        }
+
+        return getApp()->getTwitch()->getOrAddChannel(channelName);
     }
 
     if (this->ui_.watching->isChecked())
@@ -672,6 +779,7 @@ void SelectChannelDialog::scaleChangedEvent(float newScale)
         getApp()->getFonts()->getFont(FontStyle::UiMedium, this->scale());
 
     ui.channelName->setFont(uiFont);
+    ui.channelAnonymous->setFont(uiFont);
 }
 
 void SelectChannelDialog::addShortcuts()

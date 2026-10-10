@@ -4,9 +4,10 @@
 
 #include "widgets/helper/color/ColorInput.hpp"
 
+namespace chatterino {
+
 namespace {
 
-// from qtools_p.h
 int fromHex(char c) noexcept
 {
     if (c >= '0' && c <= '9')
@@ -25,19 +26,21 @@ int fromHex(char c) noexcept
     return -1;
 }
 
+}  // namespace
+
 QColor parseHexColor(const QString &text)
 {
-    if (text.length() == 5)  // #rgba
+    if (text.length() == 5)
     {
         auto alphaHex = fromHex(text[4].toLatin1());
         QStringView v(text);
         v.chop(1);
         QColor col(v);
-        col.setAlpha(alphaHex);
+        col.setAlpha((alphaHex << 4) | alphaHex);
         return col;
     }
     QColor col(text);
-    if (col.isValid() && text.length() == 9)  // #rrggbbaa
+    if (col.isValid() && text.length() == 9)
     {
         auto rgba = col.rgba();
         auto alpha = rgba & 0xff;
@@ -47,10 +50,6 @@ QColor parseHexColor(const QString &text)
     }
     return col;
 }
-
-}  // namespace
-
-namespace chatterino {
 
 ColorInput::ColorInput(QColor color, QWidget *parent)
     : QWidget(parent)
@@ -142,7 +141,7 @@ void ColorInput::updateHex()
     auto rgb = this->currentColor_.rgb();
     rgb <<= 8;
     rgb |= this->currentColor_.alpha();
-    // we always need to update the CSS color
+
     this->hexInput_.setText(QStringLiteral("#%1").arg(rgb, 8, 16, QChar(u'0')));
 }
 
@@ -159,13 +158,12 @@ void ColorInput::setColor(QColor color)
     }
     this->currentColor_ = color;
     this->updateComponents();
-    // no emit, as we just got the updated color
 }
 
 void ColorInput::emitUpdate()
 {
     this->updateComponents();
-    // our components triggered this update, emit the new color
+
     this->colorChanged(this->currentColor_);
 }
 

@@ -17,17 +17,20 @@
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/kick/KickLiveUpdates.hpp"
+#include "providers/kick/KickMessageBuilder.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
+#include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/Settings.hpp"
+#include "util/BoostJsonWrap.hpp"
 #include "util/FormatTime.hpp"
 #include "util/Helpers.hpp"
 #include "util/PostToThread.hpp"
 
-using namespace Qt::Literals;
+using namespace Qt::Literals::StringLiterals;
 using namespace std::chrono_literals;
 
 namespace chatterino {
@@ -36,7 +39,7 @@ KickChannel::KickChannel(const QString &name)
     : Channel(name.toLower(), Type::Kick)
     , ChannelChatters(static_cast<Channel &>(*this))
     , displayName_(name)
-    , slug_(this->getName())
+    , slug_(KickApi::slugify(this->getName()))
     , seventvEmotes_(std::make_shared<const EmoteMap>())
 {
     this->setMentionFlag(MessageElementFlag::KickUsername);
@@ -108,9 +111,6 @@ std::pair<std::shared_ptr<MessageThread>, MessagePtr>
     return {thread, msg};
 }
 
-// FIXME: These are largely the same as in TwitchChannel. They should be
-// combined. However, we also want to avoid merge conflicts as much as possible.
-
 void KickChannel::reloadSeventvEmotes(bool manualRefresh)
 {
     bool cacheHit = readProviderEmotesCache(
@@ -148,7 +148,7 @@ std::shared_ptr<const EmoteMap> KickChannel::seventvEmotes() const
     return this->seventvEmotes_.get();
 }
 
-EmotePtr KickChannel::seventvEmote(const EmoteName &name) const
+EmotePtr KickChannel::seventvEmote(EmoteNameView name) const
 {
     auto emotes = this->seventvEmotes_.get();
 
@@ -163,26 +163,28 @@ EmotePtr KickChannel::seventvEmote(const EmoteName &name) const
 void KickChannel::addSeventvEmote(
     const seventv::eventapi::EmoteAddDispatch &dispatch)
 {
-    if (!SeventvEmotes::addEmote(this->seventvEmotes_, dispatch))
+    auto emote = SeventvEmotes::addEmote(this->seventvEmotes_, dispatch);
+    if (!emote)
     {
         return;
     }
 
     this->addOrReplaceSeventvAddRemove(true, dispatch.actorName,
-                                       dispatch.emoteJson["name"].toString());
+                                       LiveUpdateEmote{*emote});
 }
 
 void KickChannel::updateSeventvEmote(
     const seventv::eventapi::EmoteUpdateDispatch &dispatch)
 {
-    if (!SeventvEmotes::updateEmote(this->seventvEmotes_, dispatch))
+    auto updated = SeventvEmotes::updateEmote(this->seventvEmotes_, dispatch);
+    if (!updated)
     {
         return;
     }
 
-    auto builder =
-        MessageBuilder(liveUpdatesUpdateEmoteMessage, "7TV", dispatch.actorName,
-                       dispatch.emoteName, dispatch.oldEmoteName);
+    auto builder = MessageBuilder(liveUpdatesUpdateEmoteMessage, "7TV",
+                                  dispatch.actorName, (*updated)->name.string,
+                                  dispatch.oldEmoteName, *updated);
     this->addMessage(builder.release(), MessageContext::Original);
 }
 
@@ -196,7 +198,7 @@ void KickChannel::removeSeventvEmote(
     }
 
     this->addOrReplaceSeventvAddRemove(false, dispatch.actorName,
-                                       (*removed)->name.string);
+                                       LiveUpdateEmote{*removed});
 }
 
 void KickChannel::updateSeventvUser(
@@ -204,7 +206,6 @@ void KickChannel::updateSeventvUser(
 {
     if (dispatch.connectionIndex != this->seventvKickConnectionIndex_)
     {
-        // A different connection was updated
         return;
     }
 
@@ -293,7 +294,7 @@ void KickChannel::sendReply(const QString &message, const QString &replyToId)
                 {
                     self->setSendWait(*self->roomModes_.slowModeDuration);
                 }
-                return;  // message sent
+                return;
             }
             if (self)
             {
@@ -378,19 +379,25 @@ void KickChannel::updateStreamData(const KickChannelInfo &info)
 
         if (this->streamData_.isLive)
         {
-            this->addMessage(
-                MessageBuilder::makeLiveMessage(
-                    this->getDisplayName(), QString::number(this->userID()),
-                    info.streamTitle,
-                    {MessageFlag::System,
-                     MessageFlag::DoNotTriggerNotification}),
-                MessageContext::Original);
+            this->addMessage(MessageBuilder::makeLiveMessage(
+                                 HelixMinimalUser{
+                                     .id = QString::number(this->userID()),
+                                     .login = this->getDisplayName(),
+                                     .displayName = this->getDisplayName(),
+                                 },
+                                 info.streamTitle,
+                                 {MessageFlag::System,
+                                  MessageFlag::DoNotTriggerNotification}),
+                             MessageContext::Original);
         }
         else
         {
             this->addMessage(
-                MessageBuilder::makeOfflineSystemMessage(
-                    this->getDisplayName(), QString::number(this->userID())),
+                MessageBuilder::makeOfflineSystemMessage(HelixMinimalUser{
+                    .id = QString::number(this->userID()),
+                    .login = this->getDisplayName(),
+                    .displayName = this->getDisplayName(),
+                }),
                 MessageContext::Original);
         }
         this->liveStatusChanged.invoke();
@@ -469,6 +476,48 @@ void KickChannel::setSendWait(std::chrono::seconds waitTime)
     }
 }
 
+EmotePtr KickChannel::getSubBadge(unsigned months)
+{
+    auto cIt = this->subBadges_.find(months);
+    if (cIt != this->subBadges_.end())
+    {
+        return cIt->second;
+    }
+
+    auto baseIt = this->subBadgeImages_.lower_bound(months);
+    if (this->subBadgeImages_.empty())
+    {
+        return {};
+    }
+
+    if (baseIt == this->subBadgeImages_.begin())
+    {
+        if (baseIt->first != months)
+        {
+            return {};
+        }
+    }
+    else if (baseIt == this->subBadgeImages_.end() || baseIt->first != months)
+    {
+        --baseIt;
+    }
+
+    auto name = [&]() -> QString {
+        if (months == 1)
+        {
+            return u"1-Month Subscriber"_s;
+        }
+        return QString::number(months) % u"-Months Subscriber";
+    }();
+    auto emote = std::make_shared<const Emote>(Emote{
+        .name = {name},
+        .images = ImageSet{baseIt->second},
+        .tooltip = Tooltip{name},
+    });
+    this->subBadges_.emplace(months, emote);
+    return emote;
+}
+
 void KickChannel::messageRemovedFromStart(const MessagePtr &msg)
 {
     if (msg->replyThread)
@@ -502,6 +551,7 @@ void KickChannel::resolveChannelInfo()
                 return;
             }
 
+            self->initSubBadges(res->subBadges);
             self->slug_ = res->slug;
             self->setUserInfo(UserInit{
                 .roomID = res->chatroom.roomID,
@@ -521,6 +571,7 @@ void KickChannel::resolveChannelInfo()
                 .slowModeDuration = res->chatroom.slowModeDuration,
                 .followersModeDuration = res->chatroom.followersModeDuration,
             });
+            self->loadChannelHistory();
         });
 }
 
@@ -556,7 +607,6 @@ void KickChannel::setUserInfo(UserInit init)
 
 size_t KickChannel::maxBurstMessages() const
 {
-    // FIXME: this isn't fully tested (maybe these are higher?)
     if (this->hasHighRateLimit())
     {
         return 20;
@@ -566,7 +616,6 @@ size_t KickChannel::maxBurstMessages() const
 
 std::chrono::milliseconds KickChannel::minMessageOffset() const
 {
-    // FIXME: this isn't fully tested
     if (this->hasHighRateLimit())
     {
         return 50ms;
@@ -583,10 +632,8 @@ bool KickChannel::checkMessageRatelimit()
     auto now = std::chrono::steady_clock::now();
     auto &timestamps = this->lastMessageTimestamps_;
 
-    // FIXME: haven't tested this fully
     const auto cooldown = 5s;
 
-    // This is mostly identical to the logic in TwitchIrcServer
     if (!timestamps.empty() &&
         timestamps.back() + this->minMessageOffset() > now)
     {
@@ -598,13 +645,11 @@ bool KickChannel::checkMessageRatelimit()
         return false;
     }
 
-    // remove messages older than `cooldown`
     while (!timestamps.empty() && timestamps.front() + cooldown < now)
     {
         timestamps.pop();
     }
 
-    // check if you are sending too many messages
     if (timestamps.size() >= this->maxBurstMessages())
     {
         if (this->lastMessageAmountErrorTs_ + 30s < now)
@@ -620,7 +665,6 @@ bool KickChannel::checkMessageRatelimit()
     return true;
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static) -- might need some state later
 QString KickChannel::prepareMessage(const QString &message) const
 {
     const QString baseMessage = getApp()
@@ -629,15 +673,12 @@ QString KickChannel::prepareMessage(const QString &message) const
                                     ->replaceShortCodes(message)
                                     .simplified();
 
-    // We need to manually add the emotes. They're in the format
-    // "[emote:{id}:{name}]". If the name doesn't match the emote name, Kick
-    // will reject the message.
     auto globalEmotes = getApp()->getKickChatServer()->globalEmotes();
     QString outMessage;
     const QChar *lastEnd = nullptr;
     for (QStringView word : baseMessage.tokenize(u' '))
     {
-        EmoteName emote{word.toString()};  // FIXME: get rid of this
+        EmoteName emote{word.toString()};
         auto it = globalEmotes->find(emote);
         if (it == globalEmotes->end())
         {
@@ -654,7 +695,7 @@ QString KickChannel::prepareMessage(const QString &message) const
         }
 
         lastEnd = word.end();
-        outMessage += u"[emote:";
+        outMessage += QStringLiteral("[emote:");
         outMessage += it->second->id.string;
         outMessage += ':';
         outMessage += it->second->name.string;
@@ -667,7 +708,6 @@ QString KickChannel::prepareMessage(const QString &message) const
     }
     else
     {
-        // no emote added
         outMessage = baseMessage;
     }
     return outMessage;
@@ -693,7 +733,7 @@ void KickChannel::updateSevenTVActivity()
     {
         return;
     }
-    // Make sure to not send activity again before receiving the response
+
     this->nextSeventvActivity_ = this->nextSeventvActivity_.addSecs(300);
 
     qCDebug(chatterinoSeventv) << "Sending activity in" << this->getName();
@@ -761,7 +801,6 @@ void KickChannel::updateSeventvData(const QString &newUserID,
 
             if (oldUserID || oldEmoteSetID)
             {
-                // FIXME: make sure no TwitchChannel is listenting to this
                 getApp()->getTwitch()->dropSeventvChannel(
                     oldUserID.value_or(QString()),
                     oldEmoteSetID.value_or(QString()));
@@ -772,29 +811,31 @@ void KickChannel::updateSeventvData(const QString &newUserID,
 
 void KickChannel::addOrReplaceSeventvAddRemove(bool isEmoteAdd,
                                                const QString &actor,
-                                               const QString &emoteName)
+                                               const LiveUpdateEmote &emote)
 {
     if (this->tryReplaceLastSeventvAddOrRemove(
             isEmoteAdd ? MessageFlag::LiveUpdatesAdd
                        : MessageFlag::LiveUpdatesRemove,
-            actor, emoteName))
+            actor, emote))
     {
         return;
     }
 
-    this->lastSeventvEmoteNames_ = {emoteName};
+    this->lastSeventvEmotes_ = {emote};
 
     MessagePtr msg;
     if (isEmoteAdd)
     {
         msg = MessageBuilder(liveUpdatesAddEmoteMessage, "7TV", actor,
-                             this->lastSeventvEmoteNames_)
+                             this->lastSeventvEmotes_,
+                             QDateTime::currentDateTime())
                   .release();
     }
     else
     {
         msg = MessageBuilder(liveUpdatesRemoveEmoteMessage, "7TV", actor,
-                             this->lastSeventvEmoteNames_)
+                             this->lastSeventvEmotes_,
+                             QDateTime::currentDateTime())
                   .release();
     }
     this->lastSeventvMessage_ = msg;
@@ -804,17 +845,17 @@ void KickChannel::addOrReplaceSeventvAddRemove(bool isEmoteAdd,
 
 bool KickChannel::tryReplaceLastSeventvAddOrRemove(MessageFlag op,
                                                    const QString &actor,
-                                                   const QString &emoteName)
+                                                   const LiveUpdateEmote &emote)
 {
+    auto now = QDateTime::currentDateTime();
     auto last = this->lastSeventvMessage_.lock();
     if (!last || !last->flags.has(op) ||
-        last->parseTime < QTime::currentTime().addSecs(-5) ||
-        last->loginName != actor)
+        last->serverReceivedTime < now.addSecs(-5) || last->loginName != actor)
     {
         return false;
     }
-    // Update the message
-    this->lastSeventvEmoteNames_.push_back(emoteName);
+
+    this->lastSeventvEmotes_.push_back(emote);
 
     auto makeReplacement = [&](MessageFlag op) -> MessageBuilder {
         if (op == MessageFlag::LiveUpdatesAdd)
@@ -823,16 +864,17 @@ bool KickChannel::tryReplaceLastSeventvAddOrRemove(MessageFlag op,
                 liveUpdatesAddEmoteMessage,
                 "7TV",
                 last->loginName,
-                this->lastSeventvEmoteNames_,
+                this->lastSeventvEmotes_,
+                QDateTime::currentDateTime(),
             };
         }
 
-        // op == RemoveEmoteMessage
         return {
             liveUpdatesRemoveEmoteMessage,
             "7TV",
             last->loginName,
-            this->lastSeventvEmoteNames_,
+            this->lastSeventvEmotes_,
+            QDateTime::currentDateTime(),
         };
     };
 
@@ -865,6 +907,60 @@ void KickChannel::emitSendWait()
     {
         this->sendWaitUpdate.invoke(formatTime(remaining, 2));
     }
+}
+
+void KickChannel::initSubBadges(
+    std::span<const KickPrivateChannelSubBadge> infos)
+{
+    this->subBadges_.clear();
+    this->subBadgeImages_.clear();
+    for (const auto &info : infos)
+    {
+        this->subBadgeImages_.emplace(
+            info.months, Image::fromAutoscaledUrl({info.badgeImageUrl}, 18));
+    }
+}
+
+void KickChannel::loadChannelHistory()
+{
+    KickApi::privateChannelHistory(
+        this->channelID_, [weak = this->weakFromThis()](const auto &res) {
+            auto self = weak.lock();
+            if (!self)
+            {
+                return;
+            }
+            if (!res)
+            {
+                qCWarning(chatterinoKick)
+                    << *self << "Failed to load channel history" << res.error();
+                return;
+            }
+            BoostJsonObject obj(*res);
+            std::vector<MessagePtr> messages;
+            auto arr = obj["data"]["messages"].toArray();
+            if (arr.empty())
+            {
+                return;
+            }
+            for (auto i = static_cast<qsizetype>(arr.size() - 1); i >= 0; --i)
+            {
+                auto msg = arr.at(static_cast<size_t>(i));
+                if (msg["type"].toStringView() != "message")
+                {
+                    continue;
+                }
+                auto [ptr, highlight] = KickMessageBuilder::makeChatMessage(
+                    self.get(), msg.toObject());
+                messages.emplace_back(std::move(ptr));
+            }
+
+            // Just use the Twitch setting here.
+            if (getSettings()->loadTwitchMessageHistoryOnConnect)
+            {
+                self->fillInMissingMessages(messages);
+            }
+        });
 }
 
 QDebug operator<<(QDebug dbg, const KickChannel &chan)

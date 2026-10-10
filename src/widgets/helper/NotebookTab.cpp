@@ -21,6 +21,7 @@
 #include "widgets/splits/DraggedSplit.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/splits/SplitContainer.hpp"
+#include "widgets/Window.hpp"
 
 #include <boost/bind/bind.hpp>
 #include <boost/container_hash/hash.hpp>
@@ -28,13 +29,17 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDialogButtonBox>
+#include <QIcon>
 #include <QLabel>
 #include <QLinearGradient>
 #include <QLineEdit>
 #include <QMimeData>
 #include <QPainter>
+#include <QPixmap>
 
 #include <algorithm>
+
+using namespace Qt::StringLiterals;
 
 namespace chatterino {
 namespace {
@@ -88,14 +93,9 @@ float getCompactReducer(TabStyle tabStyle)
 bool colorsMatch(const std::shared_ptr<QColor> &lhs,
                  const std::shared_ptr<QColor> &rhs)
 {
-    if (lhs == rhs)
+    if (lhs == nullptr || rhs == nullptr)
     {
-        return true;
-    }
-
-    if (!lhs || !rhs)
-    {
-        return false;
+        return lhs == rhs;
     }
 
     return *lhs == *rhs;
@@ -126,6 +126,45 @@ QColor makeTabHighlightLineColor(const QColor &color, bool windowFocused)
 
     return adjusted;
 }
+
+QColor tabColorFill(QColor color, bool selected, bool windowFocused)
+{
+    auto alpha = color.alpha();
+    const auto cap = selected ? 110 : 85;
+    alpha = std::clamp(alpha, 0, cap);
+    if (!windowFocused)
+    {
+        alpha = alpha * 2 / 3;
+    }
+
+    color.setAlpha(alpha);
+    return color;
+}
+
+/// Most colors shown in the tab line.
+constexpr size_t MAX_HIGHLIGHT_LINE_COLORS = 5;
+
+QIcon tabColorIcon(QColor color)
+{
+    QPixmap pixmap(18, 18);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    color.setAlpha(210);
+    painter.setBrush(color);
+    painter.setPen(QColor(255, 255, 255, 70));
+    painter.drawRoundedRect(QRectF(3, 3, 12, 12), 3, 3);
+
+    return QIcon(pixmap);
+}
+
+QColor opaqueTabColor(QColor color)
+{
+    color.setAlpha(255);
+    return color;
+}
 }  // namespace
 
 NotebookTab::NotebookTab(Notebook *notebook)
@@ -155,7 +194,12 @@ NotebookTab::NotebookTab(Notebook *notebook)
             this->update();
         },
         this->managedConnections_);
-    getSettings()->tabHighlightsUseThemeColor.connect(
+    getSettings()->colorTabHighlightsByMessage.connect(
+        [this](auto, auto) {
+            this->update();
+        },
+        this->managedConnections_);
+    getSettings()->multiColorTabHighlights.connect(
         [this](auto, auto) {
             this->update();
         },
@@ -163,7 +207,7 @@ NotebookTab::NotebookTab(Notebook *notebook)
 
     this->setMouseTracking(true);
 
-    this->menu_.addAction("Rename Tab", [this]() {
+    this->menu_.addAction(u"Rename Tab…"_s, this, [this]() {
         this->showRenameDialog();
     });
 
@@ -215,58 +259,47 @@ NotebookTab::NotebookTab(Notebook *notebook)
 
     this->notebook_->addNotebookActionsToMenu(&this->menu_);
 
-    // Tab Color submenu
-    auto *tabColorMenu_ = new QMenu("Tab Color", this);
+    auto *tabColorMenu = this->menu_.addMenu("Tab Color");
+    const std::vector<std::pair<QString, QColor>> tabColorPresets = {
+        {"Blue", QColor(91, 157, 255)},  {"Orange", QColor(255, 148, 67)},
+        {"Red", QColor(244, 91, 91)},    {"Yellow", QColor(244, 190, 72)},
+        {"Green", QColor(76, 196, 120)}, {"Purple", QColor(172, 123, 255)},
+        {"Pink", QColor(238, 95, 161)},  {"Cyan", QColor(73, 205, 214)},
+    };
+    for (const auto &[name, color] : tabColorPresets)
+    {
+        auto *action = tabColorMenu->addAction(tabColorIcon(color), name);
+        QObject::connect(action, &QAction::triggered, this, [this, color] {
+            this->setCustomTabColor(color);
+        });
+    }
 
-    // Color presets (with 50% opacity)
-    tabColorMenu_->addAction("Blue", [this]() {
-        this->setCustomTabColor(QColor(66, 133, 244, 128));
-    });
-    tabColorMenu_->addAction("Red", [this]() {
-        this->setCustomTabColor(QColor(234, 67, 53, 128));
-    });
-    tabColorMenu_->addAction("Yellow", [this]() {
-        this->setCustomTabColor(QColor(251, 188, 4, 128));
-    });
-    tabColorMenu_->addAction("Orange", [this]() {
-        this->setCustomTabColor(QColor(255, 152, 0, 128));
-    });
-    tabColorMenu_->addAction("Purple", [this]() {
-        this->setCustomTabColor(QColor(156, 39, 176, 128));
-    });
-    tabColorMenu_->addAction("Green", [this]() {
-        this->setCustomTabColor(QColor(52, 168, 83, 128));
-    });
-    tabColorMenu_->addAction("Pink", [this]() {
-        this->setCustomTabColor(QColor(233, 30, 99, 128));
-    });
-    tabColorMenu_->addAction("Cyan", [this]() {
-        this->setCustomTabColor(QColor(0, 188, 212, 128));
-    });
+    tabColorMenu->addSeparator();
+    auto *customColorAction =
+        tabColorMenu->addAction("Custom Color...", this, [this] {
+            auto initialColor = this->hasCustomTabColor()
+                                    ? opaqueTabColor(this->getCustomTabColor())
+                                    : QColor(255, 148, 67);
+            auto *dialog = new ColorPickerDialog(initialColor, this);
+            QObject::connect(dialog, &ColorPickerDialog::colorConfirmed, this,
+                             [this](const QColor &color) {
+                                 if (color.isValid())
+                                 {
+                                     this->setCustomTabColor(color);
+                                 }
+                             });
+            dialog->show();
+        });
+    customColorAction->setIcon(tabColorIcon(QColor(255, 148, 67)));
 
-    tabColorMenu_->addSeparator();
-
-    // Custom Color option
-    tabColorMenu_->addAction("Custom Color...", [this]() {
-        auto *dialog = new ColorPickerDialog(
-            this->hasCustomTabColor() ? this->getCustomTabColor() : QColor(),
-            this);
-        QObject::connect(dialog, &ColorPickerDialog::colorConfirmed, this,
-                         [this](const QColor &color) {
-                             if (color.isValid())
-                             {
-                                 this->setCustomTabColor(color);
-                             }
-                         });
-        dialog->show();
-    });
-
-    // Reset Color option
-    tabColorMenu_->addAction("Reset to Default", [this]() {
-        this->resetCustomTabColor();
-    });
-
-    this->menu_.addMenu(tabColorMenu_);
+    auto *resetTabColorAction =
+        tabColorMenu->addAction("Reset to Default", this, [this] {
+            this->resetCustomTabColor();
+        });
+    QObject::connect(
+        tabColorMenu, &QMenu::aboutToShow, this, [this, resetTabColorAction] {
+            resetTabColorAction->setEnabled(this->hasCustomTabColor());
+        });
 }
 
 void NotebookTab::recreateCloseMultipleTabsMenu(
@@ -500,20 +533,7 @@ void NotebookTab::themeChangedEvent()
 
 void NotebookTab::growWidth(int width)
 {
-    if (this->growWidth_ != width)
-    {
-        this->growWidth_ = width;
-        this->updateSize();
-    }
-    else
-    {
-        this->growWidth_ = width;
-    }
-}
-
-int NotebookTab::normalTabWidth() const
-{
-    return this->normalTabWidthForHeight(this->height());
+    this->growWidth_ = width;
 }
 
 int NotebookTab::normalTabWidthForHeight(int height) const
@@ -548,22 +568,57 @@ int NotebookTab::normalTabWidthForHeight(int height) const
     return width;
 }
 
-void NotebookTab::updateSize()
+void NotebookTab::refreshAndCommitSize(bool notify)
+{
+    this->refreshSize();
+    this->commitSize(notify);
+}
+
+void NotebookTab::refreshSize()
 {
     float scale = this->scale();
     auto height = static_cast<int>(NOTEBOOK_TAB_HEIGHT * scale);
     int width = this->normalTabWidthForHeight(height);
+    this->computedMinimumSize = {width, height};
+}
 
-    if (width < this->growWidth_)
+void NotebookTab::commitSize(bool notify)
+{
+    auto size = this->computedMinimumSize;
+    if (size.width() < this->growWidth_)
     {
-        width = this->growWidth_;
+        size.setWidth(this->growWidth_);
     }
 
-    if (this->width() != width || this->height() != height)
+    if (this->size() != size)
     {
-        this->resize(width, height);
-        this->notebook_->refresh();
+        this->resize(size);
+        if (notify)
+        {
+            this->notebook_->refresh();
+        }
     }
+}
+
+QSize NotebookTab::minimumTabSize() const
+{
+    return this->computedMinimumSize;
+}
+
+int NotebookTab::minimumTabWidth() const
+{
+    return this->computedMinimumSize.width();
+}
+
+void NotebookTab::queueMove(QPoint to, bool animated)
+{
+    this->queuedMove = to;
+    this->queuedMoveAnimated = animated;
+}
+
+void NotebookTab::commitMove()
+{
+    this->moveAnimated(this->queuedMove, this->queuedMoveAnimated);
 }
 
 const QString &NotebookTab::getCustomTitle() const
@@ -590,6 +645,40 @@ bool NotebookTab::hasCustomTitle() const
     return !this->customTitle_.isEmpty();
 }
 
+void NotebookTab::setCustomTabColor(const QColor &color)
+{
+    if (!color.isValid())
+    {
+        return;
+    }
+
+    const auto normalizedColor = opaqueTabColor(color);
+    if (this->customTabColor_ != normalizedColor)
+    {
+        this->customTabColor_ = normalizedColor;
+        this->tabColorUpdated();
+    }
+}
+
+void NotebookTab::resetCustomTabColor()
+{
+    if (this->customTabColor_.isValid())
+    {
+        this->customTabColor_ = QColor();
+        this->tabColorUpdated();
+    }
+}
+
+bool NotebookTab::hasCustomTabColor() const
+{
+    return this->customTabColor_.isValid();
+}
+
+const QColor &NotebookTab::getCustomTabColor() const
+{
+    return this->customTabColor_;
+}
+
 void NotebookTab::setDefaultTitle(const QString &title)
 {
     if (this->defaultTitle_ != title)
@@ -614,30 +703,6 @@ const QString &NotebookTab::getTitle() const
                                         : this->customTitle_;
 }
 
-void NotebookTab::setCustomTabColor(const QColor &color)
-{
-    if (this->customTabColor_ != color)
-    {
-        this->customTabColor_ = color;
-        this->tabColorUpdated();
-    }
-}
-
-void NotebookTab::resetCustomTabColor()
-{
-    this->setCustomTabColor(QColor());
-}
-
-bool NotebookTab::hasCustomTabColor() const
-{
-    return this->customTabColor_.isValid();
-}
-
-const QColor &NotebookTab::getCustomTabColor() const
-{
-    return this->customTabColor_;
-}
-
 void NotebookTab::tabColorUpdated()
 {
     // Queue up save because: Tab color changed
@@ -649,9 +714,9 @@ void NotebookTab::titleUpdated()
 {
     // Queue up save because: Tab title changed
     getApp()->getWindows()->queueSave();
-    this->notebook_->refresh();
-    this->updateSize();
+    this->refreshSize();
     this->update();
+    this->notebook_->refresh();
 }
 
 bool NotebookTab::isSelected() const
@@ -672,6 +737,9 @@ void NotebookTab::removeHighlightSource(
     const ChannelView::ChannelViewID &source)
 {
     this->highlightSources_.erase(source);
+    std::erase_if(this->highlightLineColors_, [&](const auto &entry) {
+        return entry.source == source;
+    });
 }
 
 void NotebookTab::newHighlightSourceAdded(const ChannelView &channelViewSource)
@@ -680,13 +748,13 @@ void NotebookTab::newHighlightSourceAdded(const ChannelView &channelViewSource)
     this->removeHighlightSource(channelViewId);
     this->updateHighlightStateDueSourcesChange();
 
-    auto *splitNotebook = dynamic_cast<SplitNotebook *>(this->notebook_);
-    if (splitNotebook)
+    for (auto *window : getApp()->getWindows()->windows())
     {
-        for (int i = 0; i < splitNotebook->getPageCount(); ++i)
+        auto &splitNotebook = window->getNotebook();
+        for (int i = 0; i < splitNotebook.getPageCount(); ++i)
         {
             auto *splitContainer =
-                dynamic_cast<SplitContainer *>(splitNotebook->getPageAt(i));
+                dynamic_cast<SplitContainer *>(splitNotebook.getPageAt(i));
             if (splitContainer)
             {
                 auto *tab = splitContainer->getTab();
@@ -704,17 +772,16 @@ void NotebookTab::updateHighlightStateDueSourcesChange()
 {
     auto newState = HighlightState::None;
     std::shared_ptr<QColor> newColor;
-    size_t newestHighlightSequence = 0;
+    std::size_t newestSequence = 0;
 
     for (const auto &[_, source] : this->highlightSources_)
     {
         if (source.state == HighlightState::Highlighted)
         {
             newState = HighlightState::Highlighted;
-
-            if (source.sequence >= newestHighlightSequence)
+            if (source.sequence >= newestSequence)
             {
-                newestHighlightSequence = source.sequence;
+                newestSequence = source.sequence;
                 newColor = source.color;
             }
         }
@@ -728,6 +795,7 @@ void NotebookTab::updateHighlightStateDueSourcesChange()
     if (newState != HighlightState::Highlighted)
     {
         newColor.reset();
+        this->highlightLineColors_.clear();
     }
 
     if (this->highlightState_ != newState ||
@@ -750,11 +818,13 @@ void NotebookTab::copyHighlightStateAndSourcesFrom(const NotebookTab *sourceTab)
 
     this->highlightSources_ = sourceTab->highlightSources_;
     this->highlightColor_ = sourceTab->highlightColor_;
+    this->highlightLineColors_ = sourceTab->highlightLineColors_;
     this->lastHighlightSequence_ = sourceTab->lastHighlightSequence_;
 
     if (!this->highlightEnabled_ &&
         sourceTab->highlightState_ == HighlightState::NewMessage)
     {
+        this->highlightColor_.reset();
         return;
     }
 
@@ -776,13 +846,13 @@ void NotebookTab::setSelected(bool value)
 
     if (value)
     {
-        auto *splitNotebook = dynamic_cast<SplitNotebook *>(this->notebook_);
-        if (splitNotebook)
+        for (auto *window : getApp()->getWindows()->windows())
         {
-            for (int i = 0; i < splitNotebook->getPageCount(); ++i)
+            auto &splitNotebook = window->getNotebook();
+            for (int i = 0; i < splitNotebook.getPageCount(); ++i)
             {
                 auto *splitContainer =
-                    dynamic_cast<SplitContainer *>(splitNotebook->getPageAt(i));
+                    dynamic_cast<SplitContainer *>(splitNotebook.getPageAt(i));
                 if (splitContainer)
                 {
                     auto *tab = splitContainer->getTab();
@@ -798,6 +868,8 @@ void NotebookTab::setSelected(bool value)
     }
 
     this->highlightSources_.clear();
+    this->highlightLineColors_.clear();
+    this->highlightColor_.reset();
     this->highlightState_ = HighlightState::None;
     this->highlightColor_.reset();
 
@@ -867,6 +939,7 @@ void NotebookTab::setHighlightState(HighlightState newHighlightStyle)
 
     bool hadHighlightColor = this->highlightColor_ != nullptr;
     this->highlightSources_.clear();
+    this->highlightLineColors_.clear();
     this->highlightColor_.reset();
 
     if (!this->highlightEnabled_ &&
@@ -892,9 +965,11 @@ void NotebookTab::setHighlightState(HighlightState newHighlightStyle)
     this->update();
 }
 
-void NotebookTab::updateHighlightState(const TabHighlight &newHighlight,
+void NotebookTab::updateHighlightState(const TabHighlight &highlight,
                                        const ChannelView &channelViewSource)
 {
+    const auto newHighlightStyle = highlight.state;
+
     if (this->isSelected())
     {
         assert(this->highlightSources_.empty());
@@ -908,7 +983,7 @@ void NotebookTab::updateHighlightState(const TabHighlight &newHighlight,
     }
 
     if (!this->highlightEnabled_ &&
-        newHighlight.state == HighlightState::NewMessage)
+        newHighlightStyle == HighlightState::NewMessage)
     {
         return;
     }
@@ -917,25 +992,45 @@ void NotebookTab::updateHighlightState(const TabHighlight &newHighlight,
 
     auto channelViewId = channelViewSource.getID();
 
-    switch (newHighlight.state)
+    switch (newHighlightStyle)
     {
         case HighlightState::Highlighted:
+            if (highlight.color)
+            {
+                // Oldest first. When full, the oldest one makes room so the
+                // newest is always at the end.
+                if (this->highlightLineColors_.size() >=
+                    MAX_HIGHLIGHT_LINE_COLORS)
+                {
+                    this->highlightLineColors_.erase(
+                        this->highlightLineColors_.begin());
+                }
+                this->highlightLineColors_.push_back({
+                    .source = channelViewId,
+                    .color = highlight.color,
+                });
+            }
+            // override lower states
             this->highlightSources_.insert_or_assign(
                 channelViewId, HighlightSource{
-                                   .state = HighlightState::Highlighted,
-                                   .color = newHighlight.color,
+                                   .state = newHighlightStyle,
+                                   .color = highlight.color,
                                    .sequence = ++this->lastHighlightSequence_,
                                });
             break;
-        case HighlightState::NewMessage:
+        case HighlightState::NewMessage: {
+            // only insert if no state already there to avoid overriding
             if (!this->highlightSources_.contains(channelViewId))
             {
                 this->highlightSources_.emplace(
-                    channelViewId, HighlightSource{
-                                       .state = HighlightState::NewMessage,
-                                   });
+                    channelViewId,
+                    HighlightSource{
+                        .state = newHighlightStyle,
+                        .sequence = ++this->lastHighlightSequence_,
+                    });
             }
             break;
+        }
         case HighlightState::None:
             break;
     }
@@ -946,17 +1041,19 @@ void NotebookTab::updateHighlightState(const TabHighlight &newHighlight,
 bool NotebookTab::shouldMessageHighlight(
     const ChannelView &channelViewSource) const
 {
-    auto *visibleSplitContainer =
-        dynamic_cast<SplitContainer *>(this->notebook_->getSelectedPage());
-    if (visibleSplitContainer != nullptr)
+    for (auto *window : getApp()->getWindows()->windows())
     {
-        const auto &visibleSplits = visibleSplitContainer->getSplits();
-        for (const auto &visibleSplit : visibleSplits)
+        auto *visibleSplitContainer = window->getNotebook().getSelectedPage();
+        if (visibleSplitContainer != nullptr)
         {
-            if (channelViewSource.getID() ==
-                visibleSplit->getChannelView().getID())
+            const auto &visibleSplits = visibleSplitContainer->getSplits();
+            for (const auto &visibleSplit : visibleSplits)
             {
-                return false;
+                if (channelViewSource.getID() ==
+                    visibleSplit->getChannelView().getID())
+                {
+                    return false;
+                }
             }
         }
     }
@@ -982,7 +1079,7 @@ QRect NotebookTab::getDesiredRect() const
 
 void NotebookTab::tabSizeChanged()
 {
-    this->updateSize();
+    this->refreshAndCommitSize(true);
     this->update();
 }
 
@@ -1086,13 +1183,18 @@ void NotebookTab::paintEvent(QPaintEvent *)
 
     painter.fillRect(bgRect, tabBackground);
 
+    if (this->hasCustomTabColor())
+    {
+        painter.fillRect(bgRect, tabColorFill(this->customTabColor_,
+                                              this->selected_, windowFocused));
+    }
+
     // draw color indicator line
     auto lineThickness = ceil((this->selected_ ? 2.f : 1.f) * scale);
     auto lineColor = this->mouseOver_ ? colors.line.hover
                                       : (windowFocused ? colors.line.regular
                                                        : colors.line.unfocused);
-
-    if (!getSettings()->tabHighlightsUseThemeColor &&
+    if (getSettings()->colorTabHighlightsByMessage &&
         this->highlightState_ == HighlightState::Highlighted &&
         this->highlightColor_ != nullptr && this->highlightColor_->isValid())
     {
@@ -1121,7 +1223,51 @@ void NotebookTab::paintEvent(QPaintEvent *)
             break;
     }
 
-    painter.fillRect(lineRect, lineColor);
+    std::vector<QColor> lineColors;
+    if (getSettings()->colorTabHighlightsByMessage &&
+        getSettings()->multiColorTabHighlights &&
+        this->highlightState_ == HighlightState::Highlighted)
+    {
+        for (const auto &entry : this->highlightLineColors_)
+        {
+            if (entry.color && entry.color->isValid())
+            {
+                lineColors.push_back(
+                    makeTabHighlightLineColor(*entry.color, windowFocused));
+            }
+        }
+    }
+
+    if (lineColors.size() > 1)
+    {
+        // One part per highlight, oldest at the start.
+        const bool horizontal =
+            this->tabLocation_ == NotebookTabLocation::Top ||
+            this->tabLocation_ == NotebookTabLocation::Bottom;
+        const auto length = horizontal ? lineRect.width() : lineRect.height();
+        const auto count = static_cast<int>(lineColors.size());
+        for (int i = 0; i < count; ++i)
+        {
+            const auto start = length * i / count;
+            const auto end = length * (i + 1) / count;
+            auto part = lineRect;
+            if (horizontal)
+            {
+                part.setLeft(lineRect.left() + start);
+                part.setWidth(end - start);
+            }
+            else
+            {
+                part.setTop(lineRect.top() + start);
+                part.setHeight(end - start);
+            }
+            painter.fillRect(part, lineColors[static_cast<size_t>(i)]);
+        }
+    }
+    else
+    {
+        painter.fillRect(lineRect, lineColor);
+    }
 
     // draw live indicator
     if ((this->isLive_ || this->isRerun_) && getSettings()->showTabLive)
@@ -1341,7 +1487,11 @@ void NotebookTab::mouseDoubleClickEvent(QMouseEvent *event)
     }
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 void NotebookTab::enterEvent(QEnterEvent *event)
+#else
+void NotebookTab::enterEvent(QEvent *event)
+#endif
 {
     this->mouseOver_ = true;
 
@@ -1445,28 +1595,7 @@ void NotebookTab::mouseMoveEvent(QMouseEvent *event)
 
 void NotebookTab::wheelEvent(QWheelEvent *event)
 {
-    const auto defaultMouseDelta = 120;
-    const auto verticalDelta = event->angleDelta().y();
-    const auto selectTab = [this](int delta) {
-        delta > 0 ? this->notebook_->selectPreviousTab()
-                  : this->notebook_->selectNextTab();
-    };
-    // If it's true
-    // Then the user uses the trackpad or perhaps the most accurate mouse
-    // Which has small delta.
-    if (std::abs(verticalDelta) < defaultMouseDelta)
-    {
-        this->mouseWheelDelta_ += verticalDelta;
-        if (std::abs(this->mouseWheelDelta_) >= defaultMouseDelta)
-        {
-            selectTab(this->mouseWheelDelta_);
-            this->mouseWheelDelta_ = 0;
-        }
-    }
-    else
-    {
-        selectTab(verticalDelta);
-    }
+    this->notebook_->scrollTabs(event);
 }
 
 void NotebookTab::update()

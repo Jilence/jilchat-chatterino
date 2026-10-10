@@ -8,6 +8,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "providers/twitch/IrcMessageHandler.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
+#include "singletons/Settings.hpp"
 #include "util/Helpers.hpp"
 #include "util/VectorMessageSink.hpp"
 
@@ -16,7 +17,6 @@
 
 namespace chatterino::recentmessages::detail {
 
-// Parse the IRC messages returned in JSON form into Communi messages
 std::vector<Communi::IrcMessage *> parseRecentMessages(
     const QJsonObject &jsonRoot)
 {
@@ -28,7 +28,7 @@ std::vector<Communi::IrcMessage *> parseRecentMessages(
         return messages;
     }
 
-    for (const auto jsonMessage : jsonMessages)
+    for (const auto &jsonMessage : jsonMessages)
     {
         auto content = unescapeZeroWidthJoiner(jsonMessage.toString());
 
@@ -41,8 +41,6 @@ std::vector<Communi::IrcMessage *> parseRecentMessages(
     return messages;
 }
 
-// Build Communi messages retrieved from the recent messages API into
-// proper chatterino messages.
 std::vector<MessagePtr> buildRecentMessages(
     std::vector<Communi::IrcMessage *> &messages, Channel *channel)
 {
@@ -56,14 +54,12 @@ std::vector<MessagePtr> buildRecentMessages(
 
     for (auto *message : messages)
     {
-        if (message->tags().contains("rm-received-ts"))
+        if (auto optReceivedTs = message->tags().get("rm-received-ts"))
         {
             const auto msgDate =
-                QDateTime::fromMSecsSinceEpoch(
-                    message->tags().value("rm-received-ts").toLongLong())
+                QDateTime::fromMSecsSinceEpoch(optReceivedTs->toLongLong())
                     .date();
 
-            // Check if we need to insert a message stating that a new day began
             if (msgDate != channel->lastDate_)
             {
                 channel->lastDate_ = msgDate;
@@ -82,8 +78,33 @@ std::vector<MessagePtr> buildRecentMessages(
     return std::move(sink).takeMessages();
 }
 
-// Returns the URL to be used for querying the Recent Messages API for the
-// given channel.
+QString recentMessagesApiUrlTemplate()
+{
+    if (!qEnvironmentVariable("CHATTERINO2_RECENT_MESSAGES_URL").isEmpty())
+    {
+        return Env::get().recentMessagesApiUrl;
+    }
+
+    switch (getSettings()->recentMessagesApi.getEnum())
+    {
+        case RecentMessagesApi::Zneix:
+            return QStringLiteral("https://recent-messages.zneix.eu/api/v2/"
+                                  "recent-messages/%1");
+
+        case RecentMessagesApi::Lilb:
+            return QStringLiteral(
+                "https://rm.lilb.dev/api/v2/recent-messages/%1");
+
+        case RecentMessagesApi::Zonian:
+            return QStringLiteral("https://logs.zonian.dev/rm/%1");
+
+        case RecentMessagesApi::Robotty:
+        default:
+            return QStringLiteral("https://recent-messages.robotty.de/api/v2/"
+                                  "recent-messages/%1");
+    }
+}
+
 QUrl constructRecentMessagesUrl(
     const QString &name, const int limit,
     const std::optional<std::chrono::time_point<std::chrono::system_clock>>
@@ -91,7 +112,7 @@ QUrl constructRecentMessagesUrl(
     const std::optional<std::chrono::time_point<std::chrono::system_clock>>
         before)
 {
-    QUrl url(Env::get().recentMessagesApiUrl.arg(name));
+    QUrl url(recentMessagesApiUrlTemplate().arg(name));
     QUrlQuery urlQuery(url);
     if (!urlQuery.hasQueryItem("limit"))
     {

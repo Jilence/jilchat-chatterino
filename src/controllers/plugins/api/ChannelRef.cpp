@@ -316,51 +316,42 @@ std::optional<ChannelRef> ChannelRef::get_by_twitch_id(const QString &id)
 
 void ChannelRef::createUserType(sol::table &c2)
 {
-    // clang-format off
     c2.new_usertype<ChannelRef>(
-        "Channel", sol::no_constructor, 
-        // meta methods
+        "Channel", sol::no_constructor,
+
         sol::meta_method::to_string, &ChannelRef::to_string,
 
-        // Channel
-        "is_valid", &ChannelRef::is_valid,
-        "get_name",&ChannelRef::get_name,
-        "get_type", &ChannelRef::get_type,
-        "get_display_name", &ChannelRef::get_display_name,
-        "is_twitch_channel", &ChannelRef::is_twitch_channel,
+        "is_valid", &ChannelRef::is_valid, "get_name", &ChannelRef::get_name,
+        "get_type", &ChannelRef::get_type, "get_display_name",
+        &ChannelRef::get_display_name, "is_twitch_channel",
+        &ChannelRef::is_twitch_channel,
 
-        // Messages
-        "send_message", &ChannelRef::send_message,
-        "add_system_message", &ChannelRef::add_system_message,
-        "add_message", &ChannelRef::add_message,
-        "message_snapshot", &ChannelRef::message_snapshot,
-        "last_message", &ChannelRef::last_message,
-        "replace_message", sol::overload(&ChannelRef::replace_message,
-             &ChannelRef::replace_message_hint),
-        "replace_message_at", &ChannelRef::replace_message_at,
-        "clear_messages", &ChannelRef::clear_messages,
-        "find_message_by_id", &ChannelRef::find_message_by_id,
-        "has_messages", &ChannelRef::has_messages,
-        "count_messages", &ChannelRef::count_messages,
+        "send_message", &ChannelRef::send_message, "add_system_message",
+        &ChannelRef::add_system_message, "add_message",
+        &ChannelRef::add_message, "message_snapshot",
+        &ChannelRef::message_snapshot, "last_message",
+        &ChannelRef::last_message, "replace_message",
+        sol::overload(&ChannelRef::replace_message,
+                      &ChannelRef::replace_message_hint),
+        "replace_message_at", &ChannelRef::replace_message_at, "clear_messages",
+        &ChannelRef::clear_messages, "find_message_by_id",
+        &ChannelRef::find_message_by_id, "has_messages",
+        &ChannelRef::has_messages, "count_messages",
+        &ChannelRef::count_messages,
 
         "on_display_name_changed", &ChannelRef::on_display_name_changed,
         "on_messages_cleared", &ChannelRef::on_messages_cleared,
         "on_message_replaced", &ChannelRef::on_message_replaced,
         "on_message_appended", &ChannelRef::on_message_appended,
 
-        // TwitchChannel
-        "get_room_modes", &ChannelRef::get_room_modes, 
-        "get_stream_status", &ChannelRef::get_stream_status,
-        "get_twitch_id", &ChannelRef::get_twitch_id,
-        "is_broadcaster", &ChannelRef::is_broadcaster,
-        "is_mod", &ChannelRef::is_mod,
-        "is_vip", &ChannelRef::is_vip,
+        "get_room_modes", &ChannelRef::get_room_modes, "get_stream_status",
+        &ChannelRef::get_stream_status, "get_twitch_id",
+        &ChannelRef::get_twitch_id, "is_broadcaster",
+        &ChannelRef::is_broadcaster, "is_mod", &ChannelRef::is_mod, "is_vip",
+        &ChannelRef::is_vip,
 
-        // static
-        "by_name", &ChannelRef::get_by_name,
-        "by_twitch_id", &ChannelRef::get_by_twitch_id
-    );
-    // clang-format on
+        "by_name", &ChannelRef::get_by_name, "by_twitch_id",
+        &ChannelRef::get_by_twitch_id);
 }
 
 sol::table toTable(lua_State *L, const TwitchChannel::RoomModes &modes)
@@ -372,29 +363,19 @@ sol::table toTable(lua_State *L, const TwitchChannel::RoomModes &modes)
         }
         return std::optional<int>{};
     };
-    // clang-format off
-    return sol::table::create_with(L,
-        "subscriber_only", modes.submode,
-        "unique_chat", modes.r9k,
-        "emotes_only", modes.emoteOnly,
-        "follower_only", maybe(modes.followerOnly),
-        "slow_mode", maybe(modes.slowMode)
-    );
-    // clang-format on
+
+    return sol::table::create_with(
+        L, "subscriber_only", modes.submode, "unique_chat", modes.r9k,
+        "emotes_only", modes.emoteOnly, "follower_only",
+        maybe(modes.followerOnly), "slow_mode", maybe(modes.slowMode));
 }
 
 sol::table toTable(lua_State *L, const TwitchChannel::StreamStatus &status)
 {
-    // clang-format off
-    return sol::table::create_with(L,
-        "live", status.live,
-        "viewer_count", status.viewerCount,
-        "title", status.title,
-        "game_name", status.game,
-        "game_id", status.gameId,
-        "uptime", status.uptimeSeconds
-    );
-    // clang-format on
+    return sol::table::create_with(
+        L, "live", status.live, "viewer_count", status.viewerCount, "title",
+        status.title, "game_name", status.game, "game_id", status.gameId,
+        "uptime", status.uptimeSeconds);
 }
 
 }  // namespace chatterino::lua::api

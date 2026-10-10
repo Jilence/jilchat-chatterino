@@ -19,7 +19,7 @@ struct HelixStream;
 class NotificationModel;
 
 enum class Platform : uint8_t {
-    Twitch,  // 0
+    Twitch,
 };
 
 class NotificationController final
@@ -27,7 +27,6 @@ class NotificationController final
 public:
     NotificationController();
 
-    // Perform an initial load so we don't have to wait for the timer
     void initialize();
 
     bool isChannelNotified(const QString &channelName, Platform p) const;
@@ -37,6 +36,7 @@ public:
 
     struct NotificationPayload {
         QString channelId;
+        QString streamId;
         QString channelName;
         QString displayName;
         QString title;
@@ -45,12 +45,9 @@ public:
 
     /// @brief Sends out notifications for a channel that has gone live
     ///
-    /// This doesn't check for duplicate notifications.
-    void notifyTwitchChannelLive(const NotificationPayload &payload) const;
+    /// Duplicate calls for the same stream have no effect
+    void notifyTwitchChannelLive(const NotificationPayload &payload);
 
-    /// @brief Sends out notifications for a channel that has gone offline
-    ///
-    /// This doesn't check for duplicate notifications.
     void notifyTwitchChannelOffline(const QString &id) const;
 
     void playSound() const;
@@ -68,11 +65,10 @@ private:
         bool isLive = false;
     };
 
-    /// @brief This map tracks channels without an associated TwitchChannel
-    ///
-    /// These channels won't be tracked in LiveController.
-    /// Channels are identified by their login name (case insensitive).
     std::map<QString, FakeChannel, QCompareCaseInsensitive> fakeChannels_;
+
+    /// Maps channel IDs to their most recently notified stream IDs
+    std::map<QString, QString> lastNotifiedStreamIds_;
 
     QTimer liveStatusTimer_;
 

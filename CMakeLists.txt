@@ -4,9 +4,6 @@ cmake_minimum_required(VERSION 3.15)
 set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY On) # For rapidjson
 cmake_policy(SET CMP0087 NEW) # evaluates generator expressions in `install(CODE/SCRIPT)`
 cmake_policy(SET CMP0091 NEW) # select MSVC runtime library through `CMAKE_MSVC_RUNTIME_LIBRARY`
-if(POLICY CMP0207)
-    cmake_policy(SET CMP0207 NEW) # file(GET_RUNTIME_DEPENDENCIES) normalizes paths before matching
-endif()
 include(FeatureSummary)
 include(FetchContent)
 include(CMakeDependentOption)
@@ -14,6 +11,10 @@ include(CMakeDependentOption)
 list(APPEND CMAKE_MODULE_PATH
     "${CMAKE_SOURCE_DIR}/cmake"
     )
+
+if(WIN32 AND NOT MINGW)
+    include(EnableSegmentHeap)
+endif()
 
 option(BUILD_APP "Build Chatterino" ON)
 option(BUILD_TESTS "Build the tests for Chatterino" OFF)
@@ -37,7 +38,6 @@ option(CHATTERINO_LTO "Enable LTO for all targets" OFF)
 # so this skips the check and assumes LTO works.
 cmake_dependent_option(CHATTERINO_FORCE_LTO "Skip check if LTO is supported" OFF CHATTERINO_LTO OFF)
 option(CHATTERINO_NO_AVIF_PLUGIN "Disable AVIF plugin" OFF)
-option(CHATTERINO_FORCE_LTO "Don't check if LTO is supported" OFF)
 option(CHATTERINO_PLUGINS "Enable ALPHA plugin support in Chatterino" ON)
 option(CHATTERINO_USE_GDI_FONTENGINE "Use the legacy GDI fontengine instead of the new DirectWrite one on Windows (Qt 6.8.0 and later)" ON)
 option(CHATTERINO_ALLOW_PRIVATE_QT_API "Allow uses of Qt's private API - when enabling this, Chatterino must use the EXACT Qt version it was compiled against" OFF)
@@ -48,7 +48,7 @@ option(CHATTERINO_SANITIZER_SUPPORT "Attempt to enable Sanitizer support on the 
 mark_as_advanced(CHATTERINO_SANITIZER_SUPPORT)
 add_feature_info("Chatterino code sanitizer support" CHATTERINO_SANITIZER_SUPPORT "")
 
-option(CHATTERINO_UPDATER "Enable update checks" ON)
+option(CHATTERINO_UPDATER "Enable legacy Chatterino update checks" OFF)
 mark_as_advanced(CHATTERINO_UPDATER)
 
 set(CHATTERINO_EXTRA_BUILD_STRING "" CACHE STRING "Provide an extra string to show in the about page under the Chatterino version. This string allows the use of Qt's HTML subset.")
@@ -70,11 +70,23 @@ if(BUILD_BENCHMARKS)
     list(APPEND VCPKG_MANIFEST_FEATURES "benchmarks")
 endif()
 
+# Chocolatey ccache on Windows may export CMAKE_RC_COMPILER_LAUNCHER. Launchers break
+# llvm-rc (`cmake -E cmake_llvm_rc` + @response files). Clear before project() enables RC.
+if(WIN32)
+    unset(ENV{CMAKE_RC_COMPILER_LAUNCHER})
+    set(CMAKE_RC_COMPILER_LAUNCHER "" CACHE STRING "RC compiler launcher" FORCE)
+endif()
+
 project(chatterino
-    VERSION 7.5.5
+    VERSION 2.5.5
     DESCRIPTION "Chat client for twitch.tv"
     HOMEPAGE_URL "https://chatterino.com/"
 )
+
+if(APPLE AND CHATTERINO_SPELLCHECK)
+    message(STATUS "Spellcheck is disabled on macOS builds to avoid bundling Hunspell dylibs.")
+    set(CHATTERINO_SPELLCHECK OFF CACHE BOOL "Enable spellchecking in Chatterino (requires Hunspell)" FORCE)
+endif()
 
 if(CHATTERINO_GENERATE_COVERAGE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -106,12 +118,14 @@ else()
     set(MAJOR_QT_VERSION "5")
 endif()
 
-find_program(CCACHE_PROGRAM ccache)
 find_program(SCCACHE_PROGRAM sccache)
 if(SCCACHE_PROGRAM)
     set(_compiler_launcher ${SCCACHE_PROGRAM})
-elseif(CCACHE_PROGRAM)
-    set(_compiler_launcher ${CCACHE_PROGRAM})
+else()
+    find_program(CCACHE_PROGRAM ccache)
+    if(CCACHE_PROGRAM)
+        set(_compiler_launcher ${CCACHE_PROGRAM})
+    endif()
 endif()
 
 if(USE_ALTERNATE_LINKER)
@@ -125,7 +139,9 @@ if(USE_ALTERNATE_LINKER)
 endif()
 
 if(_compiler_launcher)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${_compiler_launcher}" CACHE STRING "CXX compiler launcher")
+    # FORCE so env CMAKE_*_COMPILER_LAUNCHER=ccache (e.g. chocolatey) cannot win over sccache
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${_compiler_launcher}" CACHE STRING "CXX compiler launcher" FORCE)
+    set(CMAKE_C_COMPILER_LAUNCHER "${_compiler_launcher}" CACHE STRING "C compiler launcher" FORCE)
     message(STATUS "Using ${_compiler_launcher} for speeding up build")
 
     if(MSVC)
@@ -150,12 +166,13 @@ find_package(Qt${MAJOR_QT_VERSION} REQUIRED
     Gui
     Network
     Svg
-    SvgWidgets
     Concurrent
+    Charts
 )
+find_package(Qt${MAJOR_QT_VERSION} COMPONENTS Multimedia)
 
-find_package(Qt${MAJOR_QT_VERSION} COMPONENTS WidgetsPrivate)
-find_package(Qt${MAJOR_QT_VERSION} COMPONENTS NetworkPrivate)
+find_package(Qt${MAJOR_QT_VERSION} COMPONENTS WidgetsPrivate QUIET)
+find_package(Qt${MAJOR_QT_VERSION} COMPONENTS NetworkPrivate QUIET)
 if(CHATTERINO_ALLOW_PRIVATE_QT_API)
     # Only exists since 6.10 and prints a warning regarding private headers
     find_package(Qt${MAJOR_QT_VERSION} COMPONENTS GuiPrivate)
@@ -168,11 +185,7 @@ if(WIN32)
 endif()
 
 # Find boost on the system
-set(BOOST_REQUIRED_COMPONENTS "")
-if (VCPKG_TARGET_TRIPLET)
-    list(APPEND BOOST_REQUIRED_COMPONENTS json)
-endif ()
-find_package(Boost REQUIRED CONFIG COMPONENTS ${BOOST_REQUIRED_COMPONENTS} OPTIONAL_COMPONENTS headers)
+find_package(Boost REQUIRED CONFIG OPTIONAL_COMPONENTS headers)
 
 # Find OpenSSL on the system
 find_package(OpenSSL REQUIRED)
@@ -238,7 +251,8 @@ if (BUILD_TESTS)
     # See https://github.com/google/googletest/blob/main/googletest/README.md#visual-studio-dynamic-vs-static-runtimes
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/lib/googletest" "lib/googletest")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/lib/googletest" "lib/googletest"
+                     EXCLUDE_FROM_ALL)
 
     mark_as_advanced(
         BUILD_GMOCK BUILD_GTEST BUILD_SHARED_LIBS

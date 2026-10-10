@@ -12,21 +12,28 @@
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
+#include "providers/bluzyrino/BluzyrinoBadges.hpp"
+#include "providers/folhinha/FolhinhaBadges.hpp"
+#include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickChannel.hpp"
+#include "providers/twitch/ChannelManagement.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchBadges.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
+#include "providers/youtube/YouTubeChannel.hpp"
 #include "singletons/Fonts.hpp"
-#include "singletons/ImageUploader.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/CustomPlayer.hpp"
+#include "util/IncognitoBrowser.hpp"
 #include "util/MultiChannel.hpp"
 #include "util/StreamLink.hpp"
 #include "widgets/ChatterListWidget.hpp"
+#include "widgets/dialogs/RewardQueueDialog.hpp"
 #include "widgets/dialogs/SelectChannelDialog.hpp"
 #include "widgets/dialogs/SelectChannelFiltersDialog.hpp"
 #include "widgets/dialogs/UserInfoPopup.hpp"
@@ -34,6 +41,9 @@
 #include "widgets/helper/DebugPopup.hpp"
 #include "widgets/helper/MessageView.hpp"
 #include "widgets/helper/NotebookTab.hpp"
+#include "widgets/helper/PinnedMessageBanner.hpp"
+#include "widgets/helper/PollBanner.hpp"
+#include "widgets/helper/PredictionBanner.hpp"
 #include "widgets/helper/ResizingTextEdit.hpp"
 #include "widgets/helper/SearchPopup.hpp"
 #include "widgets/Notebook.hpp"
@@ -45,13 +55,15 @@
 #include "widgets/splits/SplitInput.hpp"
 #include "widgets/splits/SplitMpsOverlay.hpp"
 #include "widgets/splits/SplitOverlay.hpp"
-#include "widgets/splits/SplitPinnedMessagePanel.hpp"
-#include "widgets/splits/SplitPredictionPanel.hpp"
+#include "widgets/splits/SplitVoiceMessagePanel.hpp"
 #include "widgets/Window.hpp"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDrag>
+#include <QElapsedTimer>
+#include <QEvent>
 #include <QJsonArray>
 #include <QLabel>
 #include <QListWidget>
@@ -61,11 +73,47 @@
 #include <QSet>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVector>
 
 #include <functional>
+#include <optional>
+
+using namespace Qt::Literals;
 
 namespace chatterino {
 namespace {
+constexpr int DEFERRED_TWITCH_FEATURE_REFRESH_DELAY_MS = 3500;
+constexpr int DEFERRED_TWITCH_EDITOR_REFRESH_OFFSET_MS = 375;
+constexpr int DEFERRED_TWITCH_POLL_REFRESH_OFFSET_MS = 250;
+constexpr int DEFERRED_TWITCH_POINTS_REFRESH_OFFSET_MS = 500;
+constexpr int DEFERRED_TWITCH_WARNING_REFRESH_OFFSET_MS = 650;
+constexpr int DEFERRED_TWITCH_CHATTERS_REFRESH_OFFSET_MS = 750;
+constexpr int DEFERRED_TWITCH_ROOM_ID_RETRY_MS = 1000;
+constexpr int DEFERRED_TWITCH_ROOM_ID_MAX_RETRIES = 12;
+constexpr int INTERACTIVE_TWITCH_FEATURE_REFRESH_DELAY_MS = 75;
+constexpr int INTERACTIVE_TWITCH_EDITOR_REFRESH_OFFSET_MS = 90;
+constexpr int INTERACTIVE_TWITCH_POLL_REFRESH_OFFSET_MS = 60;
+constexpr int INTERACTIVE_TWITCH_POINTS_REFRESH_OFFSET_MS = 120;
+constexpr int INTERACTIVE_TWITCH_WARNING_REFRESH_OFFSET_MS = 180;
+constexpr int INTERACTIVE_TWITCH_CHATTERS_REFRESH_OFFSET_MS = 300;
+constexpr int INTERACTIVE_TWITCH_ROOM_ID_RETRY_MS = 250;
+
+QElapsedTimer &twitchStartupTimer()
+{
+    static QElapsedTimer timer = [] {
+        QElapsedTimer created;
+        created.start();
+        return created;
+    }();
+    return timer;
+}
+
+bool shouldUseColdTwitchFeatureDelay()
+{
+    return twitchStartupTimer().elapsed() <
+           DEFERRED_TWITCH_FEATURE_REFRESH_DELAY_MS;
+}
+
 void showTutorialVideo(QWidget *parent, const QString &source,
                        const QString &title, const QString &description)
 {
@@ -75,7 +123,7 @@ void showTutorialVideo(QWidget *parent, const QString &source,
             BaseWindow::BoundsCheckOnShow,
         },
         parent);
-    window->setWindowTitle("Chatterino - " + title);
+    window->setWindowTitle("Leafyrino - " + title);
     window->setAttribute(Qt::WA_DeleteOnClose);
     auto *layout = new QVBoxLayout();
     layout->addWidget(new QLabel(description));
@@ -98,8 +146,10 @@ Split::Split(QWidget *parent)
     , channel_(Channel::getEmpty())
     , vbox_(new QVBoxLayout(this))
     , header_(new SplitHeader(this))
-    , pinnedMessagePanel_(new SplitPinnedMessagePanel(this))
-    , predictionPanel_(new SplitPredictionPanel(this))
+    , pinnedBanner_(new PinnedMessageBanner(this, this))
+    , predictionBanner_(new PredictionBanner(this, this))
+    , pollBanner_(new PollBanner(this, this))
+    , voiceMessagePanel_(new SplitVoiceMessagePanel(this))
     , view_(new ChannelView(this, this, ChannelView::Context::None,
                             getSettings()->scrollbackSplitLimit))
     , input_(new SplitInput(this))
@@ -114,28 +164,47 @@ Split::Split(QWidget *parent)
     this->vbox_->setContentsMargins(1, 1, 1, 1);
 
     this->vbox_->addWidget(this->header_);
-    this->vbox_->addWidget(this->pinnedMessagePanel_);
-    this->vbox_->addWidget(this->predictionPanel_);
+    this->vbox_->addWidget(this->voiceMessagePanel_);
+    this->vbox_->addWidget(this->pinnedBanner_);
+    this->vbox_->addWidget(this->predictionBanner_);
+    this->vbox_->addWidget(this->pollBanner_);
     this->vbox_->addWidget(this->view_, 1);
     this->vbox_->addWidget(this->input_);
 
     this->input_->ui_.textEdit->installEventFilter(parent);
 
-    if (getSettings()->showTextInputPlaceholder)
-    {
-        this->bSignals_.emplace_back(
-            getApp()->getAccounts()->twitch.currentUserChanged.connect([this] {
-                this->updateInputPlaceholder();
-            }));
-        this->signalHolder_.managedConnect(channelChanged, [this] {
+    // update placeholder text on Twitch account change and channel change
+    this->bSignals_.emplace_back(
+        getApp()->getAccounts()->twitch.currentUserChanged.connect([this] {
+            this->updateInputPlaceholder();
+            this->deferredTwitchForcePersonalRefresh_ = true;
+            this->scheduleDeferredTwitchRefresh(true);
+        }));
+    this->signalHolder_.managedConnect(this->channelChanged, [this] {
+        this->updateInputPlaceholder();
+    });
+    getSettings()->moltorinoAuthAccounts.connect(
+        [this](const QString &, auto) {
+            this->editorAccessProbedChannels_.clear();
+            this->scheduleDeferredTwitchRefresh(true);
+        },
+        this->signalHolder_);
+    getSettings()->showEditStreamInfoButtonInSplitHeader.connect(
+        [this](bool, auto) {
+            this->editorAccessProbedChannels_.clear();
+            this->scheduleDeferredTwitchRefresh(true);
+        },
+        this->signalHolder_);
+    this->signalHolder_.managedConnect(
+        getApp()->getAccounts()->kick.currentUserChanged, [this] {
             this->updateInputPlaceholder();
         });
-        this->signalHolder_.managedConnect(
-            getApp()->getAccounts()->kick.currentUserChanged, [this] {
-                this->updateInputPlaceholder();
-            });
-        this->updateInputPlaceholder();
-    }
+    this->updateInputPlaceholder();
+    getSettings()->showTextInputPlaceholder.connect(
+        [this](const bool &, auto) {
+            this->updateInputPlaceholder();
+        },
+        this->signalHolder_);
 
     // clear SplitInput selection when selecting in ChannelView
     // this connection can be ignored since the ChannelView is owned by this Split
@@ -144,7 +213,6 @@ Split::Split(QWidget *parent)
         {
             this->input_->clearSelection();
         }
-        this->pinnedMessagePanel_->clearExpandedMessageSelection();
     });
 
     // clear ChannelView selection when selecting in SplitInput
@@ -185,39 +253,19 @@ Split::Split(QWidget *parent)
             }
         });
 
-    // this connection can be ignored since the SplitInput is owned by this Split
+    // These connections can be ignored since the SplitInput is owned by this Split.
     std::ignore =
         this->input_->textChanged.connect([this](const QString &newText) {
-            if (getSettings()->showEmptyInput)
-            {
-                // We always show the input regardless of the text, so we can early out here
-                return;
-            }
-
-            if (newText.isEmpty())
-            {
-                this->input_->hide();
-            }
-            else if (this->input_->isHidden())
-            {
-                // Text updated and the input was previously hidden, show it
-                this->input_->show();
-            }
+            this->refreshInputState(newText);
         });
 
+    std::ignore = this->input_->historySearchStateChanged.connect([this] {
+        this->refreshInputState(this->input_->getInputText());
+    });
+
     getSettings()->showEmptyInput.connect(
-        [this](const bool &showEmptyInput) {
-            if (showEmptyInput)
-            {
-                this->input_->show();
-            }
-            else
-            {
-                if (this->input_->getInputText().isEmpty())
-                {
-                    this->input_->hide();
-                }
-            }
+        [this] {
+            this->refreshInputState(this->input_->getInputText());
         },
         this->signalHolder_);
 
@@ -228,11 +276,11 @@ Split::Split(QWidget *parent)
     this->mpsOverlay_->setGeometry(this->rect());
     this->updateMpsOverlayAnchor();
 
-    // Keep the mps overlay anchored to the top of the message view even when
-    // panels show/hide without resizing the split
     this->view_->installEventFilter(this);
-    this->pinnedMessagePanel_->installEventFilter(this);
-    this->predictionPanel_->installEventFilter(this);
+    this->voiceMessagePanel_->installEventFilter(this);
+    this->pinnedBanner_->installEventFilter(this);
+    this->predictionBanner_->installEventFilter(this);
+    this->pollBanner_->installEventFilter(this);
     this->installEventFilter(this);
 
     QTimer::singleShot(0, this, [this] {
@@ -242,7 +290,6 @@ Split::Split(QWidget *parent)
     QObject::connect(
         this->view_, &ChannelView::messageAddedToChannel, this,
         [this](MessagePtr &message) {
-            // Existing feature: pulse the input on self message
             if (getSettings()->pulseTextInputOnSelfMessage)
             {
                 auto user = getApp()->getAccounts()->twitch.getCurrent();
@@ -252,7 +299,10 @@ Split::Split(QWidget *parent)
                 }
             }
 
-            this->mpsOverlay_->onMessageAdded();
+            if (this->mpsOverlay_)
+            {
+                this->mpsOverlay_->onMessageAdded();
+            }
         });
 
     this->setSizePolicy(QSizePolicy::MinimumExpanding,
@@ -295,8 +345,7 @@ Split::Split(QWidget *parent)
                                            this->focused.invoke();
                                        });
     this->signalHolder_.managedConnect(this->focused, [this] {
-        this->pinnedMessagePanel_->refresh();
-        this->predictionPanel_->refresh();
+        this->scheduleDeferredTwitchRefresh(true);
     });
     this->signalHolder_.managedConnect(this->input_->ui_.textEdit->focusLost,
                                        [this] {
@@ -304,73 +353,14 @@ Split::Split(QWidget *parent)
                                            this->focusLost.invoke();
                                        });
 
-    // this connection can be ignored since the SplitInput is owned by this Split
-    std::ignore = this->input_->ui_.textEdit->imagePasted.connect(
-        [this](const QMimeData *original) {
-            if (!getSettings()->imageUploaderEnabled)
-            {
-                return;
-            }
-
-            auto channel = this->getChannel();
-            auto *imageUploader = getApp()->getImageUploader();
-
-            auto [images, imageProcessError] =
-                imageUploader->getImages(original);
-            if (images.empty())
-            {
-                channel->addSystemMessage(
-                    QString(
-                        "An error occurred trying to process your image: %1")
-                        .arg(imageProcessError));
-                return;
-            }
-
-            if (getSettings()->askOnImageUpload.getValue())
-            {
-                QMessageBox msgBox(this->window());
-                msgBox.setWindowTitle("Chatterino");
-                msgBox.setText("Image upload");
-                msgBox.setInformativeText(
-                    "You are uploading an image to a 3rd party service not in "
-                    "control of the Chatterino team. You may not be able to "
-                    "remove the image from the site. Are you okay with this?");
-                auto *cancel = msgBox.addButton(QMessageBox::Cancel);
-                auto *yes = msgBox.addButton(QMessageBox::Yes);
-                auto *yesDontAskAgain = msgBox.addButton("Yes, don't ask again",
-                                                         QMessageBox::YesRole);
-
-                msgBox.setDefaultButton(QMessageBox::Yes);
-
-                msgBox.exec();
-
-                auto *clickedButton = msgBox.clickedButton();
-                if (clickedButton == yesDontAskAgain)
-                {
-                    getSettings()->askOnImageUpload.setValue(false);
-                }
-                else if (clickedButton == yes)
-                {
-                    // Continue with image upload
-                }
-                else if (clickedButton == cancel)
-                {
-                    // Not continuing with image upload
-                    return;
-                }
-                else
-                {
-                    // An unknown "button" was pressed - handle it as if cancel was pressed
-                    // cancel is already handled as the "escape" option, so this should never happen
-                    qCWarning(chatterinoImageuploader)
-                        << "Unhandled button pressed:" << clickedButton;
-                    return;
-                }
-            }
-
-            QPointer<ResizingTextEdit> edit = this->input_->ui_.textEdit;
-            imageUploader->upload(std::move(images), channel, edit);
-        });
+    this->deferredTwitchRefreshTimer_ = new QTimer(this);
+    this->deferredTwitchRefreshTimer_->setSingleShot(true);
+    this->deferredTwitchRefreshTimer_->setInterval(
+        DEFERRED_TWITCH_FEATURE_REFRESH_DELAY_MS);
+    QObject::connect(this->deferredTwitchRefreshTimer_, &QTimer::timeout, this,
+                     [this] {
+                         this->runDeferredTwitchRefresh();
+                     });
 
     getSettings()->imageUploaderEnabled.connect(
         [this](const bool &val) {
@@ -417,7 +407,7 @@ void Split::addShortcuts()
          [](const std::vector<QString> &) -> QString {
              auto *popup = new DebugPopup;
              popup->setAttribute(Qt::WA_DeleteOnClose);
-             popup->setWindowTitle("Chatterino - Debug popup");
+             popup->setWindowTitle("Leafyrino - Debug popup");
              popup->show();
              return "";
          }},
@@ -529,6 +519,11 @@ void Split::addShortcuts()
              this->openModViewInBrowser();
              return "";
          }},
+        {"openRewardQueue",
+         [this](const std::vector<QString> &) -> QString {
+             this->openRewardQueue();
+             return "";
+         }},
         {"createClip",
          [this](const std::vector<QString> &) -> QString {
              // Alt+X: create clip LUL
@@ -578,6 +573,10 @@ void Split::addShortcuts()
              {
                  getApp()->getTwitchBadges()->loadTwitchBadges(
                      this->getChannel());
+                 getApp()->getHomiesBadges()->loadHomiesBadges();
+                 getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
+                 getApp()->getJilChatBadges()->loadJilChatBadges();
+                 getApp()->getBluzyrinoBadges()->loadBluzyrinoBadges();
              }
 
              return "";
@@ -789,10 +788,60 @@ void Split::addShortcuts()
              this->openSubPage();
              return "";
          }},
+        {"changeMultichannelContext",
+         [this](const std::vector<QString> &arguments) -> QString {
+             if (arguments.empty())
+             {
+                 return "Expected at least one argument";
+             }
+             auto *mc =
+                 dynamic_cast<MultiChannel *>(this->channel_.get().get());
+             if (!mc || mc->channels().empty())
+             {
+                 return {};
+             }
+
+             size_t nextIndex = mc->activeChannelIndex();
+             QStringView arg = arguments[0];
+             if (arg == u"next")
+             {
+                 nextIndex =
+                     (mc->activeChannelIndex() + 1) % mc->channels().size();
+             }
+             else if (arg == u"prev")
+             {
+                 if (mc->activeChannelIndex() == 0)
+                 {
+                     nextIndex = mc->channels().size() - 1;
+                 }
+                 else
+                 {
+                     nextIndex -= 1;
+                 }
+             }
+             else
+             {
+                 bool ok = false;
+                 nextIndex = arg.toULongLong(&ok);
+                 if (!ok)
+                 {
+                     return "Failed to parse argument as integer";
+                 }
+             }
+             mc->setActiveChannelIndex(nextIndex);
+             getApp()->getWindows()->forceLayoutChannelViews();
+             return {};
+         }},
     };
 
     this->shortcuts_ = getApp()->getHotkeys()->shortcutsForCategory(
         HotkeyCategory::Split, actions, this);
+}
+
+void Split::showEvent(QShowEvent *event)
+{
+    BaseWidget::showEvent(event);
+    this->scheduleDeferredTwitchRefresh(!shouldUseColdTwitchFeatureDelay());
 }
 
 Split::~Split()
@@ -801,6 +850,215 @@ Split::~Split()
     this->roomModeChangedConnection_.disconnect();
     this->channelIDChangedConnection_.disconnect();
     this->indirectChannelChangedConnection_.disconnect();
+}
+
+void Split::scheduleDeferredTwitchRefresh(bool interactive)
+{
+    if (this->deferredTwitchRefreshTimer_ == nullptr)
+    {
+        return;
+    }
+
+    if (dynamic_cast<TwitchChannel *>(this->getSelectedChannel().get()) ==
+        nullptr)
+    {
+        return;
+    }
+
+    auto *container = dynamic_cast<SplitContainer *>(this->parentWidget());
+    if (container != nullptr && container->getSelectedSplit() != nullptr &&
+        container->getSelectedSplit() != this)
+    {
+        return;
+    }
+
+    const int delayMs = interactive
+                            ? INTERACTIVE_TWITCH_FEATURE_REFRESH_DELAY_MS
+                            : DEFERRED_TWITCH_FEATURE_REFRESH_DELAY_MS;
+
+    if (this->deferredTwitchRefreshTimer_->isActive())
+    {
+        const int remaining =
+            this->deferredTwitchRefreshTimer_->remainingTime();
+        if (remaining >= 0 && remaining <= delayMs)
+        {
+            this->deferredTwitchRefreshInteractive_ =
+                this->deferredTwitchRefreshInteractive_ || interactive;
+            return;
+        }
+    }
+
+    this->deferredTwitchRefreshRetries_ = 0;
+    this->deferredTwitchRefreshInteractive_ = interactive;
+    this->deferredTwitchRefreshTimer_->start(delayMs);
+}
+
+void Split::runDeferredTwitchRefresh()
+{
+    const bool interactive = this->deferredTwitchRefreshInteractive_;
+
+    if (!this->isVisible())
+    {
+        return;
+    }
+
+    auto *container = dynamic_cast<SplitContainer *>(this->parentWidget());
+    if (container != nullptr && container->getSelectedSplit() != nullptr &&
+        container->getSelectedSplit() != this)
+    {
+        return;
+    }
+
+    auto *channel = this->twitchOverlayChannel();
+    if (channel == nullptr)
+    {
+        return;
+    }
+
+    if (channel->roomId().isEmpty())
+    {
+        if (this->deferredTwitchRefreshRetries_ <
+            DEFERRED_TWITCH_ROOM_ID_MAX_RETRIES)
+        {
+            ++this->deferredTwitchRefreshRetries_;
+            this->deferredTwitchRefreshTimer_->start(
+                interactive ? INTERACTIVE_TWITCH_ROOM_ID_RETRY_MS
+                            : DEFERRED_TWITCH_ROOM_ID_RETRY_MS);
+        }
+        return;
+    }
+
+    this->deferredTwitchRefreshRetries_ = 0;
+    this->deferredTwitchRefreshInteractive_ = false;
+    const bool forcePersonalRefresh = this->deferredTwitchForcePersonalRefresh_;
+    this->deferredTwitchForcePersonalRefresh_ = false;
+
+    const int editorOffsetMs = interactive
+                                   ? INTERACTIVE_TWITCH_EDITOR_REFRESH_OFFSET_MS
+                                   : DEFERRED_TWITCH_EDITOR_REFRESH_OFFSET_MS;
+    const int pollOffsetMs = interactive
+                                 ? INTERACTIVE_TWITCH_POLL_REFRESH_OFFSET_MS
+                                 : DEFERRED_TWITCH_POLL_REFRESH_OFFSET_MS;
+    const int pointsOffsetMs = interactive
+                                   ? INTERACTIVE_TWITCH_POINTS_REFRESH_OFFSET_MS
+                                   : DEFERRED_TWITCH_POINTS_REFRESH_OFFSET_MS;
+    const int warningOffsetMs =
+        interactive ? INTERACTIVE_TWITCH_WARNING_REFRESH_OFFSET_MS
+                    : DEFERRED_TWITCH_WARNING_REFRESH_OFFSET_MS;
+    const int chattersOffsetMs =
+        interactive ? INTERACTIVE_TWITCH_CHATTERS_REFRESH_OFFSET_MS
+                    : DEFERRED_TWITCH_CHATTERS_REFRESH_OFFSET_MS;
+
+    auto runIfStillActive = [this](auto &&callback) {
+        if (!this->isVisible())
+        {
+            return;
+        }
+
+        auto *container = dynamic_cast<SplitContainer *>(this->parentWidget());
+        if (container != nullptr && container->getSelectedSplit() != nullptr &&
+            container->getSelectedSplit() != this)
+        {
+            return;
+        }
+
+        auto *tc = this->twitchOverlayChannel();
+        if (tc == nullptr || tc->roomId().isEmpty())
+        {
+            return;
+        }
+
+        callback(tc);
+    };
+
+    channel->showPendingChatWarningIfVisible();
+    const bool shouldRefreshWarnings =
+        interactive || this->deferredTwitchWarningStartupSeen_;
+    this->deferredTwitchWarningStartupSeen_ = true;
+
+    if (getSettings()->showEditStreamInfoButtonInSplitHeader)
+    {
+        QTimer::singleShot(editorOffsetMs, this, [this, runIfStillActive] {
+            runIfStillActive([this](TwitchChannel *tc) {
+                const auto roomId = tc->roomId();
+                if (this->editorAccessProbedChannels_.contains(roomId))
+                {
+                    return;
+                }
+
+                const auto managedChannel =
+                    std::dynamic_pointer_cast<TwitchChannel>(
+                        tc->shared_from_this());
+                if (!managedChannel || managedChannel.get() != tc)
+                {
+                    return;
+                }
+
+                this->editorAccessProbedChannels_.insert(roomId);
+                const QPointer<Split> self(this);
+                const auto refreshHeader = [self, roomId] {
+                    if (!self)
+                    {
+                        return;
+                    }
+                    const auto *current = self->twitchOverlayChannel();
+                    if (current != nullptr && current->roomId() == roomId &&
+                        self->header_ != nullptr)
+                    {
+                        self->header_->updateIcons();
+                    }
+                };
+                ChannelManagement::verifyAccess(
+                    managedChannel, false,
+                    [refreshHeader](ChannelManagementAccess) {
+                        refreshHeader();
+                    },
+                    [refreshHeader](const QString &) {
+                        refreshHeader();
+                    });
+            });
+        });
+    }
+    if (getSettings()->enablePredictions)
+    {
+        runIfStillActive([forcePersonalRefresh](TwitchChannel *tc) {
+            tc->refreshPrediction(forcePersonalRefresh);
+        });
+    }
+    if (getSettings()->enablePolls)
+    {
+        QTimer::singleShot(
+            pollOffsetMs, this, [this, runIfStillActive, forcePersonalRefresh] {
+                runIfStillActive([forcePersonalRefresh](TwitchChannel *tc) {
+                    tc->refreshPollIfStale(forcePersonalRefresh);
+                });
+            });
+    }
+    if (getSettings()->enableChannelPointsDisplay)
+    {
+        QTimer::singleShot(
+            pointsOffsetMs, this,
+            [this, runIfStillActive, forcePersonalRefresh] {
+                runIfStillActive([forcePersonalRefresh](TwitchChannel *tc) {
+                    tc->refreshChannelPointsIfStale(forcePersonalRefresh);
+                });
+            });
+    }
+    if (shouldRefreshWarnings)
+    {
+        QTimer::singleShot(
+            warningOffsetMs, this,
+            [this, runIfStillActive, forcePersonalRefresh] {
+                runIfStillActive([forcePersonalRefresh](TwitchChannel *tc) {
+                    tc->refreshChatWarningIfStale(forcePersonalRefresh);
+                });
+            });
+    }
+    QTimer::singleShot(chattersOffsetMs, this, [this, runIfStillActive] {
+        runIfStillActive([](TwitchChannel *tc) {
+            tc->refreshChatters();
+        });
+    });
 }
 
 ChannelView &Split::getChannelView()
@@ -815,12 +1073,29 @@ SplitInput &Split::getInput()
 
 MessageView *Split::pinnedExpandedMessageView() const
 {
-    return this->pinnedMessagePanel_->expandedMessageView();
+    return nullptr;
 }
 
 void Split::updateInputPlaceholder()
 {
     auto channel = this->getChannel();
+
+    const bool soloYouTube =
+        channel && channel->getType() == Channel::Type::YouTube;
+    this->input_->ui_.textEdit->setReadOnly(soloYouTube);
+    if (soloYouTube)
+    {
+        this->input_->ui_.textEdit->setPlaceholderText(
+            u"This YouTube chat is read-only"_s);
+        return;
+    }
+
+    if (!getSettings()->showTextInputPlaceholder)
+    {
+        this->input_->ui_.textEdit->setPlaceholderText({});
+        return;
+    }
+
     if (auto *multiChannel = dynamic_cast<MultiChannel *>(channel.get()))
     {
         const auto *active = multiChannel->activeChannel();
@@ -854,6 +1129,17 @@ void Split::updateInputPlaceholder()
     if (!this->getChannel()->isTwitchChannel())
     {
         return;
+    }
+
+    if (auto *twitchChannel =
+            dynamic_cast<TwitchChannel *>(this->getChannel().get()))
+    {
+        if (twitchChannel->isAnonymous())
+        {
+            this->input_->ui_.textEdit->setPlaceholderText(
+                "Anonymous channel - read only");
+            return;
+        }
     }
 
     auto user = getApp()->getAccounts()->twitch.getCurrent();
@@ -891,12 +1177,484 @@ void Split::refreshModerationMode()
     this->view_->queueLayout();
 }
 
+namespace {
+
+QString pinBannerKey(const std::optional<TwitchChannel::PinnedMessage> &pin)
+{
+    if (!pin)
+    {
+        return {};
+    }
+
+    QString key = !pin->pinId.isEmpty() ? pin->pinId : pin->messageId;
+    if (key.isEmpty())
+    {
+        key = pin->authorLogin + QStringLiteral(":") + pin->text.left(80);
+    }
+
+    if (pin->endsAt && pin->endsAt->isValid())
+    {
+        key += QStringLiteral("|") + pin->endsAt->toUTC().toString(Qt::ISODate);
+    }
+    return key;
+}
+
+QString predictionBannerKey(
+    const std::optional<TwitchChannel::PredictionEvent> &prediction)
+{
+    if (!prediction)
+    {
+        return {};
+    }
+
+    return prediction->id + QStringLiteral("|") + prediction->status.toUpper() +
+           QStringLiteral("|") + prediction->winningOutcomeId;
+}
+
+QString pollBannerKey(const std::optional<TwitchChannel::PollEvent> &poll)
+{
+    if (!poll)
+    {
+        return {};
+    }
+
+    return poll->id + QStringLiteral("|") + poll->status.toUpper();
+}
+
+bool predictionIsActive(
+    const std::optional<TwitchChannel::PredictionEvent> &prediction)
+{
+    return prediction &&
+           prediction->status.compare("ACTIVE", Qt::CaseInsensitive) == 0;
+}
+
+bool pollIsActive(const std::optional<TwitchChannel::PollEvent> &poll)
+{
+    return poll && poll->status.compare("ACTIVE", Qt::CaseInsensitive) == 0;
+}
+
+}  // namespace
+
+void Split::clearBannerAttention()
+{
+    this->bannerAttentionOverride_ = -1;
+    this->bannerAttentionUntil_ = {};
+}
+
+void Split::noteBannerStateChanged(TwitchChannel *channel, int bannerId)
+{
+    if (channel == nullptr)
+    {
+        this->lastPinBannerKey_.clear();
+        this->lastPredictionBannerKey_.clear();
+        this->lastPollBannerKey_.clear();
+        this->clearBannerAttention();
+        return;
+    }
+
+    const auto pin = *channel->accessPinnedMessage();
+    const auto prediction = *channel->accessPrediction();
+    const auto poll = *channel->accessPoll();
+
+    const auto newPinKey = pinBannerKey(pin);
+    const auto newPredictionKey = predictionBannerKey(prediction);
+    const auto newPollKey = pollBannerKey(poll);
+
+    QString *oldKey = nullptr;
+    QString newKey;
+    switch (bannerId)
+    {
+        case 0:
+            oldKey = &this->lastPinBannerKey_;
+            newKey = newPinKey;
+            break;
+        case 1:
+            oldKey = &this->lastPredictionBannerKey_;
+            newKey = newPredictionKey;
+            break;
+        case 2:
+            oldKey = &this->lastPollBannerKey_;
+            newKey = newPollKey;
+            break;
+        default:
+            return;
+    }
+
+    const bool changed = oldKey != nullptr && *oldKey != newKey;
+
+    this->lastPinBannerKey_ = newPinKey;
+    this->lastPredictionBannerKey_ = newPredictionKey;
+    this->lastPollBannerKey_ = newPollKey;
+
+    if (this->primingBannerState_ || !changed || newKey.isEmpty() ||
+        getSettings()->bannerStackMode != 3)
+    {
+        return;
+    }
+
+    const bool hasLivePrediction = predictionIsActive(prediction);
+    const bool hasLivePoll = pollIsActive(poll);
+    int durationMs = 5000;
+
+    if (bannerId == 0)
+    {
+        durationMs = (hasLivePrediction || hasLivePoll) ? 5000 : 20000;
+    }
+    else if (bannerId == 1 && prediction)
+    {
+        const auto status = prediction->status.toUpper();
+        if (status == "ACTIVE")
+        {
+            durationMs = 12000;
+        }
+        else if (status == "LOCKED")
+        {
+            durationMs = 6000;
+        }
+        else if (status == "RESOLVED")
+        {
+            durationMs = 10000;
+        }
+        else
+        {
+            durationMs = 5000;
+        }
+    }
+    else if (bannerId == 2 && poll)
+    {
+        const auto status = poll->status.toUpper();
+        if (status == "ACTIVE")
+        {
+            durationMs = 12000;
+        }
+        else if (status == "COMPLETED")
+        {
+            durationMs = 8000;
+        }
+        else
+        {
+            durationMs = 5000;
+        }
+    }
+
+    this->bannerToggleOverride_ = -1;
+    this->bannerAttentionOverride_ = bannerId;
+    this->bannerAttentionUntil_ =
+        QDateTime::currentDateTimeUtc().addMSecs(durationMs);
+
+    QTimer::singleShot(durationMs + 50, this, [this, bannerId] {
+        if (this->bannerAttentionOverride_ == bannerId &&
+            this->bannerAttentionUntil_.isValid() &&
+            QDateTime::currentDateTimeUtc() >= this->bannerAttentionUntil_)
+        {
+            this->clearBannerAttention();
+            this->updateBannerVisibility();
+        }
+    });
+}
+
+void Split::updateBannerVisibility()
+{
+    const bool hasPin = this->pinnedBanner_->hasPinnedMessage() &&
+                        !this->perSplitHidePinnedMessage_;
+    const bool hasPred = this->predictionBanner_->hasPrediction() &&
+                         !this->perSplitHidePrediction_;
+    const int mode = getSettings()->bannerStackMode;
+    const bool hasPoll =
+        this->pollBanner_->hasPoll() && !this->perSplitHidePoll_;
+
+    const int activeCount = int(hasPin) + int(hasPred) + int(hasPoll);
+    auto setVisibility = [this](bool showPin, bool showPred, bool showPoll,
+                                bool showToggle) {
+        this->pinnedBanner_->setVisible(showPin);
+        this->predictionBanner_->setVisible(showPred);
+        this->pollBanner_->setVisible(showPoll);
+
+        this->pinnedBanner_->setToggleButtonVisible(showToggle && showPin);
+        this->predictionBanner_->setToggleButtonVisible(showToggle && showPred);
+        this->pollBanner_->setToggleButtonVisible(showToggle && showPoll);
+    };
+
+    if (mode == 0 || activeCount <= 1)
+    {
+        setVisibility(hasPin, hasPred, hasPoll, false);
+        return;
+    }
+
+    QVector<int> activeBannerIds;
+    if (hasPin)
+    {
+        activeBannerIds.push_back(0);
+    }
+    if (hasPred)
+    {
+        activeBannerIds.push_back(1);
+    }
+    if (hasPoll)
+    {
+        activeBannerIds.push_back(2);
+    }
+
+    auto firstActiveFromOrder =
+        [&activeBannerIds](std::initializer_list<int> order) {
+            for (const int id : order)
+            {
+                if (activeBannerIds.contains(id))
+                {
+                    return id;
+                }
+            }
+            return activeBannerIds.isEmpty() ? -1 : activeBannerIds.front();
+        };
+
+    int selectedId = -1;
+    if (this->bannerAttentionOverride_ >= 0)
+    {
+        if (this->bannerAttentionUntil_.isValid() &&
+            QDateTime::currentDateTimeUtc() < this->bannerAttentionUntil_ &&
+            activeBannerIds.contains(this->bannerAttentionOverride_))
+        {
+            selectedId = this->bannerAttentionOverride_;
+        }
+        else
+        {
+            this->clearBannerAttention();
+        }
+    }
+
+    if (selectedId < 0 && this->bannerToggleOverride_ >= 0 &&
+        activeBannerIds.contains(this->bannerToggleOverride_))
+    {
+        selectedId = this->bannerToggleOverride_;
+    }
+    else if (selectedId < 0 && mode == 1)
+    {
+        selectedId = firstActiveFromOrder({0, 1, 2});
+    }
+    else if (selectedId < 0 && mode == 2)
+    {
+        selectedId = firstActiveFromOrder({1, 2, 0});
+    }
+    else if (selectedId < 0 && mode == 4)
+    {
+        selectedId = firstActiveFromOrder({2, 1, 0});
+    }
+    else if (selectedId < 0)
+    {
+        auto urgencyBonus = [](qint64 secondsLeft) {
+            if (secondsLeft <= 0)
+            {
+                return 30;
+            }
+            if (secondsLeft <= 15)
+            {
+                return 30;
+            }
+            if (secondsLeft <= 60)
+            {
+                return 20;
+            }
+            if (secondsLeft <= 120)
+            {
+                return 12;
+            }
+            if (secondsLeft <= 300)
+            {
+                return 5;
+            }
+            return 0;
+        };
+
+        auto pollSelfVoteCount = [](const TwitchChannel::PollEvent &poll) {
+            int total = 0;
+            for (const auto &vote : poll.selfVotes)
+            {
+                total += vote.freeVotes + vote.channelPointsVotes;
+            }
+            return total;
+        };
+
+        const auto now = QDateTime::currentDateTimeUtc();
+        int pinScore = hasPin ? 58 : -1;
+        int predictionScore = hasPred ? 0 : -1;
+        int pollScore = hasPoll ? 0 : -1;
+
+        if (auto *tc =
+                dynamic_cast<TwitchChannel *>(this->channel_.get().get()))
+        {
+            if (hasPin)
+            {
+                auto pinGuard = tc->accessPinnedMessage();
+                if (*pinGuard)
+                {
+                    const auto &pin = **pinGuard;
+                    if (pin.pinnedAt && pin.pinnedAt->isValid() &&
+                        pin.pinnedAt->secsTo(now) <= 120)
+                    {
+                        pinScore += 12;
+                    }
+                    if (pin.endsAt && pin.endsAt->isValid())
+                    {
+                        pinScore += urgencyBonus(now.secsTo(*pin.endsAt)) / 2;
+                    }
+                }
+            }
+
+            if (hasPred)
+            {
+                auto predictionGuard = tc->accessPrediction();
+                if (*predictionGuard)
+                {
+                    const auto &prediction = **predictionGuard;
+                    const auto status = prediction.status.toUpper();
+                    if (status == "RESOLVED")
+                    {
+                        predictionScore = 52;
+                    }
+                    else if (status == "LOCKED")
+                    {
+                        predictionScore = 36;
+                    }
+                    else if (status == "CANCELED")
+                    {
+                        predictionScore = 25;
+                    }
+                    else if (status == "ACTIVE")
+                    {
+                        predictionScore = 90;
+                        if (prediction.selfOutcomeId.isEmpty())
+                        {
+                            predictionScore += 15;
+                        }
+                        if (prediction.createdAt.isValid() &&
+                            prediction.predictionWindowSeconds > 0)
+                        {
+                            const auto end = prediction.createdAt.addSecs(
+                                prediction.predictionWindowSeconds);
+                            predictionScore += urgencyBonus(now.secsTo(end));
+                        }
+                    }
+                    else
+                    {
+                        predictionScore = 38;
+                    }
+                }
+            }
+
+            if (hasPoll)
+            {
+                auto pollGuard = tc->accessPoll();
+                if (*pollGuard)
+                {
+                    const auto &poll = **pollGuard;
+                    const auto status = poll.status.toUpper();
+                    if (status == "ACTIVE")
+                    {
+                        pollScore = 88;
+                        if (pollSelfVoteCount(poll) == 0)
+                        {
+                            pollScore += 14;
+                        }
+                        if (poll.channelPointsVotingEnabled)
+                        {
+                            pollScore += 4;
+                        }
+
+                        std::optional<QDateTime> end = poll.endsAt;
+                        if (!end && poll.createdAt.isValid() &&
+                            poll.durationSeconds > 0)
+                        {
+                            end = poll.createdAt.addSecs(poll.durationSeconds);
+                        }
+                        if (end && end->isValid())
+                        {
+                            pollScore += urgencyBonus(now.secsTo(*end));
+                        }
+                    }
+                    else if (status == "COMPLETED")
+                    {
+                        pollScore = 50;
+                    }
+                    else if (status == "TERMINATED" || status == "ARCHIVED")
+                    {
+                        pollScore = 25;
+                    }
+                    else
+                    {
+                        pollScore = 38;
+                    }
+                }
+            }
+        }
+
+        struct Candidate {
+            int id = -1;
+            int score = -1;
+            int tieBreak = 0;
+        };
+
+        Candidate best;
+        const Candidate candidates[] = {
+            {0, pinScore, 0},
+            {1, predictionScore, 2},
+            {2, pollScore, 1},
+        };
+        for (const auto &candidate : candidates)
+        {
+            if (!activeBannerIds.contains(candidate.id))
+            {
+                continue;
+            }
+            if (candidate.score > best.score ||
+                (candidate.score == best.score &&
+                 candidate.tieBreak > best.tieBreak))
+            {
+                best = candidate;
+            }
+        }
+
+        selectedId = best.id >= 0 ? best.id : firstActiveFromOrder({1, 2, 0});
+    }
+
+    setVisibility(selectedId == 0, selectedId == 1, selectedId == 2, true);
+}
+
+void Split::refreshInputState(const QString &inputText)
+{
+    if (getSettings()->showEmptyInput)
+    {
+        // We always show the input regardless of the text, so we can early out here
+        if (this->input_->isHidden())
+        {
+            this->input_->show();
+        }
+        return;
+    }
+
+    if (inputText.isEmpty() && !this->input_->isInHistorySearch())
+    {
+        this->input_->hide();
+    }
+    else
+    {
+        // Text updated and the input was previously hidden, show it
+        this->input_->show();
+    }
+}
+
 void Split::openChannelInBrowserPlayer(ChannelPtr channel)
 {
     if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
     {
-        QDesktopServices::openUrl(
-            QUrl(TWITCH_PLAYER_URL.arg(twitchChannel->getName())));
+        const auto playerUrl = TWITCH_PLAYER_URL.arg(twitchChannel->getName());
+        if (getSettings()->openLinksIncognito && supportsIncognitoLinks())
+        {
+            openLinkIncognito(playerUrl);
+        }
+        else
+        {
+            QDesktopServices::openUrl(QUrl(playerUrl));
+        }
     }
 }
 
@@ -904,7 +1662,7 @@ void Split::openChannelInStreamlink(const QString channelName)
 {
     try
     {
-        openStreamlinkForChannel(channelName);
+        openStreamlinkForChannelOrUrl(channelName);
     }
     catch (const Exception &ex)
     {
@@ -918,7 +1676,7 @@ void Split::openChannelInCustomPlayer(const QString channelName)
     openInCustomPlayer(channelName);
 }
 
-IndirectChannel Split::getIndirectChannel()
+IndirectChannel Split::getIndirectChannel() const
 {
     return this->channel_;
 }
@@ -943,29 +1701,367 @@ ChannelPtr Split::getSelectedChannel() const
     return chan;
 }
 
+TwitchChannel *Split::twitchOverlayChannel() const
+{
+    auto chan = this->channel_.get();
+    if (auto *tc = dynamic_cast<TwitchChannel *>(chan.get()))
+    {
+        return tc;
+    }
+    if (auto *mc = dynamic_cast<MultiChannel *>(chan.get()))
+    {
+        if (!mc->showTwitchOverlays())
+        {
+            return nullptr;
+        }
+        if (const auto *active = mc->activeChannel())
+        {
+            if (auto *tc = dynamic_cast<TwitchChannel *>(active->channel.get()))
+            {
+                return tc;
+            }
+        }
+        for (const auto &child : mc->channels())
+        {
+            if (auto *tc = dynamic_cast<TwitchChannel *>(child.channel.get()))
+            {
+                return tc;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void Split::wireTwitchBanners(TwitchChannel *tc)
+{
+    this->twitchBannerSignalHolder_.clear();
+
+    if (tc == nullptr)
+    {
+        this->pinnedBanner_->setPinnedMessage(std::nullopt, nullptr);
+        this->predictionBanner_->setPrediction(std::nullopt, nullptr);
+        this->pollBanner_->setPoll(std::nullopt, nullptr);
+        this->updateBannerVisibility();
+        return;
+    }
+
+    auto updatePin = [this, tc] {
+        this->noteBannerStateChanged(tc, 0);
+        this->pinnedBanner_->setPinnedMessage(*tc->accessPinnedMessage(), tc);
+        this->updateBannerVisibility();
+    };
+
+    if (getSettings()->enablePinnedMessages)
+    {
+        this->twitchBannerSignalHolder_.managedConnect(tc->pinnedMessageChanged,
+                                                       updatePin);
+
+        this->twitchBannerSignalHolder_.managedConnect(
+            tc->messageReplaced,
+            [this, tc](size_t /*index*/, const MessagePtr & /*prev*/,
+                       const MessagePtr &replacement) {
+                auto pin = tc->accessPinnedMessage();
+                if (!pin->has_value())
+                {
+                    return;
+                }
+                if (!(*pin)->messageId.isEmpty() &&
+                    replacement->id == (*pin)->messageId)
+                {
+                    this->pinnedBanner_->setPinnedMessage(*pin, tc);
+                }
+            });
+
+        this->twitchBannerSignalHolder_.managedConnect(
+            tc->messageAppended,
+            [this, tc](MessagePtr &msg, std::optional<MessageFlags> /*flags*/) {
+                auto pin = tc->accessPinnedMessage();
+                if (pin->has_value() && !(*pin)->authorLogin.isEmpty() &&
+                    msg->loginName.compare((*pin)->authorLogin,
+                                           Qt::CaseInsensitive) == 0)
+                {
+                    this->pinnedBanner_->refreshLayout();
+                }
+            });
+
+        updatePin();
+    }
+    else
+    {
+        this->pinnedBanner_->hide();
+    }
+
+    getSettings()->enablePinnedMessages.connect(
+        [this, tc](const bool &enabled, auto) {
+            if (enabled)
+            {
+                tc->refreshPinnedMessage();
+                this->twitchBannerSignalHolder_.managedConnect(
+                    tc->pinnedMessageChanged, [this, tc] {
+                        this->noteBannerStateChanged(tc, 0);
+                        this->pinnedBanner_->setPinnedMessage(
+                            *tc->accessPinnedMessage(), tc);
+                        this->updateBannerVisibility();
+                    });
+            }
+            else
+            {
+                this->pinnedBanner_->setPinnedMessage(std::nullopt, tc);
+                this->updateBannerVisibility();
+            }
+        },
+        this->twitchBannerSignalHolder_);
+
+    if (getSettings()->enablePredictions)
+    {
+        auto updatePrediction = [this, tc] {
+            this->noteBannerStateChanged(tc, 1);
+            this->predictionBanner_->setPrediction(*tc->accessPrediction(), tc);
+            this->updateBannerVisibility();
+        };
+        this->twitchBannerSignalHolder_.managedConnect(tc->predictionChanged,
+                                                       updatePrediction);
+        updatePrediction();
+    }
+    else
+    {
+        this->predictionBanner_->setPrediction(std::nullopt, tc);
+    }
+
+    if (getSettings()->enablePolls)
+    {
+        auto updatePoll = [this, tc] {
+            this->noteBannerStateChanged(tc, 2);
+            this->pollBanner_->setPoll(*tc->accessPoll(), tc);
+            this->updateBannerVisibility();
+        };
+        this->twitchBannerSignalHolder_.managedConnect(tc->pollChanged,
+                                                       updatePoll);
+        updatePoll();
+    }
+    else
+    {
+        this->pollBanner_->setPoll(std::nullopt, tc);
+    }
+
+    auto weakTC = std::weak_ptr<TwitchChannel>(
+        std::static_pointer_cast<TwitchChannel>(tc->shared_from_this()));
+
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->focused, [weakTC, this] {
+            auto tc = weakTC.lock();
+            if (!tc)
+            {
+                return;
+            }
+
+            this->scheduleDeferredTwitchRefresh(true);
+        });
+
+    getSettings()->enablePredictions.connect(
+        [this, tc](const bool &enabled, auto) {
+            if (enabled)
+            {
+                this->scheduleDeferredTwitchRefresh(true);
+                this->twitchBannerSignalHolder_.managedConnect(
+                    tc->predictionChanged, [this, tc] {
+                        this->noteBannerStateChanged(tc, 1);
+                        this->predictionBanner_->setPrediction(
+                            *tc->accessPrediction(), tc);
+                        this->updateBannerVisibility();
+                    });
+            }
+            else
+            {
+                this->predictionBanner_->setPrediction(std::nullopt, tc);
+                this->updateBannerVisibility();
+            }
+        },
+        this->twitchBannerSignalHolder_);
+
+    getSettings()->enablePolls.connect(
+        [this, tc](const bool &enabled, auto) {
+            if (enabled)
+            {
+                this->scheduleDeferredTwitchRefresh(true);
+                this->twitchBannerSignalHolder_.managedConnect(
+                    tc->pollChanged, [this, tc] {
+                        this->noteBannerStateChanged(tc, 2);
+                        this->pollBanner_->setPoll(*tc->accessPoll(), tc);
+                        this->updateBannerVisibility();
+                    });
+            }
+            else
+            {
+                this->pollBanner_->setPoll(std::nullopt, tc);
+                this->updateBannerVisibility();
+            }
+        },
+        this->twitchBannerSignalHolder_);
+
+    auto cycleBanner = [this] {
+        this->clearBannerAttention();
+        QVector<int> activeIds;
+        if (this->pinnedBanner_->hasPinnedMessage())
+        {
+            activeIds.push_back(0);
+        }
+        if (this->predictionBanner_->hasPrediction())
+        {
+            activeIds.push_back(1);
+        }
+        if (this->pollBanner_->hasPoll())
+        {
+            activeIds.push_back(2);
+        }
+        if (!activeIds.isEmpty())
+        {
+            const int foundIndex =
+                activeIds.indexOf(this->bannerToggleOverride_);
+            const int currentIndex = foundIndex >= 0 ? foundIndex : 0;
+            this->bannerToggleOverride_ =
+                activeIds.at((currentIndex + 1) % activeIds.size());
+        }
+        this->updateBannerVisibility();
+    };
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->pinnedBanner_->toggleBannerRequested, cycleBanner);
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->predictionBanner_->toggleBannerRequested, cycleBanner);
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->pollBanner_->toggleBannerRequested, cycleBanner);
+
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->pinnedBanner_->dismissed, [this] {
+            this->bannerToggleOverride_ = -1;
+            this->updateBannerVisibility();
+        });
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->predictionBanner_->dismissed, [this] {
+            this->bannerToggleOverride_ = -1;
+            this->updateBannerVisibility();
+        });
+    this->twitchBannerSignalHolder_.managedConnect(
+        this->pollBanner_->dismissed, [this] {
+            this->bannerToggleOverride_ = -1;
+            this->updateBannerVisibility();
+        });
+
+    getSettings()->bannerStackMode.connect(
+        [this](const int &, auto) {
+            this->bannerToggleOverride_ = -1;
+            this->updateBannerVisibility();
+        },
+        this->twitchBannerSignalHolder_);
+
+    this->updateBannerVisibility();
+}
+
 void Split::setChannel(IndirectChannel newChannel)
 {
+    this->editorAccessProbedChannels_.clear();
+    this->channelSignalHolder_.clear();
+    this->input_->setSendWaitStatus("");
+
     this->channel_ = newChannel;
 
     this->view_->setChannel(newChannel.get());
+    this->channelSignalHolder_.clear();
+    this->twitchBannerSignalHolder_.clear();
+    this->bannerToggleOverride_ = -1;
+    this->clearBannerAttention();
+    this->lastPinBannerKey_.clear();
+    this->lastPredictionBannerKey_.clear();
+    this->lastPollBannerKey_.clear();
+    this->primingBannerState_ = true;
+    this->pinnedBanner_->setPinnedMessage(std::nullopt, nullptr);
+    this->predictionBanner_->setPrediction(std::nullopt, nullptr);
+    this->pollBanner_->setPoll(std::nullopt, nullptr);
 
-    this->usermodeChangedConnection_.disconnect();
-    this->roomModeChangedConnection_.disconnect();
     this->indirectChannelChangedConnection_.disconnect();
     this->channelSignalHolder_.clear();
 
-    TwitchChannel *tc = dynamic_cast<TwitchChannel *>(newChannel.get().get());
-    auto *kc = dynamic_cast<KickChannel *>(newChannel.get().get());
     auto *mc = dynamic_cast<MultiChannel *>(newChannel.get().get());
+    auto *tc = dynamic_cast<TwitchChannel *>(newChannel.get().get());
 
     if (mc)
     {
         this->channelSignalHolder_.managedConnect(
             mc->activeChannelChanged, [this] {
                 this->updateInputPlaceholder();
+                this->updateChannelConnections();
+                this->wireTwitchBanners(this->twitchOverlayChannel());
+                this->scheduleDeferredTwitchRefresh(true);
             });
+
+        this->wireTwitchBanners(this->twitchOverlayChannel());
+
+        if (this->isVisible())
+        {
+            this->scheduleDeferredTwitchRefresh(
+                !shouldUseColdTwitchFeatureDelay());
+        }
     }
     else if (tc != nullptr)
+    {
+        this->wireTwitchBanners(tc);
+
+        if (this->isVisible())
+        {
+            this->scheduleDeferredTwitchRefresh(
+                !shouldUseColdTwitchFeatureDelay());
+        }
+    }
+
+    this->updateChannelConnections();
+
+    this->primingBannerState_ = false;
+
+    this->indirectChannelChangedConnection_ =
+        newChannel.getChannelChanged().connect([this] {
+            QTimer::singleShot(0, [this] {
+                this->setChannel(this->channel_);
+            });
+        });
+
+    this->header_->updateIcons();
+    this->header_->updateChannelText();
+    this->header_->updateRoomModes();
+
+    this->channelSignalHolder_.managedConnect(
+        this->channel_.get()->displayNameChanged, [this] {
+            this->header_->updateChannelText();
+            this->actionRequested.invoke(Action::RefreshTab);
+        });
+
+    this->channelChanged.invoke();
+    this->actionRequested.invoke(Action::RefreshTab);
+
+    // Queue up save because: Split channel changed
+    getApp()->getWindows()->queueSave();
+}
+
+void Split::updateChannelConnections()
+{
+    this->usermodeChangedConnection_.disconnect();
+    this->roomModeChangedConnection_.disconnect();
+    this->sendWaitConnection_ = pajlada::Signals::ScopedConnection{};
+    this->sharedChatConnection_ = pajlada::Signals::ScopedConnection{};
+    this->getInput().setSendWaitStatus({});
+
+    auto *channel = this->channel_.get().get();
+    auto *mc = dynamic_cast<MultiChannel *>(channel);
+    if (mc)
+    {
+        if (const auto *active = mc->activeChannel())
+        {
+            channel = active->channel.get();
+        }
+    }
+
+    auto *tc = dynamic_cast<TwitchChannel *>(channel);
+    auto *kc = dynamic_cast<KickChannel *>(channel);
+    if (tc)
     {
         this->usermodeChangedConnection_ = tc->userStateChanged.connect([this] {
             this->header_->updateIcons();
@@ -976,9 +2072,14 @@ void Split::setChannel(IndirectChannel newChannel)
             this->header_->updateRoomModes();
         });
 
-        this->channelSignalHolder_.managedConnect(
-            tc->sendWaitUpdate, [this](const QString &text) {
+        this->sendWaitConnection_ =
+            tc->sendWaitUpdate.connect([this](const QString &text) {
                 this->getInput().setSendWaitStatus(text);
+            });
+
+        this->sharedChatConnection_ = tc->sharedChatStatusChanged.connect(
+            [this](const std::vector<HelixMinimalUser> &) {
+                this->header_->updateChannelText();
             });
     }
     else if (kc != nullptr)
@@ -992,44 +2093,11 @@ void Split::setChannel(IndirectChannel newChannel)
             this->header_->updateRoomModes();
         });
 
-        this->channelSignalHolder_.managedConnect(
-            kc->sendWaitUpdate, [this](const QString &text) {
+        this->sendWaitConnection_ =
+            kc->sendWaitUpdate.connect([this](const QString &text) {
                 this->getInput().setSendWaitStatus(text);
             });
     }
-
-    this->indirectChannelChangedConnection_ =
-        newChannel.getChannelChanged().connect([this] {
-            QTimer::singleShot(0, [this] {
-                this->setChannel(this->channel_);
-            });
-        });
-
-    if (tc != nullptr)
-    {
-        this->pinnedMessagePanel_->setTwitchChannel(tc);
-        this->predictionPanel_->setTwitchChannel(tc);
-    }
-    else
-    {
-        this->pinnedMessagePanel_->setTwitchChannel(nullptr);
-        this->predictionPanel_->setTwitchChannel(nullptr);
-    }
-
-    this->header_->updateIcons();
-    this->header_->updateChannelText();
-    this->header_->updateRoomModes();
-
-    this->channelSignalHolder_.managedConnect(
-        this->channel_.get()->displayNameChanged, [this] {
-            this->actionRequested.invoke(Action::RefreshTab);
-        });
-
-    this->channelChanged.invoke();
-    this->actionRequested.invoke(Action::RefreshTab);
-
-    // Queue up save because: Split channel changed
-    getApp()->getWindows()->queueSave();
 }
 
 void Split::setModerationMode(bool value)
@@ -1051,6 +2119,89 @@ std::optional<bool> Split::checkSpellingOverride() const
 void Split::setCheckSpellingOverride(std::optional<bool> override)
 {
     this->input_->setCheckSpellingOverride(override);
+}
+
+void Split::syncPerSplitBannerHidesToBanners()
+{
+    this->updateBannerVisibility();
+}
+
+bool Split::perSplitHidePinnedMessage() const
+{
+    return this->perSplitHidePinnedMessage_;
+}
+
+void Split::setPerSplitHidePinnedMessage(bool hide)
+{
+    if (this->perSplitHidePinnedMessage_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePinnedMessage_ = hide;
+    this->updateBannerVisibility();
+    getApp()->getWindows()->queueSave();
+}
+
+bool Split::perSplitHidePrediction() const
+{
+    return this->perSplitHidePrediction_;
+}
+
+void Split::setPerSplitHidePrediction(bool hide)
+{
+    if (this->perSplitHidePrediction_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePrediction_ = hide;
+    this->updateBannerVisibility();
+    getApp()->getWindows()->queueSave();
+}
+
+bool Split::perSplitHidePoll() const
+{
+    return this->perSplitHidePoll_;
+}
+
+void Split::setPerSplitHidePoll(bool hide)
+{
+    if (this->perSplitHidePoll_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePoll_ = hide;
+    this->updateBannerVisibility();
+    getApp()->getWindows()->queueSave();
+}
+
+void Split::setPerSplitHideAllBanners(bool hide)
+{
+    if (this->perSplitHidePinnedMessage_ == hide &&
+        this->perSplitHidePrediction_ == hide &&
+        this->perSplitHidePoll_ == hide)
+    {
+        return;
+    }
+    this->perSplitHidePinnedMessage_ = hide;
+    this->perSplitHidePrediction_ = hide;
+    this->perSplitHidePoll_ = hide;
+    this->syncPerSplitBannerHidesToBanners();
+    getApp()->getWindows()->queueSave();
+}
+
+void Split::loadPerSplitBannerHides(bool hidePinned, bool hidePrediction,
+                                    bool hidePoll)
+{
+    if (this->perSplitHidePinnedMessage_ == hidePinned &&
+        this->perSplitHidePrediction_ == hidePrediction &&
+        this->perSplitHidePoll_ == hidePoll)
+    {
+        return;
+    }
+    this->perSplitHidePinnedMessage_ = hidePinned;
+    this->perSplitHidePrediction_ = hidePrediction;
+    this->perSplitHidePoll_ = hidePoll;
+    this->syncPerSplitBannerHidesToBanners();
 }
 
 void Split::insertTextToInput(const QString &text)
@@ -1098,10 +2249,25 @@ void Split::updateGifEmotes()
     this->view_->queueUpdate();
 }
 
-void Split::recoverDismissedPanels()
+void Split::recoverDismissedBanners()
 {
-    this->pinnedMessagePanel_->recoverDismissedPanel();
-    this->predictionPanel_->recoverDismissedPanel();
+    this->bannerToggleOverride_ = -1;
+    this->clearBannerAttention();
+
+    this->pinnedBanner_->clearDismissState();
+    this->predictionBanner_->clearDismissState();
+    this->pollBanner_->clearDismissState();
+
+    auto *tc = dynamic_cast<TwitchChannel *>(this->getSelectedChannel().get());
+    if (tc != nullptr)
+    {
+        this->pinnedBanner_->setPinnedMessage(*tc->accessPinnedMessage(), tc);
+        this->predictionBanner_->setPrediction(*tc->accessPrediction(), tc);
+        this->pollBanner_->setPoll(*tc->accessPoll(), tc);
+    }
+
+    this->scheduleDeferredTwitchRefresh(true);
+    this->updateBannerVisibility();
 }
 
 void Split::updateLastReadMessage()
@@ -1148,8 +2314,11 @@ void Split::resizeEvent(QResizeEvent *event)
     BaseWidget::resizeEvent(event);
 
     this->overlay_->setGeometry(this->rect());
-    this->mpsOverlay_->setGeometry(this->rect());
-    this->updateMpsOverlayAnchor();
+    if (this->mpsOverlay_)
+    {
+        this->mpsOverlay_->setGeometry(this->rect());
+        this->updateMpsOverlayAnchor();
+    }
 }
 
 bool Split::eventFilter(QObject *watched, QEvent *event)
@@ -1162,8 +2331,10 @@ bool Split::eventFilter(QObject *watched, QEvent *event)
         case QEvent::Hide:
         case QEvent::LayoutRequest: {
             if (watched == this || watched == this->view_ ||
-                watched == this->pinnedMessagePanel_ ||
-                watched == this->predictionPanel_)
+                watched == this->voiceMessagePanel_ ||
+                watched == this->pinnedBanner_ ||
+                watched == this->predictionBanner_ ||
+                watched == this->pollBanner_)
             {
                 this->updateMpsOverlayAnchor();
             }
@@ -1270,7 +2441,7 @@ void Split::explainSplitting()
 void Split::popup()
 {
     auto *app = getApp();
-    Window &window = app->getWindows()->createWindow(WindowType::Popup);
+    Window &window = app->getWindows()->createWindow(WindowType::Popup, {});
 
     auto *split = new Split(window.getNotebook().getOrAddSelectedPage());
 
@@ -1315,6 +2486,10 @@ void Split::openInBrowser()
     {
         QDesktopServices::openUrl("https://kick.com/" + kc->slug());
     }
+    else if (auto *yt = dynamic_cast<YouTubeChannel *>(channel.get()))
+    {
+        QDesktopServices::openUrl(yt->streamUrl());
+    }
 }
 
 void Split::openWhispersInBrowser()
@@ -1345,13 +2520,37 @@ void Split::openModViewInBrowser()
     }
 }
 
+void Split::openRewardQueue()
+{
+    auto channel = this->getSelectedChannel();
+
+    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
+    {
+        RewardQueueDialog::showDialog(twitchChannel, this);
+    }
+}
+
 void Split::openInStreamlink()
 {
     auto chan = this->getSelectedChannel();
     auto *kc = dynamic_cast<KickChannel *>(chan.get());
     if (kc)
     {
-        openStreamlinkForChannel(kc->slug(), u"kick.com/");
+        openStreamlinkForChannelOrUrl(kc->slug(), u"kick.com/");
+        return;
+    }
+    if (auto *yt = dynamic_cast<YouTubeChannel *>(chan.get()))
+    {
+        if (!yt->videoId().isEmpty())
+        {
+            openStreamlinkForChannel(yt->videoId(), u"youtube.com/watch?v=");
+        }
+        else
+        {
+            // streamUrl() is https://…; streamlink accepts a full URL as the
+            // "channel" when the prefix is empty.
+            openStreamlinkForChannel(yt->streamUrl(), u"");
+        }
         return;
     }
     this->openChannelInStreamlink(chan->getName());
@@ -1368,11 +2567,15 @@ void Split::openWithCustomScheme()
     {
         openInCustomPlayer(kc->slug(), u"https://kick.com/");
     }
+    else if (auto *yt = dynamic_cast<YouTubeChannel *>(channel))
+    {
+        openInCustomPlayer(yt->streamUrl(), u"");
+    }
 }
 
 void Split::openChatterList()
 {
-    auto channel = this->getSelectedChannel();
+    auto channel = this->getChannel();
     if (!channel)
     {
         qCWarning(chatterinoWidget)
@@ -1380,24 +2583,41 @@ void Split::openChatterList()
         return;
     }
 
-    auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get());
-    if (twitchChannel == nullptr)
+    if (!ChatterListWidget::supportsChannel(channel.get()))
     {
         qCWarning(chatterinoWidget)
-            << "Chatter list opened in a non-Twitch channel";
+            << "Chatter list opened without a supported channel";
         return;
+    }
+
+    for (auto *window : this->findChildren<ChatterListWidget *>())
+    {
+        if (window->channelName().compare(channel->getName(),
+                                          Qt::CaseInsensitive) == 0)
+        {
+            window->showNormal();
+            window->raise();
+            window->activateWindow();
+            return;
+        }
     }
 
     const auto chatterListWidth = static_cast<int>(this->width() * 0.5);
     const auto chatterListHeight =
-        this->height() - this->header_->height() - this->input_->height();
+        this->height() - this->header_->height() -
+        (this->input_ != nullptr ? this->input_->height() : 0);
 
-    auto *chatterDock = new ChatterListWidget(twitchChannel, this);
+    auto *chatterDock = new ChatterListWidget(std::move(channel), this);
 
-    QObject::connect(chatterDock, &ChatterListWidget::userClicked,
-                     [this](const QString &userLogin) {
-                         this->view_->showUserInfoPopup(
-                             userLogin, MessagePlatform::AnyOrTwitch);
+    QObject::connect(chatterDock, &ChatterListWidget::userClicked, this,
+                     [this](const QString &userLogin, MessagePlatform platform,
+                            const QString &channelName, const QString &) {
+                         if (platform == MessagePlatform::YouTube)
+                         {
+                             return;
+                         }
+                         this->view_->showUserInfoPopup(userLogin, platform,
+                                                        channelName);
                      });
 
     chatterDock->resize(chatterListWidth, chatterListHeight);
@@ -1450,18 +2670,28 @@ void Split::showSearch(bool singleChannel)
         return;
     }
 
-    // Pass every ChannelView for every Split across the app to the search popup
+    // Pass every ChannelView for every Split across the main window's tabs to
+    // the search popup.
     auto &notebook = getApp()->getWindows()->getMainWindow().getNotebook();
-    for (int i = 0; i < notebook.getPageCount(); ++i)
-    {
-        auto *container = dynamic_cast<SplitContainer *>(notebook.getPageAt(i));
-        for (auto *split : container->getSplits())
+    bool addedAnyChannel = false;
+    notebook.forEachSplit([&](Split *split) {
+        if (split == nullptr)
         {
-            if (split->channel_.getType() != Channel::Type::TwitchAutomod)
-            {
-                popup->addChannel(split->getChannelView());
-            }
+            return;
         }
+
+        if (split->channel_.getType() == Channel::Type::TwitchAutomod)
+        {
+            return;
+        }
+
+        popup->addChannel(split->getChannelView());
+        addedAnyChannel = true;
+    });
+
+    if (!addedAnyChannel)
+    {
+        popup->addChannel(this->getChannelView());
     }
 
     popup->show();
@@ -1528,9 +2758,81 @@ void Split::drag()
     stopDraggingSplit();
 }
 
-void Split::setInputReply(const MessagePtr &reply)
+void Split::setInputReply(const MessagePtr &reply,
+                          std::weak_ptr<Channel> channel)
 {
-    this->input_->setReply(reply);
+    this->input_->setReply(reply, std::move(channel));
+}
+
+SplitDescriptor Split::buildDescriptor() const
+{
+    SplitDescriptor descriptor;
+    descriptor.moderationMode_ = this->getModerationMode();
+    descriptor.filters_ = this->getFilters();
+    descriptor.spellCheckOverride = this->checkSpellingOverride();
+
+    auto chan = this->getIndirectChannel();
+    descriptor.type_ = qmagicenum::enumNameString(chan.getType());
+    switch (chan.getType())
+    {
+        case Channel::Type::Twitch:
+        case Channel::Type::Misc:
+        case Channel::Type::YouTube:
+            descriptor.channelName_ = chan.get()->getName();
+            break;
+
+        case Channel::Type::Kick: {
+            descriptor.channelName_ = chan.get()->getName();
+            auto *kc = dynamic_cast<KickChannel *>(chan.get().get());
+            if (kc)
+            {
+                descriptor.kickChannelID = kc->channelID();
+                descriptor.kickRoomID = kc->roomID();
+                descriptor.kickUserID = kc->userID();
+            }
+        }
+        break;
+
+        case Channel::Type::Multi: {
+            descriptor.channelName_ = chan.get()->getName();
+            auto *mc = dynamic_cast<MultiChannel *>(chan.get().get());
+            if (mc)
+            {
+                for (const auto &child : mc->channels())
+                {
+                    descriptor.children.emplace_back(child.descriptor());
+                }
+                descriptor.mcIndicator = mc->indicatorMode();
+                descriptor.mcIndex = mc->activeChannelIndex();
+                descriptor.mcTintByPlatform = mc->tintByPlatform();
+                descriptor.mcShowTwitchOverlays = mc->showTwitchOverlays();
+                descriptor.mcCombinedViewerCount = mc->combinedViewerCount();
+            }
+        }
+        break;
+
+        case Channel::Type::TwitchWhispers:
+        case Channel::Type::TwitchWatching:
+        case Channel::Type::TwitchMentions:
+        case Channel::Type::TwitchLive:
+        case Channel::Type::TwitchAutomod:
+
+        // FIXME: Remove these (#5703)
+        case Channel::Type::None:
+        case Channel::Type::Direct:
+        case Channel::Type::TwitchEnd:
+            break;
+    }
+
+    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(chan.get().get()))
+    {
+        descriptor.anonymous_ = twitchChannel->isAnonymous();
+    }
+    descriptor.perSplitHidePinnedMessage_ = this->perSplitHidePinnedMessage_;
+    descriptor.perSplitHidePrediction_ = this->perSplitHidePrediction_;
+    descriptor.perSplitHidePoll_ = this->perSplitHidePoll_;
+
+    return descriptor;
 }
 
 void Split::unpause()

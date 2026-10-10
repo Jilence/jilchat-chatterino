@@ -9,11 +9,14 @@
 #include "widgets/splits/SplitContainer.hpp"
 
 #include <pajlada/settings/settinglistener.hpp>
+#include <QJsonArray>
 #include <QObject>
 #include <QPoint>
+#include <QSet>
 #include <QTimer>
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <span>
 
@@ -26,14 +29,23 @@ class Window;
 class ChannelView;
 class IndirectChannel;
 class Split;
+
 struct SplitDescriptor;
+struct SplitNodeDescriptor;
+struct ContainerNodeDescriptor;
+using NodeDescriptor =
+    std::variant<ContainerNodeDescriptor, SplitNodeDescriptor>;
+
 class Channel;
 using ChannelPtr = std::shared_ptr<Channel>;
 struct Message;
 using MessagePtr = std::shared_ptr<const Message>;
+class MessageLayout;
+class MessageLayoutElement;
 class WindowLayout;
 class Theme;
 class Fonts;
+class TrayController;
 
 enum class MessageElementFlag : int64_t;
 using MessageElementFlags = FlagsEnum<MessageElementFlag>;
@@ -63,62 +75,58 @@ public:
 
     static void encodeTab(SplitContainer *tab, bool isSelected,
                           QJsonObject &obj);
-    static void encodeChannel(IndirectChannel channel, QJsonObject &obj);
-    static void encodeFilters(Split *split, QJsonArray &arr);
-    static IndirectChannel decodeChannel(const SplitDescriptor &descriptor);
 
     void showSettingsDialog(
         QWidget *parent,
         SettingsDialogPreference preference = SettingsDialogPreference());
 
-    // Show the account selector widget at point
     void showAccountSelectPopup(QPoint point);
 
-    // Tell a channel (or all channels if channel is nullptr) to redo their
-    // layout
     void layoutChannelViews(Channel *channel = nullptr);
 
-    // Force all channel views to redo their layout
-    // This is called, for example, when the emote scale or timestamp format has
-    // changed
     void forceLayoutChannelViews();
 
-    // Tell a channel (or all channels if channel is nullptr) to invalidate all paint buffers
     void invalidateChannelViewBuffers(Channel *channel = nullptr);
+
+    /// Tells listeners that a badge provider updated its data. Pass the user
+    /// whose badges changed, or leave it empty when a provider reloaded its
+    /// whole list. Safe to call from any thread and while holding a
+    /// provider's lock: badgesUpdated is always queued on the GUI thread.
+    static void notifyBadgesUpdated(const QString &userID = {});
 
     void repaintVisibleChatWidgets(Channel *channel = nullptr);
     void repaintGifEmotes();
 
     Window &getMainWindow();
 
-    // Returns a pointer to the last selected window.
-    // Edge cases:
-    //  - If the application was not focused since the start, this will return a pointer to the main window.
-    //  - If the window was closed this points to the main window.
-    //  - If the window was unfocused since being selected, this function will still return it.
     Window *getLastSelectedWindow() const;
 
-    Window &createWindow(WindowType type, bool show = true,
-                         QWidget *parent = nullptr);
+    struct CreateWindowArgs {
+        bool show = true;
+        QWidget *parent = nullptr;
+        std::optional<size_t> popupID;
+    };
 
-    // Use this method if you want to open a "new" channel in a popup. If you want to popup an
-    // existing Split or SplitContainer, consider using Split::popup() or SplitContainer::popup().
+    Window &createWindow(WindowType type, const CreateWindowArgs &args);
+
+    std::span<Window *const> windows() const;
+
     Window &openInPopup(ChannelPtr channel);
 
     void select(Split *split);
     void select(SplitContainer *container);
-    /**
-     * Scrolls to the message in a split that's not
-     * a mentions view and focuses the split.
-     *
-     * @param message Message to scroll to.
-     */
+
     void scrollToMessage(const MessagePtr &message);
+    void openChannelOrMessageFromTray(const QString &channelName,
+                                      const QString &messageId);
+    void showMainWindow();
+    bool hideMainWindowToTray();
+    void notifyTrayHighlight(const Channel *channel, const MessagePtr &message,
+                             bool playSound);
 
     QRect emotePopupBounds() const;
     void setEmotePopupBounds(QRect bounds);
 
-    // Set up some final signals & actually show the windows
     void initialize();
     void save();
     void closeAll();
@@ -129,32 +137,24 @@ public:
     MessageElementFlags getWordFlags();
     void updateWordTypeMask();
 
-    // Sends an alert to the main window
-    // It reads the `longAlert` setting to decide whether the alert will expire
-    // or not
     void sendAlert();
 
-    // Queue up a save in the next 10 seconds
-    // If a save was already queued up, we reset the to happen in 10 seconds
-    // again
     void queueSave();
 
-    /// Toggles the inertia in all open overlay windows
     void toggleAllOverlayInertia();
 
     std::set<QString> getVisibleChannelNames() const;
+    QJsonArray getOpenTabSnapshot() const;
 
-    std::span<Window *const> windows() const;
-
-    /// Signals
     pajlada::Signals::NoArgSignal gifRepaintRequested;
 
-    // This signal fires whenever views rendering a channel, or all views if the
-    // channel is a nullptr, need to redo their layout
     pajlada::Signals::Signal<Channel *> layoutRequested;
-    // This signal fires whenever views rendering a channel, or all views if the
-    // channel is a nullptr, need to invalidate their paint buffers
+
     pajlada::Signals::Signal<Channel *> invalidateBuffersRequested;
+
+    /// Fired on the GUI thread after a badge provider updated its data. The
+    /// argument is the affected user ID, or empty for "any user".
+    pajlada::Signals::Signal<QString> badgesUpdated;
 
     pajlada::Signals::NoArgSignal wordFlagsChanged;
 
@@ -162,15 +162,21 @@ public:
     pajlada::Signals::Signal<SplitContainer *> selectSplitContainer;
     pajlada::Signals::Signal<const MessagePtr &> scrollToMessageSignal;
 
+    /// This is invoked when a context menu for a message is requested in any
+    /// ChannelView. It's primarily used by plugins to add items.
+    pajlada::Signals::Signal<const ChannelView &, const MessageLayout &,
+                             const MessageLayoutElement *, QMenu &>
+        channelViewContextMenuRequested;
+
 private:
-    static void encodeNodeRecursively(SplitContainer::Node *node,
-                                      QJsonObject &obj);
-
     // Load window layout from the window-layout.json file
-    WindowLayout loadWindowLayoutFromFile() const;
+    ExpectedStr<WindowLayout> loadWindowLayoutFromFile() const;
 
-    // Apply a window layout for this window manager.
     void applyWindowLayout(const WindowLayout &layout);
+
+    size_t takePopupID(std::optional<size_t> preferred);
+    void closePopup(size_t id);
+    void refreshNextPopupID();
 
     // Contains the full path to the window layout file, e.g. /home/pajlada/.local/share/Chatterino/Settings/window-layout.json
     const QString windowLayoutFilePath;
@@ -182,8 +188,16 @@ private:
     std::atomic<int> generation_{0};
 
     std::vector<Window *> windows_;
+    std::vector<Window *> trayHiddenWindows_;
+
+    /// ID to be used for the next popup.
+    size_t nextPopupID = 1;
+    QSet<size_t> usedPopupIDs;
 
     std::unique_ptr<FramelessEmbedWindow> framelessEmbedWindow_;
+#ifndef Q_OS_MACOS
+    std::unique_ptr<TrayController> trayController_;
+#endif
     Window *mainWindow_{};
     Window *selectedWindow_{};
 
@@ -199,7 +213,7 @@ private:
     SignalListener invalidateChannelViewBuffersListener;
     SignalListener repaintVisibleChatWidgetsListener;
 
-    friend class Window;  // this is for selectedWindow_
+    friend class Window;
 };
 
 }  // namespace chatterino

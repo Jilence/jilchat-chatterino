@@ -26,6 +26,12 @@ struct ClearChatMessage {
     std::optional<QString> username;
 };
 
+struct AddMessageArgs {
+    bool isSub = false;
+    bool isAction = false;
+    bool isSpecial = false;
+};
+
 class IrcMessageHandler
 {
     IrcMessageHandler() = default;
@@ -33,10 +39,6 @@ class IrcMessageHandler
 public:
     static IrcMessageHandler &instance();
 
-    /**
-     * Parse an IRC message into 0 or more Chatterino messages
-     * Takes previously loaded messages into consideration to add reply contexts
-     **/
     static void parseMessageInto(Communi::IrcMessage *message,
                                  MessageSink &sink, TwitchChannel *channel);
 
@@ -64,8 +66,7 @@ public:
 
     static void addMessage(Communi::IrcMessage *message, MessageSink &sink,
                            TwitchChannel *chan, const QString &originalContent,
-                           ITwitchIrcServer &twitch, bool isSub, bool isAction,
-                           const QString &msgType = "");
+                           ITwitchIrcServer &twitch, AddMessageArgs addArgs);
 
 private:
     static float similarity(const MessagePtr &msg,

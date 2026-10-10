@@ -44,31 +44,6 @@ AccountsPage::AccountsPage()
     });
 
     view->getTableView()->setStyleSheet("background: #333");
-
-    //    auto buttons = layout.emplace<QDialogButtonBox>();
-    //    {
-    //        this->addButton = buttons->addButton("Add",
-    //        QDialogButtonBox::YesRole); this->removeButton =
-    //        buttons->addButton("Remove", QDialogButtonBox::NoRole);
-    //    }
-
-    //    layout.emplace<AccountSwitchWidget>(this).assign(&this->accSwitchWidget);
-
-    // ----
-    //    QObject::connect(this->addButton, &QPushButton::clicked, []() {
-    //        static auto loginWidget = new LoginWidget();
-    //        loginWidget->show();
-    //    });
-
-    //    QObject::connect(this->removeButton, &QPushButton::clicked, [this] {
-    //        auto selectedUser = this->accSwitchWidget->currentItem()->text();
-    //        if (selectedUser == ANONYMOUS_USERNAME_LABEL) {
-    //            // Do nothing
-    //            return;
-    //        }
-
-    //        getApp()->getAccounts()->Twitch.removeUser(selectedUser);
-    //    });
 }
 
 }  // namespace chatterino

@@ -95,9 +95,11 @@ sol::table toTable(lua_State *L, const CompletionEvent &ev);
  * @includefile controllers/plugins/api/Accounts.hpp
  * @includefile controllers/plugins/api/ChannelRef.hpp
  * @includefile controllers/plugins/api/ConnectionHandle.hpp
+ * @includefile controllers/plugins/api/DateTime.hpp
  * @includefile controllers/plugins/api/HTTPResponse.hpp
  * @includefile controllers/plugins/api/HTTPRequest.hpp
  * @includefile controllers/plugins/api/Images.hpp
+ * @includefile controllers/plugins/api/Menu.hpp
  * @includefile controllers/plugins/api/Message.hpp
  * @includefile controllers/plugins/api/WebSocket.hpp
  * @includefile controllers/plugins/api/WindowManager.hpp
@@ -152,8 +154,6 @@ void package_loadlib(sol::variadic_args args);
 int searcherAbsolute(lua_State *L);
 int searcherRelative(lua_State *L);
 
-// This is a fat pointer that allows us to type check values given to functions needing a userdata.
-// Ensure ALL userdata given to Lua are a subclass of this! Otherwise we garbage as a pointer!
 struct UserData {
     enum class Type {
         Channel,
@@ -203,13 +203,11 @@ struct WeakPtrUserData : public UserData {
     static int destroy(lua_State *L)
     {
         auto self = WeakPtrUserData<T, U>::from(lua_touserdata(L, -1));
-        // Note it is safe to only check the weakness of the pointer, as
-        // std::weak_ptr seems to have identical representation regardless of
-        // what it points to
+
         assert(self->isWeak);
 
         self->target.reset();
-        lua_pop(L, 1);  // Lua deallocates the memory for full user data
+        lua_pop(L, 1);
         return 0;
     }
 };
@@ -254,13 +252,11 @@ struct SharedPtrUserData : public UserData {
     static int destroy(lua_State *L)
     {
         auto self = SharedPtrUserData<T, U>::from(lua_touserdata(L, -1));
-        // Note it is safe to only check the weakness of the pointer, as
-        // std::shared_ptr seems to have identical representation regardless of
-        // what it points to
+
         assert(!self->isWeak);
 
         self->target.reset();
-        lua_pop(L, 1);  // Lua deallocates the memory for full user data
+        lua_pop(L, 1);
         return 0;
     }
 };

@@ -9,7 +9,7 @@
 
 namespace {
 
-using namespace Qt::Literals;
+using namespace Qt::Literals::StringLiterals;
 using namespace chatterino;
 
 template <typename Fn>
@@ -36,12 +36,11 @@ void withUser(KickChannel *channel, const QString &userSpec,
         return;
     }
 
-    // otherwise resolve the user
-    getKickApi()->getChannelByName(
+    KickApi::privateChannelInfo(
         userSpec,
         [weakChan = channel->weakFromThis(), onAction = std::move(onAction),
          userSpec, fn, ... args = std::forward<decltype(args)>(args)](
-            const auto &res) mutable {
+            const ExpectedStr<KickPrivateChannelInfo> &res) mutable {
             auto chan = weakChan.lock();
             if (!chan)
             {
@@ -53,7 +52,7 @@ void withUser(KickChannel *channel, const QString &userSpec,
                                        u": " % res.error());
                 return;
             }
-            (getKickApi()->*fn)(chan->userID(), res->userID,
+            (getKickApi()->*fn)(chan->userID(), res->user.userID,
                                 std::forward<decltype(args)>(args)...,
                                 std::move(onAction));
         });

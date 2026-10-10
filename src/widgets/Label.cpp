@@ -88,13 +88,29 @@ void Label::setShouldElide(bool shouldElide)
     this->update();
 }
 
+void Label::setElideSuffix(const QString &suffix)
+{
+    if (this->elideSuffix_ == suffix)
+    {
+        return;
+    }
+    this->elideSuffix_ = suffix;
+    if (this->shouldElide_)
+    {
+        this->updateElidedText(this->getFontMetrics(),
+                               this->textRect().width());
+    }
+    this->updateSize();
+    this->update();
+}
+
 void Label::setFontStyle(FontStyle style)
 {
     this->fontStyle_ = style;
     this->updateSize();
 }
 
-void Label::scaleChangedEvent(float /*scale*/)
+void Label::scaleChangedEvent(float)
 {
     this->updateSize();
 }
@@ -109,7 +125,7 @@ QSize Label::minimumSizeHint() const
     return this->minimumSizeHint_;
 }
 
-void Label::paintEvent(QPaintEvent * /*event*/)
+void Label::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
 
@@ -118,7 +134,6 @@ void Label::paintEvent(QPaintEvent * /*event*/)
     painter.setFont(
         getApp()->getFonts()->getFont(this->getFontStyle(), this->scale()));
 
-    // draw text
     QRectF textRect = this->textRect();
 
     auto text = [this] {
@@ -188,7 +203,17 @@ void Label::updateSize()
     {
         this->updateElidedText(metrics, this->textRect().width());
         this->sizeHint_ = QSizeF(-1, height).toSize();
-        this->minimumSizeHint_ = this->sizeHint_;
+        if (this->elideSuffix_.isEmpty())
+        {
+            this->minimumSizeHint_ = this->sizeHint_;
+        }
+        else
+        {
+            auto minWidth = metrics.horizontalAdvance(this->elideSuffix_) +
+                            this->currentPadding_.left() +
+                            this->currentPadding_.right();
+            this->minimumSizeHint_ = QSizeF(minWidth, height).toSize();
+        }
     }
     else
     {
@@ -205,8 +230,20 @@ void Label::updateSize()
 bool Label::updateElidedText(const QFontMetricsF &fontMetrics, qreal width)
 {
     assert(this->shouldElide_ == true);
-    auto elidedText = fontMetrics.elidedText(
-        this->text_, Qt::TextElideMode::ElideRight, width);
+    QString elidedText;
+    if (this->elideSuffix_.isEmpty())
+    {
+        elidedText = fontMetrics.elidedText(
+            this->text_, Qt::TextElideMode::ElideRight, width);
+    }
+    else
+    {
+        auto suffixWidth = fontMetrics.horizontalAdvance(this->elideSuffix_);
+        elidedText =
+            fontMetrics.elidedText(this->text_, Qt::TextElideMode::ElideRight,
+                                   qMax(qreal(0), width - suffixWidth)) +
+            this->elideSuffix_;
+    }
 
     if (elidedText != this->elidedText_)
     {

@@ -7,6 +7,7 @@
 #include "widgets/BaseWindow.hpp"
 
 #include <pajlada/signals/signal.hpp>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFocusEvent>
 #include <QLabel>
@@ -74,6 +75,7 @@ private:
         detail::AutoCheckedRadioButton *channel;
         QLabel *channelLabel;
         QLineEdit *channelName;
+        QCheckBox *channelAnonymous;
 
         detail::AutoCheckedRadioButton *whispers;
         QLabel *whispersLabel;
@@ -92,12 +94,18 @@ private:
 
         QLineEdit *kickName;
 
+        QLineEdit *youtubeName;
+
         QListWidget *multiView;
         QComboBox *multiIndicatorMode;
+        QCheckBox *multiTintByPlatform;
+        QCheckBox *multiShowTwitchOverlays;
+        QCheckBox *multiCombinedViewerCount;
 
         MicroNotebook *notebook;
         QWidget *twitchPage;
         QWidget *kickPage;
+        QWidget *youtubePage;
         QWidget *multiPage;
     } ui_{};
 

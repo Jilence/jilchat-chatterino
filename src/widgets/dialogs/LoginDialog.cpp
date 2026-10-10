@@ -13,6 +13,7 @@
 #include "singletons/Settings.hpp"
 #include "util/Clipboard.hpp"
 #include "util/Helpers.hpp"
+#include "widgets/dialogs/MoltorinoAuthPage.hpp"
 
 #ifdef USEWINSDK
 #    include <Windows.h>
@@ -85,7 +86,7 @@ BasicLoginWidget::BasicLoginWidget()
     this->ui_.loginButton.setText("Log in (Opens in browser)");
     this->ui_.pasteCodeButton.setText("Paste login info");
     this->ui_.unableToOpenBrowserHelper.setWindowTitle(
-        "Chatterino - unable to open in browser");
+        "Leafyrino - unable to open in browser");
     this->ui_.unableToOpenBrowserHelper.setWordWrap(true);
     this->ui_.unableToOpenBrowserHelper.hide();
     this->ui_.unableToOpenBrowserHelper.setText(
@@ -96,9 +97,8 @@ BasicLoginWidget::BasicLoginWidget()
     this->ui_.unableToOpenBrowserHelper.setOpenExternalLinks(true);
 
     this->ui_.channelPointsHint.setText(
-        "The Twitch (Device) tab is a newer sign in option that enables "
-        "channel points features and pinned messages. The usual login "
-        "below is enough for chat.");
+        "The Moltorino tab enables channel points, pinned messages, and "
+        "other mod features. The usual login below is enough for chat.");
     this->ui_.channelPointsHint.setWordWrap(true);
     this->ui_.channelPointsHint.setAlignment(Qt::AlignLeft | Qt::AlignTop);
     this->ui_.layout.addWidget(&this->ui_.channelPointsHint);
@@ -127,7 +127,6 @@ BasicLoginWidget::BasicLoginWidget()
         QStringList parameters = getClipboardText().split(";");
         QString oauthToken, clientID, username, userID;
 
-        // Removing clipboard content to prevent accidental paste of credentials into somewhere
         crossPlatformCopy("");
 
         for (const auto &param : parameters)
@@ -186,7 +185,6 @@ AdvancedLoginWidget::AdvancedLoginWidget()
 
     this->refreshButtons();
 
-    /// Form
     this->ui_.formLayout.addRow("Username", &this->ui_.usernameInput);
     this->ui_.formLayout.addRow("User ID", &this->ui_.userIDInput);
     this->ui_.formLayout.addRow("Client ID", &this->ui_.clientIDInput);
@@ -206,8 +204,6 @@ AdvancedLoginWidget::AdvancedLoginWidget()
     connect(&this->ui_.oauthTokenInput, &QLineEdit::textChanged, [this]() {
         this->refreshButtons();
     });
-
-    /// Upper button row
 
     this->ui_.buttonUpperRow.addUserButton.setText("Add user");
     this->ui_.buttonUpperRow.clearFieldsButton.setText("Clear fields");
@@ -265,11 +261,10 @@ LoginDialog::LoginDialog(QWidget *parent)
     this->setLayout(&this->ui_.mainLayout);
     this->ui_.mainLayout.addWidget(&this->ui_.tabWidget);
 
-    this->ui_.tabWidget.addTab(&this->ui_.twitchDevice, "Twitch (Device)");
     this->ui_.tabWidget.addTab(&this->ui_.basic, "Basic");
+    this->ui_.tabWidget.addTab(createMoltorinoAuthLoginPage(this), "Moltorino");
     this->ui_.tabWidget.addTab(&this->ui_.advanced, "Advanced");
     this->ui_.tabWidget.addTab(&this->ui_.kick, "Kick");
-    this->ui_.tabWidget.setCurrentIndex(0);
 
     this->ui_.buttonBox.setStandardButtons(QDialogButtonBox::Close);
 

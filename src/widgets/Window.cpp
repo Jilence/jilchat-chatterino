@@ -1,13 +1,8 @@
-// SPDX-FileCopyrightText: 2016 Contributors to Chatterino <https://chatterino.com>
-//
-// SPDX-License-Identifier: MIT
-
 #include "widgets/Window.hpp"
 
 #include "Application.hpp"
 #include "common/Args.hpp"
 #include "common/Common.hpp"
-#include "common/Credentials.hpp"
 #include "common/Modes.hpp"
 #include "common/QLogging.hpp"
 #include "common/Version.hpp"
@@ -23,7 +18,7 @@
 #include "singletons/WindowManager.hpp"
 #include "util/RapidJsonSerializeQSize.hpp"
 #include "widgets/AccountSwitchPopup.hpp"
-#include "widgets/buttons/InitUpdateButton.hpp"
+// #include "widgets/buttons/InitMoltorinoUpdateButton.hpp"
 #include "widgets/buttons/LabelButton.hpp"
 #include "widgets/buttons/PixmapButton.hpp"
 #include "widgets/buttons/TitlebarButton.hpp"
@@ -46,6 +41,7 @@
 #endif
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QDesktopServices>
 #include <QHeaderView>
 #include <QMenuBar>
@@ -92,7 +88,6 @@ Window::Window(WindowType type, QWidget *parent)
         auto lastPopup = getSettings()->lastPopupSize.getValue();
         if (lastPopup.isEmpty())
         {
-            // The size in the setting was invalid, use the default value
             lastPopup = getSettings()->lastPopupSize.getDefaultValue();
         }
         this->resize(lastPopup.width(), lastPopup.height());
@@ -121,6 +116,16 @@ WindowType Window::getType()
 SplitNotebook &Window::getNotebook()
 {
     return *this->notebook_;
+}
+
+void Window::setPopupID(size_t id)
+{
+    this->popupID_ = id;
+}
+
+std::optional<size_t> Window::popupID() const
+{
+    return this->popupID_;
 }
 
 bool Window::event(QEvent *event)
@@ -155,7 +160,7 @@ bool Window::event(QEvent *event)
     return BaseWindow::event(event);
 }
 
-void Window::closeEvent(QCloseEvent *)
+void Window::closeEvent(QCloseEvent *event)
 {
     if (isAppAboutToQuit())
     {
@@ -165,6 +170,13 @@ void Window::closeEvent(QCloseEvent *)
     }
 
     auto *app = getApp();
+
+    if (this->type_ == WindowType::Main &&
+        app->getWindows()->hideMainWindowToTray())
+    {
+        event->ignore();
+        return;
+    }
 
     if (this->type_ == WindowType::Main)
     {
@@ -177,9 +189,7 @@ void Window::closeEvent(QCloseEvent *)
         QSize newSize(rect.width(), rect.height());
         getSettings()->lastPopupSize.setValue(newSize);
     }
-    // Ensure selectedWindow_ is never an invalid pointer.
-    // WindowManager will return the main window if no window is pointed to by
-    // `selectedWindow_`.
+
     app->getWindows()->selectedWindow_ = nullptr;
 
     this->closed.invoke();
@@ -197,7 +207,6 @@ void Window::addLayout()
     layout->addWidget(this->notebook_);
     this->getLayoutContainer()->setLayout(layout);
 
-    // set margin
     layout->setContentsMargins(0, 0, 0, 0);
 
     this->notebook_->setAllowUserTabManagement(true);
@@ -215,19 +224,16 @@ void Window::addCustomTitlebarButtons()
         return;
     }
 
-    // settings
     this->addTitleBarButton<TitleBarButton>(
         [this] {
             getApp()->getWindows()->showSettingsDialog(this);
         },
         TitleBarButtonStyle::Settings);
 
-    // updates
-    auto *update = this->addTitleBarButton<PixmapButton>([] {});
+    // auto *update = this->addTitleBarButton<PixmapButton>([] {});
+    //
+    // initMoltorinoUpdateButton(*update, [] {}, this->signalHolder_);
 
-    initUpdateButton(*update, [] {}, this->signalHolder_);
-
-    // account
     this->userLabel_ = this->addTitleBarLabel([this] {
         getApp()->getWindows()->showAccountSelectPopup(
             this->userLabel_->mapToGlobal(
@@ -235,7 +241,6 @@ void Window::addCustomTitlebarButtons()
     });
     this->userLabel_->setMinimumWidth(20 * this->scale());
 
-    // streamer mode
     this->streamerModeTitlebarIcon_ =
         this->addTitleBarButton<PixmapButton>([this] {
             getApp()->getWindows()->showSettingsDialog(
@@ -244,15 +249,11 @@ void Window::addCustomTitlebarButtons()
     QObject::connect(getApp()->getStreamerMode(), &IStreamerMode::changed, this,
                      &Window::updateStreamerModeIcon);
 
-    // Update initial state
     this->updateStreamerModeIcon();
 }
 
 void Window::updateStreamerModeIcon()
 {
-    // A duplicate of this code is in SplitNotebook class (in Notebook.{c,h}pp)
-    // That one is the one near splits (on linux and mac or non-main windows on Windows)
-    // This copy handles the TitleBar icon in Window (main window on Windows)
     if (this->streamerModeTitlebarIcon_ == nullptr)
     {
         return;
@@ -272,9 +273,10 @@ void Window::updateStreamerModeIcon()
     this->streamerModeTitlebarIcon_->setVisible(
         getApp()->getStreamerMode()->isEnabled());
 #else
-    // clang-format off
-    assert(false && "Streamer mode TitleBar icon should not exist on non-Windows OSes");
-    // clang-format on
+
+    assert(false &&
+           "Streamer mode TitleBar icon should not exist on non-Windows OSes");
+
 #endif
 }
 
@@ -363,22 +365,22 @@ void Window::addDebugStuff(HotkeyController::HotkeyMap &actions)
 void Window::addShortcuts()
 {
     HotkeyController::HotkeyMap actions{
-        {"openSettings",  // Open settings
+        {"openSettings",
          [this](std::vector<QString>) -> QString {
              SettingsDialog::showDialog(this);
              return "";
          }},
-        {"openAccountSelector",  // Open account selector
+        {"openAccountSelector",
          [](const std::vector<QString> &) -> QString {
              getApp()->getWindows()->showAccountSelectPopup({0, 0});
              return "";
          }},
-        {"newSplit",  // Create a new split
+        {"newSplit",
          [this](std::vector<QString>) -> QString {
              this->notebook_->getOrAddSelectedPage()->appendNewSplit(true);
              return "";
          }},
-        {"openTab",  // CTRL + 1-8 to open corresponding tab.
+        {"openTab",
          [this](std::vector<QString> arguments) -> QString {
              if (arguments.size() == 0)
              {
@@ -421,6 +423,16 @@ void Window::addShortcuts()
                          .arg(target);
                  }
              }
+             return "";
+         }},
+        {"selectTabHistoryBack",
+         [this](const std::vector<QString> &) -> QString {
+             this->notebook_->selectHistoryBack(true);
+             return "";
+         }},
+        {"selectTabHistoryForward",
+         [this](const std::vector<QString> &) -> QString {
+             this->notebook_->selectHistoryForward(true);
              return "";
          }},
         {"popup",
@@ -562,8 +574,7 @@ void Window::addShortcuts()
                         "or \"previous\")";
              }
              int newIndex = -1;
-             bool indexIsGenerated =
-                 false;  // indicates if `newIndex` was generated using target="next" or target="previous"
+             bool indexIsGenerated = false;
 
              auto target = arguments.at(0);
              qCDebug(chatterinoHotkeys) << target;
@@ -596,7 +607,7 @@ void Window::addShortcuts()
              {
                  if (indexIsGenerated)
                  {
-                     return "";  // don't error out on generated indexes, ie move tab right
+                     return "";
                  }
                  qCWarning(chatterinoHotkeys)
                      << "Invalid index for moveTab shortcut:" << newIndex;
@@ -693,7 +704,6 @@ void Window::addShortcuts()
              }
              else if (arg == "toggleLiveOnly")
              {
-                 // NOOP: Removed 2024-08-04 https://github.com/Chatterino/chatterino2/pull/5530
                  return "toggleLiveOnly is no longer a valid argument for "
                         "setTabVisibility";
              }
@@ -722,10 +732,8 @@ void Window::addMenuBar()
     QMenuBar *mainMenu = new QMenuBar();
     mainMenu->setNativeMenuBar(true);
 
-    // First menu.
     QMenu *menu = mainMenu->addMenu(QString());
 
-    // About button that shows the About tab in the Settings Dialog.
     QAction *about = menu->addAction(QString());
     about->setMenuRole(QAction::AboutRole);
     connect(about, &QAction::triggered, this, [this] {
@@ -738,10 +746,8 @@ void Window::addMenuBar()
         SettingsDialog::showDialog(this);
     });
 
-    // Window menu.
     QMenu *windowMenu = mainMenu->addMenu(QString("Window"));
 
-    // Window->Minimize item
     QAction *minimizeWindow = windowMenu->addAction(QString("Minimize"));
     minimizeWindow->setShortcuts({QKeySequence("Meta+M")});
     connect(minimizeWindow, &QAction::triggered, this, [this] {
@@ -760,22 +766,18 @@ void Window::addMenuBar()
         this->notebook_->selectPreviousTab();
     });
 
-    // Help menu.
     QMenu *helpMenu = mainMenu->addMenu(QString("Help"));
 
-    // Help->Chatterino Wiki item
     QAction *helpWiki = helpMenu->addAction(QString("Chatterino Wiki"));
     connect(helpWiki, &QAction::triggered, this, []() {
         QDesktopServices::openUrl(QUrl(LINK_CHATTERINO_WIKI.toString()));
     });
 
-    // Help->Chatterino Github
     QAction *helpGithub = helpMenu->addAction(QString("Chatterino GitHub"));
     connect(helpGithub, &QAction::triggered, this, []() {
         QDesktopServices::openUrl(QUrl(LINK_CHATTERINO_SOURCE.toString()));
     });
 
-    // Help->Chatterino Discord
     QAction *helpDiscord = helpMenu->addAction(QString("Chatterino Discord"));
     connect(helpDiscord, &QAction::triggered, this, []() {
         QDesktopServices::openUrl(QUrl(LINK_CHATTERINO_DISCORD.toString()));
@@ -786,7 +788,6 @@ void Window::onAccountSelected()
 {
     auto user = getApp()->getAccounts()->twitch.getCurrent();
 
-    // update title (also append username on Linux and MacOS)
     QString windowTitle = Version::instance().fullVersion();
 
 #if defined(Q_OS_LINUX) || defined(Q_OS_MACOS)
@@ -807,7 +808,6 @@ void Window::onAccountSelected()
 
     this->setWindowTitle(windowTitle);
 
-    // update user
     if (this->userLabel_)
     {
         if (user->isAnon())

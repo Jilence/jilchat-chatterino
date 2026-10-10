@@ -94,7 +94,6 @@ public:
     SpinBox(QWidget *parent = nullptr)
         : QSpinBox(parent)
     {
-        // QAbstractSpinBox defaults to Qt::WheelFocus
         this->setFocusPolicy(Qt::StrongFocus);
     }
 
@@ -122,12 +121,9 @@ public:
 
     void addWidget(QWidget *widget, const QStringList &keywords = {});
 
-    /// Register the widget with the given keywords.
-    /// This assumes that the widget is being held by a layout that has been added previously
     void registerWidget(QWidget *widget, const QStringList &keywords,
                         QWidget *parentElement);
 
-    /// Pushes the widget into the current layout
     void pushWidget(QWidget *widget);
 
     void addLayout(QLayout *layout);
@@ -173,7 +169,6 @@ public:
 
         if (selected.which() == 1)
         {
-            // QString
             if (!editable && !items2.contains(boost::get<QString>(selected)))
             {
                 items2.insert(0, boost::get<QString>(selected));
@@ -188,7 +183,6 @@ public:
 
         if (selected.which() == 0)
         {
-            // int
             auto value = boost::get<int>(selected);
             if (value >= 0 && value < items2.size())
             {
@@ -197,7 +191,6 @@ public:
         }
         else if (selected.which() == 1)
         {
-            // QString
             combo->setEditText(boost::get<QString>(selected));
         }
 
@@ -257,12 +250,9 @@ private:
     void addToolTip(QWidget &widget, QString text) const;
 
     struct Widget {
-        /// The element of the register widget
-        /// This can point to the label of the widget, or the action widget (e.g. the spinbox)
         QWidget *element{};
         QStringList keywords;
 
-        /// The optional parent element of the widget (usually pointing at a SettingWidget)
         QWidget *parentElement{};
     };
 

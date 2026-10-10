@@ -11,6 +11,7 @@
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
+#include "util/Twitch.hpp"
 
 namespace {
 
@@ -21,7 +22,6 @@ void addSuspiciousTreatment(const CommandContext &ctx, const QString &command,
 {
     if (ctx.twitchChannel == nullptr)
     {
-        // This action must be performed with a twitch channel as a context
         const QString error =
             "The " % command % " command only works in Twitch channels";
         if (ctx.channel != nullptr)
@@ -51,13 +51,15 @@ void addSuspiciousTreatment(const CommandContext &ctx, const QString &command,
 
     auto roomId = ctx.twitchChannel->roomId();
     auto modId = currentUser->getUserId();
+    auto target = ctx.words.at(1);
+    stripChannelName(target);
     getHelix()->getUserByName(
-        ctx.words.at(1),
+        target,
         [chan{ctx.channel}, roomId, modId, command, restrict](const auto &u) {
             getHelix()->addSuspiciousUser(
                 roomId, modId, u.id, restrict,
                 [] {
-                    // treatment notification is handled by eventsub
+
                 },
                 [chan, command](const auto &err) {
                     chan->addSystemMessage("Failed to " % command % " user - " %
@@ -74,7 +76,6 @@ void removeSuspiciousTreatment(const CommandContext &ctx,
 {
     if (ctx.twitchChannel == nullptr)
     {
-        // This action must be performed with a twitch channel as a context
         const QString error =
             "The " % command % " command only works in Twitch channels";
         if (ctx.channel != nullptr)
@@ -104,13 +105,15 @@ void removeSuspiciousTreatment(const CommandContext &ctx,
 
     auto roomId = ctx.twitchChannel->roomId();
     auto modId = currentUser->getUserId();
+    auto target = ctx.words.at(1);
+    stripChannelName(target);
     getHelix()->getUserByName(
-        ctx.words.at(1),
+        target,
         [chan{ctx.channel}, roomId, modId, command](const auto &user) {
             getHelix()->removeSuspiciousUser(
                 roomId, modId, user.id,
                 [] {
-                    // treatment notification is handled by eventsub
+
                 },
                 [chan, command](const auto &err) {
                     chan->addSystemMessage("Failed to " % command % " user - " %

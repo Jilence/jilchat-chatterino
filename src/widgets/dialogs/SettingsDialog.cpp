@@ -24,16 +24,20 @@
 #include "widgets/settingspages/KeyboardSettingsPage.hpp"
 #include "widgets/settingspages/LeafyrinoPage.hpp"
 #include "widgets/settingspages/ModerationPage.hpp"
+#include "widgets/settingspages/MoltorinoPage.hpp"
 #include "widgets/settingspages/NicknamesPage.hpp"
 #include "widgets/settingspages/NotificationPage.hpp"
 #include "widgets/settingspages/PluginsPage.hpp"
+#include "widgets/settingspages/SettingsProfilePage.hpp"
 #include "widgets/settingspages/TechnorinoPage.hpp"
 
 #include <QDateTime>
 #include <QDebug>
 #include <QDialogButtonBox>
-#include <QFile>
 #include <QLineEdit>
+#include <QPointer>
+
+using namespace Qt::Literals;
 
 namespace chatterino {
 
@@ -44,29 +48,21 @@ SettingsDialog::SettingsDialog(QWidget *parent)
               BaseWindow::Flags::Dialog,
               BaseWindow::DisableLayoutSave,
               BaseWindow::BoundsCheckOnShow,
+              BaseWindow::UseSettingsStylesheet,
           },
           parent)
 {
     this->setObjectName("SettingsDialog");
-    this->setWindowTitle("Chatterino Settings");
+    this->setWindowTitle("Leafyrino Settings");
+    this->setWindowRole(u"chatterino.settings"_s);
     // Disable the ? button in the titlebar until we decide to use it
     this->setWindowFlags(this->windowFlags() &
                          ~Qt::WindowContextHelpButtonHint);
 
     this->resize(915, 600);
-    this->themeChangedEvent();
-    QFile styleFile(":/qss/settings.qss");
-    if (!styleFile.open(QFile::ReadOnly))
-    {
-        assert(false && "Resources not loaded");
-        qCWarning(chatterinoWidget) << "Resources not loaded";
-    }
-    QString stylesheet = QString::fromUtf8(styleFile.readAll());
-    this->setStyleSheet(stylesheet);
 
     this->initUi();
     this->addTabs();
-    this->overrideBackgroundColor_ = QColor("#111111");
 
     this->addShortcuts();
     this->signalHolder_.managedConnect(getApp()->getHotkeys()->onItemsUpdated,
@@ -258,14 +254,16 @@ void SettingsDialog::addTabs()
 
     // clang-format off
     this->addTab([]{return new GeneralPage;},          "General",        ":/settings/about.svg", SettingsTabId::General);
+    this->addTab([]{return new SettingsProfilePage;},  "Import/Export",  ":/settings/commands.svg");
     this->addTab([]{return new LeafyrinoPage;},        "Leafyrino",      ":/settings/leafyrino.png", SettingsTabId::Leafyrino);
-    this->addTab([]{return new TechnorinoPage;},          "Technorino",        technorinoIconPath, SettingsTabId::Technorino);
+    this->addTab([]{return new MoltorinoPage;},        "Moltorino",      ":/settings/moltorino.svg", SettingsTabId::Moltorino);
+    this->addTab([]{return new TechnorinoPage;},       "Technorino",     technorinoIconPath, SettingsTabId::Technorino);
     this->ui_.tabContainer->addSpacing(16);
     this->addTab([]{return new AccountsPage;},         "Accounts",       ":/settings/accounts.svg", SettingsTabId::Accounts);
     this->addTab([]{return new NicknamesPage;},        "Nicknames",      ":/settings/accounts.svg");
     this->ui_.tabContainer->addSpacing(16);
     this->addTab([]{return new CommandPage;},          "Commands",       ":/settings/commands.svg");
-    this->addTab([]{return new HighlightingPage;},     "Highlights",     ":/settings/notifications.svg", SettingsTabId::Highlights);
+    this->addTab([]{return new HighlightingPage;},     "Highlights",     ":/settings/notifications.svg");
     this->addTab([]{return new IgnoresPage;},          "Ignores",        ":/settings/ignore.svg");
     this->addTab([]{return new FiltersPage;},          "Filters",        ":/settings/filters.svg");
     this->ui_.tabContainer->addSpacing(16);
@@ -361,13 +359,15 @@ SettingsDialogTab *SettingsDialog::tab(SettingsTabId id)
 void SettingsDialog::showDialog(QWidget *parent,
                                 SettingsDialogPreference preferredTab)
 {
-    static SettingsDialog *instance = new SettingsDialog(parent);
-    static bool hasShownBefore = false;
-    if (hasShownBefore)
+    static QPointer<SettingsDialog> instance;
+    if (instance)
     {
         instance->refresh();
     }
-    hasShownBefore = true;
+    else
+    {
+        instance = new SettingsDialog(parent);
+    }
 
     // Resets the cancel button.
     getSettings()->saveSnapshot();
@@ -376,10 +376,6 @@ void SettingsDialog::showDialog(QWidget *parent,
     {
         case SettingsDialogPreference::Accounts:
             instance->selectTab(SettingsTabId::Accounts);
-            break;
-
-        case SettingsDialogPreference::Highlights:
-            instance->selectTab(SettingsTabId::Highlights);
             break;
 
         case SettingsDialogPreference::ModerationActions:
@@ -406,6 +402,16 @@ void SettingsDialog::showDialog(QWidget *parent,
         default:;
     }
 
+    if (instance->isMinimized())
+    {
+        instance->setWindowState(
+            (instance->windowState() & ~Qt::WindowMinimized) |
+            Qt::WindowActive);
+    }
+    if (instance->width() < 200 || instance->height() < 120)
+    {
+        instance->resize(915, 600);
+    }
     instance->show();
     if (preferredTab == SettingsDialogPreference::StreamerMode)
     {
@@ -419,10 +425,15 @@ void SettingsDialog::showDialog(QWidget *parent,
 
 void SettingsDialog::refresh()
 {
-    // Updates tabs.
+    // Update tabs that have already been opened. Calling page() here would
+    // construct every settings page on repeated opens, which is rough during
+    // startup and defeats the lazy loading above.
     for (auto *tab : this->tabs_)
     {
-        tab->page()->onShow();
+        if (auto *page = tab->createdPage())
+        {
+            page->onShow();
+        }
     }
 }
 
@@ -441,15 +452,6 @@ void SettingsDialog::scaleChangedEvent(float newScale)
     {
         this->ui_.tabContainerContainer->setFixedWidth(150);
     }
-}
-
-void SettingsDialog::themeChangedEvent()
-{
-    BaseWindow::themeChangedEvent();
-
-    QPalette palette;
-    palette.setColor(QPalette::Window, QColor("#111"));
-    this->setPalette(palette);
 }
 
 void SettingsDialog::showEvent(QShowEvent *e)

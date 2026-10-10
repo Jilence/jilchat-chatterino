@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+//
+// SPDX-License-Identifier: MIT
+
 #include "controllers/plugins/PluginRef.hpp"
 
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -12,7 +16,7 @@
 namespace chatterino::lua {
 
 PluginRef::PluginRef(Plugin *plugin)
-    : shared(plugin, /*deleter=*/[](void *) {})
+    : shared(plugin, [](void *) {})
 {
     assert(plugin != nullptr);
 }

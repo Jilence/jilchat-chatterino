@@ -33,10 +33,6 @@ QSet<QColor> ColorProvider::recentColors() const
 {
     QSet<QColor> retVal;
 
-    /*
-     * Currently, only colors used in highlight phrases are considered. This
-     * may change at any point in the future.
-     */
     for (const auto &phrase : getSettings()->highlightedMessages)
     {
         retVal.insert(*phrase.getColor());
@@ -47,9 +43,9 @@ QSet<QColor> ColorProvider::recentColors() const
         retVal.insert(*userHl.getColor());
     }
 
-    // Insert preset highlight colors
     retVal.insert(*this->color(ColorType::SelfHighlight));
     retVal.insert(*this->color(ColorType::Subscription));
+    retVal.insert(*this->color(ColorType::Follow));
     retVal.insert(*this->color(ColorType::WatchStreak));
     retVal.insert(*this->color(ColorType::Whisper));
     retVal.insert(*this->color(ColorType::AnnouncementHighlight));
@@ -64,9 +60,6 @@ const std::vector<QColor> &ColorProvider::defaultColors() const
 
 void ColorProvider::initTypeColorMap()
 {
-    // Read settings for custom highlight colors and save them in map.
-    // If no custom values can be found, set up default values instead.
-    // Set up a signal to the respective setting for updating the color when it's changed
     auto initColor = [this](ColorType colorType, QStringSetting &setting,
                             QColor fallbackColor) {
         const auto &colorString = setting.getValue();
@@ -91,7 +84,6 @@ void ColorProvider::initTypeColorMap()
                 QColor color(colorString);
                 if (color.isValid())
                 {
-                    // Update color based on the update from the setting
                     *this->typeColorMap_.at(colorType) = color;
                 }
                 else
@@ -116,6 +108,9 @@ void ColorProvider::initTypeColorMap()
     initColor(ColorType::Subscription, getSettings()->subHighlightColor,
               HighlightPhrase::FALLBACK_SUB_COLOR);
 
+    initColor(ColorType::Follow, getSettings()->followHighlightColor,
+              HighlightPhrase::FALLBACK_FOLLOW_COLOR);
+
     initColor(ColorType::WatchStreak, getSettings()->watchStreakHighlightColor,
               HighlightPhrase::FALLBACK_WATCH_STREAK_COLOR);
 
@@ -129,10 +124,6 @@ void ColorProvider::initTypeColorMap()
     initColor(ColorType::FirstMessageHighlight,
               getSettings()->firstMessageHighlightColor,
               HighlightPhrase::FALLBACK_FIRST_MESSAGE_HIGHLIGHT_COLOR);
-
-    initColor(ColorType::ElevatedMessageHighlight,
-              getSettings()->elevatedMessageHighlightColor,
-              HighlightPhrase::FALLBACK_ELEVATED_MESSAGE_HIGHLIGHT_COLOR);
 
     initColor(ColorType::ThreadMessageHighlight,
               getSettings()->threadHighlightColor,
@@ -169,17 +160,16 @@ void ColorProvider::initTypeColorMap()
 
 void ColorProvider::initDefaultColors()
 {
-    // Init default colors
-    this->defaultColors_.emplace_back(75, 127, 107, 100);  // Teal
-    this->defaultColors_.emplace_back(105, 127, 63, 100);  // Olive
-    this->defaultColors_.emplace_back(63, 83, 127, 100);   // Blue
-    this->defaultColors_.emplace_back(72, 127, 63, 100);   // Green
+    this->defaultColors_.emplace_back(75, 127, 107, 100);
+    this->defaultColors_.emplace_back(105, 127, 63, 100);
+    this->defaultColors_.emplace_back(63, 83, 127, 100);
+    this->defaultColors_.emplace_back(72, 127, 63, 100);
 
-    this->defaultColors_.emplace_back(31, 141, 43, 115);  // Green
-    this->defaultColors_.emplace_back(28, 126, 141, 90);  // Blue
-    this->defaultColors_.emplace_back(136, 141, 49, 90);  // Golden
-    this->defaultColors_.emplace_back(143, 48, 24, 127);  // Red
-    this->defaultColors_.emplace_back(28, 141, 117, 90);  // Cyan
+    this->defaultColors_.emplace_back(31, 141, 43, 115);
+    this->defaultColors_.emplace_back(28, 126, 141, 90);
+    this->defaultColors_.emplace_back(136, 141, 49, 90);
+    this->defaultColors_.emplace_back(143, 48, 24, 127);
+    this->defaultColors_.emplace_back(28, 141, 117, 90);
 
     this->defaultColors_.push_back(HighlightPhrase::FALLBACK_HIGHLIGHT_COLOR);
     this->defaultColors_.push_back(HighlightPhrase::FALLBACK_SUB_COLOR);

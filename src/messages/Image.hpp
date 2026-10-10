@@ -7,8 +7,6 @@
 #include "common/Aliases.hpp"
 #include "util/DebugCount.hpp"
 
-#include <boost/variant.hpp>
-#include <pajlada/signals/signal.hpp>
 #include <QList>
 #include <QPixmap>
 #include <QString>
@@ -21,10 +19,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace chatterino {
 
 class Image;
+class ImageExpirationPool;
 
 }  // namespace chatterino
 
@@ -51,20 +51,21 @@ public:
     void clear();
     bool empty() const;
     bool animated() const;
-    void advance();
     std::optional<QPixmap> current() const;
-    std::optional<QPixmap> first() const;
+    /// Returns the size of the first frame, if one has been loaded.
+    std::optional<QSize> frameSize() const;
 
 private:
+    friend class chatterino::ImageExpirationPool;
+    struct Storage;
+    struct CachedFrames;
+
     int64_t memoryUsage() const;
-    void processOffset();
-    QList<Frame> items_;
-    QList<Frame>::size_type index_{0};
-    int durationOffset_{0};
-    pajlada::Signals::Connection gifTimerConnection_;
+    std::unique_ptr<Storage> storage_;
 };
 
-QList<Frame> readFrames(QImageReader &reader, const Url &url);
+QList<Frame> readFrames(QImageReader &reader, const Url &url,
+                        std::optional<QSize> rescale = std::nullopt);
 void assignFrames(std::weak_ptr<Image> weak, QList<Frame> parsed);
 
 }  // namespace chatterino::detail
@@ -74,11 +75,9 @@ namespace chatterino {
 class Image;
 using ImagePtr = std::shared_ptr<Image>;
 
-/// This class is thread safe.
 class Image : public std::enable_shared_from_this<Image>
 {
 public:
-    // Maximum amount of RAM used by the image in bytes.
     static constexpr int maxBytesRam = 20 * 1024 * 1024;
 
     ~Image();
@@ -98,7 +97,7 @@ public:
 
     const Url &url() const;
     bool loaded() const;
-    // either returns the current pixmap, or triggers loading it (lazy loading)
+
     std::optional<QPixmap> pixmapOrLoad() const;
     void load() const;
     qreal scale() const;
@@ -107,8 +106,10 @@ public:
     int height() const;
     QSizeF size() const;
     bool animated() const;
+    void setFrameCacheLifetime(std::chrono::milliseconds lifetime);
 
     bool operator==(const Image &image) = delete;
+    bool operator!=(const Image &image) = delete;
 
 private:
     Image();
@@ -127,6 +128,7 @@ private:
     /// just an estimation and provided to avoid (large) layout shifts when
     /// loading images.
     const QSize expectedSize_{16, 16};
+    bool useExpectedSizeForRead_{false};
     std::atomic_bool empty_{false};
 
     bool shouldLoad_{false};
@@ -139,10 +141,10 @@ private:
     /// Upon creation, only `expectedSize_` is set to `(autoScale, autoScale)`.
     /// When the image is loaded, `scale_` is set to `autoScale / actualSize`.
     std::optional<uint16_t> autoScale_;
+    std::atomic<int64_t> frameCacheLifetimeMs_{0};
 
     mutable std::chrono::time_point<std::chrono::steady_clock> lastUsed_;
 
-    // gui thread only
     std::unique_ptr<detail::Frames> frames_;
 
     friend class ImageExpirationPool;
@@ -150,7 +152,6 @@ private:
                                      QList<detail::Frame>);
 };
 
-// forward-declarable function that calls Image::getEmpty() under the hood.
 ImagePtr getEmptyImagePtr();
 
 #ifndef DISABLE_IMAGE_EXPIRATION_POOL
@@ -158,27 +159,25 @@ ImagePtr getEmptyImagePtr();
 class ImageExpirationPool
 {
 public:
+    struct ProviderUsage {
+        QString provider;
+        int64_t bytes = 0;
+        size_t images = 0;
+        size_t animatedImages = 0;
+    };
+
     ImageExpirationPool();
     static ImageExpirationPool &instance();
 
     void addImagePtr(ImagePtr imgPtr);
     void removeImagePtr(Image *rawPtr);
 
-    /**
-     * @brief Frees frame data for all images that ImagePool deems to have expired.
-     * 
-     * Expiration is based on last accessed time of the Image, stored in Image::lastUsed_.
-     * Must be ran in the GUI thread.
-     */
     void freeOld();
 
-    /*
-     * Debug function that unloads all images in the pool. This is intended to
-     * test for possible memory leaks from tracked images.
-     */
+    std::vector<ProviderUsage> getProviderUsageSnapshot();
+
     void freeAll();
 
-    // Timer to periodically run freeOld()
     QTimer *freeTimer_;
     std::map<Image *, std::weak_ptr<Image>> allImages_;
     std::mutex mutex_;

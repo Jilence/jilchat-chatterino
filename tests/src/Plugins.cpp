@@ -206,7 +206,7 @@ public:
         getApp()->getPlugins()->openLibrariesFor(plugin);
     }
 
-    static std::map<QString, std::unique_ptr<Plugin>> &plugins()
+    static std::map<QString, AnyPlugin> &plugins()
     {
         return getApp()->getPlugins()->plugins_;
     }
@@ -486,7 +486,7 @@ TEST_F(PluginTest, testHttp)
             waiter.requestDone();
         };
 
-        (*lua)["DoReq"](HTTPBIN_BASE_URL.toStdString().c_str() + c.url, c.data);
+        (*lua)["DoReq"](HTTPBIN_BASE_URL + c.url, c.data);
         waiter.waitForRequest();
 
         EXPECT_EQ(lua->get<bool>("success"), c.success);
@@ -749,10 +749,8 @@ TEST_F(PluginTest, testTcpWebSocket)
         open = true;
     });
 
-    lua->set("url", "ws://" + PUBSUB_WS_ADDR + "/echo");
-
     std::shared_ptr<lua::api::WebSocket> ws = lua->script(R"lua(
-        local ws = c2.WebSocket.new(url)
+        local ws = c2.WebSocket.new("ws://127.0.0.1:9052/echo")
         ws.on_text = function(data)
             add(true, data)
         end
@@ -827,10 +825,8 @@ TEST_F(PluginTest, testTlsWebSocket)
         open = true;
     });
 
-    lua->set("url", "wss://" + PUBSUB_WSS_ADDR + "/echo");
-
     std::shared_ptr<lua::api::WebSocket> ws = lua->script(R"lua(
-        local ws = c2.WebSocket.new(url, {
+        local ws = c2.WebSocket.new("wss://127.0.0.1:9050/echo", {
             headers = {
                 ["User-Agent"] = "Lua",
                 ["A-Header"] = "A value",
@@ -906,10 +902,8 @@ TEST_F(PluginTest, testWebSocketNoPerms)
     )lua");
     ASSERT_TRUE(res);
 
-    lua->set("url", "wss://" + PUBSUB_WSS_ADDR + "/echo");
-
     const char *shouldThrow = R"lua(
-        return c2.WebSocket.new(url)
+        return c2.WebSocket.new('wss://127.0.0.1:9050/echo')
     )lua";
     EXPECT_ANY_THROW(lua->script(shouldThrow));
 }
@@ -917,13 +911,12 @@ TEST_F(PluginTest, testWebSocketNoPerms)
 TEST_F(PluginTest, testWebSocketApi)
 {
     configure({PluginPermission{{{"type", "Network"}}}});
-    lua->set("url", "wss://" + PUBSUB_WSS_ADDR + "/echo");
 
     bool ok = lua->script(R"lua(
         local t = function () end
         local b = function () end
         local c = function () end
-        local ws = c2.WebSocket.new(url, {
+        local ws = c2.WebSocket.new("wss://127.0.0.1:9050/echo", {
             on_text = t,
             on_binary = b,
             on_close = c,
@@ -944,10 +937,8 @@ TEST_F(PluginTest, testWebSocketUnsetFns)
         waiter.requestDone();
     });
 
-    lua->set("url", "wss://" + PUBSUB_WSS_ADDR + "/echo");
-
     lua->script(R"lua(
-        local ws = c2.WebSocket.new(url)
+        local ws = c2.WebSocket.new("wss://127.0.0.1:9050/echo")
         ws.on_close = function()
             done()
         end
@@ -973,6 +964,7 @@ TEST_F(PluginTest, MessageElementFlag)
     )lua");
 
     const char *VALUES = "AlwaysShow=0x2000000,"
+                         "AnnouncementHeader=0x8000000000,"
                          "BadgeBttv=0x40,"
                          "BadgeChannelAuthority=0x8000,"
                          "BadgeChatterino=0x40000,"
@@ -995,6 +987,7 @@ TEST_F(PluginTest, MessageElementFlag)
                          "EmojiText=0x1000000,"
                          "EmoteImage=0x10,"
                          "EmoteText=0x20,"
+                         "HeaderTimestamp=0x4000000000,"
                          "KickUsername=0x4000000000000,"
                          "LowercaseLinks=0x20000000,"
                          "Mention=0x8000000,"
@@ -1004,9 +997,12 @@ TEST_F(PluginTest, MessageElementFlag)
                          "PlatformBadgeIfUnselected=0x10000000000000,"
                          "RepliedMessage=0x100000000,"
                          "ReplyButton=0x200000000,"
+                         "SubscriptionHeader=0x10000000000,"
                          "Text=0x2,"
                          "Timestamp=0x8,"
-                         "Username=0x4";
+                         "TwitchGif=0x200,"
+                         "Username=0x4,"
+                         "WatchStreakHeader=0x20000000000";
 
     std::string got = (*lua)["out"];
     ASSERT_EQ(got, VALUES);
@@ -1133,9 +1129,6 @@ TEST_F(PluginTest, MessageModification)
     // Test that we can modify properties and that Lua sees the modification
     sol::table tests = lua->script(R"lua(
         return {
-            function(msg)
-                msg.parse_time = 1234567
-            end,
             function(msg)
                 assert(msg.id == "abc")
                 msg.id = "1234"
@@ -1665,43 +1658,18 @@ TEST_P(PluginChannelTest, Run)
 INSTANTIATE_TEST_SUITE_P(PluginChannel, PluginChannelTest,
                          testing::ValuesIn(discoverLuaTests("channel")));
 
-class PluginImageTest : public PluginTest,
-                        public ::testing::WithParamInterface<QString>
+class PluginDateTimeTest : public PluginTest,
+                           public ::testing::WithParamInterface<QString>
 {
 };
-TEST_P(PluginImageTest, Run)
-{
-    this->configure({PluginPermission({{"type", "network"}})});
-    runLuaTest("images", GetParam(), *this->lua);
-}
-
-TEST_F(PluginImageTest, NoPerms)
+TEST_P(PluginDateTimeTest, Run)
 {
     this->configure();
-    auto res = this->lua->safe_script(R"lua(
-        local ok, err = pcall(c2.Image.from_url, "https://foo.bar")
-        assert(not ok and err == "Missing network permission to create images")
-        ok, err = pcall(c2.ImageSet.new)
-        assert(not ok and err == "Missing network permission to create images")
-        ok, err = pcall(c2.ImageSet.new, c2.Image.empty(), "https://foo.bar")
-        assert(not ok and err == "Missing network permission to create images")
-        -- should still be able to query images
-        local img = c2.Image.empty()
-        assert(img.url == "")
-        assert(not img.animated)
-        assert(not img.is_loaded)
-        assert(img.is_empty)
-        assert(img.width == 0)
-        assert(img.height == 0)
-        assert(img.scale == 1)
-        assert(img.size[1] == img.width)
-        assert(img.size[2] == img.height)
-    )lua");
-    ASSERT_TRUE(res.valid());
+    runLuaTest("datetime", GetParam(), *this->lua);
 }
 
-INSTANTIATE_TEST_SUITE_P(PluginImage, PluginImageTest,
-                         testing::ValuesIn(discoverLuaTests("images")));
+INSTANTIATE_TEST_SUITE_P(PluginChannel, PluginDateTimeTest,
+                         testing::ValuesIn(discoverLuaTests("datetime")));
 
 // verify that all snapshots are included
 TEST(PluginMessageConstructionTest, Integrity)

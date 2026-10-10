@@ -6,6 +6,7 @@
 
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
+#include "common/network/RetryingGet.hpp"
 #include "common/Outcome.hpp"
 #include "common/QLogging.hpp"
 #include "messages/Emote.hpp"
@@ -22,6 +23,8 @@
 #include <QStringLiteral>
 #include <QThread>
 
+#include <tuple>
+
 namespace {
 
 using namespace chatterino;
@@ -29,9 +32,6 @@ using namespace chatterino;
 const QString CHANNEL_HAS_NO_EMOTES(
     "This channel has no BetterTTV channel emotes.");
 
-/// The emote page template.
-///
-/// %1 being the emote ID (e.g. 566ca04265dbbdab32ec054a)
 constexpr QStringView EMOTE_LINK_FORMAT = u"https://betterttv.com/emotes/%1";
 
 const QSet<QStringView> ZERO_WIDTH_EMOTES{
@@ -39,16 +39,84 @@ const QSet<QStringView> ZERO_WIDTH_EMOTES{
     u"ReinDeer", u"CandyCane", u"cvMask",   u"cvHazmat",
 };
 
-/// The emote CDN link template.
-///
-/// %1 being the emote ID (e.g. 566ca04265dbbdab32ec054a)
-///
-/// %2 being the emote size (e.g. 3x)
 constexpr QStringView EMOTE_CDN_FORMAT =
     u"https://cdn.betterttv.net/emote/%1/%2.webp";
 
-// BTTV doesn't provide any data on the size, so we assume an emote is 28x28
-constexpr QSize EMOTE_BASE_SIZE(28, 28);
+uint32_t modifierFlags(QStringView name)
+{
+    using namespace emote_modifiers;
+    if (name == u"w!")
+    {
+        return BTTV_WIDE;
+    }
+    if (name == u"h!")
+    {
+        return FLIP_X;
+    }
+    if (name == u"v!")
+    {
+        return FLIP_Y;
+    }
+    if (name == u"l!")
+    {
+        return ROTATE_LEFT;
+    }
+    if (name == u"r!")
+    {
+        return ROTATE_RIGHT;
+    }
+    if (name == u"z!")
+    {
+        return ZERO_SPACE;
+    }
+    if (name == u"c!")
+    {
+        return CURSED;
+    }
+    if (name == u"p!")
+    {
+        return PARTY;
+    }
+    if (name == u"s!")
+    {
+        return BTTV_SHAKE;
+    }
+    return 0;
+}
+
+void setModifierMetadata(bool isModifier, Emote &emote)
+{
+    emote.modifierFlags = 0;
+    emote.modifierPlacement = EmoteModifierPlacement::None;
+    emote.modifierSource = EmoteModifierSource::None;
+
+    if (!isModifier)
+    {
+        return;
+    }
+
+    const auto flags = modifierFlags(emote.name.string);
+    if ((flags & emote_modifiers::SUPPORTED) == 0)
+    {
+        return;
+    }
+
+    emote.modifierFlags = flags;
+    emote.modifierPlacement = EmoteModifierPlacement::Prefix;
+    emote.modifierSource = EmoteModifierSource::BetterTTV;
+    emote.tooltip = Tooltip{emote.name.string + "<br>BetterTTV emote effect"};
+}
+
+void applyModifierMetadata(const QJsonObject &jsonEmote, Emote &emote)
+{
+    setModifierMetadata(jsonEmote.value("modifier").toBool(), emote);
+}
+
+QSize emoteBaseSize(const QJsonObject &jsonEmote)
+{
+    return {jsonEmote.value("width").toInt(28),
+            jsonEmote.value("height").toInt(28)};
+}
 
 struct CreateEmoteResult {
     EmoteId id;
@@ -76,24 +144,25 @@ std::pair<Outcome, EmoteMap> parseGlobalEmotes(const QJsonArray &jsonEmotes,
 
     for (auto jsonEmote : jsonEmotes)
     {
-        auto id = EmoteId{jsonEmote.toObject().value("id").toString()};
-        auto name = EmoteName{jsonEmote.toObject().value("code").toString()};
+        auto emoteJson = jsonEmote.toObject();
+        auto id = EmoteId{emoteJson.value("id").toString()};
+        auto name = EmoteName{emoteJson.value("code").toString()};
+        auto baseSize = emoteBaseSize(emoteJson);
 
         auto emote = Emote({
             .name = name,
             .images =
                 ImageSet{
-                    Image::fromUrl(getEmoteLinkV3(id, "1x"), 1,
-                                   EMOTE_BASE_SIZE),
-                    Image::fromUrl(getEmoteLinkV3(id, "2x"), 0.5,
-                                   EMOTE_BASE_SIZE * 2),
+                    Image::fromUrl(getEmoteLinkV3(id, "1x"), 1, baseSize),
+                    Image::fromUrl(getEmoteLinkV3(id, "2x"), 0.5, baseSize * 2),
                     Image::fromUrl(getEmoteLinkV3(id, "3x"), 0.25,
-                                   EMOTE_BASE_SIZE * 4),
+                                   baseSize * 4),
                 },
             .tooltip = Tooltip{name.string + "<br>Global BetterTTV Emote"},
             .homePage = Url{EMOTE_LINK_FORMAT.arg(id.string)},
             .zeroWidth = ZERO_WIDTH_EMOTES.contains(name.string),
         });
+        applyModifierMetadata(emoteJson, emote);
 
         emotes[name] = cachedOrMakeEmotePtr(std::move(emote), currentEmotes);
     }
@@ -113,28 +182,28 @@ CreateEmoteResult createChannelEmote(const QString &channelDisplayName,
         author.string = jsonEmote["channel"].toString();
     }
 
+    auto baseSize = emoteBaseSize(jsonEmote);
+
     auto emote = Emote({
         .name = name,
         .images =
             ImageSet{
-                Image::fromUrl(getEmoteLinkV3(id, "1x"), 1, EMOTE_BASE_SIZE),
-                Image::fromUrl(getEmoteLinkV3(id, "2x"), 0.5,
-                               EMOTE_BASE_SIZE * 2),
-                Image::fromUrl(getEmoteLinkV3(id, "3x"), 0.25,
-                               EMOTE_BASE_SIZE * 4),
+                Image::fromUrl(getEmoteLinkV3(id, "1x"), 1, baseSize),
+                Image::fromUrl(getEmoteLinkV3(id, "2x"), 0.5, baseSize * 2),
+                Image::fromUrl(getEmoteLinkV3(id, "3x"), 0.25, baseSize * 4),
             },
         .tooltip =
-            Tooltip{
-                QString("%1<br>%2 BetterTTV Emote<br>By: %3")
-                    .arg(name.string)
-                    // when author is empty, it is a channel emote created by the broadcaster
-                    .arg(author.string.isEmpty() ? "Channel" : "Shared")
-                    .arg(author.string.isEmpty() ? channelDisplayName
-                                                 : author.string)},
+            Tooltip{QString("%1<br>%2 BetterTTV Emote<br>By: %3")
+                        .arg(name.string)
+
+                        .arg(author.string.isEmpty() ? "Channel" : "Shared")
+                        .arg(author.string.isEmpty() ? channelDisplayName
+                                                     : author.string)},
         .homePage = Url{EMOTE_LINK_FORMAT.arg(id.string)},
         .zeroWidth = false,
         .id = id,
     });
+    applyModifierMetadata(jsonEmote, emote);
 
     return {id, name, emote};
 }
@@ -143,6 +212,8 @@ bool updateChannelEmote(Emote &emote, const QString &channelDisplayName,
                         const QJsonObject &jsonEmote)
 {
     bool anyModifications = false;
+    const bool wasModifier =
+        emote.modifierSource == EmoteModifierSource::BetterTTV;
 
     if (jsonEmote.contains("code"))
     {
@@ -156,15 +227,33 @@ bool updateChannelEmote(Emote &emote, const QString &channelDisplayName,
         anyModifications = true;
     }
 
+    if (jsonEmote.contains("code") || jsonEmote.contains("modifier"))
+    {
+        const auto previous = std::tuple{
+            emote.modifierFlags, emote.modifierPlacement, emote.modifierSource};
+        setModifierMetadata(jsonEmote.contains("modifier")
+                                ? jsonEmote.value("modifier").toBool()
+                                : wasModifier,
+                            emote);
+        anyModifications |=
+            previous != std::tuple{emote.modifierFlags, emote.modifierPlacement,
+                                   emote.modifierSource};
+    }
+
     if (anyModifications)
     {
         emote.tooltip = Tooltip{
             QString("%1<br>%2 BetterTTV Emote<br>By: %3")
                 .arg(emote.name.string)
-                // when author is empty, it is a channel emote created by the broadcaster
+
                 .arg(emote.author.string.isEmpty() ? "Channel" : "Shared")
                 .arg(emote.author.string.isEmpty() ? channelDisplayName
                                                    : emote.author.string)};
+        if (emote.modifierSource == EmoteModifierSource::BetterTTV)
+        {
+            emote.tooltip =
+                Tooltip{emote.name.string + "<br>BetterTTV emote effect"};
+        }
     }
 
     return anyModifications;
@@ -199,9 +288,44 @@ EmoteMap bttv::detail::parseChannelEmotes(const QJsonObject &jsonRoot,
     return emotes;
 }
 
-//
-// BttvEmotes
-//
+EmoteMap bttv::detail::parsePersonalEmotes(const QJsonArray &jsonEmotes)
+{
+    auto emotes = EmoteMap();
+
+    for (const auto &jsonEmote_ : jsonEmotes)
+    {
+        const auto jsonEmote = jsonEmote_.toObject();
+        auto id = EmoteId{jsonEmote.value("id").toString()};
+        auto name = EmoteName{jsonEmote.value("code").toString()};
+        if (id.string.isEmpty() || name.string.isEmpty())
+        {
+            continue;
+        }
+        const auto baseSize = emoteBaseSize(jsonEmote);
+
+        auto emote = Emote({
+            .name = name,
+            .images =
+                ImageSet{
+                    Image::fromUrl(getEmoteLinkV3(id, "1x"), 1, baseSize),
+                    Image::fromUrl(getEmoteLinkV3(id, "2x"), 0.5, baseSize * 2),
+                    Image::fromUrl(getEmoteLinkV3(id, "3x"), 0.25,
+                                   baseSize * 4),
+                },
+            .tooltip = Tooltip{name.string + "<br>Personal BetterTTV Emote"},
+            .homePage = Url{EMOTE_LINK_FORMAT.arg(id.string)},
+            .zeroWidth = false,
+            .id = id,
+        });
+
+        // Not the cache of the channel emotes: the same emote has another
+        // tooltip there.
+        emotes[name] = std::make_shared<const Emote>(std::move(emote));
+    }
+
+    return emotes;
+}
+
 BttvEmotes::BttvEmotes()
     : global_(std::make_shared<EmoteMap>())
 {
@@ -217,7 +341,7 @@ std::shared_ptr<const EmoteMap> BttvEmotes::emotes() const
     return this->global_.get();
 }
 
-std::optional<EmotePtr> BttvEmotes::emote(const EmoteName &name) const
+std::optional<EmotePtr> BttvEmotes::emote(EmoteNameView name) const
 {
     auto emotes = this->global_.get();
     auto it = emotes->find(name);
@@ -277,10 +401,10 @@ void BttvEmotes::loadChannel(std::weak_ptr<Channel> channel,
                              std::function<void(EmoteMap &&)> callback,
                              bool manualRefresh, bool cacheHit)
 {
-    NetworkRequest(QString(bttvChannelEmoteApiUrl) + channelId)
-        .timeout(20000)
-        .onSuccess([callback = std::move(callback), channel, channelId,
-                    channelDisplayName, manualRefresh](auto result) {
+    network::fetchWithBackoff(
+        QString(bttvChannelEmoteApiUrl) + channelId,
+        [callback = std::move(callback), channel, channelId, channelDisplayName,
+         manualRefresh](auto result) {
             auto emotes =
                 parseChannelEmotes(result.parseJson(), channelDisplayName);
             bool hasEmotes = !emotes.empty();
@@ -299,8 +423,8 @@ void BttvEmotes::loadChannel(std::weak_ptr<Channel> channel,
                     shared->addSystemMessage(CHANNEL_HAS_NO_EMOTES);
                 }
             }
-        })
-        .onError([channelId, channel, manualRefresh, cacheHit](auto result) {
+        },
+        [channelId, channel, manualRefresh, cacheHit](auto result) {
             auto shared = channel.lock();
             if (!shared)
             {
@@ -309,7 +433,6 @@ void BttvEmotes::loadChannel(std::weak_ptr<Channel> channel,
 
             if (result.status() == 404)
             {
-                // User does not have any BTTV emotes
                 if (manualRefresh)
                 {
                     shared->addSystemMessage(CHANNEL_HAS_NO_EMOTES);
@@ -317,7 +440,6 @@ void BttvEmotes::loadChannel(std::weak_ptr<Channel> channel,
             }
             else
             {
-                // TODO: Auto retry in case of a timeout, with a delay
                 auto errorString = result.formatError();
                 qCWarning(chatterinoBttv)
                     << "Error fetching BTTV emotes for channel" << channelId
@@ -332,8 +454,8 @@ void BttvEmotes::loadChannel(std::weak_ptr<Channel> channel,
                         "Using cached BetterTTV emotes as fallback.");
                 }
             }
-        })
-        .execute();
+        },
+        20000);
 }
 
 EmotePtr BttvEmotes::addEmote(
@@ -341,7 +463,6 @@ EmotePtr BttvEmotes::addEmote(
     Atomic<std::shared_ptr<const EmoteMap>> &channelEmoteMap,
     const BttvLiveUpdateEmoteUpdateAddMessage &message)
 {
-    // This copies the map.
     EmoteMap updatedMap = *channelEmoteMap.get();
     auto result = createChannelEmote(channelDisplayName, message.jsonEmote);
 
@@ -357,26 +478,20 @@ std::optional<std::pair<EmotePtr, EmotePtr>> BttvEmotes::updateEmote(
     Atomic<std::shared_ptr<const EmoteMap>> &channelEmoteMap,
     const BttvLiveUpdateEmoteUpdateAddMessage &message)
 {
-    // This copies the map.
     EmoteMap updatedMap = *channelEmoteMap.get();
 
-    // Step 1: remove the existing emote
     auto it = updatedMap.findEmote(QString(), message.emoteID);
     if (it == updatedMap.end())
     {
-        // We already copied the map at this point and are now discarding the copy.
-        // This is fine, because this case should be really rare.
         return std::nullopt;
     }
     auto oldEmotePtr = it->second;
-    // copy the existing emote, to not change the original one
+
     auto emote = *oldEmotePtr;
     updatedMap.erase(it);
 
-    // Step 2: update the emote
     if (!updateChannelEmote(emote, channelDisplayName, message.jsonEmote))
     {
-        // The emote wasn't actually updated
         return std::nullopt;
     }
 
@@ -392,13 +507,10 @@ std::optional<EmotePtr> BttvEmotes::removeEmote(
     Atomic<std::shared_ptr<const EmoteMap>> &channelEmoteMap,
     const BttvLiveUpdateEmoteRemoveMessage &message)
 {
-    // This copies the map.
     EmoteMap updatedMap = *channelEmoteMap.get();
     auto it = updatedMap.findEmote(QString(), message.emoteID);
     if (it == updatedMap.end())
     {
-        // We already copied the map at this point and are now discarding the copy.
-        // This is fine, because this case should be really rare.
         return std::nullopt;
     }
     auto emote = it->second;

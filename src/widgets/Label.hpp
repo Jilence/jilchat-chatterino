@@ -35,9 +35,9 @@ public:
     bool getWordWrap() const;
     void setWordWrap(bool wrap);
 
-    /// Sets whether the text should elide if there's not enough room to
-    /// render the current text.
     void setShouldElide(bool shouldElide);
+
+    void setElideSuffix(const QString &suffix);
 
 protected:
     void scaleChangedEvent(float scale_) override;
@@ -50,12 +50,8 @@ protected:
     virtual void updateSize();
     QRectF textRect() const;
 
-    /// Returns the current font style's font metric based on the current scale.
     QFontMetricsF getFontMetrics() const;
 
-    /// Calculate the new elided text based on text_
-    ///
-    /// Return true if the elided text changed
     bool updateElidedText(const QFontMetricsF &fontMetrics, qreal width);
 
     QString text_;
@@ -63,16 +59,16 @@ protected:
     QSize sizeHint_;
     QSize minimumSizeHint_;
 
-    /// The user specified padding (scale agnostic)
     QMargins basePadding_;
-    /// The actual scaled padding
+
     QMarginsF currentPadding_;
 
     bool centered_ = false;
     bool wordWrap_ = false;
     bool shouldElide_ = false;
-    /// The text, but elided. Only set if shouldElide_ is true
+
     QString elidedText_;
+    QString elideSuffix_;
 
     pajlada::Signals::SignalHolder connections_;
 };

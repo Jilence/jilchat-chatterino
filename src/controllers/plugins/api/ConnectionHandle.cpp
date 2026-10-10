@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+//
+// SPDX-License-Identifier: MIT
+
 #include "controllers/plugins/api/ConnectionHandle.hpp"
 
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -9,8 +13,7 @@ namespace chatterino::lua::api {
 void ConnectionHandle::createUserType(sol::table &c2)
 {
     c2.new_usertype<ConnectionHandle>(
-        "ConnectionHandle", sol::no_constructor,  //
-        "disconnect",
+        "ConnectionHandle", sol::no_constructor, "disconnect",
         [](ConnectionHandle &hdl) {
             auto locked = hdl.connection.lock();
             if (locked)

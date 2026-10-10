@@ -42,6 +42,7 @@
 #include <rapidjson/pointer.h>
 
 #include <cstring>
+#include <iostream>
 #include <memory>
 
 #ifdef CHATTERINO_WITH_AVIF_PLUGIN
@@ -158,14 +159,21 @@ int main(int argc, char **argv)
 
     QApplication a(argc, argv);
 
+    // Keep "chatterino" so config/data stay under the existing chatterino paths
+    // (Flatpak also mounts xdg-data/chatterino).
     QCoreApplication::setApplicationName("chatterino");
     QCoreApplication::setApplicationVersion(CHATTERINO_VERSION);
     QCoreApplication::setOrganizationDomain("chatterino.com");
+    // Must match the installed .desktop / Flatpak app-id so the shell
+    // associates this window with Leafyrino's icon (not Chatterino's).
+    QGuiApplication::setDesktopFileName("com.leafyzito.leafyrino");
 #ifdef Q_OS_WIN
     SetCurrentProcessExplicitAppUserModelID(
         Version::instance().appUserModelID().c_str());
 #endif
 
+    const Args args(a);
+    const Modes modes(args);
     std::unique_ptr<Paths> paths;
 
     // Optional logger override that logs to a file
@@ -173,12 +181,12 @@ int main(int argc, char **argv)
 
     try
     {
-        paths = std::make_unique<Paths>();
+        paths = std::make_unique<Paths>(args, modes);
     }
     catch (std::runtime_error &error)
     {
         QMessageBox box;
-        if (Modes::instance().isPortable)
+        if (modes.isPortable)
         {
             auto errorMessage =
                 error.what() +
@@ -200,13 +208,10 @@ int main(int argc, char **argv)
     }
     ipc::initPaths(paths.get());
 
-    const Args args(a, *paths);
-
 #ifdef CHATTERINO_WITH_CRASHPAD
     const auto crashpadHandler = installCrashHandler(args, *paths);
 #endif
 
-    // run in gui mode or browser extension host mode
     if (args.shouldRunBrowserExtensionHost)
     {
 #ifdef Q_OS_MACOS
@@ -235,32 +240,41 @@ int main(int argc, char **argv)
         }
 
         qCInfo(chatterinoApp).noquote()
-            << "Chatterino Qt SSL library build version:"
+            << "Leafyrino Qt SSL library build version:"
             << QSslSocket::sslLibraryBuildVersionString();
         qCInfo(chatterinoApp).noquote()
-            << "Chatterino Qt SSL library version:"
+            << "Leafyrino Qt SSL library version:"
             << QSslSocket::sslLibraryVersionString();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
         qCInfo(chatterinoApp).noquote()
-            << "Chatterino Qt SSL active backend:"
-            << QSslSocket::activeBackend() << "of"
-            << QSslSocket::availableBackends().join(", ");
-#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
-        qCInfo(chatterinoApp) << "Chatterino Qt SSL active backend features:"
+            << "Leafyrino Qt SSL active backend:" << QSslSocket::activeBackend()
+            << "of" << QSslSocket::availableBackends().join(", ");
+#    if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+        qCInfo(chatterinoApp) << "Leafyrino Qt SSL active backend features:"
                               << QSslSocket::supportedFeatures();
-#endif
-        qCInfo(chatterinoApp) << "Chatterino Qt SSL active backend protocols:"
+#    endif
+        qCInfo(chatterinoApp) << "Leafyrino Qt SSL active backend protocols:"
                               << QSslSocket::supportedProtocols();
+#endif
 
-        Settings settings(args, paths->settingsDirectory);
+        Settings settings(modes, args, paths->settingsDirectory);
+#ifndef Q_OS_MACOS
+        if (!args.remoteRestart && !args.isFramelessEmbed &&
+            settings.trayHideOnClose.getValue() &&
+            activateExistingGuiInstance(*paths))
+        {
+            return 0;
+        }
+#endif
 
-        Updates updates(*paths, settings);
+        Updates updates(modes, *paths, settings);
 
         NetworkConfigurationProvider::applyFromEnv(Env::get());
 
         IvrApi::initialize();
         Helix::initialize();
 
-        runGui(a, *paths, settings, args, updates);
+        runGui(a, modes, *paths, settings, args, updates);
     }
     return 0;
 }

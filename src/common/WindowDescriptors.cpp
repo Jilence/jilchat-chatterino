@@ -4,84 +4,73 @@
 
 #include "common/WindowDescriptors.hpp"
 
+#include "Application.hpp"
 #include "common/QLogging.hpp"
+#include "debug/AssertInGuiThread.hpp"
+#include "providers/kick/KickChatServer.hpp"
+#include "providers/twitch/TwitchIrcServer.hpp"
+#include "providers/youtube/YouTubeChatServer.hpp"
+#include "util/Backup.hpp"
+#include "util/Expected.hpp"
+#include "util/MultiChannel.hpp"
 #include "util/QMagicEnum.hpp"
 #include "widgets/Window.hpp"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonParseError>
+
+#include <span>
+
+using namespace Qt::Literals;
 
 namespace chatterino {
 
 namespace {
 
-QJsonArray loadWindowArray(const QString &settingsPath)
+ExpectedStr<QJsonArray> loadWindowArray(const QString &settingsPath)
 {
     QFile file(settingsPath);
+    if (!file.exists())
+    {
+        return QJsonArray{};
+    }
+
     if (!file.open(QIODevice::ReadOnly))
     {
-        return {};
+        return makeUnexpected(u"Failed to open file: " % file.errorString());
     }
+
     QByteArray data = file.readAll();
-    QJsonDocument document = QJsonDocument::fromJson(data);
-    QJsonArray windows_arr = document.object().value("windows").toArray();
-    return windows_arr;
-}
-
-template <typename T>
-T loadNodes(const QJsonObject &obj)
-{
-    static_assert("loadNodes must be called with the SplitNodeDescriptor "
-                  "or ContainerNodeDescriptor type");
-}
-
-template <>
-SplitNodeDescriptor loadNodes(const QJsonObject &root)
-{
-    SplitNodeDescriptor descriptor;
-
-    descriptor.flexH_ = root.value("flexh").toDouble(1.0);
-    descriptor.flexV_ = root.value("flexv").toDouble(1.0);
-
-    auto data = root.value("data").toObject();
-
-    SplitDescriptor::loadFromJSON(descriptor, root, data);
-
-    return descriptor;
-}
-
-template <>
-ContainerNodeDescriptor loadNodes(const QJsonObject &root)
-{
-    ContainerNodeDescriptor descriptor;
-
-    descriptor.flexH_ = root.value("flexh").toDouble(1.0);
-    descriptor.flexV_ = root.value("flexv").toDouble(1.0);
-
-    descriptor.vertical_ = root.value("type").toString() == "vertical";
-
-    for (QJsonValue _val : root.value("items").toArray())
+    QJsonParseError err;
+    QJsonDocument document = QJsonDocument::fromJson(data, &err);
+    if (err.error != QJsonParseError::NoError)
     {
-        auto _obj = _val.toObject();
-
-        auto _type = _obj.value("type");
-        if (_type == "split")
-        {
-            descriptor.items_.emplace_back(
-                loadNodes<SplitNodeDescriptor>(_obj));
-        }
-        else
-        {
-            descriptor.items_.emplace_back(
-                loadNodes<ContainerNodeDescriptor>(_obj));
-        }
+        return makeUnexpected(u"Failed to parse JSON: " % err.errorString());
     }
-
-    return descriptor;
+    if (!document.isObject())
+    {
+        return makeUnexpected(u"Root element is not an object"_s);
+    }
+    const auto rootObj = document.object();
+    const auto windowsEl = rootObj["windows"_L1];
+    if (!windowsEl.isArray())
+    {
+        return makeUnexpected(
+            u"Root object does not contain a 'windows' array"_s);
+    }
+    auto windows = windowsEl.toArray();
+    if (windows.isEmpty())
+    {
+        return makeUnexpected(
+            QStringLiteral("Window layout does not contain any windows"));
+    }
+    return windows;
 }
 
-const QList<QUuid> loadFilters(QJsonValue val)
+QList<QUuid> loadFilters(const QJsonValue &val)
 {
     QList<QUuid> filterIds;
 
@@ -89,13 +78,23 @@ const QList<QUuid> loadFilters(QJsonValue val)
     {
         const auto array = val.toArray();
         filterIds.reserve(array.size());
-        for (const auto id : array)
+        for (const auto &id : array)
         {
             filterIds.append(QUuid::fromString(id.toString()));
         }
     }
 
     return filterIds;
+}
+
+QJsonArray encodeFilters(std::span<const QUuid> filters)
+{
+    QJsonArray arr;
+    for (const auto &f : filters)
+    {
+        arr.append(f.toString(QUuid::WithoutBraces));
+    }
+    return arr;
 }
 
 }  // namespace
@@ -116,12 +115,14 @@ QJsonObject ChildChannelDescriptor::toJson() const
     };
 }
 
-void SplitDescriptor::loadFromJSON(SplitDescriptor &descriptor,
-                                   const QJsonObject &root,
-                                   const QJsonObject &data)
+SplitDescriptor SplitDescriptor::loadFromJSON(const QJsonObject &root)
 {
+    const QJsonObject data = root["data"].toObject();
+
+    SplitDescriptor descriptor;
     descriptor.type_ = data.value("type").toString();
     descriptor.server_ = data.value("server").toInt(-1);
+    descriptor.anonymous_ = data.value("anonymous").toBool(false);
     descriptor.moderationMode_ = root.value("moderationMode").toBool();
     if (data.contains("channel"))
     {
@@ -138,6 +139,12 @@ void SplitDescriptor::loadFromJSON(SplitDescriptor &descriptor,
     {
         descriptor.spellCheckOverride = spellOverride.toBool();
     }
+    descriptor.perSplitHidePinnedMessage_ =
+        root.value(QStringLiteral("splitHidePinnedMessage")).toBool();
+    descriptor.perSplitHidePrediction_ =
+        root.value(QStringLiteral("splitHidePrediction")).toBool();
+    descriptor.perSplitHidePoll_ =
+        root.value(QStringLiteral("splitHidePoll")).toBool();
     if (descriptor.type_ == u"kick")
     {
         descriptor.kickChannelID =
@@ -158,7 +165,216 @@ void SplitDescriptor::loadFromJSON(SplitDescriptor &descriptor,
             qmagicenum::enumCast<MultiChannelIndicatorMode>(modeStr).value_or(
                 MultiChannelIndicatorMode::PlatformBadgeIfUnselected);
         descriptor.mcIndex = static_cast<uint32_t>(data["activeIndex"].toInt());
+        descriptor.mcTintByPlatform = data["tintByPlatform"].toBool();
+        descriptor.mcShowTwitchOverlays = data["showTwitchOverlays"].toBool();
+        descriptor.mcCombinedViewerCount = data["combinedViewerCount"].toBool();
     }
+
+    return descriptor;
+}
+
+QJsonObject SplitDescriptor::toJson() const
+{
+    QJsonObject obj;
+
+    obj.insert("type", "split");
+    obj.insert("moderationMode", this->moderationMode_);
+
+    QJsonObject data{{"type"_L1, this->type_}};
+    if (!this->channelName_.isEmpty())
+    {
+        data.insert("name"_L1, this->channelName_);
+    }
+    if (this->anonymous_)
+    {
+        data.insert("anonymous"_L1, true);
+    }
+    if (this->type_ == u"kick")
+    {
+        data.insert("roomID", static_cast<qint64>(this->kickRoomID));
+        data.insert("userID", static_cast<qint64>(this->kickUserID));
+        data.insert("channelID", static_cast<qint64>(this->kickChannelID));
+    }
+    else if (this->type_ == u"multi")
+    {
+        QJsonArray children;
+        for (const auto &child : this->children)
+        {
+            children.append(child.toJson());
+        }
+        data.insert("children", children);
+        data.insert("indicatorMode",
+                    qmagicenum::enumNameString(this->mcIndicator));
+        data.insert("activeIndex", static_cast<int32_t>(this->mcIndex));
+        data.insert("tintByPlatform", this->mcTintByPlatform);
+        data.insert("showTwitchOverlays", this->mcShowTwitchOverlays);
+        data.insert("combinedViewerCount", this->mcCombinedViewerCount);
+    }
+    obj.insert("data", data);
+
+    obj.insert("filters", encodeFilters(this->filters_));
+
+    if (this->spellCheckOverride.has_value())
+    {
+        obj["checkSpelling"] = *this->spellCheckOverride;
+    }
+
+    if (this->perSplitHidePinnedMessage_)
+    {
+        obj.insert(QStringLiteral("splitHidePinnedMessage"), true);
+    }
+    if (this->perSplitHidePrediction_)
+    {
+        obj.insert(QStringLiteral("splitHidePrediction"), true);
+    }
+    if (this->perSplitHidePoll_)
+    {
+        obj.insert(QStringLiteral("splitHidePoll"), true);
+    }
+
+    return obj;
+}
+
+IndirectChannel SplitDescriptor::decodeChannel() const
+{
+    assertInGuiThread();
+
+    auto twitchChannel = [this]() -> IndirectChannel {
+        if (this->anonymous_)
+        {
+            return getApp()->getTwitch()->getOrAddAnonymousChannel(
+                this->channelName_);
+        }
+
+        return getApp()->getTwitch()->getOrAddChannel(this->channelName_);
+    };
+
+    auto type = qmagicenum::enumCast<Channel::Type>(this->type_);
+    if (!type)
+    {
+        return twitchChannel();
+    }
+
+    switch (*type)
+    {
+        case Channel::Type::Twitch:
+            return twitchChannel();
+        case Channel::Type::TwitchMentions:
+            return getApp()->getTwitch()->getMentionsChannel();
+        case Channel::Type::TwitchWatching:
+            return getApp()->getTwitch()->getWatchingChannel();
+        case Channel::Type::TwitchWhispers:
+            return getApp()->getTwitch()->getWhispersChannel();
+        case Channel::Type::TwitchLive:
+            return getApp()->getTwitch()->getLiveChannel();
+        case Channel::Type::TwitchAutomod:
+            return getApp()->getTwitch()->getAutomodChannel();
+        case Channel::Type::Misc:
+            return getApp()->getTwitch()->getChannelOrEmpty(this->channelName_);
+        case Channel::Type::Kick:
+            return getApp()->getKickChatServer()->getOrCreate(
+                this->channelName_, KickChannel::UserInit{
+                                        .roomID = this->kickRoomID,
+                                        .userID = this->kickUserID,
+                                        .channelID = this->kickChannelID,
+                                    });
+        case Channel::Type::YouTube:
+            return getApp()->getYouTubeChatServer()->getOrCreate(
+                this->channelName_);
+        case Channel::Type::Multi: {
+            QVarLengthArray<MultiChannel::Spec, 4> specs;
+            for (const auto &child : this->children)
+            {
+                auto spec = MultiChannel::Spec::fromDescriptor(child);
+                if (spec)
+                {
+                    specs.emplace_back(*std::move(spec));
+                }
+            }
+            auto ptr = std::make_shared<MultiChannel>(
+                specs, this->mcIndicator, this->mcTintByPlatform,
+                this->mcShowTwitchOverlays, this->mcCombinedViewerCount);
+            ptr->setActiveChannelIndex(this->mcIndex);
+            return {std::move(ptr)};
+        }
+        case Channel::Type::None:
+        case Channel::Type::Direct:
+        case Channel::Type::TwitchEnd:
+            break;  // FIXME: Remove these (#5703)
+    }
+
+    return Channel::getEmpty();
+}
+
+SplitNodeDescriptor::SplitNodeDescriptor(SplitDescriptor descriptor)
+    : SplitDescriptor(std::move(descriptor))
+{
+}
+
+SplitNodeDescriptor SplitNodeDescriptor::loadFromJSON(const QJsonObject &root)
+{
+    SplitNodeDescriptor descriptor(SplitDescriptor::loadFromJSON(root));
+    descriptor.flexH_ = root["flexh"].toDouble(1.0);
+    descriptor.flexV_ = root["flexv"].toDouble(1.0);
+    return descriptor;
+}
+
+QJsonObject SplitNodeDescriptor::toJson() const
+{
+    QJsonObject obj = SplitDescriptor::toJson();
+    obj.insert("flexh", this->flexH_);
+    obj.insert("flexv", this->flexV_);
+    return obj;
+}
+
+ContainerNodeDescriptor ContainerNodeDescriptor::loadFromJSON(
+    const QJsonObject &root)
+{
+    ContainerNodeDescriptor descriptor;
+
+    descriptor.flexH_ = root.value("flexh").toDouble(1.0);
+    descriptor.flexV_ = root.value("flexv").toDouble(1.0);
+
+    descriptor.vertical_ = root.value("type").toString() == "vertical";
+
+    const auto items = root.value("items").toArray();
+    for (const auto val : items)
+    {
+        const auto obj = val.toObject();
+        auto type = obj.value("type");
+        if (type.toString() == "split")
+        {
+            descriptor.items_.emplace_back(
+                SplitNodeDescriptor::loadFromJSON(obj));
+        }
+        else
+        {
+            descriptor.items_.emplace_back(
+                ContainerNodeDescriptor::loadFromJSON(obj));
+        }
+    }
+
+    return descriptor;
+}
+
+QJsonObject ContainerNodeDescriptor::toJson() const
+{
+    QJsonObject obj;
+    obj.insert("type", this->vertical_ ? "vertical" : "horizontal");
+    obj.insert("flexh", this->flexH_);
+    obj.insert("flexv", this->flexV_);
+
+    QJsonArray itemsArr;
+    for (const auto &n : this->items_)
+    {
+        itemsArr.append(std::visit(
+            [](auto &&it) {
+                return it.toJson();
+            },
+            n));
+    }
+    obj.insert("items", itemsArr);
+    return obj;
 }
 
 TabDescriptor TabDescriptor::loadFromJSON(const QJsonObject &tabObj)
@@ -193,27 +409,56 @@ TabDescriptor TabDescriptor::loadFromJSON(const QJsonObject &tabObj)
         auto nodeType = splitRoot.value("type").toString();
         if (nodeType == "split")
         {
-            tab.rootNode_ = loadNodes<SplitNodeDescriptor>(splitRoot);
+            tab.rootNode_ = SplitNodeDescriptor::loadFromJSON(splitRoot);
         }
         else if (nodeType == "horizontal" || nodeType == "vertical")
         {
-            tab.rootNode_ = loadNodes<ContainerNodeDescriptor>(splitRoot);
+            tab.rootNode_ = ContainerNodeDescriptor::loadFromJSON(splitRoot);
         }
     }
 
     return tab;
 }
 
-WindowLayout WindowLayout::loadFromFile(const QString &path)
+ExpectedStr<WindowLayout> WindowLayout::loadFromFile(const QString &path)
 {
     WindowLayout layout;
+    QJsonArray windowsArr;
+    bool loaded = false;
+
+    const QFileInfo fileInfo(path);
+    backup::loadWithBackups(
+        backup::FileData{
+            .fileName = fileInfo.fileName(),
+            .directory = fileInfo.absolutePath(),
+            .fileKind = QStringLiteral("Window layout"),
+            .fileDescription =
+                QStringLiteral("This file contains your open windows, tabs, "
+                               "splits, and split sizes."),
+        },
+        [&]() -> ExpectedStr<void> {
+            auto maybeWindows = loadWindowArray(path);
+            if (!maybeWindows)
+            {
+                return makeUnexpected(maybeWindows.error());
+            }
+
+            windowsArr = maybeWindows.value();
+            loaded = true;
+            return {};
+        });
+
+    if (!loaded)
+    {
+        return layout;
+    }
 
     bool hasSetAMainWindow = false;
 
     // "deserialize"
-    for (const auto windowVal : loadWindowArray(path))
+    for (const QJsonValue &windowVal : windowsArr)
     {
-        QJsonObject windowObj = windowVal.toObject();
+        const QJsonObject windowObj = windowVal.toObject();
 
         WindowDescriptor window;
 
@@ -253,6 +498,13 @@ WindowLayout WindowLayout::loadFromFile(const QString &path)
             int height = windowObj.value("height").toInt(-1);
 
             window.geometry_ = QRect(x, y, width, height);
+        }
+
+        // Load popup ID
+        auto idVal = windowObj["popupID"];
+        if (idVal.isDouble())
+        {
+            window.popupID = idVal.toInt(1);
         }
 
         bool hasSetASelectedTab = false;

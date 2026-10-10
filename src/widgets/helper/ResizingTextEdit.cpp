@@ -9,10 +9,17 @@
 #include "controllers/completion/TabCompletionModel.hpp"
 #include "singletons/Settings.hpp"
 
+#include <QAbstractTextDocumentLayout>
+#include <QEvent>
+#include <QFontMetrics>
+#include <QLayout>
 #include <QMenu>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QObject>
+#include <QPainter>
+#include <QTextDocument>
+#include <QtMath>
 
 namespace chatterino {
 
@@ -26,6 +33,11 @@ ResizingTextEdit::ResizingTextEdit()
 
     QObject::connect(this, &QTextEdit::textChanged, this,
                      &QWidget::updateGeometry);
+    QObject::connect(this->document()->documentLayout(),
+                     &QAbstractTextDocumentLayout::documentSizeChanged, this,
+                     [this] {
+                         this->invalidateAncestorLayouts();
+                     });
 
     QObject::connect(this, &QTextEdit::cursorPositionChanged, [this]() {
         // If tab was pressed and we're completing/replacing the current word,
@@ -50,9 +62,80 @@ ResizingTextEdit::ResizingTextEdit()
     this->installEventFilter(this);
 }
 
+void ResizingTextEdit::paintEvent(QPaintEvent *event)
+{
+    QTextEdit::paintEvent(event);
+    const auto cursor = this->textCursor();
+    if (this->ghostText_.isEmpty() || !this->hasFocus() ||
+        cursor.hasSelection() ||
+        cursor.position() != this->document()->characterCount() - 1)
+    {
+        return;
+    }
+
+    const auto caret = this->cursorRect();
+    const auto available = this->viewport()->width() - caret.right() - 3;
+    if (available <= 0)
+    {
+        return;
+    }
+
+    QPainter painter(this->viewport());
+    painter.setFont(this->font());
+    auto color = this->palette().color(QPalette::Text);
+    color.setAlphaF(0.42F);
+    painter.setPen(color);
+    const QFontMetrics metrics(this->font());
+    const auto text =
+        metrics.elidedText(this->ghostText_, Qt::ElideRight, available);
+    const auto baseline = caret.top() +
+                          (caret.height() - metrics.height()) / 2 +
+                          metrics.ascent();
+    painter.drawText(QPointF(caret.right() + 1, baseline), text);
+}
+
+void ResizingTextEdit::changeEvent(QEvent *event)
+{
+    QTextEdit::changeEvent(event);
+    if (event->type() == QEvent::FontChange)
+    {
+        // QTextEdit::setFont() updates the widget font but not the backing
+        // document's default font. Keep them in sync so the live document
+        // relayout tracks scale changes correctly.
+        this->document()->setDefaultFont(this->font());
+        this->invalidateAncestorLayouts();
+    }
+}
+
+void ResizingTextEdit::invalidateAncestorLayouts()
+{
+    this->updateGeometry();
+
+    // Walk up only 3 levels (inputWrapper -> SplitInput -> Split) to avoid
+    // invalidating unrelated ancestor layouts during scale propagation.
+    QWidget *w = this->parentWidget();
+    for (int i = 0; w != nullptr && i < 3; ++i, w = w->parentWidget())
+    {
+        if (auto *lay = w->layout())
+        {
+            lay->invalidate();
+        }
+        w->updateGeometry();
+    }
+}
+
 QSize ResizingTextEdit::sizeHint() const
 {
-    return QSize(this->width(), this->heightForWidth(this->width()));
+    auto hint = QTextEdit::sizeHint();
+    hint.setHeight(this->heightForWidth(hint.width()));
+    return hint;
+}
+
+QSize ResizingTextEdit::minimumSizeHint() const
+{
+    auto hint = QTextEdit::minimumSizeHint();
+    hint.setHeight(this->heightForWidth(hint.width()));
+    return hint;
 }
 
 bool ResizingTextEdit::hasHeightForWidth() const
@@ -64,15 +147,48 @@ bool ResizingTextEdit::isFirstWord() const
 {
     QString plainText = this->toPlainText();
     QString portionBeforeCursor = plainText.left(this->textCursor().position());
+    const auto prefixLength = this->ignoredCompletionPrefix_.size();
+
+    // An empty reply still completes the username in the prefix.
+    if (portionBeforeCursor.size() > prefixLength &&
+        portionBeforeCursor.startsWith(this->ignoredCompletionPrefix_))
+    {
+        portionBeforeCursor.remove(0, prefixLength);
+    }
     return !portionBeforeCursor.contains(' ');
 };
 
-int ResizingTextEdit::heightForWidth(int) const
+void ResizingTextEdit::setIgnoredCompletionPrefix(const QString &prefix)
+{
+    this->ignoredCompletionPrefix_ = prefix;
+    this->resetCompletion();
+}
+
+int ResizingTextEdit::heightForWidth(int width) const
 {
     auto margins = this->contentsMargins();
+    auto documentWidth = qMax(width - margins.left() - margins.right(), 1);
 
-    return margins.top() + this->document()->size().height() +
+    return margins.top() + qCeil(this->documentHeightForWidth(documentWidth)) +
            margins.bottom() + 5;
+}
+
+qreal ResizingTextEdit::documentHeightForWidth(int width) const
+{
+    QTextDocument document;
+    document.setDocumentMargin(this->document()->documentMargin());
+    document.setDefaultFont(this->font());
+    document.setDefaultTextOption(this->document()->defaultTextOption());
+
+    auto text = this->toPlainText();
+    if (text.isEmpty())
+    {
+        text = " ";
+    }
+
+    document.setPlainText(text);
+    document.setTextWidth(width);
+    return document.size().height();
 }
 
 QString ResizingTextEdit::textUnderCursor(bool *hadSpace) const
@@ -181,7 +297,6 @@ void ResizingTextEdit::keyPressEvent(QKeyEvent *event)
                 QSignalBlocker dontTriggerCursorMovement(this);
                 this->completer_->complete();
             }
-            this->textChanged();
             return;
         }
 
@@ -211,7 +326,6 @@ void ResizingTextEdit::keyPressEvent(QKeyEvent *event)
             QSignalBlocker dontTriggerCursorMovement(this);
             this->completer_->complete();
         }
-        this->textChanged();
         return;
     }
 
@@ -270,6 +384,21 @@ void ResizingTextEdit::setCompleter(QCompleter *c)
 void ResizingTextEdit::resetCompletion()
 {
     this->completionInProgress_ = false;
+}
+
+void ResizingTextEdit::setGhostText(QString text)
+{
+    if (this->ghostText_ == text)
+    {
+        return;
+    }
+    this->ghostText_ = std::move(text);
+    this->viewport()->update();
+}
+
+const QString &ResizingTextEdit::ghostText() const
+{
+    return this->ghostText_;
 }
 
 void ResizingTextEdit::insertCompletion(const QString &completion)

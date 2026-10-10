@@ -455,7 +455,7 @@ See also: [`ConnectionHandle:block`](#connectionhandleblock).
 `cb` receives:
 
 - `msg` ([`c2.Message`](#message))
-- `override_flags` ([`c2.MessageFlag`](#message) or `nil`)
+- `override_flags` (`c2.MessageFlag` or `nil`)
 
 ##### `Channel:is_twitch_channel()`
 
@@ -752,7 +752,6 @@ end)
 ```
 
 The full range of options can be found in the typing files ([LuaLS](./lua-meta/globals.lua), [TypeScript](./chatterino.d.ts)).
-Existing `MessageElement`s in `elements` field of the table will be cloned regardless if they can be created in Lua.
 
 ##### `Message:elements()`
 
@@ -848,6 +847,104 @@ Is this connection currently blocked?
 
 Is this connection still connected?
 
+#### `DateTime`
+
+A zoned date and time.
+
+##### `DateTime.from_iso_string(str)`
+
+Parse a date from an ISO 8601 string with milliseconds (`yyyy-MM-ddTHH:mm:ss.zzz±hh:mm`)
+
+##### `DateTime:to_iso_string()`
+
+Format the datetime as an ISO string with milliseconds (`yyyy-MM-ddTHH:mm:ss.zzz±hh:mm`)
+
+##### `DateTime:to_iso_string_without_ms()`
+
+Format the datetime as an ISO string without milliseconds (`yyyy-MM-ddTHH:mm:ss±hh:mm`)
+
+##### `DateTime.current_local()`
+
+Get the current datetime in the system's local time zone.
+
+##### `DateTime.current_utc()`
+
+Get the current datetime in the UTC time zone (00:00).
+
+##### `DateTime.from_unix_milliseconds(ts)`
+
+Get a datetime from a Unix timestamp (offset from 1970-01-01 00:00 UTC) in milliseconds.
+
+The returned date time will be in the local time zone.
+
+##### `DateTime.from_unix_seconds(ts)`
+
+Get a datetime from a Unix timestamp (offset from 1970-01-01 00:00 UTC) in seconds.
+
+The returned date time will be in the local time zone.
+
+##### `DateTime:to_unix_milliseconds()`
+
+Convert a datetime to a Unix timestamp (offset from 1970-01-01 00:00 UTC) in milliseconds.
+
+##### `DateTime:to_unix_seconds()`
+
+Convert a datetime to a Unix timestamp (offset from 1970-01-01 00:00 UTC) in seconds.
+
+##### `DateTime:is_local()`
+
+Check if the datetime is in the user's local timezone.
+Local times are represented without a timezone. Whenever the timezone is needed
+(e.g. for comparison) it is queried from the system. This is distinct from a
+datetime with your system timezone.
+
+##### `DateTime:is_utc()`
+
+Check if the datetime is in UTC.
+
+##### `DateTime:to_local()`
+
+Returns a copy of this datetime converted to the user's local timezone.
+A local time is represented without a timezone. That is `1970-01-01T00:00:00` is
+a local time but `1970-01-01T00:00:00Z` is not.
+
+##### `DateTime:to_utc()`
+
+Returns a copy of this datetime converted to UTC.
+
+#### `Menu`
+
+A generic menu used for context menus.
+
+##### `Menu:add_action(text, cb)`
+
+Appends a new action to the menu.
+
+##### `Menu:insert_action(before, text, cb)`
+
+Inserts an action named `text` before `before`. If `before` is not found, the
+action is inserted at the end. `before` can either be a name or a one-based
+index.
+
+##### `Menu:add_menu(title)`
+
+Appends a new Menu with `title` to the menu. Returns the new menu.
+
+##### `Menu:insert_menu(before, text)`
+
+Inserts a new Menu named `title` before `before`. If `before` is not found,
+the menu is inserted at the end. `before` can either be a name or a one-based
+index. Returns the new menu.
+
+##### `Menu:add_separator()`
+
+Appends a new separator.
+
+##### `Menu:insert_separator(before)`
+
+Inserts a new separator before `before`. If `before` is not found, the separator
+is inserted at the end. `before` can either be a name or a one-based index.
+
 #### `Image`
 
 An image with some scale associated with it. Images are mainly used for emotes
@@ -915,7 +1012,7 @@ It can be one of the following `type`s (`SplitContainerNodeType`):
 It has the following fields:
 
 - `type` (`SplitContainerNodeType`) The type of this node
-- `split` ([`Split`](#split)?) The split contained in this code (if this is a split node)
+- `split` ([`Split`](#split)?) The split contained in this node (if this is a split node)
 - `parent` ([`SplitContainerNode`](#splitcontainernode)?) The parent node
 - `horizontal_flex` (`number`) The amount of horizontal space this split takes
 - `vertical_flex` (`number`) The amount of vertical space this split takes
@@ -923,6 +1020,10 @@ It has the following fields:
 ##### `SplitContainerNode:children()`
 
 Get all children ([`SplitContainerNode`](#splitcontainernode)) of this node.
+
+##### `SplitContainerNode:is_valid()`
+
+Returns whether this handle still points at a live node.
 
 #### `SplitContainer`
 
@@ -976,6 +1077,21 @@ GraphViz output:
 ##### `WindowManager:all()`
 
 Get all open windows.
+
+##### `WindowManager:on_channelview_context_menu_requested(cb)`
+
+Registers an event handler for context menus in ChannelViews.
+
+When a context menu is requested, `cb` is passed a table with the following
+fields:
+
+- `split?` ([`Split`](#split)) The split holding the channel view. This is `nil`
+  if the view is not inside a split.
+- `message` ([`Message`](#message)) The clicked message.
+- `message_element?` (`MessageElement`) The clicked message element.
+- `channel?` ([`Channel`](#channel)) The channel shown in the view. Note that
+  this might be a virtual channel (e.g. in a search popup or usercard).
+- `menu` ([`Menu`](#menu)) The context menu. Add your actions here.
 
 #### `c2.windows`
 

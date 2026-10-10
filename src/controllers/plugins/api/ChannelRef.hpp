@@ -91,7 +91,6 @@ public:
      */
     void add_message(std::shared_ptr<Message> &message, sol::variadic_args va);
 
-    // FIXME: create a separate type for Sol container wrappers
     /**
      * Get a list of messages in this channel (starting from the most recent messages).
      * The snapshot is returned as a usertype that wraps a C++ object.
@@ -104,7 +103,7 @@ public:
 
     /**
      * Get the most recent message. If this channel doesn't have any message, this returns `nil`.
-     * 
+     *
      * @lua@return c2.Message?
      * @exposed c2.Channel:last_message
      */
@@ -112,16 +111,17 @@ public:
 
     /**
      * Replace a specific message with a different one.
-     * 
+     *
      * @lua@param message c2.Message The message to replace.
      * @lua@param replacement c2.Message The replacement.
      * @exposed c2.Channel:replace_message
      */
     void replace_message(const MessagePtrMut &message,
                          const MessagePtrMut &replacement);
+
     /**
      * Replace a specific message with a different one.
-     * 
+     *
      * @lua@param message c2.Message The message to replace.
      * @lua@param replacement c2.Message The replacement.
      * @lua@param hint number A one-based index (from the start) where the message is probably located. This is checked first. Otherwise the behavior is identical to the overload without this parameter.
@@ -132,7 +132,7 @@ public:
 
     /**
      * Replace a message at an index with a different one.
-     * 
+     *
      * @lua@param index number A one-based index (from the start) of the message to replace.
      * @lua@param replacement c2.Message The replacement.
      * @exposed c2.Channel:replace_message_at
@@ -236,8 +236,8 @@ public:
     bool is_vip();
 
     /**
-      * Misc
-      */
+     * Misc
+     */
 
     /**
      * @lua@return string
@@ -276,7 +276,7 @@ public:
      * (`Channel:replace_message`) where this can lead to infinite recursion.
      * See also: `ConnectionHandle:block`.
      *
-     * @lua@param cb fun(idx: number, old: c2.Message, replacement: c2.Message) `idx` is a one-based index (from the start) 
+     * @lua@param cb fun(idx: number, old: c2.Message, replacement: c2.Message) `idx` is a one-based index (from the start)
      * @lua@return c2.ConnectionHandle hdl
      * @exposed c2.Channel:on_message_replaced
      */
@@ -330,10 +330,8 @@ public:
 private:
     std::weak_ptr<Channel> weak;
 
-    /// Locks the weak pointer and throws if the pointer expired
     std::shared_ptr<Channel> strong();
 
-    /// Locks the weak pointer and throws if the pointer is invalid
     std::shared_ptr<TwitchChannel> twitch();
 };
 

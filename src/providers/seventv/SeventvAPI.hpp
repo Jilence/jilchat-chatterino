@@ -9,6 +9,7 @@
 
 class QString;
 class QJsonObject;
+class QByteArray;
 
 namespace chatterino {
 
@@ -29,23 +30,31 @@ public:
     SeventvAPI &operator=(const SeventvAPI &) = delete;
     SeventvAPI &operator=(SeventvAPI &&) = delete;
 
-    void getUserByTwitchID(const QString &twitchID,
-                           SuccessCallback<const QJsonObject &> &&onSuccess,
-                           ErrorCallback &&onError);
-    void getUserByKickID(uint64_t userID,
-                         SuccessCallback<const QJsonObject &> &&onSuccess,
-                         ErrorCallback &&onError);
-    void getEmoteSet(const QString &emoteSet,
-                     SuccessCallback<const QJsonObject &> &&onSuccess,
-                     ErrorCallback &&onError);
+    void getUserByTwitchID(
+        const QString &twitchID,
+        SuccessCallback<const QJsonObject &, const QByteArray &> &&onSuccess,
+        ErrorCallback &&onError);
+    void getUserByKickID(
+        uint64_t userID,
+        SuccessCallback<const QJsonObject &, const QByteArray &> &&onSuccess,
+        ErrorCallback &&onError);
+    void getEmoteSet(
+        const QString &emoteSet,
+        SuccessCallback<const QJsonObject &, const QByteArray &> &&onSuccess,
+        ErrorCallback &&onError);
 
-    void updatePresence(const QString &twitchChannelID,
-                        const QString &seventvUserID,
-                        SuccessCallback<> &&onSuccess, ErrorCallback &&onError);
+    void updateTwitchPresence(const QString &twitchChannelID,
+                              const QString &seventvUserID,
+                              SuccessCallback<> &&onSuccess,
+                              ErrorCallback &&onError);
 
     void updateKickPresence(uint64_t kickUserID, const QString &seventvUserID,
                             SuccessCallback<> &&onSuccess,
                             ErrorCallback &&onError);
+
+    void updatePresence(const QString &platform, const QString &platformID,
+                        const QString &seventvUserID,
+                        SuccessCallback<> &&onSuccess, ErrorCallback &&onError);
 };
 
 }  // namespace chatterino

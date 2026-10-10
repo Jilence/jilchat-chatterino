@@ -6,6 +6,8 @@
 
 #include "Application.hpp"
 #include "common/Args.hpp"
+#include "common/Modes.hpp"
+#include "common/QLogging.hpp"
 #include "controllers/filters/FilterRecord.hpp"
 #include "controllers/highlights/HighlightBadge.hpp"
 #include "controllers/highlights/HighlightBlacklistUser.hpp"
@@ -16,14 +18,25 @@
 #include "debug/Benchmark.hpp"
 #include "pajlada/settings/signalargs.hpp"
 #include "util/Backup.hpp"
+#include "util/CombinePath.hpp"
 #include "util/WindowsHelper.hpp"
 
 #include <pajlada/signals/scoped-connection.hpp>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QSaveFile>
+#include <QStringList>
+#include <rapidjson/pointer.h>
+
+#include <optional>
 
 namespace {
 
 using namespace chatterino;
-using namespace Qt::Literals;
+using namespace Qt::Literals::StringLiterals;
 
 template <typename T>
 void initializeSignalVector(pajlada::Signals::SignalHolder &signalHolder,
@@ -42,9 +55,171 @@ void initializeSignalVector(pajlada::Signals::SignalHolder &signalHolder,
     });
 }
 
+struct OutgoingTranslationChannelSettings {
+    QString channel;
+    QString mode;
+    QString targetLanguage;
+};
+
+QString normalizedOutgoingTranslationChannel(QString channelName)
+{
+    channelName = channelName.trimmed().toLower();
+    if (channelName.startsWith('#'))
+    {
+        channelName.remove(0, 1);
+    }
+
+    return channelName;
+}
+
+std::optional<OutgoingTranslationChannelSettings>
+    parseOutgoingTranslationChannelSettings(const QString &entry)
+{
+    const auto parts = entry.split('\t');
+    if (parts.size() < 3)
+    {
+        return std::nullopt;
+    }
+
+    auto channel = normalizedOutgoingTranslationChannel(parts.at(0));
+    if (channel.isEmpty())
+    {
+        return std::nullopt;
+    }
+
+    return OutgoingTranslationChannelSettings{
+        .channel = channel,
+        .mode = parts.at(1).trimmed(),
+        .targetLanguage = parts.at(2).trimmed(),
+    };
+}
+
+QString formatOutgoingTranslationChannelSettings(
+    const OutgoingTranslationChannelSettings &settings)
+{
+    return QStringList{settings.channel, settings.mode, settings.targetLanguage}
+        .join(QLatin1Char('\t'));
+}
+
+constexpr auto SETTINGS_IMPORT_FORMAT = "leafyrino-settings-export";
+constexpr auto PENDING_SETTINGS_IMPORT_FILENAME =
+    "pending-settings-import.json";
+const QStringList SETTINGS_IMPORT_FILES = {
+    u"settings.json"_s,
+    u"commands.json"_s,
+    u"window-layout.json"_s,
+};
+
+QJsonDocument readJsonFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        return {};
+    }
+
+    QJsonParseError parseError;
+    auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+    {
+        return {};
+    }
+
+    return document;
+}
+
+bool writeJsonFile(const QString &path, const QJsonObject &object)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+    {
+        return false;
+    }
+
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Indented));
+    return file.commit();
+}
+
+QJsonObject preserveLocalAccounts(QJsonObject importedSettings,
+                                  const QJsonObject &currentSettings)
+{
+    importedSettings.remove(u"accounts"_s);
+    importedSettings.remove(u"kickAccounts"_s);
+
+    if (currentSettings.contains(u"accounts"_s))
+    {
+        importedSettings.insert(u"accounts"_s, currentSettings[u"accounts"_s]);
+    }
+    if (currentSettings.contains(u"kickAccounts"_s))
+    {
+        importedSettings.insert(u"kickAccounts"_s,
+                                currentSettings[u"kickAccounts"_s]);
+    }
+
+    return importedSettings;
+}
+
+void applyPendingSettingsImport(const QString &settingsDirectory)
+{
+    const auto pendingPath =
+        combinePath(settingsDirectory, PENDING_SETTINGS_IMPORT_FILENAME);
+    if (!QFileInfo::exists(pendingPath))
+    {
+        return;
+    }
+
+    auto importDocument = readJsonFile(pendingPath);
+    if (importDocument.isNull())
+    {
+        return;
+    }
+
+    const auto importObject = importDocument.object();
+    if (importObject[u"format"_s].toString() != SETTINGS_IMPORT_FORMAT ||
+        !importObject[u"files"_s].isObject())
+    {
+        return;
+    }
+
+    const auto files = importObject[u"files"_s].toObject();
+    const auto settingsPath = combinePath(settingsDirectory, "settings.json");
+    const auto currentSettings = QFileInfo::exists(settingsPath)
+                                     ? readJsonFile(settingsPath).object()
+                                     : QJsonObject{};
+
+    for (const auto &relativeFile : SETTINGS_IMPORT_FILES)
+    {
+        if (!files.contains(relativeFile) || !files[relativeFile].isObject())
+        {
+            continue;
+        }
+
+        auto object = files[relativeFile].toObject();
+        if (relativeFile == u"settings.json"_s)
+        {
+            object = preserveLocalAccounts(object, currentSettings);
+        }
+
+        if (!writeJsonFile(combinePath(settingsDirectory, relativeFile),
+                           object))
+        {
+            return;
+        }
+    }
+
+    QFile::remove(pendingPath);
+}
+
 }  // namespace
 
 namespace chatterino {
+
+namespace {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+const auto &LOG = chatterinoSettings;
+
+}  // namespace
 
 std::vector<std::weak_ptr<pajlada::Settings::SettingData>> _settings;
 
@@ -52,6 +227,12 @@ void _actuallyRegisterSetting(
     std::weak_ptr<pajlada::Settings::SettingData> setting)
 {
     _settings.push_back(std::move(setting));
+}
+
+bool Settings::isEmoteModifierEnabled(const QString &name) const
+{
+    return this->enableEmoteModifiers.getValue() &&
+           !this->disabledEmoteModifiers.getValue().contains(name);
 }
 
 bool Settings::isHighlightedUser(const QString &username)
@@ -67,6 +248,10 @@ bool Settings::isHighlightedUser(const QString &username)
     }
 
     return false;
+}
+
+void Settings::migrate(bool isTest)
+{
 }
 
 bool Settings::isBlacklistedUser(const QString &username)
@@ -91,6 +276,20 @@ bool Settings::isMutedChannel(const QString &channelName)
     for (const auto &channel : *items)
     {
         if (channelName.toLower() == channel.toLower())
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Settings::isAutoTranslateChannel(const QString &channelName)
+{
+    auto items = this->autoTranslateChannels.readOnly();
+
+    for (const auto &channel : *items)
+    {
+        if (channelName.compare(channel, Qt::CaseInsensitive) == 0)
         {
             return true;
         }
@@ -134,6 +333,28 @@ void Settings::unmute(const QString &channelName)
     }
 }
 
+void Settings::enableAutoTranslateChannel(const QString &channelName)
+{
+    if (!this->isAutoTranslateChannel(channelName))
+    {
+        this->autoTranslateChannels.append(channelName);
+    }
+}
+
+void Settings::disableAutoTranslateChannel(const QString &channelName)
+{
+    for (std::vector<int>::size_type i = 0;
+         i != this->autoTranslateChannels.raw().size(); i++)
+    {
+        if (this->autoTranslateChannels.raw()[i].compare(
+                channelName, Qt::CaseInsensitive) == 0)
+        {
+            this->autoTranslateChannels.removeAt(i);
+            i--;
+        }
+    }
+}
+
 bool Settings::toggleMutedChannel(const QString &channelName)
 {
     if (this->isMutedChannel(channelName))
@@ -148,20 +369,186 @@ bool Settings::toggleMutedChannel(const QString &channelName)
     }
 }
 
+bool Settings::toggleAutoTranslateChannel(const QString &channelName)
+{
+    if (this->isAutoTranslateChannel(channelName))
+    {
+        this->disableAutoTranslateChannel(channelName);
+        return false;
+    }
+
+    this->autoTranslateChannels.append(channelName);
+    return true;
+}
+
+QString Settings::outgoingTranslationModeForChannel(const QString &channelName)
+{
+    const auto channel = normalizedOutgoingTranslationChannel(channelName);
+    if (channel.isEmpty())
+    {
+        return this->outgoingTranslationMode.getValue();
+    }
+
+    for (const auto &entry :
+         this->outgoingTranslationChannelSettingsSetting.getValue())
+    {
+        const auto parsed = parseOutgoingTranslationChannelSettings(entry);
+        if (parsed.has_value() && parsed->channel == channel &&
+            !parsed->mode.isEmpty())
+        {
+            return parsed->mode;
+        }
+    }
+
+    return this->outgoingTranslationMode.getValue();
+}
+
+QString Settings::outgoingTranslationTargetLanguageForChannel(
+    const QString &channelName)
+{
+    const auto channel = normalizedOutgoingTranslationChannel(channelName);
+    if (channel.isEmpty())
+    {
+        return this->outgoingTranslationTargetLanguage.getValue();
+    }
+
+    for (const auto &entry :
+         this->outgoingTranslationChannelSettingsSetting.getValue())
+    {
+        const auto parsed = parseOutgoingTranslationChannelSettings(entry);
+        if (parsed.has_value() && parsed->channel == channel &&
+            !parsed->targetLanguage.isEmpty())
+        {
+            return parsed->targetLanguage;
+        }
+    }
+
+    return this->outgoingTranslationTargetLanguage.getValue();
+}
+
+void Settings::setOutgoingTranslationModeForChannel(const QString &channelName,
+                                                    const QString &mode)
+{
+    const auto channel = normalizedOutgoingTranslationChannel(channelName);
+    if (channel.isEmpty())
+    {
+        this->outgoingTranslationMode.setValue(mode);
+        return;
+    }
+
+    auto entries = this->outgoingTranslationChannelSettingsSetting.getValue();
+    std::vector<QString> cleaned;
+    cleaned.reserve(entries.size() + 1);
+    bool updated = false;
+    for (const auto &entry : entries)
+    {
+        auto parsed = parseOutgoingTranslationChannelSettings(entry);
+        if (!parsed.has_value())
+        {
+            continue;
+        }
+
+        if (parsed->channel == channel)
+        {
+            if (updated)
+            {
+                continue;
+            }
+
+            parsed->mode = mode;
+            if (parsed->targetLanguage.isEmpty())
+            {
+                parsed->targetLanguage =
+                    this->outgoingTranslationTargetLanguage.getValue();
+            }
+            updated = true;
+        }
+
+        cleaned.push_back(formatOutgoingTranslationChannelSettings(*parsed));
+    }
+
+    if (!updated)
+    {
+        cleaned.push_back(formatOutgoingTranslationChannelSettings({
+            .channel = channel,
+            .mode = mode,
+            .targetLanguage =
+                this->outgoingTranslationTargetLanguage.getValue(),
+        }));
+    }
+
+    this->outgoingTranslationChannelSettingsSetting.setValue(cleaned);
+}
+
+void Settings::setOutgoingTranslationTargetLanguageForChannel(
+    const QString &channelName, const QString &targetLanguage)
+{
+    const auto channel = normalizedOutgoingTranslationChannel(channelName);
+    if (channel.isEmpty())
+    {
+        this->outgoingTranslationTargetLanguage.setValue(targetLanguage);
+        return;
+    }
+
+    auto entries = this->outgoingTranslationChannelSettingsSetting.getValue();
+    std::vector<QString> cleaned;
+    cleaned.reserve(entries.size() + 1);
+    bool updated = false;
+    for (const auto &entry : entries)
+    {
+        auto parsed = parseOutgoingTranslationChannelSettings(entry);
+        if (!parsed.has_value())
+        {
+            continue;
+        }
+
+        if (parsed->channel == channel)
+        {
+            if (updated)
+            {
+                continue;
+            }
+
+            parsed->targetLanguage = targetLanguage;
+            updated = true;
+        }
+
+        cleaned.push_back(formatOutgoingTranslationChannelSettings(*parsed));
+    }
+
+    if (!updated)
+    {
+        cleaned.push_back(formatOutgoingTranslationChannelSettings({
+            .channel = channel,
+            .mode = this->outgoingTranslationMode.getValue(),
+            .targetLanguage = targetLanguage,
+        }));
+    }
+
+    this->outgoingTranslationChannelSettingsSetting.setValue(cleaned);
+}
+
 Settings *Settings::instance_ = nullptr;
 
-Settings::Settings(const Args &args, const QString &settingsDirectory,
-                   bool isTest)
+Settings::Settings(const Modes &modes, const Args &args,
+                   const QString &settingsDirectory,
+                   const SettingsArgs &settingsArgs)
     : prevInstance_(Settings::instance_)
     , disableSaving(args.dontSaveSettings)
+    , createShortcutForToasts(
+          "/notifications/createShortcutForToasts",
+          (modes.isPortable || modes.isExternallyPackaged) ? false : true)
 {
+    applyPendingSettingsImport(settingsDirectory);
+
     QString settingsPath = settingsDirectory + "/settings.json";
 
     // get global instance of the settings library
     auto settingsInstance = pajlada::Settings::SettingManager::getInstance();
 
-    if (isTest)
+    if (settingsArgs.isTest)
     {
+        qCInfo(LOG) << "Loading settings from" << settingsPath;
         settingsInstance->load(qPrintable(settingsPath));
     }
     else
@@ -192,6 +579,10 @@ Settings::Settings(const Args &args, const QString &settingsDirectory,
                         return makeUnexpected("Failed to seek in file");
                     case LoadError::JSONParseError:
                         return makeUnexpected("File contained malformed JSON");
+                    case LoadError::SavingFromTemporaryFileFailed:
+                        return makeUnexpected(
+                            u"Failed to save '" % settingsPath %
+                            u"' with settings from .tmp file");
                 }
                 assert(false);
                 return makeUnexpected("Unknown error");
@@ -207,6 +598,12 @@ Settings::Settings(const Args &args, const QString &settingsDirectory,
         static_cast<uint64_t>(
             pajlada::Settings::SettingManager::SaveMethod::OnlySaveIfChanged));
 
+    // Run setting migrations
+    if (settingsArgs.runMigrations)
+    {
+        this->migrate(settingsArgs.isTest);
+    }
+
     initializeSignalVector(this->signalHolder, this->highlightedMessagesSetting,
                            this->highlightedMessages);
     initializeSignalVector(this->signalHolder, this->highlightedUsersSetting,
@@ -219,6 +616,9 @@ Settings::Settings(const Args &args, const QString &settingsDirectory,
                            this->ignoredMessages);
     initializeSignalVector(this->signalHolder, this->mutedChannelsSetting,
                            this->mutedChannels);
+    initializeSignalVector(this->signalHolder,
+                           this->autoTranslateChannelsSetting,
+                           this->autoTranslateChannels);
     initializeSignalVector(this->signalHolder, this->filterRecordsSetting,
                            this->filterRecords);
     initializeSignalVector(this->signalHolder, this->nicknamesSetting,
@@ -244,7 +644,119 @@ Settings::Settings(const Args &args, const QString &settingsDirectory,
     {
         this->showUnlistedSevenTVEmotes.setValue(true);
         // reset to default, so it doesn't appear in the config
-        this->showUnlistedEmotesDontUse.remove();
+        settingsInstance->removeSetting(
+            this->showUnlistedEmotesDontUse.getPath());
+    }
+
+    // migration for `/appearance/badges/homies`
+    // -> `/appearance/badges/homies/supporter` and
+    //    `/appearance/badges/homies/custom`
+    constexpr const char *OLD_HOMIES_BADGES_SETTING =
+        "/appearance/badges/homies";
+    if (auto *oldHomiesBadgesSetting =
+            settingsInstance->get(OLD_HOMIES_BADGES_SETTING);
+        oldHomiesBadgesSetting != nullptr && oldHomiesBadgesSetting->IsBool())
+    {
+        const auto enabled = oldHomiesBadgesSetting->GetBool();
+
+        // removeSetting would also unregister the new split badge settings
+        const auto removedOldSetting =
+            rapidjson::Pointer(OLD_HOMIES_BADGES_SETTING)
+                .Erase(settingsInstance->document);
+        const auto wroteSupporter =
+            this->showBadgesHomiesSupporter.setValue(enabled);
+        const auto wroteCustom = this->showBadgesHomiesCustom.setValue(enabled);
+        if (removedOldSetting || wroteSupporter || wroteCustom)
+        {
+            this->requestSave();
+        }
+    }
+
+    auto saveHomiesBadgeSetting = [this](bool, auto) {
+        this->requestSave();
+    };
+    this->showBadgesHomiesSupporter.connect(saveHomiesBadgeSetting,
+                                            this->signalHolder, false);
+    this->showBadgesHomiesCustom.connect(saveHomiesBadgeSetting,
+                                         this->signalHolder, false);
+
+    // migration for `/moltorino/pinnedMessages/showPinButtonOnModerators`
+    // -> `/moltorino/pinnedMessages/showPinButtonOnModeratorsMode`
+    constexpr const char *OLD_PIN_MODERATOR_BUTTON_SETTING =
+        "/moltorino/pinnedMessages/showPinButtonOnModerators";
+    if (auto *oldPinSetting =
+            settingsInstance->get(OLD_PIN_MODERATOR_BUTTON_SETTING);
+        oldPinSetting != nullptr)
+    {
+        if (settingsInstance->get(
+                this->showPinButtonOnModeratorsMode.getPath()) == nullptr)
+        {
+            this->showPinButtonOnModeratorsMode.setValue(
+                oldPinSetting->IsBool() && oldPinSetting->GetBool() ? 1 : 0);
+        }
+        settingsInstance->removeSetting(OLD_PIN_MODERATOR_BUTTON_SETTING);
+    }
+
+    // `/appearance/tabHighlightsUseThemeColor` came from Moltorino and did
+    // the same as `/appearance/tabs/colorHighlightsByMessage`.
+    settingsInstance->removeSetting("/appearance/tabHighlightsUseThemeColor");
+
+    auto migrateBoolSetting = [&](const char *oldPath,
+                                  BoolSetting &newSetting) {
+        if (settingsInstance->get(newSetting.getPath()) != nullptr)
+        {
+            return;
+        }
+
+        if (auto *oldSetting = settingsInstance->get(oldPath);
+            oldSetting != nullptr && oldSetting->IsBool())
+        {
+            newSetting.setValue(oldSetting->GetBool());
+            settingsInstance->removeSetting(oldPath);
+            this->requestSave();
+        }
+    };
+
+    auto migrateStringSetting = [&](const char *oldPath,
+                                    QStringSetting &newSetting) {
+        if (settingsInstance->get(newSetting.getPath()) != nullptr)
+        {
+            return;
+        }
+
+        if (auto *oldSetting = settingsInstance->get(oldPath);
+            oldSetting != nullptr && oldSetting->IsString())
+        {
+            newSetting.setValue(QString::fromUtf8(oldSetting->GetString()));
+            settingsInstance->removeSetting(oldPath);
+            this->requestSave();
+        }
+    };
+
+    migrateBoolSetting("/moltorino/showInputPlaceholder",
+                       this->showTextInputPlaceholder);
+    migrateBoolSetting("/moltorino/client/spoofIrcMessagesAsWeb",
+                       this->fakeWebChat);
+    migrateBoolSetting("/moltorino/client/showDetectionHighlights",
+                       this->normalNonceDetection);
+    migrateStringSetting("/moltorino/client/webHighlightColor",
+                         this->webchatColor);
+    migrateStringSetting("/moltorino/client/androidHighlightColor",
+                         this->androidColor);
+    migrateStringSetting("/moltorino/client/iosHighlightColor", this->iosColor);
+
+    // "Display 7TV Paints" became one of the choices for the paints of names.
+    if (auto *oldSetting = settingsInstance->get("/misc/displaySevenTVPaints");
+        oldSetting != nullptr)
+    {
+        if (settingsInstance->get(this->usernamePaintSource.getPath()) ==
+                nullptr &&
+            oldSetting->IsBool() && !oldSetting->GetBool())
+        {
+            this->usernamePaintSource = QStringLiteral("off");
+        }
+        settingsInstance->removeSetting("/misc/displaySevenTVPaints");
+        this->requestSave();
     }
 }
 

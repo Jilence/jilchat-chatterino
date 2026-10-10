@@ -5,8 +5,11 @@
 #include "widgets/settingspages/NotificationPage.hpp"
 
 #include "Application.hpp"
+#include "controllers/accounts/AccountController.hpp"
+#include "controllers/notifications/DesktopPresenceController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
 #include "controllers/notifications/NotificationModel.hpp"
+#include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Toasts.hpp"
 #include "util/LayoutCreator.hpp"
@@ -36,7 +39,8 @@ NotificationPage::NotificationPage()
             {
                 settings.emplace<QLabel>(
                     "You can be informed when certain channels go live. You "
-                    "can be informed in multiple ways:");
+                    "must be logged in to receive live notifications."
+                    "\nYou can be informed in multiple ways:");
 
                 settings.append(this->createCheckBox(
                     "Flash taskbar", getSettings()->notificationFlashTaskbar));
@@ -50,6 +54,28 @@ NotificationPage::NotificationPage()
                 settings.append(this->createCheckBox(
                     "Suppress live notifications on startup",
                     getSettings()->suppressInitialLiveNotification));
+
+                auto presenceBox =
+                    settings.emplace<QGroupBox>("JilChat Desktop Presence");
+                auto *presenceLayout = new QVBoxLayout;
+                presenceBox->setLayout(presenceLayout);
+                this->rebuildDesktopPresenceAccounts(presenceLayout);
+                this->managedConnections_.managedConnect(
+                    getApp()->getAccounts()->twitch.userListUpdated,
+                    [this, presenceLayout] {
+                        QTimer::singleShot(0, this, [this, presenceLayout] {
+                            this->rebuildDesktopPresenceAccounts(
+                                presenceLayout);
+                        });
+                    });
+                this->managedConnections_.managedConnect(
+                    getApp()->getAccounts()->desktopPresence().changed,
+                    [this, presenceLayout] {
+                        QTimer::singleShot(0, this, [this, presenceLayout] {
+                            this->rebuildDesktopPresenceAccounts(
+                                presenceLayout);
+                        });
+                    });
 #if defined(Q_OS_WIN) || defined(CHATTERINO_WITH_LIBNOTIFY)
                 settings.append(this->createCheckBox(
                     "Show notification", getSettings()->notificationToast));
@@ -63,7 +89,8 @@ NotificationPage::NotificationPage()
                     "start menu folder if needed by live notifications."
                     "\n(On portable mode, this is disabled by "
                     "default)"));
-
+#endif
+#if defined(Q_OS_WIN) || defined(CHATTERINO_WITH_LIBNOTIFY)
                 auto openIn = settings.emplace<QHBoxLayout>().withoutMargin();
                 {
                     openIn
@@ -72,9 +99,6 @@ NotificationPage::NotificationPage()
                         ->setSizePolicy(QSizePolicy::Maximum,
                                         QSizePolicy::Preferred);
 
-                    // implementation of custom combobox done
-                    // because addComboBox only can handle strings-settings
-                    // int setting for the ToastReaction is desired
                     openIn.append(this->createToastReactionComboBox())
                         ->setSizePolicy(QSizePolicy::Maximum,
                                         QSizePolicy::Preferred);
@@ -128,7 +152,6 @@ NotificationPage::NotificationPage()
                     view->getTableView()->setColumnWidth(0, 200);
                 });
 
-                // We can safely ignore this signal connection since we own the view
                 std::ignore = view->addButtonPressed.connect([] {
                     getApp()->getNotifications()->addChannelNotification(
                         "channel", Platform::Twitch);
@@ -136,6 +159,49 @@ NotificationPage::NotificationPage()
             }
         }
     }
+}
+
+void NotificationPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
+{
+    while (auto *item = layout->takeAt(0))
+    {
+        delete item->widget();
+        delete item;
+    }
+
+    auto &controller = getApp()->getAccounts()->desktopPresence();
+    const auto accounts = getApp()->getAccounts()->twitch.accounts.readOnly();
+    if (accounts->empty())
+    {
+        layout->addWidget(new QLabel("No Twitch account is logged in."));
+    }
+    for (const auto &account : *accounts)
+    {
+        auto *checkBox = new QCheckBox(
+            account->getUserName() +
+            " — Pause mobile notifications while JilChat Desktop is running");
+        checkBox->setChecked(controller.isEnabled(account->getUserId()));
+        QObject::connect(checkBox, &QCheckBox::toggled, this,
+                         [account, &controller](bool enabled) {
+                             controller.setEnabled(account, enabled);
+                         });
+        layout->addWidget(checkBox);
+
+        const auto status = controller.statusText(account->getUserId());
+        if (!status.isEmpty())
+        {
+            auto *statusLabel = new QLabel(status);
+            statusLabel->setStyleSheet("color: palette(mid);");
+            statusLabel->setContentsMargins(24, 0, 0, 0);
+            layout->addWidget(statusLabel);
+        }
+    }
+
+    auto *hint = new QLabel(
+        "When the program is closed or crashes, notifications resume "
+        "automatically within 90 seconds.");
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
 }
 QComboBox *NotificationPage::createToastReactionComboBox()
 {
@@ -148,7 +214,6 @@ QComboBox *NotificationPage::createToastReactionComboBox()
             i, Toasts::findStringFromReaction(static_cast<ToastReaction>(i)));
     }
 
-    // update when setting changes
     pajlada::Settings::Setting<int> setting = getSettings()->openFromToast;
     setting.connect(
         [toastReactionOptions](const int &index, auto) {

@@ -58,6 +58,8 @@ set(SOURCE_FILES
         common/network/NetworkResult.hpp
         common/network/NetworkTask.cpp
         common/network/NetworkTask.hpp
+        common/network/RetryingGet.cpp
+        common/network/RetryingGet.hpp
 
         common/websockets/WebSocketPool.cpp
         common/websockets/WebSocketPool.hpp
@@ -95,6 +97,10 @@ set(SOURCE_FILES
         controllers/commands/builtin/twitch/Ban.hpp
         controllers/commands/builtin/twitch/Block.cpp
         controllers/commands/builtin/twitch/Block.hpp
+        controllers/commands/builtin/twitch/BlockedTerms.cpp
+        controllers/commands/builtin/twitch/BlockedTerms.hpp
+        controllers/commands/builtin/twitch/ChannelPoints.cpp
+        controllers/commands/builtin/twitch/ChannelPoints.hpp
         controllers/commands/builtin/twitch/ChatSettings.cpp
         controllers/commands/builtin/twitch/ChatSettings.hpp
         controllers/commands/builtin/twitch/Chatters.cpp
@@ -103,10 +109,20 @@ set(SOURCE_FILES
         controllers/commands/builtin/twitch/DeleteMessages.hpp
         controllers/commands/builtin/twitch/GetModerators.cpp
         controllers/commands/builtin/twitch/GetModerators.hpp
+        controllers/commands/builtin/twitch/GetFounders.cpp
+        controllers/commands/builtin/twitch/GetFounders.hpp
         controllers/commands/builtin/twitch/GetVIPs.cpp
         controllers/commands/builtin/twitch/GetVIPs.hpp
+        controllers/commands/builtin/twitch/Gif.cpp
+        controllers/commands/builtin/twitch/Gif.hpp
         controllers/commands/builtin/twitch/LowTrust.cpp
         controllers/commands/builtin/twitch/LowTrust.hpp
+        controllers/commands/builtin/twitch/ModVipActions.cpp
+        controllers/commands/builtin/twitch/ModVipActions.hpp
+        controllers/commands/builtin/twitch/Nuke.cpp
+        controllers/commands/builtin/twitch/Nuke.hpp
+        controllers/commands/builtin/twitch/Pin.cpp
+        controllers/commands/builtin/twitch/Pin.hpp
         controllers/commands/builtin/twitch/Poll.cpp
         controllers/commands/builtin/twitch/Poll.hpp
         controllers/commands/builtin/twitch/Prediction.cpp
@@ -145,6 +161,8 @@ set(SOURCE_FILES
         controllers/commands/CommandModel.cpp
         controllers/commands/CommandModel.hpp
 
+        controllers/completion/CommandUsage.cpp
+        controllers/completion/CommandUsage.hpp
         controllers/completion/CompletionModel.cpp
         controllers/completion/CompletionModel.hpp
         controllers/completion/sources/Source.hpp
@@ -182,8 +200,6 @@ set(SOURCE_FILES
         controllers/filters/lang/expressions/Expression.hpp
         controllers/filters/lang/expressions/BinaryOperation.cpp
         controllers/filters/lang/expressions/BinaryOperation.hpp
-        controllers/filters/lang/expressions/IdentifierExpression.cpp
-        controllers/filters/lang/expressions/IdentifierExpression.hpp
         controllers/filters/lang/expressions/ListExpression.cpp
         controllers/filters/lang/expressions/ListExpression.hpp
         controllers/filters/lang/expressions/RegexExpression.cpp
@@ -253,11 +269,16 @@ set(SOURCE_FILES
 
         controllers/notifications/NotificationController.cpp
         controllers/notifications/NotificationController.hpp
+        controllers/notifications/DesktopPresenceController.cpp
+        controllers/notifications/DesktopPresenceController.hpp
         controllers/notifications/NotificationModel.cpp
         controllers/notifications/NotificationModel.hpp
 
         controllers/pings/MutedChannelModel.cpp
         controllers/pings/MutedChannelModel.hpp
+
+        controllers/tray/TrayController.cpp
+        controllers/tray/TrayController.hpp
 
 
         controllers/plugins/api/Accounts.cpp
@@ -266,6 +287,8 @@ set(SOURCE_FILES
         controllers/plugins/api/ChannelRef.hpp
         controllers/plugins/api/ConnectionHandle.cpp
         controllers/plugins/api/ConnectionHandle.hpp
+        controllers/plugins/api/DateTime.cpp
+        controllers/plugins/api/DateTime.hpp
         controllers/plugins/api/DebugLibrary.cpp
         controllers/plugins/api/DebugLibrary.hpp
         controllers/plugins/api/EventType.hpp
@@ -283,6 +306,8 @@ set(SOURCE_FILES
         controllers/plugins/api/JSONParse.hpp
         controllers/plugins/api/JSONStringify.cpp
         controllers/plugins/api/JSONStringify.hpp
+        controllers/plugins/api/Menu.cpp
+        controllers/plugins/api/Menu.hpp
         controllers/plugins/api/Message.cpp
         controllers/plugins/api/Message.hpp
         controllers/plugins/api/WebSocket.cpp
@@ -320,6 +345,9 @@ set(SOURCE_FILES
         controllers/twitch/LiveController.cpp
         controllers/twitch/LiveController.hpp
 
+        controllers/channelpoints/ChannelPointsChartStore.cpp
+        controllers/channelpoints/ChannelPointsChartStore.hpp
+
         controllers/userdata/UserDataController.cpp
         controllers/userdata/UserDataController.hpp
         controllers/userdata/UserData.hpp
@@ -327,6 +355,8 @@ set(SOURCE_FILES
         debug/Benchmark.cpp
         debug/Benchmark.hpp
 
+        messages/AsciiArt.cpp
+        messages/AsciiArt.hpp
         messages/Emote.cpp
         messages/Emote.hpp
         messages/Image.cpp
@@ -344,6 +374,7 @@ set(SOURCE_FILES
         messages/MessageElement.cpp
         messages/MessageElement.hpp
         messages/MessageFlag.hpp
+        messages/MessageParseArgs.hpp
         messages/MessageSimilarity.cpp
         messages/MessageSimilarity.hpp
         messages/MessageSink.hpp
@@ -387,6 +418,10 @@ set(SOURCE_FILES
 
         providers/bttv/BttvBadges.cpp
         providers/bttv/BttvBadges.hpp
+        providers/bttv/BttvPersonalEmotes.cpp
+        providers/bttv/BttvPersonalEmotes.hpp
+        providers/bttv/BttvUsernameEffects.cpp
+        providers/bttv/BttvUsernameEffects.hpp
         providers/bttv/BttvEmotes.cpp
         providers/bttv/BttvEmotes.hpp
         providers/bttv/BttvLiveUpdates.cpp
@@ -407,6 +442,23 @@ set(SOURCE_FILES
 
         providers/folhinha/FolhinhaBadges.cpp
         providers/folhinha/FolhinhaBadges.hpp
+
+        providers/ffzap/FfzApBadges.cpp
+        providers/ffzap/FfzApBadges.hpp
+
+        providers/dankchat/DankChatBadges.cpp
+        providers/dankchat/DankChatBadges.hpp
+
+        providers/chatsen/ChatsenBadges.cpp
+        providers/chatsen/ChatsenBadges.hpp
+
+        providers/bluzyrino/BluzyrinoBadges.cpp
+        providers/bluzyrino/BluzyrinoBadges.hpp
+
+        providers/jilchat/JilChatBadges.cpp
+        providers/jilchat/JilChatBadges.hpp
+        providers/jilchat/JilChatVoice.cpp
+        providers/jilchat/JilChatVoice.hpp
 
         providers/colors/ColorProvider.cpp
         providers/colors/ColorProvider.hpp
@@ -446,10 +498,43 @@ set(SOURCE_FILES
         providers/kick/KickMessageBuilder.cpp
         providers/kick/KickMessageBuilder.hpp
 
+        providers/youtube/YouTubeApi.cpp
+        providers/youtube/YouTubeApi.hpp
+        providers/youtube/YouTubeBadges.cpp
+        providers/youtube/YouTubeBadges.hpp
+        providers/youtube/YouTubeChannel.cpp
+        providers/youtube/YouTubeChannel.hpp
+        providers/youtube/YouTubeChatServer.cpp
+        providers/youtube/YouTubeChatServer.hpp
+        providers/youtube/YouTubeMessageBuilder.cpp
+        providers/youtube/YouTubeMessageBuilder.hpp
+
+        providers/kick/ws/KickCentrifugoManager.cpp
+        providers/kick/ws/KickPusherManager.cpp
+        providers/kick/ws/KickWebSocketCommon.cpp
+
         providers/links/LinkInfo.cpp
         providers/links/LinkInfo.hpp
         providers/links/LinkResolver.cpp
         providers/links/LinkResolver.hpp
+
+        providers/moltorino/MoltorinoAuth.cpp
+        providers/moltorino/MoltorinoAuth.hpp
+        providers/moltorino/MoltorinoFeatureFlags.hpp
+        # providers/moltorino/MoltorinoPresence.cpp
+        # providers/moltorino/MoltorinoPresence.hpp
+        providers/moltorino/MoltorinoSupporterBadges.cpp
+        providers/moltorino/MoltorinoSupporterBadges.hpp
+
+        providers/repetitions/RepeatedMessageDetector.cpp
+        providers/repetitions/RepeatedMessageDetector.hpp
+
+        providers/folhinha/FolhinhaBadges.cpp
+        providers/folhinha/FolhinhaBadges.hpp
+
+        providers/homies/HomiesBadges.cpp
+        providers/homies/HomiesBadges.hpp
+
 
         providers/liveupdates/BasicPubSubClient.hpp
         providers/liveupdates/BasicPubSubListener.hpp
@@ -462,10 +547,22 @@ set(SOURCE_FILES
         providers/pronouns/alejo/PronounsAlejoApi.cpp
         providers/pronouns/alejo/PronounsAlejoApi.hpp
 
+        providers/potat/PotatCommands.cpp
+        providers/potat/PotatCommands.hpp
+
+        providers/publiclogs/PublicLogs.cpp
+        providers/publiclogs/PublicLogs.hpp
+
+        providers/supibot/SupibotCommands.cpp
+        providers/supibot/SupibotCommands.hpp
+
         providers/recentmessages/Api.cpp
         providers/recentmessages/Api.hpp
         providers/recentmessages/Impl.cpp
         providers/recentmessages/Impl.hpp
+
+        providers/translation/Translator.cpp
+        providers/translation/Translator.hpp
 
         providers/seventv/SeventvAPI.cpp
         providers/seventv/SeventvAPI.hpp
@@ -505,6 +602,8 @@ set(SOURCE_FILES
         providers/twitch/ChannelPointReward.hpp
         providers/twitch/IrcMessageHandler.cpp
         providers/twitch/IrcMessageHandler.hpp
+        providers/twitch/ModerationActionLogs.cpp
+        providers/twitch/ModerationActionLogs.hpp
         providers/twitch/PubSubClient.cpp
         providers/twitch/PubSubClient.hpp
         providers/twitch/PubSubManager.cpp
@@ -518,6 +617,9 @@ set(SOURCE_FILES
         providers/twitch/TwitchBadge.hpp
         providers/twitch/TwitchBadges.cpp
         providers/twitch/TwitchBadges.hpp
+        providers/twitch/api/TwitchGql.cpp
+        providers/twitch/ChannelManagement.cpp
+        providers/twitch/ChannelManagement.hpp
         providers/twitch/TwitchChannel.cpp
         providers/twitch/TwitchChannel.hpp
         providers/twitch/TwitchCommon.cpp
@@ -530,6 +632,10 @@ set(SOURCE_FILES
         providers/twitch/TwitchIrc.hpp
         providers/twitch/TwitchIrcServer.cpp
         providers/twitch/TwitchIrcServer.hpp
+        providers/twitch/TwitchNameHistory.cpp
+        providers/twitch/TwitchNameHistory.hpp
+        providers/twitch/TwitchReadConnectionPool.cpp
+        providers/twitch/TwitchReadConnectionPool.hpp
         providers/twitch/TwitchUser.cpp
         providers/twitch/TwitchUser.hpp
         providers/twitch/TwitchUsers.cpp
@@ -557,13 +663,22 @@ set(SOURCE_FILES
         providers/twitch/pubsubmessages/Listen.cpp
         providers/twitch/pubsubmessages/Listen.hpp
         providers/twitch/pubsubmessages/Message.hpp
+        providers/twitch/pubsubmessages/PinnedChat.cpp
+        providers/twitch/pubsubmessages/PinnedChat.hpp
         providers/twitch/pubsubmessages/Unlisten.cpp
         providers/twitch/pubsubmessages/Unlisten.hpp
+        providers/twitch/pubsubmessages/PredictionEvent.cpp
+        providers/twitch/pubsubmessages/PredictionEvent.hpp
+        providers/twitch/pubsubmessages/PredictionUserEvent.cpp
+        providers/twitch/pubsubmessages/PredictionUserEvent.hpp
 
         providers/twitch/api/Helix.cpp
         providers/twitch/api/Helix.hpp
+        providers/twitch/api/HelixEnums.hpp
         providers/twitch/api/TwitchGql.cpp
         providers/twitch/api/TwitchGql.hpp
+        providers/twitch/api/TwitchGifs.cpp
+        providers/twitch/api/TwitchGifs.hpp
 
         singletons/CrashHandler.cpp
         singletons/CrashHandler.hpp
@@ -648,6 +763,9 @@ set(SOURCE_FILES
         util/OnceFlag.hpp
         util/RapidjsonHelpers.cpp
         util/RapidjsonHelpers.hpp
+        util/RapidJsonSerializeQSize.hpp
+        util/RapidJsonSerializeQString.hpp
+        util/RapidJsonSerializeQStringView.hpp
         util/RatelimitBucket.cpp
         util/RatelimitBucket.hpp
         util/RenameThread.cpp
@@ -660,6 +778,8 @@ set(SOURCE_FILES
         util/SignalListener.hpp
         util/StreamLink.cpp
         util/StreamLink.hpp
+        util/TabHistory.cpp
+        util/TabHistory.hpp
         util/ThreadGuard.hpp
         util/Twitch.cpp
         util/Twitch.hpp
@@ -723,8 +843,12 @@ set(SOURCE_FILES
         widgets/buttons/Button.hpp
         widgets/buttons/DimButton.cpp
         widgets/buttons/DimButton.hpp
+        widgets/buttons/FollowButton.cpp
+        widgets/buttons/FollowButton.hpp
         widgets/buttons/DrawnButton.cpp
         widgets/buttons/DrawnButton.hpp
+        # widgets/buttons/InitMoltorinoUpdateButton.cpp
+        # widgets/buttons/InitMoltorinoUpdateButton.hpp
         widgets/buttons/InitUpdateButton.cpp
         widgets/buttons/InitUpdateButton.hpp
         widgets/buttons/LabelButton.cpp
@@ -742,16 +866,34 @@ set(SOURCE_FILES
 
         widgets/dialogs/BadgePickerDialog.cpp
         widgets/dialogs/BadgePickerDialog.hpp
+        widgets/dialogs/TwitchBadgePickerDialog.cpp
+        widgets/dialogs/TwitchBadgePickerDialog.hpp
+        widgets/dialogs/UserBadgesDialog.cpp
+        widgets/dialogs/UserBadgesDialog.hpp
         widgets/dialogs/ChannelFilterEditorDialog.cpp
         widgets/dialogs/ChannelFilterEditorDialog.hpp
+        widgets/dialogs/ChannelManagementDialog.cpp
+        widgets/dialogs/ChannelManagementDialog.hpp
+        widgets/dialogs/ChannelPointsDialog.cpp
+        widgets/dialogs/ChannelPointsDialog.hpp
+        widgets/dialogs/MoltorinoDialogTheme.hpp
+        widgets/dialogs/PopupControlMetrics.hpp
+        widgets/dialogs/ChannelPointsChartDialog.cpp
+        widgets/dialogs/ChannelPointsChartDialog.hpp
+        widgets/dialogs/ChannelPointsChartView.cpp
+        widgets/dialogs/ChannelPointsChartView.hpp
         widgets/dialogs/ColorPickerDialog.cpp
         widgets/dialogs/ColorPickerDialog.hpp
+        widgets/dialogs/CrossBanDialog.cpp
+        widgets/dialogs/CrossBanDialog.hpp
         widgets/dialogs/EditHotkeyDialog.cpp
         widgets/dialogs/EditHotkeyDialog.hpp
         widgets/dialogs/EditUserNotesDialog.cpp
         widgets/dialogs/EditUserNotesDialog.hpp
         widgets/dialogs/EmotePopup.cpp
         widgets/dialogs/EmotePopup.hpp
+        widgets/dialogs/GifPickerDialog.cpp
+        widgets/dialogs/GifPickerDialog.hpp
 
         widgets/dialogs/font/FontDialog.cpp
         widgets/dialogs/font/FontDialog.hpp
@@ -774,10 +916,18 @@ set(SOURCE_FILES
         widgets/dialogs/LastRunCrashDialog.hpp
         widgets/dialogs/LoginDialog.cpp
         widgets/dialogs/LoginDialog.hpp
-        widgets/dialogs/TwitchDeviceLoginPage.cpp
-        widgets/dialogs/TwitchDeviceLoginPage.hpp
+        widgets/dialogs/MoltorinoAuthDialog.cpp
+        widgets/dialogs/MoltorinoAuthDialog.hpp
+        widgets/dialogs/MoltorinoAuthPage.cpp
+        widgets/dialogs/MoltorinoAuthPage.hpp
         widgets/dialogs/QualityPopup.cpp
         widgets/dialogs/QualityPopup.hpp
+        widgets/dialogs/PredictionDialog.cpp
+        widgets/dialogs/PredictionDialog.hpp
+        widgets/dialogs/PollDialog.cpp
+        widgets/dialogs/PollDialog.hpp
+        widgets/dialogs/RewardQueueDialog.cpp
+        widgets/dialogs/RewardQueueDialog.hpp
         widgets/dialogs/ReplyThreadPopup.cpp
         widgets/dialogs/ReplyThreadPopup.hpp
         widgets/dialogs/RestoreBackupsDialog.cpp
@@ -817,9 +967,15 @@ set(SOURCE_FILES
         widgets/helper/color/ColorItemDelegate.hpp
         widgets/helper/color/HueSlider.cpp
         widgets/helper/color/HueSlider.hpp
+        widgets/helper/UsercardLogsView.cpp
+        widgets/helper/UsercardLogsView.hpp
+        widgets/helper/UsercardRolesView.cpp
+        widgets/helper/UsercardRolesView.hpp
         widgets/helper/color/SBCanvas.cpp
         widgets/helper/color/SBCanvas.hpp
 
+        widgets/helper/ChannelCategoryPicker.cpp
+        widgets/helper/ChannelCategoryPicker.hpp
         widgets/helper/ChannelView.cpp
         widgets/helper/ChannelView.hpp
         widgets/helper/CmdDeleteKeyFilter.cpp
@@ -838,6 +994,8 @@ set(SOURCE_FILES
         widgets/helper/InvisibleSizeGrip.hpp
         widgets/helper/KickAccountSwitchWidget.cpp
         widgets/helper/KickAccountSwitchWidget.hpp
+        widgets/helper/LiveIndicator.cpp
+        widgets/helper/LiveIndicator.hpp
         widgets/helper/MessageView.cpp
         widgets/helper/MessageView.hpp
         widgets/helper/MicroNotebook.cpp
@@ -846,6 +1004,12 @@ set(SOURCE_FILES
         widgets/helper/NotebookTab.hpp
         widgets/helper/OverlayInteraction.cpp
         widgets/helper/OverlayInteraction.hpp
+        widgets/helper/PinnedMessageBanner.cpp
+        widgets/helper/PinnedMessageBanner.hpp
+        widgets/helper/PollBanner.cpp
+        widgets/helper/PollBanner.hpp
+        widgets/helper/PredictionBanner.cpp
+        widgets/helper/PredictionBanner.hpp
         widgets/helper/RegExpItemDelegate.cpp
         widgets/helper/RegExpItemDelegate.hpp
         widgets/helper/ResizingTextEdit.cpp
@@ -858,10 +1022,10 @@ set(SOURCE_FILES
         widgets/helper/SearchPopup.hpp
         widgets/helper/SettingsDialogTab.cpp
         widgets/helper/SettingsDialogTab.hpp
-        widgets/helper/LiveIndicator.cpp
-        widgets/helper/LiveIndicator.hpp
         widgets/helper/ColorSwatch.cpp
         widgets/helper/ColorSwatch.hpp
+        widgets/helper/SvgWidget.cpp
+        widgets/helper/SvgWidget.hpp
         widgets/helper/TableStyles.cpp
         widgets/helper/TableStyles.hpp
         widgets/helper/TrimRegExpValidator.cpp
@@ -904,8 +1068,12 @@ set(SOURCE_FILES
         widgets/settingspages/IgnoresPage.hpp
         widgets/settingspages/KeyboardSettingsPage.cpp
         widgets/settingspages/KeyboardSettingsPage.hpp
+        widgets/settingspages/LeafyrinoPage.cpp
+        widgets/settingspages/LeafyrinoPage.hpp
         widgets/settingspages/ModerationPage.cpp
         widgets/settingspages/ModerationPage.hpp
+        widgets/settingspages/MoltorinoPage.cpp
+        widgets/settingspages/MoltorinoPage.hpp
         widgets/settingspages/NicknamesPage.cpp
         widgets/settingspages/NicknamesPage.hpp
         widgets/settingspages/NotificationPage.cpp
@@ -914,6 +1082,8 @@ set(SOURCE_FILES
         widgets/settingspages/PluginsPage.hpp
         widgets/settingspages/SettingsPage.cpp
         widgets/settingspages/SettingsPage.hpp
+        widgets/settingspages/SettingsProfilePage.cpp
+        widgets/settingspages/SettingsProfilePage.hpp
         widgets/settingspages/SettingWidget.cpp
         widgets/settingspages/SettingWidget.hpp
 
@@ -938,12 +1108,8 @@ set(SOURCE_FILES
         widgets/splits/SplitHeader.hpp
         widgets/splits/SplitInput.cpp
         widgets/splits/SplitInput.hpp
-        widgets/splits/PredictionPoolBar.cpp
-        widgets/splits/PredictionPoolBar.hpp
-        widgets/splits/SplitPinnedMessagePanel.cpp
-        widgets/splits/SplitPinnedMessagePanel.hpp
-        widgets/splits/SplitPredictionPanel.cpp
-        widgets/splits/SplitPredictionPanel.hpp
+        widgets/splits/SplitVoiceMessagePanel.cpp
+        widgets/splits/SplitVoiceMessagePanel.hpp
         widgets/splits/SplitOverlay.cpp
         widgets/splits/SplitOverlay.hpp
         )
@@ -963,6 +1129,12 @@ source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${SOURCE_FILES})
 list(APPEND SOURCE_FILES ${RES_AUTOGEN_FILES})
 
 add_library(${LIBRARY_PROJECT} OBJECT ${SOURCE_FILES})
+
+if (APPLE)
+    target_link_libraries(${LIBRARY_PROJECT} PRIVATE
+        "$<LINK_LIBRARY:FRAMEWORK,Security>"
+    )
+endif ()
 
 if(CHATTERINO_PLUGINS)
     target_compile_definitions(${LIBRARY_PROJECT}
@@ -1026,8 +1198,8 @@ target_link_libraries(${LIBRARY_PROJECT}
         Qt${MAJOR_QT_VERSION}::Network
         Qt${MAJOR_QT_VERSION}::NetworkPrivate # for DELETE with a body (Kick)
         Qt${MAJOR_QT_VERSION}::Svg
-        Qt${MAJOR_QT_VERSION}::SvgWidgets
         Qt${MAJOR_QT_VERSION}::Concurrent
+        Qt${MAJOR_QT_VERSION}::Charts
 
         LibCommuni::LibCommuni
         Pajlada::Serialize
@@ -1044,14 +1216,19 @@ if (CHATTERINO_PLUGINS)
     target_link_libraries(${LIBRARY_PROJECT} PUBLIC lua sol2::sol2)
 endif()
 
+if (TARGET Qt${MAJOR_QT_VERSION}::Multimedia)
+    target_link_libraries(${LIBRARY_PROJECT} PUBLIC Qt${MAJOR_QT_VERSION}::Multimedia)
+    target_compile_definitions(${LIBRARY_PROJECT} PUBLIC CHATTERINO_HAVE_QT_MULTIMEDIA)
+endif()
+
 if (CHATTERINO_SPELLCHECK)
     target_compile_definitions(${LIBRARY_PROJECT} PUBLIC CHATTERINO_WITH_SPELLCHECK)
-    target_link_libraries(${LIBRARY_PROJECT} PRIVATE hunspell::hunspell)
+    target_link_libraries(${LIBRARY_PROJECT} PUBLIC hunspell::hunspell)
 endif()
 
 if (CHATTERINO_ALLOW_PRIVATE_QT_API)
     target_link_libraries(${LIBRARY_PROJECT} PUBLIC Qt${MAJOR_QT_VERSION}::GuiPrivate)
-    target_compile_definitions(${LIBRARY_PROJECT} PUBLIC 
+    target_compile_definitions(${LIBRARY_PROJECT} PUBLIC
         CHATTERINO_WITH_PRIVATE_QT_API)
 endif()
 
@@ -1067,7 +1244,7 @@ else()
         )
 endif()
 
-# Set the output of TARGET to be 
+# Set the output of TARGET to be
 # - CMAKE_BIN_DIR/lib for libraries
 # - CMAKE_BIN_DIR/bin for BINARIES
 # an additional argument specifies the subdirectory.
@@ -1089,7 +1266,7 @@ if (BUILD_APP)
     else()
         add_executable(${EXECUTABLE_PROJECT} main.cpp)
     endif()
-    
+
     if (CHATTERINO_WITH_AVIF_PLUGIN)
         target_link_libraries(${EXECUTABLE_PROJECT} PRIVATE kimageformats)
         target_compile_definitions(${EXECUTABLE_PROJECT} PRIVATE CHATTERINO_WITH_AVIF_PLUGIN)
@@ -1111,6 +1288,7 @@ if (BUILD_APP)
     target_link_libraries(${EXECUTABLE_PROJECT} PUBLIC ${LIBRARY_PROJECT})
 
     set_target_directory_hierarchy(${EXECUTABLE_PROJECT})
+    set_target_properties(${EXECUTABLE_PROJECT} PROPERTIES OUTPUT_NAME "Leafyrino")
 
     if (WIN32)
         if (WINDEPLOYQT_PATH)
@@ -1151,14 +1329,24 @@ if (BUILD_APP)
         endif()
         string(REPLACE ";" " " WINDEPLOYQT_COMMAND "${WINDEPLOYQT_COMMAND_ARGV}")
 
+        set(MOLTORINO_SUPPORT_7ZIP_DIR "${CMAKE_SOURCE_DIR}/tools/support/7zip")
+        if (EXISTS "${MOLTORINO_SUPPORT_7ZIP_DIR}/7z.exe")
+            add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${MOLTORINO_SUPPORT_7ZIP_DIR}"
+                    "$<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>/support/7zip"
+                VERBATIM)
+
+            install(DIRECTORY "${MOLTORINO_SUPPORT_7ZIP_DIR}/"
+                DESTINATION support/7zip)
+        endif()
+
         install(TARGETS ${EXECUTABLE_PROJECT}
             RUNTIME_DEPENDENCIES
                 PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
                 POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
                 DIRECTORIES ${QT_BIN_DIR}
-            COMPONENT ${PROJECT_NAME}
-            RUNTIME DESTINATION .
-        )
+            RUNTIME DESTINATION .)
 
         # Hardcoded list of DLLs to install from Qt - these are marked as optional since they only exist for vcpkg
         install(FILES
@@ -1168,45 +1356,32 @@ if (BUILD_APP)
             ${QT_BIN_DIR}/libwebp.dll
             ${QT_BIN_DIR}/libsharpyuv.dll
             DESTINATION .
-            COMPONENT ${PROJECT_NAME}
-            OPTIONAL
-        )
+            OPTIONAL)
 
-        install(
-            CODE
-                "message(\"-- Running: ${WINDEPLOYQT_COMMAND} --dir \\\"\${CMAKE_INSTALL_PREFIX}\\\"\")"
-            COMPONENT ${PROJECT_NAME}
-        )
-        install(
-            CODE
-                "execute_process(COMMAND ${WINDEPLOYQT_COMMAND} --dir \"\${CMAKE_INSTALL_PREFIX}\" COMMAND_ERROR_IS_FATAL ANY)"
-            COMPONENT ${PROJECT_NAME}
-        )
+        install(CODE "message(\"-- Running: ${WINDEPLOYQT_COMMAND} --dir \\\"\${CMAKE_INSTALL_PREFIX}\\\"\")")
+        install(CODE "execute_process(COMMAND ${WINDEPLOYQT_COMMAND} --dir \"\${CMAKE_INSTALL_PREFIX}\" COMMAND_ERROR_IS_FATAL ANY)")
     elseif (APPLE)
         install(TARGETS ${EXECUTABLE_PROJECT}
                 RUNTIME DESTINATION bin
                 BUNDLE DESTINATION bin
                 LIBRARY DESTINATION lib
                 ARCHIVE DESTINATION lib/static
-                COMPONENT ${PROJECT_NAME}
                 )
     else ()
         install(TARGETS ${EXECUTABLE_PROJECT}
                 RUNTIME DESTINATION bin
                 LIBRARY DESTINATION lib
                 ARCHIVE DESTINATION lib/static
-                COMPONENT ${PROJECT_NAME}
                 )
 
         install(FILES ${CMAKE_SOURCE_DIR}/resources/com.chatterino.chatterino.desktop
+                RENAME com.leafyzito.leafyrino.desktop
                 DESTINATION share/applications
-                COMPONENT ${PROJECT_NAME}
                 )
 
         install(FILES ${CMAKE_SOURCE_DIR}/resources/icon.png
-                RENAME com.chatterino.chatterino.png
+                RENAME com.leafyzito.leafyrino.png
                 DESTINATION share/icons/hicolor/256x256/apps
-                COMPONENT ${PROJECT_NAME}
                 )
     endif ()
 
@@ -1262,6 +1437,7 @@ target_link_libraries(${LIBRARY_PROJECT} PRIVATE ${VERSION_PROJECT})
 target_compile_definitions(${LIBRARY_PROJECT} PUBLIC
     CHATTERINO
     UNICODE
+    AB_CUSTOM_SETTINGS
     IRC_STATIC
     IRC_NAMESPACE=Communi
     $<$<BOOL:${WIN32}>:_WIN32_WINNT=0x0A00> # Windows 10
@@ -1270,9 +1446,6 @@ target_compile_definitions(${LIBRARY_PROJECT} PUBLIC
     $<$<BOOL:${WIN32}>:NOMINMAX>
     # Exclude some headers when including Windows.h
     $<$<BOOL:${WIN32}>:WIN32_LEAN_AND_MEAN>
-    # Don't allow the use of deprecated Boost.Asio functionality
-    # https://www.boost.org/doc/libs/latest/doc/html/boost_asio/using.html#boost_asio.using.macros
-    BOOST_ASIO_NO_DEPRECATED
     )
 
 set(_c2_qt_defs
@@ -1308,8 +1481,8 @@ if (APPLE AND BUILD_APP)
     set_target_properties(${EXECUTABLE_PROJECT} PROPERTIES MACOSX_BUNDLE TRUE)
     set_target_properties(${EXECUTABLE_PROJECT}
         PROPERTIES
-        MACOSX_BUNDLE_BUNDLE_NAME "Chatterino"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "app.7tv.chatterino7"
+        MACOSX_BUNDLE_BUNDLE_NAME "Leafyrino"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.leafyzito.leafyrino"
         MACOSX_BUNDLE_LONG_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
@@ -1467,13 +1640,6 @@ else ()
         )
     endif()
 endif ()
-
-# Extra Clang warnings
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(${LIBRARY_PROJECT} PUBLIC
-        -Wrange-loop-analysis
-    )
-endif()
 
 if(CHATTERINO_ENABLE_LTO)
     message(STATUS "Enabling LTO for ${LIBRARY_PROJECT}")

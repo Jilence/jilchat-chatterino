@@ -17,9 +17,12 @@ public:
     ResizingTextEdit();
 
     QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
     bool hasHeightForWidth() const override;
     bool isFirstWord() const;
+    /// Ignore this prefix when determining the first word for completion.
+    void setIgnoredCompletionPrefix(const QString &prefix);
 
     pajlada::Signals::Signal<QKeyEvent *> keyPressed;
     pajlada::Signals::NoArgSignal focused;
@@ -28,18 +31,18 @@ public:
     pajlada::Signals::Signal<QMenu *, QPoint> contextMenuRequested;
 
     void setCompleter(QCompleter *c);
-    /**
-     * Resets a completion for this text if one was is progress.
-     * See `completionInProgress_`.
-     */
     void resetCompletion();
+    void setGhostText(QString text);
+    const QString &ghostText() const;
 
 protected:
     int heightForWidth(int) const override;
     void keyPressEvent(QKeyEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
     void focusInEvent(QFocusEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
 
     bool canInsertFromMimeData(const QMimeData *source) const override;
     void insertFromMimeData(const QMimeData *source) override;
@@ -47,11 +50,14 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
-    // hadSpace is set to true in case the "textUnderCursor" word was after a
-    // space
+    qreal documentHeightForWidth(int width) const;
+    void invalidateAncestorLayouts();
+
     QString textUnderCursor(bool *hadSpace = nullptr) const;
 
     QCompleter *completer_ = nullptr;
+    QString ignoredCompletionPrefix_;
+    QString ghostText_;
     /**
      * This is true if a completion was done but the user didn't type yet,
      * and might want to press `Tab` again to get the next completion

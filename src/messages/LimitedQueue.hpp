@@ -34,7 +34,7 @@ private:
      */
     [[nodiscard]] size_t space() const
     {
-        return this->limit() - this->buffer_.size();
+        return this->limit_ - this->buffer_.size();
     }
 
 public:
@@ -43,7 +43,32 @@ public:
      */
     [[nodiscard]] size_t limit() const
     {
+        std::shared_lock lock(this->mutex_);
+
         return this->limit_;
+    }
+
+    /**
+     * @brief Change the limit of the queue
+     *
+     * When shrinking, the oldest items (at the front) are removed; the newest
+     * items are always kept.
+     *
+     * @return the removed items, oldest first
+     */
+    std::vector<T> setLimit(size_t limit)
+    {
+        std::unique_lock lock(this->mutex_);
+
+        std::vector<T> removed;
+        while (this->buffer_.size() > limit)
+        {
+            removed.push_back(this->buffer_.front());
+            this->buffer_.pop_front();
+        }
+        this->buffer_.set_capacity(limit);
+        this->limit_ = limit;
+        return removed;
     }
 
     /**
@@ -292,7 +317,7 @@ public:
 
     /**
      * @brief Inserts the given item before another item
-     * 
+     *
      * @param[in] needle the item to use as positional reference
      * @param[in] item the item to insert before needle
      * @tparam Equality function object to use for comparison
@@ -318,7 +343,7 @@ public:
 
     /**
      * @brief Inserts the given item after another item
-     * 
+     *
      * @param[in] needle the item to use as positional reference
      * @param[in] item the item to insert after needle
      * @tparam Equality function object to use for comparison
@@ -383,12 +408,12 @@ public:
 
     /**
      * @brief Returns the first item matching a predicate
-     * 
-     * The contents of the LimitedQueue are iterated over from front to back 
-     * until the first element that satisfies `pred(item)`. If no item 
+     *
+     * The contents of the LimitedQueue are iterated over from front to back
+     * until the first element that satisfies `pred(item)`. If no item
      * satisfies the predicate, or if the queue is empty, then std::nullopt
      * is returned.
-     * 
+     *
      * @param[in] pred predicate that will be applied to items
      * @return the first item found or std::nullopt
      */
@@ -436,12 +461,12 @@ public:
 
     /**
      * @brief Returns the first item matching a predicate, checking in reverse
-     * 
-     * The contents of the LimitedQueue are iterated over from back to front 
-     * until the first element that satisfies `pred(item)`. If no item 
+     *
+     * The contents of the LimitedQueue are iterated over from back to front
+     * until the first element that satisfies `pred(item)`. If no item
      * satisfies the predicate, or if the queue is empty, then std::nullopt
      * is returned.
-     * 
+     *
      * @param[in] pred predicate that will be applied to items
      * @return the first item found or std::nullopt
      */
@@ -464,7 +489,7 @@ public:
 private:
     mutable std::shared_mutex mutex_;
 
-    const size_t limit_;
+    size_t limit_;
     boost::circular_buffer<T> buffer_;
 };
 

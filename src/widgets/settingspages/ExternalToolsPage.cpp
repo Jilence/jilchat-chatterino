@@ -111,7 +111,6 @@ bool ExternalToolsPage::filterElements(const QString &query)
     return false;
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void ExternalToolsPage::initLayout(GeneralPageView &layout)
 {
     auto &s = *getSettings();
@@ -163,8 +162,8 @@ void ExternalToolsPage::initLayout(GeneralPageView &layout)
         layout.addTitle("Custom stream player");
         layout.addDescription(
             "You can open Twitch streams directly in any video player that has "
-            "built-in Twitch support and has own URI Scheme.\nE.g.: IINA for "
-            "macOS and Potplayer (with extension) for Windows.\n\nWith this "
+            "built-in Twitch support and its own URI Scheme.\nE.g.: IINA for "
+            "macOS and PotPlayer (with extension) for Windows.\n\nWith this "
             "value set, you will get the option to \"Open in custom player\" "
             "when right-clicking a channel header.");
 
@@ -237,7 +236,6 @@ void ExternalToolsPage::initLayout(GeneralPageView &layout)
 
 #ifdef CHATTERINO_WITH_SPELLCHECK
     {
-        // auto *form = new QFormLayout;
         layout.addTitle("Spell checker (experimental)");
 
         layout.addDescription(
@@ -263,7 +261,7 @@ void ExternalToolsPage::initLayout(GeneralPageView &layout)
                                     .max = std::numeric_limits<int>::max(),
                                 })
             ->setTooltip(
-                "When right clicking any word, show this many suggestions. If "
+                "When right-clicking any word, show this many suggestions. If "
                 "this is 0, no suggestions will be shown and if it's -1, no "
                 "limit is set.")
             ->addTo(layout);

@@ -65,15 +65,17 @@ inline QString parseTagString(const QString &input)
 
 QDateTime calculateMessageTime(const Communi::IrcMessage *message);
 
-// "foo/bar/baz,tri/hard" can be a valid badge-info tag
-// In that case, valid map content should be 'split by slash' only once:
-// {"foo": "bar/baz", "tri": "hard"}
+/// Adds the `historical` tag to a raw IRC line, like the recent-messages
+/// services do, so old messages (e.g. from public logs) don't ping or play a
+/// sound when they're parsed.
+QString markIrcLineHistorical(const QString &line);
+
 inline std::pair<QString, QString> slashKeyValue(const QString &kvStr)
 {
     return {
-        // part before first slash (index 0 of section)
+
         kvStr.section('/', 0, 0),
-        // part after first slash (index 1 of section)
+
         kvStr.section('/', 1, -1),
     };
 }
