@@ -1574,11 +1574,12 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
     messageGrid->setColumnStretch(3, 1);
     conditionsLayout->addWidget(messageSection);
 
-    auto *limits =
-        new QGroupBox(QStringLiteral("Time between uses"), conditions);
+    auto *limits = new QGroupBox(QStringLiteral("Timing"), conditions);
     auto *limitsGrid = new QGridLayout(limits);
+    limitsGrid->addWidget(
+        new QLabel(QStringLiteral("Time between uses"), limits), 0, 0);
     limitsGrid->addWidget(new QLabel(QStringLiteral("Per channel"), limits), 0,
-                          0);
+                          1);
     this->cooldown_ = new QSpinBox(limits);
     this->cooldown_->setObjectName(QStringLiteral("channelCooldown"));
     this->cooldown_->setRange(0, 86400);
@@ -1586,11 +1587,11 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
     this->cooldownUnit_ = new QComboBox(limits);
     this->cooldownUnit_->setObjectName(QStringLiteral("channelCooldownUnit"));
     limitsGrid->addWidget(
-        controlRow(limits, {this->cooldown_, this->cooldownUnit_}), 0, 1,
+        controlRow(limits, {this->cooldown_, this->cooldownUnit_}), 0, 2,
         Qt::AlignLeft);
 
     limitsGrid->addWidget(new QLabel(QStringLiteral("Per person"), limits), 0,
-                          2);
+                          3);
     this->userCooldown_ = new QSpinBox(limits);
     this->userCooldown_->setObjectName(QStringLiteral("userCooldown"));
     this->userCooldown_->setRange(0, 86400);
@@ -1599,11 +1600,37 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
     this->userCooldownUnit_->setObjectName(QStringLiteral("userCooldownUnit"));
     limitsGrid->addWidget(
         controlRow(limits, {this->userCooldown_, this->userCooldownUnit_}), 0,
-        3, Qt::AlignLeft);
+        4, Qt::AlignLeft);
+
+    this->delayResponse_ =
+        new QCheckBox(QStringLiteral("Wait before responding"), limits);
+    this->delayResponse_->setObjectName(QStringLiteral("delayResponse"));
+    this->delayResponse_->setToolTip(
+        QStringLiteral("Waits this long after the trigger before the action "
+                       "runs. The response is dropped if the channel is "
+                       "closed in the meantime."));
+    this->responseDelay_ = new QSpinBox(limits);
+    this->responseDelay_->setObjectName(QStringLiteral("responseDelay"));
+    this->responseDelay_->setRange(1, 86400);
+    this->responseDelayUnit_ = new QComboBox(limits);
+    this->responseDelayUnit_->setObjectName(
+        QStringLiteral("responseDelayUnit"));
+    for (QWidget *control : {static_cast<QWidget *>(this->responseDelay_),
+                             static_cast<QWidget *>(this->responseDelayUnit_)})
+    {
+        control->setEnabled(false);
+        QObject::connect(this->delayResponse_, &QCheckBox::toggled, control,
+                         &QWidget::setEnabled);
+    }
+    limitsGrid->addWidget(this->delayResponse_, 1, 0, 1, 2);
+    limitsGrid->addWidget(
+        controlRow(limits, {this->responseDelay_, this->responseDelayUnit_}), 1,
+        2, 1, 3, Qt::AlignLeft);
 
     for (auto [value, unit] :
          {std::pair{this->cooldown_, this->cooldownUnit_},
-          std::pair{this->userCooldown_, this->userCooldownUnit_}})
+          std::pair{this->userCooldown_, this->userCooldownUnit_},
+          std::pair{this->responseDelay_, this->responseDelayUnit_}})
     {
         unit->addItem(QStringLiteral("seconds"), 1);
         unit->addItem(QStringLiteral("minutes"), 60);
@@ -1617,8 +1644,8 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
     this->cooldownHint_ = new QLabel(limits);
     this->cooldownHint_->setObjectName(QStringLiteral("SecondaryText"));
     this->cooldownHint_->setWordWrap(true);
-    limitsGrid->addWidget(this->cooldownHint_, 1, 0, 1, 5);
-    limitsGrid->setColumnStretch(4, 1);
+    limitsGrid->addWidget(this->cooldownHint_, 2, 0, 1, 6);
+    limitsGrid->setColumnStretch(5, 1);
 
     auto *channelSection =
         new QGroupBox(QStringLiteral("Where and when"), conditions);
@@ -1856,14 +1883,16 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
          {this->match_, this->action_, this->responseMode_, this->argumentMode_,
           this->timeFormat_, this->dateFormat_, this->access_, this->sender_,
           this->stream_, this->channelMode_, this->channelRole_,
-          this->cooldownUnit_, this->userCooldownUnit_, this->testRole_,
-          this->testStream_, this->testMyRole_})
+          this->cooldownUnit_, this->userCooldownUnit_,
+          this->responseDelayUnit_, this->testRole_, this->testStream_,
+          this->testMyRole_})
     {
         compactCombo(combo);
     }
-    for (auto *spin : {this->cooldown_, this->userCooldown_, this->maxRuns_,
-                       this->testChoice_, this->testCounter_,
-                       this->minimumLength_, this->maximumLength_})
+    for (auto *spin :
+         {this->cooldown_, this->userCooldown_, this->responseDelay_,
+          this->maxRuns_, this->testChoice_, this->testCounter_,
+          this->minimumLength_, this->maximumLength_})
     {
         spin->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     }
@@ -1922,16 +1951,16 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
     QObject::connect(this->response_, &QPlainTextEdit::textChanged, this,
                      editChanged);
 
-    for (auto *check :
-         {this->ruleEnabled_, this->caseSensitive_, this->useBotBadge_})
+    for (auto *check : {this->ruleEnabled_, this->caseSensitive_,
+                        this->useBotBadge_, this->delayResponse_})
     {
         QObject::connect(check, &QCheckBox::toggled, this, editChanged);
     }
 
-    for (auto *combo :
-         {this->match_, this->action_, this->responseMode_, this->access_,
-          this->argumentMode_, this->stream_, this->sender_, this->channelRole_,
-          this->cooldownUnit_, this->userCooldownUnit_})
+    for (auto *combo : {this->match_, this->action_, this->responseMode_,
+                        this->access_, this->argumentMode_, this->stream_,
+                        this->sender_, this->channelRole_, this->cooldownUnit_,
+                        this->userCooldownUnit_, this->responseDelayUnit_})
     {
         QObject::connect(combo, &QComboBox::currentIndexChanged, this,
                          editChanged);
@@ -1953,8 +1982,9 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
             });
     }
 
-    for (auto *spin : {this->cooldown_, this->userCooldown_,
-                       this->minimumLength_, this->maximumLength_})
+    for (auto *spin :
+         {this->cooldown_, this->userCooldown_, this->responseDelay_,
+          this->minimumLength_, this->maximumLength_})
     {
         QObject::connect(spin, &QSpinBox::valueChanged, this, editChanged);
     }
@@ -2425,6 +2455,9 @@ void ChatAutomationDialog::loadRule(int index)
         setDuration(this->cooldown_, this->cooldownUnit_, rule.cooldownSeconds);
         setDuration(this->userCooldown_, this->userCooldownUnit_,
                     rule.userCooldownSeconds);
+        this->delayResponse_->setChecked(rule.delayResponse);
+        setDuration(this->responseDelay_, this->responseDelayUnit_,
+                    rule.responseDelaySeconds);
         auto zoneIndex = this->timeZone_->findData(rule.timeZone);
         this->timeZone_->setCurrentIndex(zoneIndex < 0 ? 0 : zoneIndex);
         if (zoneIndex < 0 && !rule.timeZone.isEmpty())
@@ -2521,6 +2554,9 @@ void ChatAutomationDialog::storeCurrentRule()
         durationSeconds(this->cooldown_, this->cooldownUnit_);
     rule.userCooldownSeconds =
         durationSeconds(this->userCooldown_, this->userCooldownUnit_);
+    rule.delayResponse = this->delayResponse_->isChecked();
+    rule.responseDelaySeconds =
+        durationSeconds(this->responseDelay_, this->responseDelayUnit_);
     rule.timeZone = selectedTimeZone(this->timeZone_);
     rule.respondToSelf = this->sender_->currentIndex() != 1;
     rule.onlySelf = this->sender_->currentIndex() == 2;
@@ -2940,6 +2976,12 @@ void ChatAutomationDialog::refreshEditorState()
                 QStringLiteral("%1 per person")
                     .arg(durationText(rule.userCooldownSeconds)));
         }
+        if (rule.delayResponse)
+        {
+            conditions.push_back(
+                QStringLiteral("%1 delay")
+                    .arg(durationText(rule.responseDelaySeconds)));
+        }
         this->conditionsSummary_->setText(
             conditions.join(QStringLiteral(" · ")));
         const auto error = ChatAutomationController::validateRule(rule);
@@ -3267,6 +3309,12 @@ void ChatAutomationDialog::refreshStyle()
         QStringLiteral("QTabWidget#automationTabs::pane { border: 0; "
                        "border-top: 1px solid %1; }")
             .arg(theme->tabs.dividerLine.name()));
+
+    auto delayPalette = this->delayResponse_->palette();
+    delayPalette.setColor(QPalette::Base,
+                          this->responseDelayUnit_->palette().color(
+                              QPalette::Active, QPalette::Button));
+    this->delayResponse_->setPalette(delayPalette);
 
     auto previewPalette = this->preview_->palette();
     previewPalette.setColor(QPalette::Window,
