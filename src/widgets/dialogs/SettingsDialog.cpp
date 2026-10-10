@@ -389,6 +389,17 @@ void SettingsDialog::showDialog(QWidget *parent,
             }
             break;
 
+        case SettingsDialogPreference::BotBadge:
+            if (auto *tab = instance->tab(SettingsTabId::Moltorino))
+            {
+                instance->selectTab(tab);
+                if (auto *page = dynamic_cast<MoltorinoPage *>(tab->page()))
+                {
+                    page->showBotBadgeSettings();
+                }
+            }
+            break;
+
         case SettingsDialogPreference::StreamerMode: {
             instance->selectTab(SettingsTabId::General);
         }

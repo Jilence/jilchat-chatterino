@@ -8,6 +8,7 @@
 #include "common/Common.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/Command.hpp"
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
@@ -135,6 +136,34 @@ void showTutorialVideo(QWidget *parent, const QString &source,
     movie->start();
     window->getLayoutContainer()->setLayout(layout);
     window->show();
+}
+
+/// The Twitch channels of a split, for the chat automations.
+std::vector<std::shared_ptr<TwitchChannel>> automationTwitchChannels(
+    const ChannelPtr &channel)
+{
+    std::vector<std::shared_ptr<TwitchChannel>> channels;
+    if (auto twitch = std::dynamic_pointer_cast<TwitchChannel>(channel))
+    {
+        channels.push_back(std::move(twitch));
+        return channels;
+    }
+    if (auto multi = std::dynamic_pointer_cast<MultiChannel>(channel))
+    {
+        for (const auto &child : multi->channels())
+        {
+            if (child.platform != MultiChannel::Platform::Twitch)
+            {
+                continue;
+            }
+            if (auto twitch =
+                    std::dynamic_pointer_cast<TwitchChannel>(child.channel))
+            {
+                channels.push_back(std::move(twitch));
+            }
+        }
+    }
+    return channels;
 }
 }  // namespace
 
@@ -846,6 +875,10 @@ void Split::showEvent(QShowEvent *event)
 
 Split::~Split()
 {
+    if (auto *app = tryGetApp(); app && app->getChatAutomations())
+    {
+        app->getChatAutomations()->removeOpenChannels(this);
+    }
     this->usermodeChangedConnection_.disconnect();
     this->roomModeChangedConnection_.disconnect();
     this->channelIDChangedConnection_.disconnect();
@@ -2036,6 +2069,12 @@ void Split::setChannel(IndirectChannel newChannel)
 
     this->channelChanged.invoke();
     this->actionRequested.invoke(Action::RefreshTab);
+
+    if (auto *automations = getApp()->getChatAutomations())
+    {
+        automations->updateOpenChannels(
+            this, automationTwitchChannels(this->channel_.get()));
+    }
 
     // Queue up save because: Split channel changed
     getApp()->getWindows()->queueSave();

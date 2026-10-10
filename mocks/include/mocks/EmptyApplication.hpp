@@ -206,6 +206,11 @@ public:
         return nullptr;
     }
 
+    ChatAutomationController *getChatAutomations() override
+    {
+        return nullptr;
+    }
+
     ChatsenBadges *getChatsenBadges() override
     {
         assert(!"getChatsenBadges was called without being initialized");

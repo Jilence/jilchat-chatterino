@@ -2,6 +2,8 @@
 
 #include "widgets/settingspages/SettingsPage.hpp"
 
+#include <pajlada/signals/scoped-connection.hpp>
+
 class QFrame;
 class QLabel;
 class QLineEdit;
@@ -20,6 +22,10 @@ public:
     MoltorinoPage();
 
     bool filterElements(const QString &query) override;
+
+    /// Reveals the bot badge setup, which is hidden otherwise, and scrolls
+    /// to it.
+    void showBotBadgeSettings();
 
 private:
     void openAuthDialog();
@@ -58,6 +64,8 @@ private:
     bool botBadgeUnlocked_{false};
     bool botBadgeIsValidating_{false};
     int botBadgeValidationGeneration_{0};
+
+    pajlada::Signals::ScopedConnection chatAutomationRulesConnection_;
 
 protected:
     void hideEvent(QHideEvent *event) override;

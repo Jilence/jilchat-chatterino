@@ -36,8 +36,10 @@
 #include "util/Clipboard.hpp"
 #include "util/FormatTime.hpp"
 #include "util/IncognitoBrowser.hpp"
+#include "util/MultiChannel.hpp"
 #include "util/StreamLink.hpp"
 #include "util/Twitch.hpp"
+#include "widgets/dialogs/ChatAutomationDialog.hpp"
 #include "widgets/dialogs/CrossBanDialog.hpp"
 #include "widgets/dialogs/UserInfoPopup.hpp"
 #include "widgets/helper/ChannelView.hpp"
@@ -2476,6 +2478,40 @@ QString openLogs(const CommandContext &ctx)
     }
 
     return "";
+}
+
+QString selfbot(const CommandContext &ctx)
+{
+    QString initialChannel;
+    if (ctx.twitchChannel != nullptr)
+    {
+        initialChannel = ctx.twitchChannel->getName();
+    }
+    else if (const auto *multi =
+                 dynamic_cast<const MultiChannel *>(ctx.channel.get()))
+    {
+        if (const auto *active = multi->activeChannel();
+            active != nullptr &&
+            active->platform == MultiChannel::Platform::Twitch)
+        {
+            initialChannel = active->channel->getName();
+        }
+        else
+        {
+            for (const auto &child : multi->channels())
+            {
+                if (child.platform == MultiChannel::Platform::Twitch)
+                {
+                    initialChannel = child.channel->getName();
+                    break;
+                }
+            }
+        }
+    }
+
+    ChatAutomationDialog::showDialog(std::move(initialChannel),
+                                     &getApp()->getWindows()->getMainWindow());
+    return {};
 }
 
 }  // namespace chatterino::commands
