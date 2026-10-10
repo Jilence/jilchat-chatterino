@@ -1207,15 +1207,7 @@ void IrcMessageHandler::handlePartMessage(Communi::IrcMessage *message)
         return;
     }
 
-    bool ownUser = [&] {
-        if (getSettings()->twitchReadConnectionMode ==
-            TwitchReadConnectionMode::Authenticated)
-        {
-            return message->nick() ==
-                   getApp()->getAccounts()->twitch.getCurrent()->getUserName();
-        }
-        return message->nick() == ANONYMOUS_USERNAME;
-    }();
+    bool ownUser = isOwnUser(message);
     if (!ownUser && getSettings()->showParts.getValue())
     {
         twitchChannel->addPartedUser(message->nick(), twitchChannel->isMod(),
