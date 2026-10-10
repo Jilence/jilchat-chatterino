@@ -1615,8 +1615,8 @@ ChatAutomationDialog::ChatAutomationDialog(QString initialChannel,
     this->responseDelayUnit_ = new QComboBox(limits);
     this->responseDelayUnit_->setObjectName(
         QStringLiteral("responseDelayUnit"));
-    for (QWidget *control : {static_cast<QWidget *>(this->responseDelay_),
-                             static_cast<QWidget *>(this->responseDelayUnit_)})
+    for (QWidget *control : std::initializer_list<QWidget *>{
+             this->responseDelay_, this->responseDelayUnit_})
     {
         control->setEnabled(false);
         QObject::connect(this->delayResponse_, &QCheckBox::toggled, control,
