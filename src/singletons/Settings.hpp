@@ -355,6 +355,8 @@ public:
         "/appearance/messages/showTwitchGifs",
         true,
     };
+    /// Giphy IDs saved in the GIF picker, newest first, as a JSON array.
+    QStringSetting favoriteTwitchGifs{"/twitch/gifs/favorites", "[]"};
     BoolSetting separateMessages = {"/appearance/messages/separateMessages",
                                     false};
     BoolSetting fadeMessageHistory = {"/appearance/messages/fadeMessageHistory",
@@ -666,6 +668,9 @@ public:
     BoolSetting enableEmoteImages = {"/emotes/enableEmoteImages", true};
     BoolSetting animateEmotes = {"/emotes/enableGifAnimations", true};
     BoolSetting enableZeroWidthEmotes = {"/emotes/enableZeroWidthEmotes", true};
+    BoolSetting enableEmoteModifiers = {"/emotes/enableModifiers", true};
+    ChatterinoSetting<QStringList> disabledEmoteModifiers = {
+        "/emotes/disabledModifiers", {}};
     FloatSetting emoteScale = {"/emotes/scale", 1.f};
     EnumStringSetting<EmoteTooltipScale> emoteTooltipScale = {
         "/emotes/tooltipScale",
@@ -1032,9 +1037,6 @@ public:
     BoolSetting displaySevenTVAnimatedProfile = {
         "/misc/displaySevenTVAnimatedProfile", true};
 
-    /// The Giphy IDs of the GIFs saved in the GIF picker, newest first,
-    /// separated by commas.
-    QStringSetting twitchGifFavorites = {"/twitch/gifs/favorites", ""};
     EnumStringSetting<TwitchReadConnectionMode> twitchReadConnectionMode = {
         "/misc/x-7tv/twitchReadConnectionMode",
         TwitchReadConnectionMode::Authenticated};
@@ -1299,6 +1301,8 @@ public:
         "/moltorino/channelPoints/closeAfterRedeem", true};
     BoolSetting rewardsReturnToListAfterRedeem{
         "/moltorino/channelPoints/returnToListAfterRedeem", false};
+    BoolSetting enableGigantifyEmotes{
+        "/moltorino/channelPoints/enableGigantifyEmotes", true};
 
     /// Banner content text scales. These intentionally do not scale banner
     /// chrome, icons, timers, or progress bars.
@@ -1471,6 +1475,7 @@ public:
     SignalVector<ModerationAction> moderationActions;
     SignalVector<ChannelLog> loggedChannels;
 
+    bool isEmoteModifierEnabled(const QString &name) const;
     bool isHighlightedUser(const QString &username);
     bool isBlacklistedUser(const QString &username);
     bool isMutedChannel(const QString &channelName);

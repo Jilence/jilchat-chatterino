@@ -302,6 +302,10 @@ private:
     Outcome tryAppendCheermote(TextState &state, const QString &string);
     Outcome tryAppendEmote(TwitchChannel *twitchChannel, const QString &userID,
                            EmoteNameView name);
+    bool appendModifier(const EmotePtr &modifier);
+    void flushPendingModifiers();
+    MessageElement *appendParsedEmote(const EmotePtr &emote,
+                                      bool gigantified = false);
 
     bool isEmpty() const;
     MessageElement &back();
@@ -358,13 +362,15 @@ private:
     void addWordsFromAstNodes(
         const QVector<ast::ASTNode> &nodes,
         const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-        TextState &state, FontStyle style = FontStyle::ChatMedium);
+        TextState &state, FontStyle style = FontStyle::ChatMedium,
+        int gigantifiedEmoteStart = -1);
     void addWords(const QStringList &words,
                   const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-                  TextState &state, FontStyle style = FontStyle::ChatMedium);
+                  TextState &state, FontStyle style = FontStyle::ChatMedium,
+                  int gigantifiedEmoteStart = -1);
     void addWords(QStringView text,
                   const std::vector<TwitchSpecialOccurrence> &twitchSpecials,
-                  TextState &state);
+                  TextState &state, int gigantifiedEmoteStart = -1);
 
     void appendTwitchBadges(Communi::TagsRef tags,
                             TwitchChannel *twitchChannel);
@@ -387,6 +393,7 @@ private:
 
     std::shared_ptr<Message> message_;
     MessageColor textColor_ = MessageColor::Text;
+    std::vector<EmotePtr> pendingPrefixModifiers_;
 
     QColor usernameColor_ = {153, 153, 153};
 };

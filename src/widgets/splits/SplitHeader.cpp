@@ -948,6 +948,14 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
                 this->split_, &Split::openModViewInBrowser);
         }
 
+        if (twitchChannel && twitchChannel->hasModRights())
+        {
+            menu->addAction(
+                "Open &reward queue",
+                h->getDisplaySequence(HotkeyCategory::Split, "openRewardQueue"),
+                this->split_, &Split::openRewardQueue);
+        }
+
         if (twitchChannel && !twitchChannel->isEmpty() &&
             canShowChannelManagementButton(*twitchChannel))
         {

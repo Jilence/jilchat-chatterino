@@ -1250,6 +1250,8 @@ void IrcMessageHandler::addMessage(Communi::IrcMessage *message,
     args.isAction = isAction;
 
     auto tags = message->tags();
+    args.isGigantifiedEmote =
+        tags.getOrEmpty("msg-id") == "gigantified-emote-message";
 
     if (!tags.has("historical"))
     {

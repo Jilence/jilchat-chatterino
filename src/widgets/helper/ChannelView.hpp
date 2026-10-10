@@ -20,6 +20,7 @@
 #include <QMenu>
 #include <QPaintEvent>
 #include <QPointer>
+#include <QRegion>
 #include <QScroller>
 #include <QSet>
 #include <QTimer>
@@ -375,7 +376,7 @@ private:
                          bool causedByScrollbar, bool disableAnimation);
     void updateScrollWidgetGeometries();
 
-    void drawMessages(QPainter &painter, const QRect &area);
+    void drawMessages(QPainter &painter, const QRegion &area);
     void setSelection(const SelectionItem &start, const SelectionItem &end);
     void setSelection(const Selection &newSelection);
     void selectWholeMessage(MessageLayout *layout, int &messageIndex);
@@ -426,9 +427,9 @@ private:
     bool lastMessageHasAlternateBackground_ = false;
     bool lastMessageHasAlternateBackgroundReverse_ = true;
 
-    /// Tracks the area of animated elements in the last full repaint.
-    /// If this is empty (QRect::isEmpty()), no animated element is shown.
-    QRect animationArea_;
+    /// Rectangles of animated elements painted in the view.
+    /// Empty when nothing animated is on screen.
+    QRegion animationRegion_;
 
     bool pausable_ = false;
     QTimer pauseTimer_;
