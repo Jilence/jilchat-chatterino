@@ -62,6 +62,7 @@ class FolhinhaBadges;
 class FfzApBadges;
 class DankChatBadges;
 class ChatsenBadges;
+class ChatAutomationController;
 class MoltorinoSupporterBadges;
 class RepeatedMessageDetector;
 class IStreamerMode;
@@ -122,6 +123,8 @@ public:
     virtual FfzApBadges *getFfzApBadges() = 0;
     virtual DankChatBadges *getDankChatBadges() = 0;
     virtual ChatsenBadges *getChatsenBadges() = 0;
+    /// The self bot rules. nullptr in tests and while shutting down.
+    virtual ChatAutomationController *getChatAutomations() = 0;
     virtual MoltorinoSupporterBadges *getMoltorinoSupporterBadges() = 0;
     virtual RepeatedMessageDetector *getRepeatedMessageDetector() = 0;
     virtual JilChatBadges *getJilChatBadges() = 0;
@@ -206,6 +209,7 @@ private:
     std::unique_ptr<SeventvAPI> seventvAPI;
     std::unique_ptr<CrashHandler> crashHandler;
     std::unique_ptr<CommandController> commands;
+    std::unique_ptr<ChatAutomationController> chatAutomations;
     std::unique_ptr<NotificationController> notifications;
     std::unique_ptr<HighlightController> highlights;
     std::unique_ptr<TwitchIrcServer> twitch;
@@ -282,6 +286,7 @@ public:
     FfzApBadges *getFfzApBadges() override;
     DankChatBadges *getDankChatBadges() override;
     ChatsenBadges *getChatsenBadges() override;
+    ChatAutomationController *getChatAutomations() override;
     MoltorinoSupporterBadges *getMoltorinoSupporterBadges() override;
     RepeatedMessageDetector *getRepeatedMessageDetector() override;
     JilChatBadges *getJilChatBadges() override;

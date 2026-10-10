@@ -1383,6 +1383,14 @@ public:
         "/moltorino/client/outgoingTranslationTargetLanguage", "en"};
 
     /// Fun
+    /// Whether the chat automations (self bot rules) also act while the
+    /// application isn't focused.
+    BoolSetting chatAutomationsRunInBackground{
+        "/moltorino/chatAutomations/runInBackground", false};
+    /// How often the chat automations may act in one channel.
+    IntSetting chatAutomationsMaxRunsPer30Seconds{
+        "/moltorino/chatAutomations/maxRunsPer30Seconds", 5};
+
     IntSetting spamCommandIntervalMs{"/moltorino/fun/spam/intervalMs", 30};
     BoolSetting spamCommandUseIrc{"/moltorino/fun/spam/useIrc", false};
     BoolSetting showSpamPyramidStatusMessages{

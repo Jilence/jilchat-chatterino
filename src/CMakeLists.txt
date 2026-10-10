@@ -79,6 +79,8 @@ set(SOURCE_FILES
         controllers/accounts/AccountModel.cpp
         controllers/accounts/AccountModel.hpp
 
+        controllers/chat/ChatAutomationController.cpp
+        controllers/chat/ChatAutomationController.hpp
         controllers/commands/builtin/chatterino/Debugging.cpp
         controllers/commands/builtin/chatterino/Debugging.hpp
         controllers/commands/builtin/Misc.cpp
@@ -876,6 +878,8 @@ set(SOURCE_FILES
         widgets/dialogs/ChannelManagementDialog.hpp
         widgets/dialogs/ChannelPointsDialog.cpp
         widgets/dialogs/ChannelPointsDialog.hpp
+        widgets/dialogs/ChatAutomationDialog.cpp
+        widgets/dialogs/ChatAutomationDialog.hpp
         widgets/dialogs/MoltorinoDialogTheme.hpp
         widgets/dialogs/PopupControlMetrics.hpp
         widgets/dialogs/ChannelPointsChartDialog.cpp

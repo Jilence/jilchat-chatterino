@@ -554,6 +554,7 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/poll", &commands::createPoll);
     this->registerCommand("/redeem", &commands::openChannelPointRewards);
     this->registerCommand("/gif", &commands::openGifPicker);
+    this->registerCommand("/selfbot", &commands::selfbot);
     this->registerCommand("/gigantify", &commands::sendGigantifiedEmote);
     this->registerCommand("/pointschart", &commands::openChannelPointsChart);
     this->registerCommand("/rewardqueue", &commands::openRewardQueue);

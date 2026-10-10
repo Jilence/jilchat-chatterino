@@ -36,6 +36,8 @@ enum class SettingsDialogPreference {
     ModerationActions,
     About,
     Moltorino,
+    /// The bot badge setup on the Moltorino page
+    BotBadge,
 };
 
 class SettingsDialog : public BaseWindow

@@ -9,6 +9,7 @@
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/builtin/Misc.hpp"
 #include "controllers/commands/CommandContext.hpp"
 #include "controllers/commands/CommandController.hpp"
@@ -37,12 +38,14 @@
 #include "widgets/buttons/LabelButton.hpp"
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/ChannelManagementDialog.hpp"
+#include "widgets/dialogs/ChatAutomationDialog.hpp"
 #include "widgets/dialogs/SettingsDialog.hpp"
 #include "widgets/helper/CommonTexts.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/splits/SplitContainer.hpp"
 #include "widgets/TooltipWidget.hpp"
+#include "widgets/Window.hpp"
 
 #include <QDrag>
 #include <QHBoxLayout>
@@ -1070,6 +1073,39 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
                          });
 
         menu->addAction(autoTranslateAction);
+    }
+
+    if (auto *automations = getApp()->getChatAutomations(); automations)
+    {
+        QString initialChannel;
+        if (auto twitch = std::dynamic_pointer_cast<TwitchChannel>(
+                this->split_->getChannel()))
+        {
+            initialChannel = twitch->getName();
+        }
+        else if (auto multi = std::dynamic_pointer_cast<MultiChannel>(
+                     this->split_->getChannel()))
+        {
+            for (const auto &child : multi->channels())
+            {
+                if (child.platform == MultiChannel::Platform::Twitch)
+                {
+                    initialChannel = child.channel->getName();
+                    break;
+                }
+            }
+        }
+
+        if (!initialChannel.isEmpty())
+        {
+            menu->addSeparator();
+            menu->addAction("Chat automations (self bot)...", this->split_,
+                            [initialChannel] {
+                                ChatAutomationDialog::showDialog(
+                                    initialChannel,
+                                    &getApp()->getWindows()->getMainWindow());
+                            });
+        }
     }
 
     menu->addSeparator();

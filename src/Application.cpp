@@ -5,6 +5,7 @@
 #include "common/Modes.hpp"
 #include "common/Version.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/Command.hpp"
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/highlights/HighlightController.hpp"
@@ -203,6 +204,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , crashHandler(new CrashHandler(paths))
 
     , commands(new CommandController(paths))
+    , chatAutomations(new ChatAutomationController(paths, this->commands.get()))
     , notifications(new NotificationController)
     , highlights(new HighlightController(_settings, this->accounts.get()))
     , twitch(new TwitchIrcServer)
@@ -568,6 +570,14 @@ DankChatBadges *Application::getDankChatBadges()
     return this->dankChatBadges.get();
 }
 
+ChatAutomationController *Application::getChatAutomations()
+{
+    assertInGuiThread();
+
+    // Reset before the windows are: the splits ask for it when they close.
+    return this->chatAutomations.get();
+}
+
 ChatsenBadges *Application::getChatsenBadges()
 {
     assert(this->chatsenBadges);
@@ -869,6 +879,8 @@ void Application::stop()
     this->twitch.reset();
     this->highlights.reset();
     this->notifications.reset();
+    // Uses the commands, so it goes first.
+    this->chatAutomations.reset();
     this->commands.reset();
     this->potatCommands.reset();
     this->supibotCommands.reset();

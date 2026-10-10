@@ -6,17 +6,21 @@
 #include "providers/translation/Translator.hpp"
 #include "providers/twitch/ChannelManagement.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
 #include "util/FuzzyConvert.hpp"
 #include "widgets/buttons/SignalLabel.hpp"
+#include "widgets/dialogs/ChatAutomationDialog.hpp"
 #include "widgets/dialogs/MoltorinoAuthDialog.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
+#include "widgets/Window.hpp"
 #ifndef Q_OS_MACOS
 #    include "singletons/Toasts.hpp"
 #endif
 #include "Application.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "messages/Emote.hpp"
@@ -39,8 +43,11 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMap>
+#include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -1012,6 +1019,62 @@ MoltorinoPage::MoltorinoPage()
         ->setTooltip("Show muted (translated) text after translated messages.")
         ->addTo(*view);
 
+    view->addTitle("Chat automations");
+    view->addDescription(
+        "Create self bot rules that reply or run commands from your Twitch "
+        "account.");
+
+    auto *automationEnabled = new QCheckBox("Enable chat automations", this);
+    automationEnabled->setToolTip(
+        "Pause every rule without changing your setup.");
+    if (auto *automations = getApp()->getChatAutomations(); automations)
+    {
+        automationEnabled->setChecked(automations->enabled());
+        QObject::connect(
+            automationEnabled, &QCheckBox::toggled, this,
+            [this, automations](bool enabled) {
+                automations->setEnabled(enabled);
+                if (!automations->save())
+                {
+                    automations->setEnabled(!enabled);
+                    QMessageBox::warning(
+                        this, "Chat automations",
+                        "Could not save chat automations. Check that your "
+                        "settings folder is writable and try again.");
+                }
+            });
+        this->chatAutomationRulesConnection_ =
+            automations->rulesChanged.connect([automations, automationEnabled] {
+                const QSignalBlocker blocker(automationEnabled);
+                automationEnabled->setChecked(automations->enabled());
+            });
+    }
+    else
+    {
+        automationEnabled->setEnabled(false);
+    }
+    view->addWidget(automationEnabled,
+                    {"Self bot", "Automation rules", "Enable automations"});
+
+    SettingWidget::checkbox("Run in the background",
+                            s.chatAutomationsRunInBackground)
+        ->setTooltip("Keep rules active while the application is minimized "
+                     "or another app is focused.")
+        ->addTo(*view);
+
+    SettingWidget::intInput("Maximum actions per 30 seconds",
+                            s.chatAutomationsMaxRunsPer30Seconds,
+                            {.min = 1, .max = 10})
+        ->setTooltip("Limit how often automations can act in each channel. "
+                     "Individual rule cooldowns still apply.")
+        ->addTo(*view);
+
+    auto *openAutomations = view->addButton("Open automations", [this] {
+        ChatAutomationDialog::showDialog(
+            {}, &getApp()->getWindows()->getMainWindow());
+    });
+    openAutomations->setToolTip("Open the rule editor.");
+
     view->addTitle("Usercards");
 
     SettingWidget::checkbox("Show relative followage",
@@ -1495,6 +1558,23 @@ void MoltorinoPage::updateAuthStatus(const QString &text, bool isValid,
 
     this->authStatusLabel_->setStyleSheet(
         QString("QLabel { color: %1; }").arg(color));
+}
+
+void MoltorinoPage::showBotBadgeSettings()
+{
+    this->revealBotBadgeSettings(true);
+
+    // The frame only has its place once the page is shown and laid out.
+    QTimer::singleShot(50, this, [this] {
+        auto *area = this->settingsView_->findChild<QScrollArea *>();
+        if (area == nullptr || area->widget() == nullptr)
+        {
+            return;
+        }
+        const auto top =
+            this->botBadgeFrame_->mapTo(area->widget(), QPoint(0, 0)).y();
+        area->verticalScrollBar()->setValue(std::max(0, top - 8));
+    });
 }
 
 void MoltorinoPage::revealBotBadgeSettings(bool revealed)

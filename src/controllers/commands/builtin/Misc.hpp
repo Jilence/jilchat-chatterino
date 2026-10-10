@@ -42,5 +42,7 @@ QString copyToClipboard(const CommandContext &ctx);
 QString unstableSetUserClientSideColor(const CommandContext &ctx);
 QString openUsercard(const CommandContext &ctx);
 QString openLogs(const CommandContext &ctx);
+/// Opens the editor of the chat automations (self bot rules).
+QString selfbot(const CommandContext &ctx);
 
 }  // namespace chatterino::commands
