@@ -1890,11 +1890,23 @@ void ChannelView::paintChatFrame(QPainter &painter)
     auto bottomSurface = theme->window.background;
     if (this->context_ == Context::None)
     {
-        const bool focused = this->split_ != nullptr &&
+        const bool hasBanner =
+            this->split_ != nullptr && this->split_->hasVisibleBanner();
+        const bool focused = !hasBanner && this->split_ != nullptr &&
                              this->split_->hasFocus() &&
                              themeUsesClassicSplitFrame(profile.foundation);
         topSurface = focused ? theme->splits.header.focusedBackground
                              : theme->splits.header.background;
+        if (hasBanner)
+        {
+            // A banner sits right above the chat; it can have its own color.
+            const QColor bannerSurface(
+                getSettings()->pinBannerBackgroundColor.getValue());
+            if (bannerSurface.isValid())
+            {
+                topSurface = bannerSurface;
+            }
+        }
         bottomSurface = theme->splits.input.background;
     }
     paintThemeChatFrame(painter, QRectF(this->rect()),

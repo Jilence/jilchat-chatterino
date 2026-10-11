@@ -2329,6 +2329,15 @@ void Split::updateLastReadMessage()
     this->view_->updateLastReadMessage();
 }
 
+bool Split::hasVisibleBanner() const
+{
+    return (this->pinnedBanner_ != nullptr &&
+            this->pinnedBanner_->isVisible()) ||
+           (this->predictionBanner_ != nullptr &&
+            this->predictionBanner_->isVisible()) ||
+           (this->pollBanner_ != nullptr && this->pollBanner_->isVisible());
+}
+
 void Split::themeChangedEvent()
 {
     // The polished look has no line around the split.
