@@ -5,6 +5,7 @@
 #include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "singletons/Paths.hpp"
+#include "singletons/Settings.hpp"
 #include "util/QStringHash.hpp"  // IWYU pragma: keep
 
 #include <QFile>
@@ -14,6 +15,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTimer>
+#include <QUrl>
 
 #include <algorithm>
 #include <array>
@@ -24,10 +26,15 @@ namespace chatterino {
 namespace {
 
 constexpr auto CATALOG_URL = "https://api.potat.app/help";
+constexpr auto USERS_URL = "https://api.potat.app/users/";
 constexpr auto CACHE_FILE = "potat-command-catalog.json";
 constexpr auto META_FILE = "potat-command-catalog.meta.json";
 constexpr qsizetype MAX_PAYLOAD_SIZE = 2 * 1024 * 1024;
+constexpr qsizetype MAX_CHANNEL_PAYLOAD_SIZE = 1024 * 1024;
 constexpr qsizetype MAX_METADATA_SIZE = 4096;
+constexpr qsizetype MAX_CHANNEL_COMMANDS = 200;
+constexpr qsizetype MAX_PREFIXES = 8;
+constexpr qsizetype MAX_HELP_LENGTH = 512;
 constexpr qsizetype MAX_COMMANDS = 1000;
 constexpr qsizetype MAX_ALIASES = 3000;
 constexpr qsizetype MAX_USAGE_LENGTH = 2048;
@@ -258,6 +265,220 @@ std::shared_ptr<const completion::CommandUsage> documentedAliasUsage(
     return std::make_shared<const completion::CommandUsage>(std::move(best));
 }
 
+bool validLogin(const QString &login)
+{
+    static const QRegularExpression expression(
+        QStringLiteral("^[a-z0-9_]{1,25}$"));
+    return expression.match(login).hasMatch();
+}
+
+bool validInvocation(const QString &text)
+{
+    if (text.isEmpty() || text.size() > 64 || text.contains(QChar(' ')))
+    {
+        return false;
+    }
+    static const QRegularExpression meta(
+        QStringLiteral(R"([.\\+*?\[\](){}|^$])"));
+    return !meta.match(text).hasMatch();
+}
+
+bool usablePrefix(const QString &prefix)
+{
+    if (!validInvocation(prefix) || prefix.size() > 16)
+    {
+        return false;
+    }
+    return prefix != QStringLiteral("/") && prefix != QStringLiteral(".") &&
+           prefix != QStringLiteral("@") && prefix != QStringLiteral("$") &&
+           !prefix.startsWith(QStringLiteral("$$"));
+}
+
+QString literalInvocation(QString trigger)
+{
+    trigger = trigger.trimmed();
+    if (trigger.size() >= 2 && trigger.startsWith(QChar('/')) &&
+        trigger.endsWith(QChar('/')))
+    {
+        trigger = trigger.mid(1, trigger.size() - 2);
+    }
+    if (!trigger.startsWith(QChar('^')))
+    {
+        return {};
+    }
+    trigger = trigger.mid(1);
+    if (trigger.endsWith(QChar('$')))
+    {
+        trigger.chop(1);
+    }
+    if (!validInvocation(trigger))
+    {
+        return {};
+    }
+    return trigger;
+}
+
+QString cleanHelp(const QString &raw)
+{
+    auto text = raw.trimmed().left(MAX_HELP_LENGTH);
+    text.replace(QRegularExpression(QStringLiteral("[\\r\\n]+")),
+                 QStringLiteral(" "));
+    return text.simplified();
+}
+
+bool commandExpired(const QJsonObject &object)
+{
+    const auto expires =
+        object.value(QStringLiteral("expires_at")).toString().trimmed();
+    if (expires.isEmpty())
+    {
+        return false;
+    }
+    const auto when = QDateTime::fromString(expires, Qt::ISODate);
+    return when.isValid() && when < QDateTime::currentDateTimeUtc();
+}
+
+bool userRestricted(const QJsonObject &object)
+{
+    const auto ids = object.value(QStringLiteral("user_trigger_ids"));
+    return ids.isArray() && !ids.toArray().isEmpty();
+}
+
+QString longestPrefix(const QStringList &prefixes, const QString &invocation)
+{
+    QString matched;
+    for (const auto &prefix : prefixes)
+    {
+        if (prefix.size() > matched.size() &&
+            invocation.startsWith(prefix, Qt::CaseInsensitive))
+        {
+            matched = prefix;
+        }
+    }
+    return matched;
+}
+
+void addChannelCommand(PotatChannelRecord &record, const QString &invocation,
+                       const QString &help)
+{
+    if (record.commands.size() >= MAX_CHANNEL_COMMANDS ||
+        !validInvocation(invocation))
+    {
+        return;
+    }
+    const auto matched = longestPrefix(record.prefixes, invocation);
+    PotatChannelCommand command;
+    if (!matched.isEmpty() && invocation.size() > matched.size())
+    {
+        command.prefix = matched;
+        command.name = invocation.mid(matched.size());
+    }
+    else if (matched.isEmpty())
+    {
+        command.prefix = invocation;
+    }
+    else
+    {
+        return;
+    }
+    const auto key = (command.prefix + command.name).toLower();
+    const auto duplicate = std::ranges::any_of(
+        record.commands, [&](const PotatChannelCommand &existing) {
+            return (existing.prefix + existing.name)
+                       .compare(key, Qt::CaseInsensitive) == 0;
+        });
+    if (duplicate)
+    {
+        return;
+    }
+    command.usage = help;
+    record.commands.push_back(std::move(command));
+}
+
+QStringList readPrefixes(const QJsonValue &value)
+{
+    QStringList prefixes;
+    const auto append = [&](const QString &raw) {
+        const auto prefix = raw.trimmed();
+        if (prefixes.size() >= MAX_PREFIXES || !usablePrefix(prefix))
+        {
+            return;
+        }
+        const auto exists =
+            std::ranges::any_of(prefixes, [&](const QString &existing) {
+                return existing.compare(prefix, Qt::CaseInsensitive) == 0;
+            });
+        if (!exists)
+        {
+            prefixes.push_back(prefix);
+        }
+    };
+    if (value.isArray())
+    {
+        for (const auto &entry : value.toArray())
+        {
+            append(entry.toString());
+        }
+    }
+    else if (value.isString())
+    {
+        append(value.toString());
+    }
+    if (prefixes.isEmpty())
+    {
+        prefixes.push_back(QStringLiteral("#"));
+    }
+    return prefixes;
+}
+
+void readCustomCommands(PotatChannelRecord &record, const QJsonArray &commands)
+{
+    for (const auto &value : commands)
+    {
+        if (record.commands.size() >= MAX_CHANNEL_COMMANDS)
+        {
+            break;
+        }
+        const auto object = value.toObject();
+        if (object.isEmpty() ||
+            !object.value(QStringLiteral("active")).toBool(false) ||
+            commandExpired(object) || userRestricted(object))
+        {
+            continue;
+        }
+        const auto help =
+            cleanHelp(object.value(QStringLiteral("help")).toString());
+        const auto trigger = object.value(QStringLiteral("trigger")).toString();
+        if (!trigger.trimmed().isEmpty())
+        {
+            const auto invocation = literalInvocation(trigger);
+            if (!invocation.isEmpty())
+            {
+                addChannelCommand(record, invocation, help);
+            }
+            continue;
+        }
+        auto name = object.value(QStringLiteral("name")).toString().trimmed();
+        if (name.startsWith(QStringLiteral("{any}")))
+        {
+            name = name.mid(QStringLiteral("{any}").size());
+            if (!validInvocation(name))
+            {
+                continue;
+            }
+            for (const auto &prefix : record.prefixes)
+            {
+                addChannelCommand(record, prefix + name, help);
+            }
+            continue;
+        }
+        if (!name.isEmpty())
+        {
+            addChannelCommand(record, name, help);
+        }
+    }
+}
+
 }  // namespace
 
 namespace potat::detail {
@@ -354,6 +575,50 @@ std::vector<PotatCommand> parseCommands(const QByteArray &payload)
         return left.name.compare(right.name, Qt::CaseInsensitive) < 0;
     });
     return commands;
+}
+
+std::optional<PotatChannelRecord> parseChannel(const QByteArray &payload)
+{
+    if (payload.isEmpty() || payload.size() > MAX_CHANNEL_PAYLOAD_SIZE)
+    {
+        return std::nullopt;
+    }
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(payload, &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject())
+    {
+        return std::nullopt;
+    }
+    const auto data = document.object().value(QStringLiteral("data"));
+    if (!data.isArray())
+    {
+        return std::nullopt;
+    }
+
+    PotatChannelRecord record;
+    if (data.toArray().isEmpty())
+    {
+        return record;
+    }
+    const auto channel =
+        data.toArray().at(0).toObject().value(QStringLiteral("channel"));
+    if (!channel.isObject())
+    {
+        return record;
+    }
+    const auto object = channel.toObject();
+    if (object.value(QStringLiteral("state")).toString() !=
+        QStringLiteral("JOINED"))
+    {
+        return record;
+    }
+    record.joined = true;
+    record.prefixes = readPrefixes(object.value(QStringLiteral("settings"))
+                                       .toObject()
+                                       .value(QStringLiteral("prefix")));
+    readCustomCommands(record,
+                       object.value(QStringLiteral("commands")).toArray());
+    return record;
 }
 
 }  // namespace potat::detail
@@ -494,6 +759,321 @@ bool PotatCommands::saveCache(const QByteArray &payload) const
         return false;
     }
     return file.commit();
+}
+
+QString PotatCommands::normalizeLogin(const QString &channelLogin)
+{
+    const auto login = channelLogin.trimmed().toLower();
+    if (!validLogin(login))
+    {
+        return {};
+    }
+    return login;
+}
+
+PotatCommands::ChannelState *PotatCommands::channelState(
+    const QString &channelLogin)
+{
+    const auto login = normalizeLogin(channelLogin);
+    if (login.isEmpty())
+    {
+        return nullptr;
+    }
+    return &this->channelStates_[login];
+}
+
+const PotatCommands::ChannelState *PotatCommands::channelState(
+    const QString &channelLogin) const
+{
+    const auto login = normalizeLogin(channelLogin);
+    if (login.isEmpty())
+    {
+        return nullptr;
+    }
+    const auto it = this->channelStates_.constFind(login);
+    if (it == this->channelStates_.cend())
+    {
+        return nullptr;
+    }
+    return &(*it);
+}
+
+void PotatCommands::ensureChannel(const QString &channelLogin)
+{
+    auto *state = this->channelState(channelLogin);
+    if (state == nullptr)
+    {
+        return;
+    }
+    const auto login = normalizeLogin(channelLogin);
+    if (!state->cacheChecked)
+    {
+        this->loadChannelCache(login);
+    }
+    if (state->fetchedThisSession || state->requestInFlight ||
+        state->requestAttempts >= 3 ||
+        (state->nextRetryAt.isValid() &&
+         QDateTime::currentDateTimeUtc() < state->nextRetryAt))
+    {
+        return;
+    }
+    this->requestChannel(login, true);
+}
+
+bool PotatCommands::channelReady(const QString &channelLogin) const
+{
+    const auto *state = this->channelState(channelLogin);
+    return state != nullptr && state->ready;
+}
+
+bool PotatCommands::isChannelLoading(const QString &channelLogin) const
+{
+    const auto *state = this->channelState(channelLogin);
+    return state != nullptr && state->requestInFlight;
+}
+
+bool PotatCommands::isJoined(const QString &channelLogin) const
+{
+    const auto *state = this->channelState(channelLogin);
+    return state != nullptr && state->ready && state->record.joined;
+}
+
+bool PotatCommands::suggestionQuery(const QString &channelLogin,
+                                    const QString &query) const
+{
+    if (query.isEmpty())
+    {
+        return false;
+    }
+    const auto *state = this->channelState(channelLogin);
+    if (state == nullptr || !state->ready)
+    {
+        return query.startsWith(QChar('#'));
+    }
+    if (!state->record.joined)
+    {
+        return false;
+    }
+    for (const auto &prefix : state->record.prefixes)
+    {
+        if (query.startsWith(prefix, Qt::CaseInsensitive))
+        {
+            return true;
+        }
+    }
+    const bool includeUnprefixed = getSettings()->showPotatUnprefixedCommands;
+    for (const auto &command : state->record.commands)
+    {
+        if (!command.usesChannelPrefix() && !includeUnprefixed)
+        {
+            continue;
+        }
+        const auto invocation = command.prefix + command.name;
+        if (!invocation.isEmpty() &&
+            invocation.startsWith(query, Qt::CaseInsensitive))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+QStringList PotatCommands::prefixesFor(const QString &channelLogin) const
+{
+    const auto *state = this->channelState(channelLogin);
+    if (state == nullptr || !state->ready || !state->record.joined)
+    {
+        return {};
+    }
+    return state->record.prefixes;
+}
+
+const std::vector<PotatChannelCommand> &PotatCommands::channelCommands(
+    const QString &channelLogin) const
+{
+    static const std::vector<PotatChannelCommand> empty;
+    const auto *state = this->channelState(channelLogin);
+    if (state == nullptr || !state->ready || !state->record.joined)
+    {
+        return empty;
+    }
+    return state->record.commands;
+}
+
+void PotatCommands::loadChannelCache(const QString &login)
+{
+    auto *state = this->channelState(login);
+    if (state == nullptr)
+    {
+        return;
+    }
+    state->cacheChecked = true;
+    QFile metadata(getApp()->getPaths().cacheFilePath(
+        QStringLiteral("potat-channel-%1.meta.json").arg(login)));
+    if (metadata.open(QIODevice::ReadOnly))
+    {
+        const auto object =
+            QJsonDocument::fromJson(metadata.read(MAX_METADATA_SIZE + 1))
+                .object();
+        if (object.value(QStringLiteral("login")).toString() == login)
+        {
+            state->etag = object.value(QStringLiteral("etag")).toString();
+        }
+    }
+    QFile cache(getApp()->getPaths().cacheFilePath(
+        QStringLiteral("potat-channel-%1.json").arg(login)));
+    if (!cache.open(QIODevice::ReadOnly))
+    {
+        return;
+    }
+    auto record =
+        potat::detail::parseChannel(cache.read(MAX_CHANNEL_PAYLOAD_SIZE + 1));
+    if (!record)
+    {
+        return;
+    }
+    state->record = std::move(*record);
+    state->ready = true;
+}
+
+void PotatCommands::requestChannel(const QString &login, bool useEtag)
+{
+    auto *state = this->channelState(login);
+    if (state == nullptr || state->requestInFlight ||
+        state->requestAttempts >= 3)
+    {
+        return;
+    }
+    state->requestInFlight = true;
+    ++state->requestAttempts;
+
+    auto request =
+        NetworkRequest(QString::fromLatin1(USERS_URL) +
+                       QString::fromUtf8(QUrl::toPercentEncoding(login)))
+            .header("Accept", "application/json")
+            .timeout(8000)
+            .caller(this);
+    if (useEtag && !state->etag.isEmpty())
+    {
+        request = std::move(request).header("If-None-Match", state->etag);
+    }
+    std::move(request)
+        .onSuccess([this, login](const NetworkResult &result) {
+            auto *state = this->channelState(login);
+            if (state == nullptr)
+            {
+                return;
+            }
+            if (result.status() == 304)
+            {
+                if (!state->ready)
+                {
+                    state->etag.clear();
+                    state->retryWithoutEtag = true;
+                    return;
+                }
+                state->fetchedThisSession = true;
+                return;
+            }
+            if (result.status() == 404)
+            {
+                state->record = {};
+                state->ready = true;
+                state->fetchedThisSession = true;
+                return;
+            }
+            auto record = potat::detail::parseChannel(
+                result.getData().left(MAX_CHANNEL_PAYLOAD_SIZE + 1));
+            if (!record)
+            {
+                qCWarning(chatterinoApp)
+                    << "[Potat] Ignoring an invalid channel record.";
+                const auto delays = std::array{30, 120, 600};
+                const auto delay = delays.at(std::min(
+                    state->requestAttempts - 1, int(delays.size()) - 1));
+                state->nextRetryAt =
+                    QDateTime::currentDateTimeUtc().addSecs(delay);
+                return;
+            }
+            state->record = std::move(*record);
+            state->etag = QString::fromUtf8(result.etag());
+            state->ready = true;
+            state->fetchedThisSession = true;
+            if (this->saveChannelCache(login, result.getData()))
+            {
+                this->saveChannelMetadata(login);
+            }
+        })
+        .onError([this, login](const NetworkResult &result) {
+            auto *state = this->channelState(login);
+            if (state == nullptr)
+            {
+                return;
+            }
+            if (result.status() == 404)
+            {
+                state->record = {};
+                state->ready = true;
+                state->fetchedThisSession = true;
+                return;
+            }
+            const auto delays = std::array{30, 120, 600};
+            const auto delay = delays.at(
+                std::min(state->requestAttempts - 1, int(delays.size()) - 1));
+            state->nextRetryAt = QDateTime::currentDateTimeUtc().addSecs(delay);
+            qCWarning(chatterinoApp) << "[Potat] Channel record request failed:"
+                                     << result.formatError();
+        })
+        .finally([this, login] {
+            auto *state = this->channelState(login);
+            if (state == nullptr)
+            {
+                return;
+            }
+            state->requestInFlight = false;
+            const auto retryWithoutEtag = state->retryWithoutEtag;
+            state->retryWithoutEtag = false;
+            this->commandsUpdated.invoke();
+            if (retryWithoutEtag)
+            {
+                QTimer::singleShot(0, this, [this, login] {
+                    this->requestChannel(login, false);
+                });
+            }
+        })
+        .execute();
+}
+
+bool PotatCommands::saveChannelCache(const QString &login,
+                                     const QByteArray &payload) const
+{
+    QSaveFile file(getApp()->getPaths().cacheFilePath(
+        QStringLiteral("potat-channel-%1.json").arg(login)));
+    if (!file.open(QIODevice::WriteOnly) ||
+        file.write(payload) != payload.size())
+    {
+        return false;
+    }
+    return file.commit();
+}
+
+void PotatCommands::saveChannelMetadata(const QString &login) const
+{
+    const auto *state = this->channelState(login);
+    if (state == nullptr)
+    {
+        return;
+    }
+    QSaveFile file(getApp()->getPaths().cacheFilePath(
+        QStringLiteral("potat-channel-%1.meta.json").arg(login)));
+    if (!file.open(QIODevice::WriteOnly))
+    {
+        return;
+    }
+    file.write(QJsonDocument(QJsonObject{{QStringLiteral("etag"), state->etag},
+                                         {QStringLiteral("login"), login}})
+                   .toJson(QJsonDocument::Compact));
+    file.commit();
 }
 
 void PotatCommands::saveMetadata() const

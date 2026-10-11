@@ -298,6 +298,13 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
 
     layout.addTitle("Commands");
+    SettingWidget::checkbox("Show command suggestions while typing",
+                            s.showCommandSuggestions)
+        ->setTooltip("Show a compact command suggestion strip above the "
+                     "message input.")
+        ->addTo(layout);
+
+    layout.addSubtitle("Supibot commands");
     SettingWidget::checkbox("Include Supibot commands in suggestions",
                             s.includeSupibotCommands)
         ->addKeywords({"supibot", "supinic", "command", "suggestion"})
@@ -307,9 +314,30 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     SettingWidget::checkbox("Show Supibot command aliases",
                             s.showSupibotCommandAliases)
         ->addKeywords({"supibot", "alias", "command", "suggestion"})
-        ->setTooltip("Include built-in shortcuts such as $cf, and your own "
-                     "Supibot aliases.")
+        ->setTooltip("Include built-in shortcuts such as $cf. Your own "
+                     "aliases are suggested separately after you type $$.")
         ->conditionallyEnabledBy(s.includeSupibotCommands)
+        ->addTo(layout);
+
+    layout.addSubtitle("PotatBotat");
+    SettingWidget::checkbox("Include Potat commands in suggestions",
+                            s.includePotatCommands)
+        ->setTooltip(
+            "Suggest Potat commands after you type that channel's prefix, "
+            "including custom commands that use it, when PotatBotat is "
+            "joined.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Show Potat command aliases",
+                            s.showPotatCommandAliases)
+        ->setTooltip("Include command shortcuts in Potat suggestions.")
+        ->conditionallyEnabledBy(s.includePotatCommands)
+        ->addTo(layout);
+    SettingWidget::checkbox("Show Potat commands without a prefix",
+                            s.showPotatUnprefixedCommands)
+        ->setTooltip("Also suggest this channel's custom commands that do "
+                     "not start with its prefix.")
+        ->addKeywords({"potat", "custom", "prefix", "command"})
+        ->conditionallyEnabledBy(s.includePotatCommands)
         ->addTo(layout);
 
     layout.addTitle("Miscellaneous");
