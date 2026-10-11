@@ -7,6 +7,10 @@
 #include <QVector>
 
 #include <cstdint>
+#include <optional>
+#ifdef CHATTERINO_THEME_VIDEO
+#    include <stop_token>
+#endif
 
 class QCheckBox;
 class QComboBox;
@@ -28,6 +32,11 @@ class CustomizationPage final : public SettingsPage
 {
 public:
     CustomizationPage();
+    ~CustomizationPage() override;
+    CustomizationPage(const CustomizationPage &) = delete;
+    CustomizationPage &operator=(const CustomizationPage &) = delete;
+    CustomizationPage(CustomizationPage &&) = delete;
+    CustomizationPage &operator=(CustomizationPage &&) = delete;
 
     void onShow() override;
     bool filterElements(const QString &query) override;
@@ -63,6 +72,19 @@ private:
     void resetDraft();
 
     void chooseWallpaper();
+#ifdef CHATTERINO_THEME_VIDEO
+    /// Converts a video (or animated GIF) into a background in a worker
+    /// thread and selects it when done.
+    void prepareVideoWallpaper(const QString &path);
+    /// Asks how much of a long video to use. 0 for all of it, nothing if the
+    /// user cancelled.
+    std::optional<int> chooseVideoLength(double duration);
+    /// Stops a running conversion.
+    std::stop_source wallpaperCancellation_;
+#endif
+    /// Bumped to drop the result of a conversion that is no longer wanted.
+    std::uint64_t wallpaperGeneration_ = 0;
+    QPushButton *cancelWallpaperButton_{};
     void clearWallpaper();
     /// Derives the palette from the colors of the background image.
     void suggestWallpaperPalette();

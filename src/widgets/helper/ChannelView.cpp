@@ -45,6 +45,10 @@
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
 #include "singletons/Theme.hpp"
+#ifdef CHATTERINO_THEME_VIDEO
+#    include "singletons/ThemeVideo.hpp"
+#    include "singletons/ThemeVideoDecoder.hpp"
+#endif
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
 #include "util/DistanceBetweenPoints.hpp"
@@ -1580,6 +1584,7 @@ void ChannelView::themeChangedEvent()
                                     getSettings()->overlayBackgroundOpacity);
     this->wallpaperCacheKey_.clear();
     this->wallpaperPixmap_.reset();
+    this->releaseVideoWallpaper();
     this->invalidateBuffers();
     this->updateRoundedChildMasks();
 }
@@ -1772,6 +1777,18 @@ void ChannelView::updateRoundedChildMasks()
     }
 }
 
+void ChannelView::releaseVideoWallpaper()
+{
+#ifdef CHATTERINO_THEME_VIDEO
+    QObject::disconnect(this->wallpaperVideoConnection_);
+    if (this->wallpaperVideo_)
+    {
+        this->wallpaperVideo_->detach(this);
+    }
+#endif
+    this->wallpaperVideo_.reset();
+}
+
 void ChannelView::paintWallpaper(QPainter &painter)
 {
     const auto &profile = getTheme()->customization;
@@ -1779,9 +1796,28 @@ void ChannelView::paintWallpaper(QPainter &painter)
     if (this->wallpaperCacheKey_.isEmpty())
     {
         this->wallpaperCacheKey_ = wallpaperKey(profile);
-        this->wallpaperPixmap_ = loadWallpaper(profile);
+#ifdef CHATTERINO_THEME_VIDEO
+        if (isThemeVideo(profile.wallpaperSource) &&
+            profile.wallpaperOpacity > 0 && this->isVisible())
+        {
+            // All views showing this video share one player. It tells us
+            // when the next frame is there.
+            this->wallpaperVideo_ =
+                ThemeVideo::acquire(profile.wallpaperSource, this);
+            this->wallpaperVideoConnection_ =
+                QObject::connect(this->wallpaperVideo_.get(),
+                                 &ThemeVideo::frameChanged, this, [this] {
+                                     this->update();
+                                 });
+        }
+        else
+#endif
+        {
+            this->wallpaperPixmap_ = loadWallpaper(profile);
+        }
     }
-    if (!this->wallpaperPixmap_ || this->wallpaperPixmap_->isNull())
+    if (!this->wallpaperVideo_ &&
+        (!this->wallpaperPixmap_ || this->wallpaperPixmap_->isNull()))
     {
         return;
     }
@@ -1801,7 +1837,14 @@ void ChannelView::paintWallpaper(QPainter &painter)
             target = container->rect();
         }
     }
-    if (profile.wallpaperMode == ThemeWallpaperMode::Tile)
+#ifdef CHATTERINO_THEME_VIDEO
+    if (this->wallpaperVideo_)
+    {
+        this->wallpaperVideo_->paint(painter, target, profile);
+    }
+    else
+#endif
+        if (profile.wallpaperMode == ThemeWallpaperMode::Tile)
     {
         const auto zoom = std::clamp(profile.wallpaperZoom, 100, 300) / 100.0;
         painter.save();
@@ -2363,6 +2406,7 @@ ChannelView::~ChannelView()
     // view while it's being destroyed.
     this->channelConnections_.clear();
     this->releaseRaisedMessageLimit();
+    this->releaseVideoWallpaper();
 }
 
 void ChannelView::setChannel(const ChannelPtr &underlyingChannel)

@@ -1,0 +1,12 @@
+Builds with video backgrounds for themes ship FFmpeg 7.1.5 as a separate
+program (ffmpeg and ffprobe in support/media) to prepare chosen videos.
+That build has GPL and nonfree components disabled and uses LGPL 2.1 or later.
+
+Upstream source: https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz
+SHA-256: de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
+
+The exact configuration is in conanfile.py of this program's source (option
+with_theme_video). That recipe pins the additional codec dependencies; their
+licenses are in support/media/licenses.
+
+The FFmpeg source is unmodified. Its LGPL text is in ffmpeg-LGPL-2.1.txt.

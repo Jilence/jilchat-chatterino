@@ -41,6 +41,8 @@ option(CHATTERINO_NO_AVIF_PLUGIN "Disable AVIF plugin" OFF)
 option(CHATTERINO_PLUGINS "Enable ALPHA plugin support in Chatterino" ON)
 option(CHATTERINO_USE_GDI_FONTENGINE "Use the legacy GDI fontengine instead of the new DirectWrite one on Windows (Qt 6.8.0 and later)" ON)
 option(CHATTERINO_ALLOW_PRIVATE_QT_API "Allow uses of Qt's private API - when enabling this, Chatterino must use the EXACT Qt version it was compiled against" OFF)
+set(CHATTERINO_THEME_VIDEO "AUTO" CACHE STRING "Enable video backgrounds for themes (requires libvpx, libwebm and libyuv): ON, OFF, or AUTO to enable it when they are found")
+set_property(CACHE CHATTERINO_THEME_VIDEO PROPERTY STRINGS AUTO ON OFF)
 option(CHATTERINO_SPELLCHECK "Enable spellchecking in Chatterino (requires Hunspell)" OFF)
 option(CHATTERINO_NIGHTLY_BUILD "Specifies whether this is a nightly build." OFF)
 
@@ -191,6 +193,53 @@ find_package(Boost REQUIRED CONFIG OPTIONAL_COMPONENTS headers)
 find_package(OpenSSL REQUIRED)
 
 find_package(Threads REQUIRED)
+
+# Video backgrounds of themes are played with libwebm, libvpx and libyuv.
+# Without them the build works as before, just without videos.
+set(CHATTERINO_HAVE_THEME_VIDEO OFF)
+if(CHATTERINO_THEME_VIDEO)
+    find_package(libvpx QUIET CONFIG)
+    find_package(webm QUIET CONFIG)
+    find_package(libyuv QUIET CONFIG)
+    if(NOT TARGET libvpx::libvpx)
+        find_path(VPX_INCLUDE_DIR vpx/vpx_decoder.h)
+        find_library(VPX_LIBRARY NAMES vpx)
+        if(VPX_INCLUDE_DIR AND VPX_LIBRARY)
+            add_library(libvpx::libvpx UNKNOWN IMPORTED)
+            set_target_properties(libvpx::libvpx PROPERTIES
+                IMPORTED_LOCATION "${VPX_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${VPX_INCLUDE_DIR}")
+        endif()
+    endif()
+    if(NOT TARGET webm::webm)
+        find_path(WEBM_INCLUDE_DIR webm/webm_parser.h)
+        find_library(WEBM_LIBRARY NAMES webm)
+        if(WEBM_INCLUDE_DIR AND WEBM_LIBRARY)
+            add_library(webm::webm UNKNOWN IMPORTED)
+            set_target_properties(webm::webm PROPERTIES
+                IMPORTED_LOCATION "${WEBM_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${WEBM_INCLUDE_DIR}")
+        endif()
+    endif()
+    if(NOT TARGET libyuv::libyuv)
+        find_path(YUV_INCLUDE_DIR libyuv/convert_argb.h)
+        find_library(YUV_LIBRARY NAMES yuv)
+        if(YUV_INCLUDE_DIR AND YUV_LIBRARY)
+            add_library(libyuv::libyuv UNKNOWN IMPORTED)
+            set_target_properties(libyuv::libyuv PROPERTIES
+                IMPORTED_LOCATION "${YUV_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${YUV_INCLUDE_DIR}")
+        endif()
+    endif()
+    if(TARGET libvpx::libvpx AND TARGET webm::webm AND TARGET libyuv::libyuv)
+        set(CHATTERINO_HAVE_THEME_VIDEO ON)
+        message(STATUS "Theme video backgrounds: enabled")
+    elseif(CHATTERINO_THEME_VIDEO STREQUAL "AUTO")
+        message(STATUS "Theme video backgrounds: disabled (libvpx, libwebm or libyuv not found)")
+    else()
+        message(FATAL_ERROR "CHATTERINO_THEME_VIDEO is ON but libvpx, libwebm or libyuv wasn't found")
+    endif()
+endif()
 
 if(CHATTERINO_SPELLCHECK)
     # Find from package manager

@@ -11,6 +11,11 @@
 #include "singletons/Fonts.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
+#ifdef CHATTERINO_THEME_VIDEO
+#    include "singletons/ThemeVideo.hpp"
+#    include "singletons/ThemeVideoDecoder.hpp"
+#    include "singletons/ThemeVideoImport.hpp"
+#endif
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
@@ -53,6 +58,12 @@
 #include <QStyle>
 #include <QStyleOptionSlider>
 #include <QTabWidget>
+#ifdef CHATTERINO_THEME_VIDEO
+#    include <QApplication>
+#    include <QDialogButtonBox>
+#    include <QtConcurrent/QtConcurrentRun>
+#    include <QTemporaryFile>
+#endif
 #include <QTextLayout>
 #include <QTimer>
 #include <QtMath>
@@ -71,7 +82,23 @@ using namespace Qt::StringLiterals;
 
 namespace chatterino {
 
+#ifndef CHATTERINO_THEME_VIDEO
+// Only there in builds with video backgrounds.
+class ThemeVideo;
+#endif
+
 namespace {
+
+/// Whether the background of a theme is a video this build can play.
+bool isVideoBackground(const QString &source)
+{
+#ifdef CHATTERINO_THEME_VIDEO
+    return isThemeVideo(source);
+#else
+    (void)source;
+    return false;
+#endif
+}
 
 // Theme files use the format of Moltorino, so themes can be exchanged.
 constexpr auto APPEARANCE_FORMAT = "moltorino-appearance";
@@ -320,7 +347,20 @@ QString wallpaperFileFilter()
     }
     patterns.removeDuplicates();
     patterns.sort();
+#ifdef CHATTERINO_THEME_VIDEO
+    QStringList videos;
+    for (const auto &extension : themeVideoInputExtensions())
+    {
+        if (extension != u"gif")
+        {
+            videos.append(u"*."_s + extension);
+        }
+    }
+    return u"Images and videos (%1);;Images (%2);;Videos (%3)"_s.arg(
+        (patterns + videos).join(u' '), patterns.join(u' '), videos.join(u' '));
+#else
     return u"Images (%1)"_s.arg(patterns.join(u' '));
+#endif
 }
 
 /// The fonts of the previews. The real ones are built by Fonts, which also
@@ -921,8 +961,23 @@ class ThemePreviewWidget final : public QWidget
 public:
     QImage wallpaperFrame() const
     {
+#ifdef CHATTERINO_THEME_VIDEO
+        if (this->video_)
+        {
+            return this->video_->currentFrame();
+        }
+#endif
         return loadThemeWallpaper(this->profile_.wallpaperSource);
     }
+
+    ~ThemePreviewWidget() override
+    {
+        this->releaseVideo();
+    }
+    ThemePreviewWidget(const ThemePreviewWidget &) = delete;
+    ThemePreviewWidget &operator=(const ThemePreviewWidget &) = delete;
+    ThemePreviewWidget(ThemePreviewWidget &&) = delete;
+    ThemePreviewWidget &operator=(ThemePreviewWidget &&) = delete;
 
     explicit ThemePreviewWidget(QWidget *parent = nullptr)
         : QWidget(parent)
@@ -970,7 +1025,8 @@ public:
             this->wallpaperRenderKey_.clear();
             this->sourceWallpaper_ = {};
             this->wallpaper_ = {};
-            if (this->isVisible() && this->profile_.hasWallpaper())
+            if (this->isVisible() && this->profile_.hasWallpaper() &&
+                !isVideoBackground(this->profile_.wallpaperSource))
             {
                 const auto image =
                     loadThemeWallpaper(this->profile_.wallpaperSource, 768);
@@ -989,6 +1045,28 @@ public:
                 }
             }
         }
+#ifdef CHATTERINO_THEME_VIDEO
+        if (isThemeVideo(this->profile_.wallpaperSource) &&
+            this->profile_.wallpaperOpacity > 0 && this->isVisible())
+        {
+            if (!this->video_ ||
+                this->videoSource_ != this->profile_.wallpaperSource)
+            {
+                this->releaseVideo();
+                this->videoSource_ = this->profile_.wallpaperSource;
+                this->video_ = ThemeVideo::acquire(this->videoSource_, this);
+                this->videoConnection_ =
+                    QObject::connect(this->video_.get(),
+                                     &ThemeVideo::frameChanged, this, [this] {
+                                         this->update();
+                                     });
+            }
+        }
+        else
+        {
+            this->releaseVideo();
+        }
+#endif
         const auto renderKey = QStringLiteral("%1:%2").arg(sourceKey).arg(
             this->profile_.wallpaperBlur);
         if (this->wallpaperRenderKey_ != renderKey)
@@ -1028,6 +1106,7 @@ protected:
     void hideEvent(QHideEvent *event) override
     {
         this->blurTimer_.stop();
+        this->releaseVideo();
         this->badgeRefreshTimer_.stop();
         this->sourceWallpaper_ = {};
         this->wallpaper_ = {};
@@ -1306,12 +1385,19 @@ protected:
         painter.save();
         painter.setClipPath(messageClip);
         painter.fillRect(messages, this->profile_.chatBackground);
-        if (!this->wallpaper_.isNull())
+        if (this->video_ || !this->wallpaper_.isNull())
         {
             painter.setOpacity(this->profile_.wallpaperOpacity / 100.0);
             const QSizeF imageSize =
                 QSizeF(this->wallpaper_.size()) / this->wallpaperScale_;
-            if (this->profile_.wallpaperMode == ThemeWallpaperMode::Tile)
+#ifdef CHATTERINO_THEME_VIDEO
+            if (this->video_)
+            {
+                this->video_->paint(painter, messages, this->profile_);
+            }
+            else
+#endif
+                if (this->profile_.wallpaperMode == ThemeWallpaperMode::Tile)
             {
                 painter.save();
                 painter.translate(messages.topLeft());
@@ -1802,6 +1888,23 @@ private:
     QPixmap wallpaper_;
     QString wallpaperSourceKey_;
     QString wallpaperRenderKey_;
+    /// Plays a video background. Always empty in builds without them.
+    std::shared_ptr<ThemeVideo> video_;
+    QString videoSource_;
+    QMetaObject::Connection videoConnection_;
+
+    void releaseVideo()
+    {
+#ifdef CHATTERINO_THEME_VIDEO
+        QObject::disconnect(this->videoConnection_);
+        if (this->video_)
+        {
+            this->video_->detach(this);
+        }
+#endif
+        this->video_.reset();
+    }
+
     QTimer blurTimer_;
     QTimer badgeRefreshTimer_;
     static constexpr int MaxBadgeRefreshAttempts = 50;
@@ -2045,6 +2148,14 @@ private:
     QImage shadowPreview_;
 };
 
+CustomizationPage::~CustomizationPage()
+{
+#ifdef CHATTERINO_THEME_VIDEO
+    // A conversion still running must not outlive the page for long.
+    this->wallpaperCancellation_.request_stop();
+#endif
+}
+
 CustomizationPage::CustomizationPage()
 {
     this->buildUi();
@@ -2121,6 +2232,23 @@ void CustomizationPage::buildUi()
     this->status_ = new QLabel;
     this->status_->setTextFormat(Qt::PlainText);
     footer->addWidget(this->status_, 1);
+    // Only shown while a video is being converted.
+    this->cancelWallpaperButton_ = new QPushButton(u"Cancel"_s);
+    this->cancelWallpaperButton_->hide();
+    footer->addWidget(this->cancelWallpaperButton_);
+#ifdef CHATTERINO_THEME_VIDEO
+    QObject::connect(
+        this->cancelWallpaperButton_, &QPushButton::clicked, this, [this] {
+            this->wallpaperCancellation_.request_stop();
+            ++this->wallpaperGeneration_;
+            this->cancelWallpaperButton_->hide();
+            this->setTransferBusy(false);
+            this->setStatus(u"Background preparation cancelled."_s);
+        });
+    QObject::connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
+        this->wallpaperCancellation_.request_stop();
+    });
+#endif
     this->resetButton_ = new QPushButton(u"Revert changes"_s);
     this->saveButton_ = new QPushButton(u"Save and apply"_s);
     footer->addWidget(this->resetButton_);
@@ -2679,8 +2807,14 @@ QWidget *CustomizationPage::buildBackgroundTab()
     pathLayout->setSpacing(5);
     this->wallpaperPath_ = new QLineEdit;
     this->wallpaperPath_->setReadOnly(true);
+#ifdef CHATTERINO_THEME_VIDEO
+    this->wallpaperPath_->setPlaceholderText(u"No image or video"_s);
+    auto *choose = new QPushButton(u"Choose image or video…"_s);
+    choose->setToolTip(u"Images or videos. Videos use more resources."_s);
+#else
     this->wallpaperPath_->setPlaceholderText(u"No image"_s);
     auto *choose = new QPushButton(u"Choose image…"_s);
+#endif
     auto *clear = new QPushButton(u"Remove"_s);
     pathLayout->addWidget(this->wallpaperPath_, 1);
     pathLayout->addWidget(choose);
@@ -2771,12 +2905,22 @@ QWidget *CustomizationPage::buildBackgroundTab()
 void CustomizationPage::chooseWallpaper()
 {
     const auto generation = this->profileGeneration_;
-    const auto path = QFileDialog::getOpenFileName(this, u"Choose an image"_s,
-                                                   {}, wallpaperFileFilter());
+    const auto path = QFileDialog::getOpenFileName(
+        this, u"Choose a background"_s, {}, wallpaperFileFilter());
     if (path.isEmpty() || generation != this->profileGeneration_)
     {
         return;
     }
+#ifdef CHATTERINO_THEME_VIDEO
+    // Videos and animated GIFs are converted first; that takes a while.
+    const bool gif =
+        QFileInfo(path).suffix().compare(u"gif", Qt::CaseInsensitive) == 0;
+    if (gif ? QImageReader(path).imageCount() > 1 : isThemeVideoInput(path))
+    {
+        this->prepareVideoWallpaper(path);
+        return;
+    }
+#endif
     if (QFileInfo(path).size() > MAX_WALLPAPER_FILE_SIZE ||
         loadThemeWallpaper(path, 256).isNull())
     {
@@ -2792,6 +2936,149 @@ void CustomizationPage::chooseWallpaper()
     this->loadProfileIntoControls();
     this->setStatus({});
 }
+
+#ifdef CHATTERINO_THEME_VIDEO
+std::optional<int> CustomizationPage::chooseVideoLength(double duration)
+{
+    if (duration <= 60)
+    {
+        return 0;
+    }
+    QDialog dialog(this);
+    dialog.setWindowTitle(u"Background length"_s);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *description = new QLabel(
+        u"Shorter loops prepare faster and use less storage."_s, &dialog);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+    auto *length = new QComboBox(&dialog);
+    length->addItem(u"First 15 seconds"_s, 15);
+    length->addItem(u"First 30 seconds"_s, 30);
+    length->addItem(u"First 45 seconds"_s, 45);
+    length->addItem(u"First minute"_s, 60);
+    const bool tooLong = duration > THEME_VIDEO_DURATION_MS / 1000.0;
+    if (!tooLong)
+    {
+        length->addItem(u"Full clip"_s, 0);
+    }
+    length->setCurrentIndex(1);
+    auto *form = new QFormLayout;
+    form->addRow(u"Use:"_s, length);
+    layout->addLayout(form);
+    if (tooLong)
+    {
+        auto *limit = new QLabel(
+            u"Over 2 minutes long, so only the start can be used."_s, &dialog);
+        limit->setWordWrap(true);
+        layout->addWidget(limit);
+    }
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(u"Use background"_s);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog,
+                     &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
+                     &QDialog::reject);
+    layout->addWidget(buttons);
+    dialog.setMinimumWidth(380);
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        return std::nullopt;
+    }
+    return length->currentData().toInt();
+}
+
+void CustomizationPage::prepareVideoWallpaper(const QString &path)
+{
+    const auto generation = this->profileGeneration_;
+    const auto wallpaperGeneration = ++this->wallpaperGeneration_;
+    this->wallpaperCancellation_.request_stop();
+    this->wallpaperCancellation_ = std::stop_source();
+    const auto cancellation = this->wallpaperCancellation_.get_token();
+    this->setTransferBusy(true);
+    this->cancelWallpaperButton_->show();
+    const auto directory = getTheme()->themesDirectory();
+
+    // Whether the result is still wanted: not cancelled, same theme, and no
+    // newer conversion started.
+    const auto current = [this, generation, wallpaperGeneration, cancellation] {
+        return !cancellation.stop_requested() &&
+               generation == this->profileGeneration_ &&
+               wallpaperGeneration == this->wallpaperGeneration_;
+    };
+    const auto finish = [this](const QString &status, bool error) {
+        this->cancelWallpaperButton_->hide();
+        this->setTransferBusy(false);
+        this->setStatus(status, error);
+    };
+    const auto prepare = [this, path, directory, cancellation, current,
+                          finish](int seconds) {
+        this->setStatus(u"Preparing background…"_s);
+        (void)QtConcurrent::run([path, cancellation, directory, seconds] {
+            const auto data = prepareThemeVideo(path, cancellation, seconds);
+            QString stored;
+            if (data.error.isEmpty() && !cancellation.stop_requested())
+            {
+                stored = storeSharedWallpaper(
+                    PreparedWallpaper{
+                        .bytes = data.bytes,
+                        .extension = data.extension,
+                        .error = {},
+                    },
+                    directory);
+            }
+            return std::pair{stored, data.error};
+        })
+            .then(this, [this, current,
+                         finish](const std::pair<QString, QString> &result) {
+                if (!current())
+                {
+                    return;
+                }
+                if (result.first.isEmpty())
+                {
+                    finish(result.second.isEmpty()
+                               ? u"The background couldn't be saved."_s
+                               : result.second,
+                           true);
+                    return;
+                }
+                this->readControlsIntoProfile();
+                this->profile_.wallpaperSource = result.first;
+                this->profile_.wallpaperId.clear();
+                finish({}, false);
+                this->loadProfileIntoControls();
+            });
+    };
+
+    this->setStatus(u"Reading background…"_s);
+    (void)QtConcurrent::run([path, cancellation] {
+        return inspectThemeVideo(path, cancellation);
+    }).then(this, [this, current, prepare, finish](const ThemeVideoInfo &info) {
+        if (!current())
+        {
+            return;
+        }
+        if (!info.error.isEmpty())
+        {
+            finish(info.error, true);
+            return;
+        }
+        this->setStatus({});
+        const auto seconds = this->chooseVideoLength(info.duration);
+        if (!current())
+        {
+            return;
+        }
+        if (!seconds)
+        {
+            finish(u"Background preparation cancelled."_s, false);
+            return;
+        }
+        prepare(*seconds);
+    });
+}
+#endif
 
 void CustomizationPage::clearWallpaper()
 {
@@ -3002,10 +3289,16 @@ QWidget *CustomizationPage::buildShareTab()
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(8);
+#ifdef CHATTERINO_THEME_VIDEO
     auto *description = new QLabel(
         u"Share the selected theme or import one. Themes from Moltorino and "
-        u"Bluzyrino can be imported too; video backgrounds aren't used "
-        u"here."_s);
+        u"Bluzyrino can be imported too."_s);
+#else
+    auto *description = new QLabel(
+        u"Share the selected theme or import one. Themes from Moltorino and "
+        u"Bluzyrino can be imported too; this build can't play video "
+        u"backgrounds."_s);
+#endif
     description->setWordWrap(true);
     layout->addWidget(description);
 
@@ -3232,6 +3525,12 @@ void CustomizationPage::createThemeCode()
     {
         prepared.error = u"The background is missing or larger than 50 MB."_s;
     }
+    else if (isVideoBackground(profile.wallpaperSource))
+    {
+        // already converted when it was chosen
+        prepared.bytes = file.readAll();
+        prepared.extension = u"webm"_s;
+    }
     else
     {
         prepared = prepareSharedWallpaper(file.readAll());
@@ -3260,9 +3559,10 @@ void CustomizationPage::createThemeCode()
 
     auto *payload = new QHttpMultiPart(QHttpMultiPart::FormDataType);
     QHttpPart part;
-    part.setHeader(
-        QNetworkRequest::ContentTypeHeader,
-        prepared.extension == u"webp"_s ? u"image/webp"_s : u"image/jpeg"_s);
+    part.setHeader(QNetworkRequest::ContentTypeHeader,
+                   prepared.extension == u"webp"_s   ? u"image/webp"_s
+                   : prepared.extension == u"webm"_s ? u"video/webm"_s
+                                                     : u"image/jpeg"_s);
     part.setHeader(
         QNetworkRequest::ContentDispositionHeader,
         u"form-data; name=\"file\"; filename=\"background.%1\""_s.arg(
@@ -3425,7 +3725,27 @@ void CustomizationPage::installImportedTheme(ThemeCustomizationProfile profile,
                 return;
             }
             this->setTransferBusy(false);
-            const auto prepared = prepareSharedWallpaper(result.getData());
+            auto prepared = prepareSharedWallpaper(result.getData());
+#ifdef CHATTERINO_THEME_VIDEO
+            // A WebM video (they start with the EBML magic number). It is
+            // decoded once from start to end to make sure it plays.
+            if (result.getData().startsWith(QByteArray::fromHex("1a45dfa3")) &&
+                result.getData().size() <= THEME_BACKGROUND_BYTES)
+            {
+                QTemporaryFile video;
+                if (video.open() &&
+                    video.write(result.getData()) == result.getData().size() &&
+                    video.flush() &&
+                    validateThemeVideo(video.fileName()).isEmpty())
+                {
+                    prepared = PreparedWallpaper{
+                        .bytes = result.getData(),
+                        .extension = u"webm"_s,
+                        .error = {},
+                    };
+                }
+            }
+#endif
             const auto stored =
                 prepared.error.isEmpty()
                     ? storeSharedWallpaper(prepared,
@@ -3433,7 +3753,8 @@ void CustomizationPage::installImportedTheme(ThemeCustomizationProfile profile,
                     : QString();
             if (stored.isEmpty())
             {
-                // Videos end up here too; the theme is still useful.
+                // Also videos in builds without them; the theme is still
+                // useful.
                 profile.wallpaperSource.clear();
                 this->writeImportedTheme(std::move(profile), adapted);
                 this->setStatus(

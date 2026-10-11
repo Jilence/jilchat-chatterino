@@ -1,6 +1,9 @@
 #include "singletons/ThemeCustomization.hpp"
 
 #include "singletons/Settings.hpp"
+#ifdef CHATTERINO_THEME_VIDEO
+#    include "singletons/ThemeVideoDecoder.hpp"
+#endif
 
 #include <QFont>
 #include <QImage>
@@ -614,6 +617,13 @@ bool isThemeWallpaperId(const QString &id)
 
 QImage loadThemeWallpaper(const QString &source, int maxDimension)
 {
+#ifdef CHATTERINO_THEME_VIDEO
+    if (isThemeVideo(source))
+    {
+        // the first frame stands in for the video
+        return themeVideoPoster(source, maxDimension);
+    }
+#endif
     if (source.trimmed().isEmpty())
     {
         return {};

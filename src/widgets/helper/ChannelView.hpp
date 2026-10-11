@@ -55,6 +55,7 @@ class LabelButton;
 struct Link;
 class MessageLayoutElement;
 class Split;
+class ThemeVideo;
 class TwitchChannel;
 class FilterSet;
 using FilterSetPtr = std::shared_ptr<FilterSet>;
@@ -494,6 +495,11 @@ private:
     QString wallpaperCacheKey_;
     /// Shared between all views showing the same background.
     std::shared_ptr<QPixmap> wallpaperPixmap_;
+    /// Set instead of `wallpaperPixmap_` when the background is a video.
+    /// Always empty in builds without video backgrounds.
+    std::shared_ptr<ThemeVideo> wallpaperVideo_;
+    QMetaObject::Connection wallpaperVideoConnection_;
+    void releaseVideoWallpaper();
 
     QPainterPath chatFrameContentPath_;
     QPainterPath chatFrameOutsidePath_;
