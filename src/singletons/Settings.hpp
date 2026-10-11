@@ -1346,6 +1346,8 @@ public:
     BoolSetting includePotatCommands{"/moltorino/includePotatCommands", true};
     BoolSetting showPotatCommandAliases{"/moltorino/showPotatCommandAliases",
                                         true};
+    BoolSetting showPotatUnprefixedCommands{
+        "/moltorino/showPotatUnprefixedCommands", false};
     BoolSetting includeSupibotCommands{"/leafyrino/includeSupibotCommands",
                                        true};
     BoolSetting showSupibotCommandAliases{

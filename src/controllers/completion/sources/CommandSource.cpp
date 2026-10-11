@@ -481,37 +481,71 @@ CommandSource::CommandSource(std::unique_ptr<CommandStrategy> strategy,
 void CommandSource::update(const QString &query)
 {
     this->output_.clear();
-    if (query.startsWith(QChar('#')))
+    if (getSettings()->includePotatCommands && this->strategy_ != nullptr &&
+        this->channel_ != nullptr &&
+        this->channel_->getType() == Channel::Type::Twitch)
     {
-        if (!getSettings()->includePotatCommands ||
-            this->strategy_ == nullptr || this->channel_ == nullptr ||
-            this->channel_->getType() != Channel::Type::Twitch)
-        {
-            return;
-        }
         auto *potat = getApp()->getPotatCommands();
-        if (potat == nullptr)
+        const auto login = this->channel_->getName();
+        if (potat != nullptr &&
+            (query.startsWith(QChar('#')) ||
+             potat->suggestionQuery(login, query)))
         {
+            potat->ensureLoaded();
+            potat->ensureChannel(login);
+            if (!potat->channelReady(login) || !potat->isJoined(login))
+            {
+                return;
+            }
+            const auto prefixes = potat->prefixesFor(login);
+            std::vector<CommandItem> items;
+            items.reserve((potat->commands().size() * prefixes.size()) +
+                          potat->channelCommands(login).size());
+            for (const auto &prefix : prefixes)
+            {
+                for (const auto &command : potat->commands())
+                {
+                    if (command.alias &&
+                        !getSettings()->showPotatCommandAliases)
+                    {
+                        continue;
+                    }
+                    items.push_back({
+                        .name = command.name,
+                        .prefix = prefix,
+                        .usage = command.usage,
+                        .argumentHint = command.argumentHint,
+                    });
+                }
+            }
+            const bool includeUnprefixed =
+                getSettings()->showPotatUnprefixedCommands;
+            for (const auto &command : potat->channelCommands(login))
+            {
+                if (!command.usesChannelPrefix() && !includeUnprefixed)
+                {
+                    continue;
+                }
+                const auto catalogCommand = std::ranges::any_of(
+                    items, [&](const CommandItem &item) {
+                        return item.prefix.compare(command.prefix,
+                                                   Qt::CaseInsensitive) == 0 &&
+                               item.name.compare(command.name,
+                                                 Qt::CaseInsensitive) == 0;
+                    });
+                if (catalogCommand)
+                {
+                    continue;
+                }
+                items.push_back({
+                    .name = command.name,
+                    .prefix = command.prefix,
+                    .usage = command.usage,
+                });
+            }
+            this->strategy_->apply(items, this->output_, query);
             return;
         }
-        potat->ensureLoaded();
-        std::vector<CommandItem> items;
-        items.reserve(potat->commands().size());
-        for (const auto &command : potat->commands())
-        {
-            if (command.alias && !getSettings()->showPotatCommandAliases)
-            {
-                continue;
-            }
-            items.push_back({
-                .name = command.name,
-                .prefix = QStringLiteral("#"),
-                .usage = command.usage,
-                .argumentHint = command.argumentHint,
-            });
-        }
-        this->strategy_->apply(items, this->output_, query);
-        return;
     }
     if (query.startsWith(QChar('$')))
     {
@@ -535,6 +569,15 @@ void CommandSource::update(const QString &query)
         items.reserve(supibot->commands().size());
         for (const auto &command : supibot->commands())
         {
+            if (command.userAlias)
+            {
+                items.push_back({
+                    .name = command.name,
+                    .prefix = QStringLiteral("$$"),
+                    .usage = command.usage,
+                });
+                continue;
+            }
             if (command.alias && !getSettings()->showSupibotCommandAliases)
             {
                 continue;

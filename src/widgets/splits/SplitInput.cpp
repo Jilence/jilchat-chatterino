@@ -552,6 +552,8 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
                                                 this->managedConnections_);
     getSettings()->showPotatCommandAliases.connect(refreshCommandHints,
                                                    this->managedConnections_);
+    getSettings()->showPotatUnprefixedCommands.connect(refreshCommandHints,
+                                                       this->managedConnections_);
     getSettings()->includeSupibotCommands.connect(refreshCommandHints,
                                                   this->managedConnections_);
     getSettings()->showSupibotCommandAliases.connect(refreshCommandHints,
@@ -3022,7 +3024,24 @@ void SplitInput::updateCompletionPopup()
         {
             const auto prefix = beforeCursor.at(commandStart);
             const auto isSlash = prefix == '/' || prefix == '.';
-            const auto isBot = prefix == '#' || prefix == '$';
+            const auto queryPreview = beforeCursor.mid(commandStart);
+            const auto selectedChannel = this->split_->getSelectedChannel();
+            const bool potatChannel =
+                getSettings()->includePotatCommands &&
+                selectedChannel != nullptr &&
+                selectedChannel->getType() == Channel::Type::Twitch;
+            auto *potat = potatChannel ? getApp()->getPotatCommands() : nullptr;
+            if (potat != nullptr)
+            {
+                potat->ensureChannel(selectedChannel->getName());
+            }
+            const auto isBot =
+                queryPreview.startsWith('$') ||
+                (potatChannel &&
+                 (queryPreview.startsWith('#') ||
+                  (potat != nullptr &&
+                   potat->suggestionQuery(selectedChannel->getName(),
+                                          queryPreview))));
             const auto commandLength = beforeCursor.size() - commandStart;
             if ((isSlash || isBot) &&
                 !beforeCursor.mid(commandStart).contains(QChar(' ')) &&
@@ -3122,17 +3141,30 @@ bool SplitInput::updateCommandCompletion(const QString &query, int start,
     if (this->commandCompletionSuggestions_.empty())
     {
         const auto selectedChannel = this->split_->getSelectedChannel();
-        if (query.startsWith(QChar('#')) &&
+        if ((query.startsWith(QChar('#')) ||
+             (getApp()->getPotatCommands() != nullptr &&
+              getApp()->getPotatCommands()->suggestionQuery(
+                  selectedChannel == nullptr ? QString{}
+                                             : selectedChannel->getName(),
+                  query))) &&
             getSettings()->includePotatCommands && selectedChannel != nullptr &&
             selectedChannel->getType() == Channel::Type::Twitch)
         {
-            if (auto *potat = getApp()->getPotatCommands();
-                potat != nullptr && potat->commands().empty() &&
-                potat->isLoading())
+            if (auto *potat = getApp()->getPotatCommands(); potat != nullptr)
             {
-                this->showCommandCompletionStatus(
-                    QStringLiteral("Loading Potat commands…"));
-                return true;
+                const auto login = selectedChannel->getName();
+                const bool waitingForChannel =
+                    !potat->channelReady(login) &&
+                    potat->isChannelLoading(login) && query.startsWith('#');
+                const bool waitingForCatalog =
+                    potat->isJoined(login) && potat->commands().empty() &&
+                    potat->isLoading();
+                if (waitingForChannel || waitingForCatalog)
+                {
+                    this->showCommandCompletionStatus(
+                        QStringLiteral("Loading Potat commands…"));
+                    return true;
+                }
             }
         }
         if (query.startsWith(QChar('$')) &&
@@ -3537,9 +3569,20 @@ void SplitInput::updateCommandArgumentHint(const QString &text,
         clear();
         return;
     }
-    const auto prefix = text.at(start);
-    const bool potat = prefix == QChar('#');
-    const bool supibot = prefix == QChar('$');
+    const auto channel = this->split_->getSelectedChannel();
+    auto commandEnd = start;
+    while (commandEnd < text.size() && !text.at(commandEnd).isSpace())
+    {
+        ++commandEnd;
+    }
+    const auto command = text.mid(start, commandEnd - start);
+    const bool supibot = command.startsWith(QChar('$'));
+    auto *potatCommands = getApp()->getPotatCommands();
+    const bool potat =
+        channel != nullptr && channel->getType() == Channel::Type::Twitch &&
+        potatCommands != nullptr &&
+        (command.startsWith(QChar('#')) ||
+         potatCommands->suggestionQuery(channel->getName(), command));
     if ((potat && !getSettings()->includePotatCommands) ||
         (supibot && !getSettings()->includeSupibotCommands) ||
         (!potat && !supibot))
@@ -3548,19 +3591,12 @@ void SplitInput::updateCommandArgumentHint(const QString &text,
         return;
     }
 
-    auto commandEnd = start;
-    while (commandEnd < text.size() && !text.at(commandEnd).isSpace())
-    {
-        ++commandEnd;
-    }
-    const auto command = text.mid(start, commandEnd - start);
     if (command.size() < 2 || text.mid(commandEnd).contains(QChar('\n')))
     {
         clear();
         return;
     }
 
-    const auto channel = this->split_->getSelectedChannel();
     if (this->commandHintKey_.compare(command, Qt::CaseInsensitive) != 0 ||
         this->commandHintChannel_.lock() != channel)
     {
@@ -3580,7 +3616,7 @@ void SplitInput::updateCommandArgumentHint(const QString &text,
             });
         if (exact != source.output().end())
         {
-            if (potat)
+            if (potat && exact->argumentHint)
             {
                 this->resolvedCommandHint_ = exact->argumentHint;
             }
@@ -3591,13 +3627,8 @@ void SplitInput::updateCommandArgumentHint(const QString &text,
         }
     }
 
-    if (potat)
+    if (potat && this->resolvedCommandHint_)
     {
-        if (!this->resolvedCommandHint_)
-        {
-            clear();
-            return;
-        }
         const auto arguments = text.mid(commandEnd);
         bool appendDirectly = false;
         const auto remaining = completion::remainingCommandUsage(
@@ -3615,6 +3646,11 @@ void SplitInput::updateCommandArgumentHint(const QString &text,
         return;
     }
 
+    if (!potat && !supibot)
+    {
+        clear();
+        return;
+    }
     if (this->resolvedSupibotDescription_.isEmpty() ||
         !text.mid(commandEnd).trimmed().isEmpty())
     {
@@ -4628,6 +4664,13 @@ void SplitInput::updateChannel()
         this->commandHintChannel_.reset();
         this->resolvedCommandHint_.reset();
         this->resolvedSupibotDescription_.clear();
+        if (selected->getType() == Channel::Type::Twitch)
+        {
+            if (auto *potat = getApp()->getPotatCommands())
+            {
+                potat->ensureChannel(selected->getName());
+            }
+        }
         this->updateCommandArgumentHint(
             this->ui_.textEdit->toPlainText(),
             this->ui_.textEdit->textCursor().position());
