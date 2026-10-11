@@ -95,8 +95,7 @@ std::optional<TabCompletionModel::SourceKind>
                 potat->suggestionQuery(this->channel_.getName(), query);
         }
     }
-    const bool botPrefix =
-        isFirstWord && (potatQuery || query.startsWith('$'));
+    const bool botPrefix = isFirstWord && (potatQuery || query.startsWith('$'));
     if ((query.length() < 2 && !botPrefix) ||
         !this->channel_.isTwitchOrKickChannel())
     {

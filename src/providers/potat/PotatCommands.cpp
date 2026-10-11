@@ -384,8 +384,8 @@ void addChannelCommand(PotatChannelRecord &record, const QString &invocation,
     const auto key = (command.prefix + command.name).toLower();
     const auto duplicate = std::ranges::any_of(
         record.commands, [&](const PotatChannelCommand &existing) {
-            return (existing.prefix + existing.name).compare(
-                       key, Qt::CaseInsensitive) == 0;
+            return (existing.prefix + existing.name)
+                       .compare(key, Qt::CaseInsensitive) == 0;
         });
     if (duplicate)
     {
@@ -404,8 +404,8 @@ QStringList readPrefixes(const QJsonValue &value)
         {
             return;
         }
-        const auto exists = std::ranges::any_of(
-            prefixes, [&](const QString &existing) {
+        const auto exists =
+            std::ranges::any_of(prefixes, [&](const QString &existing) {
                 return existing.compare(prefix, Qt::CaseInsensitive) == 0;
             });
         if (!exists)
@@ -448,8 +448,7 @@ void readCustomCommands(PotatChannelRecord &record, const QJsonArray &commands)
         }
         const auto help =
             cleanHelp(object.value(QStringLiteral("help")).toString());
-        const auto trigger =
-            object.value(QStringLiteral("trigger")).toString();
+        const auto trigger = object.value(QStringLiteral("trigger")).toString();
         if (!trigger.trimmed().isEmpty())
         {
             const auto invocation = literalInvocation(trigger);
@@ -601,8 +600,8 @@ std::optional<PotatChannelRecord> parseChannel(const QByteArray &payload)
     {
         return record;
     }
-    const auto channel = data.toArray().at(0).toObject().value(
-        QStringLiteral("channel"));
+    const auto channel =
+        data.toArray().at(0).toObject().value(QStringLiteral("channel"));
     if (!channel.isObject())
     {
         return record;
@@ -614,9 +613,9 @@ std::optional<PotatChannelRecord> parseChannel(const QByteArray &payload)
         return record;
     }
     record.joined = true;
-    record.prefixes = readPrefixes(
-        object.value(QStringLiteral("settings")).toObject().value(
-            QStringLiteral("prefix")));
+    record.prefixes = readPrefixes(object.value(QStringLiteral("settings"))
+                                       .toObject()
+                                       .value(QStringLiteral("prefix")));
     readCustomCommands(record,
                        object.value(QStringLiteral("commands")).toArray());
     return record;
@@ -927,8 +926,8 @@ void PotatCommands::loadChannelCache(const QString &login)
     {
         return;
     }
-    auto record = potat::detail::parseChannel(
-        cache.read(MAX_CHANNEL_PAYLOAD_SIZE + 1));
+    auto record =
+        potat::detail::parseChannel(cache.read(MAX_CHANNEL_PAYLOAD_SIZE + 1));
     if (!record)
     {
         return;
@@ -983,9 +982,8 @@ void PotatCommands::requestChannel(const QString &login, bool useEtag)
                 state->fetchedThisSession = true;
                 return;
             }
-            auto record =
-                potat::detail::parseChannel(result.getData().left(
-                    MAX_CHANNEL_PAYLOAD_SIZE + 1));
+            auto record = potat::detail::parseChannel(
+                result.getData().left(MAX_CHANNEL_PAYLOAD_SIZE + 1));
             if (!record)
             {
                 qCWarning(chatterinoApp)
@@ -1023,9 +1021,8 @@ void PotatCommands::requestChannel(const QString &login, bool useEtag)
             const auto delay = delays.at(
                 std::min(state->requestAttempts - 1, int(delays.size()) - 1));
             state->nextRetryAt = QDateTime::currentDateTimeUtc().addSecs(delay);
-            qCWarning(chatterinoApp)
-                << "[Potat] Channel record request failed:"
-                << result.formatError();
+            qCWarning(chatterinoApp) << "[Potat] Channel record request failed:"
+                                     << result.formatError();
         })
         .finally([this, login] {
             auto *state = this->channelState(login);

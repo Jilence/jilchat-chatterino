@@ -111,8 +111,7 @@ void CommandStrategy::apply(const std::vector<CommandItem> &items,
             : QChar{};
     const auto hasPreferredPrefix = !preferredPrefix.isNull();
     auto prefixFits = [&](const CommandItem &item) {
-        return !hasPreferredPrefix ||
-               item.prefix == QString(preferredPrefix) ||
+        return !hasPreferredPrefix || item.prefix == QString(preferredPrefix) ||
                (preferredPrefix == QChar('/') && item.prefix.isEmpty());
     };
     auto accept = [&](const CommandItem &item, const auto &nameMatches) {

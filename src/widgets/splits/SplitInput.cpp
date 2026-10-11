@@ -552,8 +552,8 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
                                                 this->managedConnections_);
     getSettings()->showPotatCommandAliases.connect(refreshCommandHints,
                                                    this->managedConnections_);
-    getSettings()->showPotatUnprefixedCommands.connect(refreshCommandHints,
-                                                       this->managedConnections_);
+    getSettings()->showPotatUnprefixedCommands.connect(
+        refreshCommandHints, this->managedConnections_);
     getSettings()->includeSupibotCommands.connect(refreshCommandHints,
                                                   this->managedConnections_);
     getSettings()->showSupibotCommandAliases.connect(refreshCommandHints,
@@ -3153,12 +3153,12 @@ bool SplitInput::updateCommandCompletion(const QString &query, int start,
             if (auto *potat = getApp()->getPotatCommands(); potat != nullptr)
             {
                 const auto login = selectedChannel->getName();
-                const bool waitingForChannel =
-                    !potat->channelReady(login) &&
-                    potat->isChannelLoading(login) && query.startsWith('#');
-                const bool waitingForCatalog =
-                    potat->isJoined(login) && potat->commands().empty() &&
-                    potat->isLoading();
+                const bool waitingForChannel = !potat->channelReady(login) &&
+                                               potat->isChannelLoading(login) &&
+                                               query.startsWith('#');
+                const bool waitingForCatalog = potat->isJoined(login) &&
+                                               potat->commands().empty() &&
+                                               potat->isLoading();
                 if (waitingForChannel || waitingForCatalog)
                 {
                     this->showCommandCompletionStatus(

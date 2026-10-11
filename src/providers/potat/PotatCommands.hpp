@@ -59,7 +59,7 @@ namespace potat::detail {
 std::vector<PotatCommand> parseCommands(const QByteArray &payload);
 std::optional<PotatChannelRecord> parseChannel(const QByteArray &payload);
 
-}
+}  // namespace potat::detail
 
 class PotatCommands final : public QObject
 {

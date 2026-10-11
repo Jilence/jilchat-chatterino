@@ -487,9 +487,8 @@ void CommandSource::update(const QString &query)
     {
         auto *potat = getApp()->getPotatCommands();
         const auto login = this->channel_->getName();
-        if (potat != nullptr &&
-            (query.startsWith(QChar('#')) ||
-             potat->suggestionQuery(login, query)))
+        if (potat != nullptr && (query.startsWith(QChar('#')) ||
+                                 potat->suggestionQuery(login, query)))
         {
             potat->ensureLoaded();
             potat->ensureChannel(login);
@@ -526,8 +525,8 @@ void CommandSource::update(const QString &query)
                 {
                     continue;
                 }
-                const auto catalogCommand = std::ranges::any_of(
-                    items, [&](const CommandItem &item) {
+                const auto catalogCommand =
+                    std::ranges::any_of(items, [&](const CommandItem &item) {
                         return item.prefix.compare(command.prefix,
                                                    Qt::CaseInsensitive) == 0 &&
                                item.name.compare(command.name,

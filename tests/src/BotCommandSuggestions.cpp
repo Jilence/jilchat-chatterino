@@ -79,13 +79,13 @@ TEST(SupibotSuggestions, userAliasKeepsADistinctPrefix)
     EXPECT_FALSE(aliases.front().alias);
     EXPECT_EQ(aliases.front().name, QStringLiteral("ping"));
 
-    const auto merged = supibot::detail::mergeCommands(
-        {SupibotCommand{
-            .name = QStringLiteral("ping"),
-            .usage = QStringLiteral("built-in"),
-            .alias = false,
-        }},
-        aliases);
+    const auto merged =
+        supibot::detail::mergeCommands({SupibotCommand{
+                                           .name = QStringLiteral("ping"),
+                                           .usage = QStringLiteral("built-in"),
+                                           .alias = false,
+                                       }},
+                                       aliases);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_FALSE(merged.at(0).userAlias);
     EXPECT_TRUE(merged.at(1).userAlias);
@@ -101,9 +101,9 @@ TEST(CommandStrategySuggestions, dollarPrefixesStaySeparate)
 
     EXPECT_EQ(invocations(apply(items, QStringLiteral("$p"), false)),
               QStringList{QStringLiteral("$ping")});
-    EXPECT_EQ(invocations(apply(items, QStringLiteral("$$"), true)),
-              (QStringList{QStringLiteral("$$ping"),
-                           QStringLiteral("$$alias")}));
+    EXPECT_EQ(
+        invocations(apply(items, QStringLiteral("$$"), true)),
+        (QStringList{QStringLiteral("$$ping"), QStringLiteral("$$alias")}));
     EXPECT_EQ(invocations(apply(items, QStringLiteral("$$a"), false)),
               QStringList{QStringLiteral("$$alias")});
 }
@@ -150,10 +150,9 @@ TEST(PotatSuggestions, channelPrefixesAndCustomCommands)
             {QStringLiteral("trigger"), QStringLiteral("^asleep$")},
         },
     };
-    const auto parsed = potat::detail::parseChannel(payloadBytes(
-        channelPayload(QStringLiteral("JOINED"),
-                       QJsonArray{QStringLiteral("#"), QStringLiteral("-")},
-                       commands)));
+    const auto parsed = potat::detail::parseChannel(payloadBytes(channelPayload(
+        QStringLiteral("JOINED"),
+        QJsonArray{QStringLiteral("#"), QStringLiteral("-")}, commands)));
     ASSERT_TRUE(parsed.has_value());
     EXPECT_TRUE(parsed->joined);
     EXPECT_EQ(parsed->prefixes,
@@ -164,9 +163,9 @@ TEST(PotatSuggestions, channelPrefixesAndCustomCommands)
     {
         custom.push_back(command.prefix + command.name);
     }
-    EXPECT_EQ(custom, (QStringList{QStringLiteral("!uwu"),
-                                   QStringLiteral("#discord"),
-                                   QStringLiteral("-discord")}));
+    EXPECT_EQ(custom,
+              (QStringList{QStringLiteral("!uwu"), QStringLiteral("#discord"),
+                           QStringLiteral("-discord")}));
     EXPECT_EQ(parsed->commands.front().usage, QStringLiteral("be cute"));
 }
 
