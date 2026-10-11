@@ -35,6 +35,7 @@ private:
     QWidget *buildChatTab();
     QWidget *buildInterfaceTab();
     QWidget *buildBackgroundTab();
+    QWidget *buildTextTab();
     /// A color button with a hex field for a color that isn't part of the
     /// palette (borders, shadows).
     QWidget *makeColorControl(const QString &tooltip,
@@ -102,6 +103,7 @@ private:
     QWidget *chatEditor_{};
     QWidget *interfaceEditor_{};
     QWidget *backgroundEditor_{};
+    QWidget *textEditor_{};
     QLabel *readability_{};
     QLabel *status_{};
     QCheckBox *chatTextFollowsText_{};
@@ -146,6 +148,16 @@ private:
     QSlider *wallpaperFocusX_{};
     QSlider *wallpaperFocusY_{};
     QPushButton *wallpaperColors_{};
+
+    QCheckBox *useThemeFonts_{};
+    QCheckBox *useThemeFontSizes_{};
+    QComboBox *chatFont_{};
+    QSlider *chatFontSize_{};
+    QSlider *chatFontWeight_{};
+    QComboBox *usernameFont_{};
+    QSlider *usernameFontWeight_{};
+    QComboBox *interfaceFont_{};
+    QSlider *interfaceFontSize_{};
 
     QComboBox *foundation_{};
     QComboBox *tabShape_{};

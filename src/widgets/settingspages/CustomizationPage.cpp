@@ -1,6 +1,7 @@
 #include "widgets/settingspages/CustomizationPage.hpp"
 
 #include "Application.hpp"
+#include "singletons/Fonts.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
@@ -15,6 +16,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -600,6 +602,7 @@ void CustomizationPage::buildUi()
     tabs->addTab(this->buildChatTab(), u"Chat"_s);
     tabs->addTab(this->buildInterfaceTab(), u"Interface"_s);
     tabs->addTab(this->buildBackgroundTab(), u"Background"_s);
+    tabs->addTab(this->buildTextTab(), u"Text"_s);
     tabs->addTab(this->buildShareTab(), u"Import and export"_s);
     workspace->addWidget(tabs);
     workspace->setStretchFactor(0, 2);
@@ -1031,6 +1034,102 @@ QWidget *CustomizationPage::buildInterfaceTab()
     return page;
 }
 
+QWidget *CustomizationPage::buildTextTab()
+{
+    auto *page = new QWidget;
+    this->textEditor_ = page;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(8);
+    auto *description = new QLabel(
+        u"A theme can bring its own fonts. Without them, the fonts from the "
+        u"General settings are used."_s);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+
+    this->useThemeFonts_ = new QCheckBox(u"Use theme fonts"_s);
+    this->useThemeFonts_->setToolTip(
+        u"Font families and weights of this theme replace the ones from "
+        u"the General settings."_s);
+    this->useThemeFontSizes_ = new QCheckBox(u"Use theme font sizes"_s);
+    layout->addWidget(this->useThemeFonts_);
+    layout->addWidget(this->useThemeFontSizes_);
+
+    const auto families = QFontDatabase::families();
+    const auto makeFontBox = [&families] {
+        auto *box = new QComboBox;
+        box->setEditable(false);
+        box->setMaxVisibleItems(18);
+        for (const auto &family : families)
+        {
+            box->addItem(family, family);
+        }
+        return box;
+    };
+
+    auto *chat = new QGroupBox(u"Chat"_s);
+    auto *chatForm = new QFormLayout(chat);
+    chatForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->chatFont_ = makeFontBox();
+    chatForm->addRow(u"Font:"_s, this->chatFont_);
+    chatForm->addRow(u"Size:"_s, makeSlider(6, 40, &this->chatFontSize_));
+    chatForm->addRow(u"Weight:"_s,
+                     makeSlider(100, 900, &this->chatFontWeight_));
+    layout->addWidget(chat);
+
+    auto *usernames = new QGroupBox(u"Usernames"_s);
+    auto *usernameForm = new QFormLayout(usernames);
+    usernameForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->usernameFont_ = makeFontBox();
+    usernames->setToolTip(u"Also used for other bold text in chat."_s);
+    usernameForm->addRow(u"Font:"_s, this->usernameFont_);
+    usernameForm->addRow(u"Weight:"_s,
+                         makeSlider(100, 900, &this->usernameFontWeight_));
+    layout->addWidget(usernames);
+
+    auto *interfaceGroup = new QGroupBox(u"Interface"_s);
+    auto *interfaceForm = new QFormLayout(interfaceGroup);
+    interfaceForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->interfaceFont_ = makeFontBox();
+    interfaceGroup->setToolTip(
+        u"Tabs, the channel bar and the input. Some parts only pick it up "
+        u"after a restart."_s);
+    interfaceForm->addRow(u"Font:"_s, this->interfaceFont_);
+    interfaceForm->addRow(u"Size:"_s,
+                          makeSlider(6, 30, &this->interfaceFontSize_));
+    layout->addWidget(interfaceGroup);
+    layout->addStretch(1);
+
+    for (auto *slider : {this->chatFontWeight_, this->usernameFontWeight_})
+    {
+        slider->setSingleStep(100);
+        slider->setPageStep(100);
+        slider->setTickInterval(100);
+    }
+
+    const auto update = [this] {
+        if (!this->loadingControls_)
+        {
+            this->readControlsIntoProfile();
+        }
+    };
+    for (auto *slider : {this->chatFontSize_, this->chatFontWeight_,
+                         this->usernameFontWeight_, this->interfaceFontSize_})
+    {
+        QObject::connect(slider, &QSlider::valueChanged, this, update);
+    }
+    for (auto *box :
+         {this->chatFont_, this->usernameFont_, this->interfaceFont_})
+    {
+        QObject::connect(box, &QComboBox::currentIndexChanged, this, update);
+    }
+    for (auto *box : {this->useThemeFonts_, this->useThemeFontSizes_})
+    {
+        QObject::connect(box, &QCheckBox::toggled, this, update);
+    }
+    return page;
+}
+
 QWidget *CustomizationPage::buildBackgroundTab()
 {
     auto *page = new QWidget;
@@ -1361,8 +1460,8 @@ QWidget *CustomizationPage::buildShareTab()
     auto *description = new QLabel(
         u"Save the selected theme as a file to share it, or import a theme "
         u"file. Theme files from Moltorino and Bluzyrino can be imported "
-        u"too; their fonts and video backgrounds are kept in the theme but "
-        u"aren't used here. A background image stored on your computer "
+        u"too; their video backgrounds are kept in the theme but aren't "
+        u"used here. A background image stored on your computer "
         u"isn't part of a saved theme file."_s);
     description->setWordWrap(true);
     layout->addWidget(description);
@@ -1404,7 +1503,7 @@ bool CustomizationPage::filterElements(const QString &query)
            u"customization themes colors palette chat interface text tabs "
            u"contrast timestamps system messages accent background surface "
            u"rows highlights corners rounding border shadow shape spacing "
-           u"wallpaper image blur overlay "
+           u"wallpaper image blur overlay fonts typography username weight "
            u"import export moltorino bluzyrino"_s.contains(
                query, Qt::CaseInsensitive) ||
            SettingsPage::filterElements(query);
@@ -1520,6 +1619,47 @@ void CustomizationPage::loadProfileIntoControls()
         static_cast<int>(this->profile_.accentStrength));
     this->inactiveTabContrast_->setValue(this->profile_.inactiveTabContrast);
     this->channelBarContrast_->setValue(this->profile_.channelBarContrast);
+    {
+        // What is shown while the theme doesn't set a font itself.
+        const auto chatFamily = getSettings()->chatFontFamily.getValue();
+        const auto selectFont = [](QComboBox *box, const QString &family,
+                                   const QString &fallback) {
+            const auto &wanted = family.isEmpty() ? fallback : family;
+            auto index = box->findData(wanted);
+            if (index < 0)
+            {
+                // not installed here; keep it so saving doesn't lose it
+                box->addItem(wanted, wanted);
+                index = box->count() - 1;
+            }
+            box->setCurrentIndex(index);
+        };
+        this->useThemeFonts_->setChecked(this->profile_.useThemeFonts);
+        this->useThemeFontSizes_->setChecked(this->profile_.useThemeFontSizes);
+        selectFont(this->chatFont_, this->profile_.chatFontFamily, chatFamily);
+        selectFont(this->usernameFont_, this->profile_.usernameFontFamily,
+                   this->profile_.chatFontFamily.isEmpty()
+                       ? chatFamily
+                       : this->profile_.chatFontFamily);
+        selectFont(this->interfaceFont_, this->profile_.interfaceFontFamily,
+                   QStringLiteral(DEFAULT_FONT_FAMILY));
+        this->chatFontSize_->setValue(
+            this->profile_.chatFontSize > 0
+                ? this->profile_.chatFontSize
+                : getSettings()->chatFontSize.getValue());
+        this->chatFontWeight_->setValue(
+            this->profile_.chatFontWeight > 0
+                ? this->profile_.chatFontWeight
+                : getSettings()->chatFontWeight.getValue());
+        this->usernameFontWeight_->setValue(
+            this->profile_.usernameFontWeight > 0
+                ? this->profile_.usernameFontWeight
+                : 700);
+        this->interfaceFontSize_->setValue(
+            this->profile_.interfaceFontSize > 0
+                ? this->profile_.interfaceFontSize
+                : 9);
+    }
     this->wallpaperPath_->setText(
         QFileInfo(this->profile_.wallpaperSource).fileName());
     this->wallpaperPath_->setToolTip(this->profile_.wallpaperSource);
@@ -1586,6 +1726,28 @@ void CustomizationPage::readControlsIntoProfile()
         std::clamp(this->accentStrength_->currentIndex(), 0, 2));
     this->profile_.inactiveTabContrast = this->inactiveTabContrast_->value();
     this->profile_.channelBarContrast = this->channelBarContrast_->value();
+    this->profile_.useThemeFonts = this->useThemeFonts_->isChecked();
+    this->profile_.useThemeFontSizes = this->useThemeFontSizes_->isChecked();
+    // Only fonts the theme really uses are stored, so turning a box off
+    // leaves no half-set fonts behind.
+    if (this->profile_.useThemeFonts)
+    {
+        this->profile_.chatFontFamily =
+            this->chatFont_->currentData().toString();
+        this->profile_.usernameFontFamily =
+            this->usernameFont_->currentData().toString();
+        this->profile_.interfaceFontFamily =
+            this->interfaceFont_->currentData().toString();
+        this->profile_.chatFontWeight = this->chatFontWeight_->value();
+        this->profile_.usernameFontWeight = this->usernameFontWeight_->value();
+    }
+    if (this->profile_.useThemeFontSizes)
+    {
+        this->profile_.chatFontSize = this->chatFontSize_->value();
+        this->profile_.usernameFontSize = this->chatFontSize_->value();
+        this->profile_.interfaceFontSize = this->interfaceFontSize_->value();
+    }
+    this->profile_.clearDisabledFontOverrides();
     this->profile_.wallpaperMode = static_cast<ThemeWallpaperMode>(
         std::clamp(this->wallpaperMode_->currentIndex(), 0, 4));
     this->profile_.wallpaperZoom = this->wallpaperZoom_->value();
@@ -1703,6 +1865,17 @@ void CustomizationPage::updateControlState()
     this->chatEditor_->setEnabled(editable);
     this->interfaceEditor_->setEnabled(editable);
     this->backgroundEditor_->setEnabled(editable);
+    this->textEditor_->setEnabled(editable);
+    for (QWidget *widget : std::initializer_list<QWidget *>{
+             this->chatFont_, this->usernameFont_, this->interfaceFont_,
+             this->chatFontWeight_, this->usernameFontWeight_})
+    {
+        widget->setEnabled(editable && this->profile_.useThemeFonts);
+    }
+    for (auto *slider : {this->chatFontSize_, this->interfaceFontSize_})
+    {
+        slider->setEnabled(editable && this->profile_.useThemeFontSizes);
+    }
     const bool wallpaper =
         editable && !this->profile_.wallpaperSource.isEmpty();
     for (QWidget *widget : std::initializer_list<QWidget *>{

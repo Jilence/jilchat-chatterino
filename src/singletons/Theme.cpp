@@ -7,6 +7,7 @@
 #include "Application.hpp"
 #include "common/Literals.hpp"
 #include "common/QLogging.hpp"
+#include "singletons/Fonts.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/WindowManager.hpp"
@@ -692,11 +693,19 @@ void Theme::parseFrom(const QJsonObject &root, bool isCustomTheme)
         this->customization.roundChat = false;
         this->customization.messageShadow = false;
         this->customization.highlightOpacityAdjustment = 0;
+        this->customization.useThemeFonts = false;
+        this->customization.useThemeFontSizes = false;
     }
-    // Fonts of a theme aren't applied yet.
-    this->customization.useThemeFonts = false;
-    this->customization.useThemeFontSizes = false;
     this->customization.clearDisabledFontOverrides();
+    Fonts::setThemeOverrides({
+        .chatFamily = this->customization.chatFontFamily,
+        .chatSize = this->customization.chatFontSize,
+        .chatWeight = this->customization.chatFontWeight,
+        .usernameFamily = this->customization.usernameFontFamily,
+        .usernameWeight = this->customization.usernameFontWeight,
+        .interfaceFamily = this->customization.interfaceFontFamily,
+        .interfaceSize = this->customization.interfaceFontSize,
+    });
 
     this->splits.input.styleSheet = uR"(
         background: %1;
