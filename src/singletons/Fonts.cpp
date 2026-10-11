@@ -110,6 +110,10 @@ float fontSize(FontStyle style)
         case FontStyle::ChatMediumStrikethrough:
         case FontStyle::TimestampMedium:
             return chatSize();
+        case FontStyle::ChatUsername:
+            return themeFonts.usernameSize > 0
+                       ? static_cast<float>(themeFonts.usernameSize)
+                       : chatSize();
         case FontStyle::ChatLarge:
             return 1.2F * chatSize();
         case FontStyle::ChatVeryLarge:
@@ -148,6 +152,9 @@ int fontWeight(FontStyle style)
                        : getSettings()->chatFontWeight.getValue();
 
         case FontStyle::ChatMediumBold:
+            return getUsernameBoldness();
+
+        case FontStyle::ChatUsername:
             return themeFonts.usernameWeight > 0 ? themeFonts.usernameWeight
                                                  : getUsernameBoldness();
 
@@ -176,6 +183,7 @@ bool isItalic(FontStyle style)
         case FontStyle::ChatMediumMono:
         case FontStyle::ChatMediumStrikethrough:
         case FontStyle::ChatMediumBold:
+        case FontStyle::ChatUsername:
         case FontStyle::ChatLarge:
         case FontStyle::ChatVeryLarge:
         case FontStyle::TimestampMedium:
@@ -200,8 +208,7 @@ QString fontFamily(FontStyle style)
         case FontStyle::Tiny:
             return QStringLiteral("Monospace");
 
-        case FontStyle::ChatMediumBold:
-            // usernames (and other bold text)
+        case FontStyle::ChatUsername:
             if (!themeFonts.usernameFamily.isEmpty())
             {
                 return themeFonts.usernameFamily;
@@ -211,6 +218,7 @@ QString fontFamily(FontStyle style)
         case FontStyle::ChatMediumSmall:
         case FontStyle::ChatMedium:
         case FontStyle::ChatMediumStrikethrough:
+        case FontStyle::ChatMediumBold:
         case FontStyle::ChatMediumItalic:
         case FontStyle::ChatLarge:
         case FontStyle::ChatVeryLarge:

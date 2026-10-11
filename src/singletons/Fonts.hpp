@@ -38,6 +38,10 @@ enum class FontStyle : uint8_t {
     UiMediumBold,
     UiTabs,
 
+    /// Usernames in chat. Elements keep `ChatMediumBold`; the layout uses
+    /// this style for them, so a theme can give usernames their own font.
+    ChatUsername,
+
     EndType,
 
     ChatStart = ChatSmall,
@@ -51,6 +55,7 @@ struct ThemeFontOverrides {
     int chatSize = 0;
     int chatWeight = 0;
     QString usernameFamily;
+    int usernameSize = 0;
     int usernameWeight = 0;
     QString interfaceFamily;
     int interfaceSize = 0;

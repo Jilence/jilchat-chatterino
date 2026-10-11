@@ -200,6 +200,7 @@ private:
     QSlider *chatFontSize_{};
     QSlider *chatFontWeight_{};
     QComboBox *usernameFont_{};
+    QSlider *usernameFontSize_{};
     QSlider *usernameFontWeight_{};
     QComboBox *interfaceFont_{};
     QSlider *interfaceFontSize_{};

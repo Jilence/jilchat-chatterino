@@ -2737,8 +2737,9 @@ QWidget *CustomizationPage::buildTextTab()
     auto *usernameForm = new QFormLayout(usernames);
     usernameForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     this->usernameFont_ = makeFontBox();
-    usernames->setToolTip(u"Also used for other bold text in chat."_s);
     usernameForm->addRow(u"Font:"_s, this->usernameFont_);
+    usernameForm->addRow(u"Size:"_s,
+                         makeSlider(6, 40, &this->usernameFontSize_));
     usernameForm->addRow(u"Weight:"_s,
                          makeSlider(100, 900, &this->usernameFontWeight_));
     layout->addWidget(usernames);
@@ -2769,8 +2770,9 @@ QWidget *CustomizationPage::buildTextTab()
             this->readControlsIntoProfile();
         }
     };
-    for (auto *slider : {this->chatFontSize_, this->chatFontWeight_,
-                         this->usernameFontWeight_, this->interfaceFontSize_})
+    for (auto *slider :
+         {this->chatFontSize_, this->chatFontWeight_, this->usernameFontSize_,
+          this->usernameFontWeight_, this->interfaceFontSize_})
     {
         QObject::connect(slider, &QSlider::valueChanged, this, update);
     }
@@ -3968,6 +3970,10 @@ void CustomizationPage::loadProfileIntoControls()
             this->profile_.usernameFontWeight > 0
                 ? this->profile_.usernameFontWeight
                 : 700);
+        // Without an own size, usernames are as large as the chat text.
+        this->usernameFontSize_->setValue(this->profile_.usernameFontSize > 0
+                                              ? this->profile_.usernameFontSize
+                                              : this->chatFontSize_->value());
         this->interfaceFontSize_->setValue(
             this->profile_.interfaceFontSize > 0
                 ? this->profile_.interfaceFontSize
@@ -4057,7 +4063,7 @@ void CustomizationPage::readControlsIntoProfile()
     if (this->profile_.useThemeFontSizes)
     {
         this->profile_.chatFontSize = this->chatFontSize_->value();
-        this->profile_.usernameFontSize = this->chatFontSize_->value();
+        this->profile_.usernameFontSize = this->usernameFontSize_->value();
         this->profile_.interfaceFontSize = this->interfaceFontSize_->value();
     }
     this->profile_.clearDisabledFontOverrides();
@@ -4183,7 +4189,8 @@ void CustomizationPage::updateControlState()
     {
         widget->setEnabled(editable && this->profile_.useThemeFonts);
     }
-    for (auto *slider : {this->chatFontSize_, this->interfaceFontSize_})
+    for (auto *slider : {this->chatFontSize_, this->usernameFontSize_,
+                         this->interfaceFontSize_})
     {
         slider->setEnabled(editable && this->profile_.useThemeFontSizes);
     }

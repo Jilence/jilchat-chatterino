@@ -1233,8 +1233,13 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
             container.ensureSingleSpaceBeforeNextElement();
         }
 
-        auto metrics =
-            app->getFonts()->getFontMetrics(this->style_, container.getScale());
+        // Usernames have their own style, so themes can change their font.
+        const auto effectiveStyle =
+            this->getFlags().has(MessageElementFlag::Username)
+                ? FontStyle::ChatUsername
+                : this->style_;
+        auto metrics = app->getFonts()->getFontMetrics(effectiveStyle,
+                                                       container.getScale());
 #ifdef Q_OS_WIN
         const bool measureUsernameWithLayout = false;
 #else
@@ -1243,7 +1248,7 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
 #endif
         const auto usernameFont =
             measureUsernameWithLayout
-                ? app->getFonts()->getFont(this->style_, container.getScale())
+                ? app->getFonts()->getFont(effectiveStyle, container.getScale())
                 : QFont{};
         const QFont *layoutFont =
             measureUsernameWithLayout ? &usernameFont : nullptr;
@@ -1261,8 +1266,8 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
                 app->getThemes()->normalizeColor(color);
 
                 auto *e = new TextLayoutElement(
-                    *this, text, size, color, this->style_, this->color_.type(),
-                    container.getScale(),
+                    *this, text, size, color, effectiveStyle,
+                    this->color_.type(), container.getScale(),
                     container.getImageScale() / container.getScale());
                 e->setTrailingSpace(hasTrailingSpace);
                 e->setText(text);
@@ -1302,7 +1307,7 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
             // corner cases when processing whole words (see #5944).
 #ifdef CHATTERINO_WITH_PRIVATE_QT_API
             auto font =
-                app->getFonts()->getFont(this->style_, container.getScale());
+                app->getFonts()->getFont(effectiveStyle, container.getScale());
 
             // This code is similar to the one from QTextEngine::elidedText in
             // the mode Qt::ElideRight (because that's essentially what we're

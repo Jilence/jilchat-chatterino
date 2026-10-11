@@ -737,6 +737,7 @@ void Theme::parseFrom(const QJsonObject &root, bool isCustomTheme)
         .chatSize = this->customization.chatFontSize,
         .chatWeight = this->customization.chatFontWeight,
         .usernameFamily = this->customization.usernameFontFamily,
+        .usernameSize = this->customization.usernameFontSize,
         .usernameWeight = this->customization.usernameFontWeight,
         .interfaceFamily = this->customization.interfaceFontFamily,
         .interfaceSize = this->customization.interfaceFontSize,
