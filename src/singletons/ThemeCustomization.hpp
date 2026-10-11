@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QPoint>
 #include <QRectF>
+#include <QSizeF>
 #include <QString>
 
 #include <cstdint>
@@ -190,6 +191,23 @@ double colorContrastRatio(const QColor &foreground, const QColor &background);
 std::optional<ThemeCustomizationProfile> buildThemePalette(
     const ThemeCustomizationProfile &profile,
     const ThemePaletteSelection &selection, ThemePaletteMode mode);
+
+/// Loads a background image, scaled down to at most `maxDimension`. Null if
+/// the file isn't a supported image.
+QImage loadThemeWallpaper(const QString &source, int maxDimension = 1536);
+
+QImage blurThemeWallpaper(QImage image, int radius);
+
+struct ThemeWallpaperLayout {
+    QRectF destination;
+    QRectF source;
+};
+
+/// Where to draw which part of a background image of `imageSize` in `target`.
+ThemeWallpaperLayout layoutThemeWallpaper(const QSizeF &imageSize,
+                                          const QRectF &target,
+                                          ThemeWallpaperMode mode, int focalX,
+                                          int focalY, int zoom = 100);
 
 QImage blurThemeShadow(QImage image, int radius);
 

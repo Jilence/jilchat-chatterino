@@ -73,9 +73,11 @@
 #include <QClipboard>
 #include <QColor>
 #include <QDate>
+#include <QDateTime>
 #include <QDebug>
 #include <QDesktopServices>
 #include <QEasingCurve>
+#include <QFileInfo>
 #include <QFontMetricsF>
 #include <QGestureEvent>
 #include <QGraphicsBlurEffect>
@@ -107,6 +109,49 @@ namespace {
 constexpr size_t TOOLTIP_EMOTE_ENTRIES_LIMIT = 7;
 
 using namespace chatterino;
+
+QString wallpaperKey(const ThemeCustomizationProfile &profile)
+{
+    const QFileInfo info(profile.wallpaperSource);
+    const auto stamp =
+        info.exists() ? info.lastModified().toMSecsSinceEpoch() : 0;
+    return QStringLiteral("wallpaper:%1:%2:%3")
+        .arg(profile.wallpaperSource)
+        .arg(profile.wallpaperBlur)
+        .arg(stamp);
+}
+
+/// The blurred background image of the theme. Views with the same background
+/// share one pixmap.
+std::shared_ptr<QPixmap> loadWallpaper(const ThemeCustomizationProfile &profile)
+{
+    if (!profile.hasWallpaper() || profile.wallpaperOpacity <= 0)
+    {
+        return {};
+    }
+    const auto key = wallpaperKey(profile);
+
+    static QHash<QString, std::weak_ptr<QPixmap>> cache;
+    for (auto it = cache.begin(); it != cache.end();)
+    {
+        it = it.value().expired() ? cache.erase(it) : std::next(it);
+    }
+    if (auto cached = cache.value(key).lock())
+    {
+        return cached;
+    }
+
+    QImage image = loadThemeWallpaper(profile.wallpaperSource);
+    if (image.isNull())
+    {
+        return {};
+    }
+    image = blurThemeWallpaper(std::move(image), profile.wallpaperBlur);
+    auto cached =
+        std::make_shared<QPixmap>(QPixmap::fromImage(std::move(image)));
+    cache.insert(key, cached);
+    return cached;
+}
 
 constexpr int SCROLLBAR_PADDING = 8;
 constexpr int MAX_AUTO_TRANSLATIONS_IN_FLIGHT_PER_CHANNEL = 5;
@@ -1526,6 +1571,8 @@ void ChannelView::themeChangedEvent()
     this->setupHighlightAnimationColors();
     this->messageColors_.applyTheme(getTheme(), this->isOverlay_,
                                     getSettings()->overlayBackgroundOpacity);
+    this->wallpaperCacheKey_.clear();
+    this->wallpaperPixmap_.reset();
     this->invalidateBuffers();
     this->updateRoundedChildMasks();
 }
@@ -1715,6 +1762,55 @@ void ChannelView::updateRoundedChildMasks()
     if (this->goToBottom_)
     {
         applyMask(this->goToBottom_);
+    }
+}
+
+void ChannelView::paintWallpaper(QPainter &painter)
+{
+    const auto &profile = getTheme()->customization;
+    painter.fillRect(this->rect(), profile.chatBackground);
+    if (this->wallpaperCacheKey_.isEmpty())
+    {
+        this->wallpaperCacheKey_ = wallpaperKey(profile);
+        this->wallpaperPixmap_ = loadWallpaper(profile);
+    }
+    if (!this->wallpaperPixmap_ || this->wallpaperPixmap_->isNull())
+    {
+        return;
+    }
+
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.setOpacity(profile.wallpaperOpacity / 100.0);
+    const QRectF target(this->rect());
+    if (profile.wallpaperMode == ThemeWallpaperMode::Tile)
+    {
+        const auto zoom = std::clamp(profile.wallpaperZoom, 100, 300) / 100.0;
+        painter.save();
+        painter.scale(zoom, zoom);
+        painter.drawTiledPixmap(
+            QRectF(target.topLeft() / zoom, target.size() / zoom),
+            *this->wallpaperPixmap_);
+        painter.restore();
+    }
+    else
+    {
+        const auto layout = layoutThemeWallpaper(
+            this->wallpaperPixmap_->size(), target, profile.wallpaperMode,
+            profile.wallpaperFocalX, profile.wallpaperFocalY,
+            profile.wallpaperZoom);
+        painter.drawPixmap(layout.destination, *this->wallpaperPixmap_,
+                           layout.source);
+    }
+    painter.restore();
+
+    if (profile.wallpaperOpacity > 0 && profile.wallpaperOverlayOpacity > 0)
+    {
+        // Darkens (or tints) the image so text stays readable.
+        auto overlay = profile.wallpaperOverlayColor;
+        overlay.setAlphaF(overlay.alphaF() * profile.wallpaperOverlayOpacity /
+                          100.0);
+        painter.fillRect(this->rect(), overlay);
     }
 }
 
@@ -3114,7 +3210,15 @@ void ChannelView::paintEvent(QPaintEvent *event)
 
     if (!this->transparentBackground_)
     {
-        painter.fillRect(this->rect(), this->messageColors_.channelBackground);
+        if (getTheme()->customization.hasWallpaper() && !this->isOverlay_)
+        {
+            this->paintWallpaper(painter);
+        }
+        else
+        {
+            painter.fillRect(this->rect(),
+                             this->messageColors_.channelBackground);
+        }
     }
 
     // draw messages

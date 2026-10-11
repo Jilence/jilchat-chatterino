@@ -8,6 +8,8 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -17,6 +19,7 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QImageReader>
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
@@ -27,6 +30,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSplitter>
@@ -50,6 +54,7 @@ namespace {
 constexpr auto APPEARANCE_FORMAT = "moltorino-appearance";
 constexpr int APPEARANCE_VERSION = 1;
 constexpr qint64 MAX_THEME_FILE_SIZE = 2LL * 1024 * 1024;
+constexpr qint64 MAX_WALLPAPER_FILE_SIZE = 50LL * 1024 * 1024;
 
 std::optional<QString> promptForThemeName(QWidget *parent, const QString &title,
                                           const QString &label,
@@ -101,6 +106,40 @@ QString importedThemeName(const QString &path)
     }
     name[0] = name[0].toUpper();
     return name;
+}
+
+/// The path as it compares to others: absolute, links resolved, and without
+/// regard to case where the file system has none.
+QString normalizedLocalPath(const QString &path)
+{
+    const QFileInfo info(path);
+    auto resolved = info.canonicalFilePath();
+    if (resolved.isEmpty())
+    {
+        resolved = info.absoluteFilePath();
+    }
+    resolved = QDir::fromNativeSeparators(QDir::cleanPath(resolved));
+#ifdef Q_OS_WIN
+    resolved = resolved.toCaseFolded();
+#endif
+    return resolved;
+}
+
+QString wallpaperFileFilter()
+{
+    QStringList patterns;
+    for (const auto &format : QImageReader::supportedImageFormats())
+    {
+        const auto name = QString::fromLatin1(format).toLower();
+        if (name == u"png" || name == u"jpg" || name == u"jpeg" ||
+            name == u"webp" || name == u"gif" || name == u"bmp")
+        {
+            patterns.append(u"*."_s + name);
+        }
+    }
+    patterns.removeDuplicates();
+    patterns.sort();
+    return u"Images (%1)"_s.arg(patterns.join(u' '));
 }
 
 QWidget *makeSlider(int minimum, int maximum, QSlider **slider,
@@ -260,6 +299,16 @@ public:
 
     void setProfile(const ThemeCustomizationProfile &profile)
     {
+        const auto wallpaperKey =
+            u"%1\n%2"_s.arg(profile.wallpaperSource).arg(profile.wallpaperBlur);
+        if (wallpaperKey != this->wallpaperKey_)
+        {
+            this->wallpaperKey_ = wallpaperKey;
+            this->wallpaper_ = blurThemeWallpaper(
+                loadThemeWallpaper(profile.wallpaperSource, 512),
+                // the preview image is a third of the real one
+                profile.wallpaperBlur / 3);
+        }
         this->profile_ = profile;
         this->colors_ =
             buildCustomizedTheme(profile).value(u"colors"_s).toObject();
@@ -404,6 +453,37 @@ protected:
         painter.setClipRect(QRect(split.left(), header.bottom() + 1,
                                   split.width(),
                                   input.top() - header.bottom() - 1));
+        if (!this->wallpaper_.isNull() && this->profile_.wallpaperOpacity > 0)
+        {
+            const QRectF area(split.left(), header.bottom() + 1, split.width(),
+                              input.top() - header.bottom() - 1);
+            painter.save();
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.setOpacity(this->profile_.wallpaperOpacity / 100.0);
+            if (this->profile_.wallpaperMode == ThemeWallpaperMode::Tile)
+            {
+                painter.fillRect(area, QBrush(this->wallpaper_));
+            }
+            else
+            {
+                const auto layout = layoutThemeWallpaper(
+                    this->wallpaper_.size(), area, this->profile_.wallpaperMode,
+                    this->profile_.wallpaperFocalX,
+                    this->profile_.wallpaperFocalY,
+                    this->profile_.wallpaperZoom);
+                painter.drawImage(layout.destination, this->wallpaper_,
+                                  layout.source);
+            }
+            painter.restore();
+            if (this->profile_.wallpaperOverlayOpacity > 0)
+            {
+                auto overlay = this->profile_.wallpaperOverlayColor;
+                overlay.setAlphaF(overlay.alphaF() *
+                                  this->profile_.wallpaperOverlayOpacity /
+                                  100.0);
+                painter.fillRect(area, overlay);
+            }
+        }
         int y = header.bottom() + 1;
         for (size_t index = 0; index < rows.size(); ++index)
         {
@@ -445,6 +525,15 @@ protected:
 private:
     QJsonObject colors_;
     ThemeCustomizationProfile profile_;
+    QString wallpaperKey_;
+    QImage wallpaper_;
+
+public:
+    /// The background image of the theme, null if it has none.
+    const QImage &wallpaper() const
+    {
+        return this->wallpaper_;
+    }
 };
 
 CustomizationPage::CustomizationPage()
@@ -510,6 +599,7 @@ void CustomizationPage::buildUi()
     tabs->addTab(this->buildColorsTab(), u"Colors"_s);
     tabs->addTab(this->buildChatTab(), u"Chat"_s);
     tabs->addTab(this->buildInterfaceTab(), u"Interface"_s);
+    tabs->addTab(this->buildBackgroundTab(), u"Background"_s);
     tabs->addTab(this->buildShareTab(), u"Import and export"_s);
     workspace->addWidget(tabs);
     workspace->setStretchFactor(0, 2);
@@ -941,6 +1031,327 @@ QWidget *CustomizationPage::buildInterfaceTab()
     return page;
 }
 
+QWidget *CustomizationPage::buildBackgroundTab()
+{
+    auto *page = new QWidget;
+    this->backgroundEditor_ = page;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(8);
+    auto *description =
+        new QLabel(u"Show an image behind the chat messages."_s);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+
+    auto *wallpaper = new QGroupBox(u"Wallpaper"_s);
+    auto *form = new QFormLayout(wallpaper);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    auto *pathRow = new QWidget;
+    auto *pathLayout = new QHBoxLayout(pathRow);
+    pathLayout->setContentsMargins(0, 0, 0, 0);
+    pathLayout->setSpacing(5);
+    this->wallpaperPath_ = new QLineEdit;
+    this->wallpaperPath_->setReadOnly(true);
+    this->wallpaperPath_->setPlaceholderText(u"No image"_s);
+    auto *choose = new QPushButton(u"Choose image…"_s);
+    auto *clear = new QPushButton(u"Remove"_s);
+    pathLayout->addWidget(this->wallpaperPath_, 1);
+    pathLayout->addWidget(choose);
+    pathLayout->addWidget(clear);
+    form->addRow(u"Background:"_s, pathRow);
+    this->wallpaperMode_ = new QComboBox;
+    this->wallpaperMode_->addItems({u"Fill chat"_s, u"Fit whole background"_s,
+                                    u"Original size"_s, u"Tile"_s,
+                                    u"Stretch"_s});
+    form->addRow(u"Placement:"_s, this->wallpaperMode_);
+    form->addRow(u"Zoom:"_s,
+                 makeSlider(100, 300, &this->wallpaperZoom_, u"%"_s));
+    this->wallpaperZoom_->setToolTip(u"Zoom around the focus point."_s);
+    form->addRow(u"Focus left to right:"_s,
+                 makeSlider(0, 100, &this->wallpaperFocusX_, u"%"_s));
+    form->addRow(u"Focus top to bottom:"_s,
+                 makeSlider(0, 100, &this->wallpaperFocusY_, u"%"_s));
+    this->wallpaperFocusX_->setToolTip(
+        u"The part of the image that stays in view when it is cropped."_s);
+    this->wallpaperFocusY_->setToolTip(this->wallpaperFocusX_->toolTip());
+    form->addRow(u"Wallpaper opacity:"_s,
+                 makeSlider(0, 100, &this->wallpaperOpacity_, u"%"_s));
+    this->wallpaperOverlayColor_ = this->makeColorControl(
+        u"Blended over the wallpaper so text stays readable."_s,
+        &ThemeCustomizationProfile::wallpaperOverlayColor);
+    form->addRow(u"Overlay color:"_s, this->wallpaperOverlayColor_);
+    form->addRow(u"Overlay opacity:"_s,
+                 makeSlider(0, 100, &this->wallpaperOverlayOpacity_, u"%"_s));
+    this->wallpaperOverlayOpacity_->setToolTip(
+        u"Blends the overlay color over the wallpaper."_s);
+    form->addRow(u"Blur:"_s, makeSlider(0, 30, &this->wallpaperBlur_));
+    layout->addWidget(wallpaper);
+
+    auto *palette = new QGroupBox(u"Colors"_s);
+    auto *paletteLayout = new QHBoxLayout(palette);
+    auto *paletteHint =
+        new QLabel(u"Pick the theme's colors from the wallpaper."_s);
+    paletteHint->setWordWrap(true);
+    paletteLayout->addWidget(paletteHint, 1);
+    this->wallpaperColors_ = new QPushButton(u"Use colors from wallpaper"_s);
+    paletteLayout->addWidget(this->wallpaperColors_);
+    layout->addWidget(palette);
+    layout->addStretch(1);
+
+    const auto update = [this] {
+        if (!this->loadingControls_)
+        {
+            this->readControlsIntoProfile();
+        }
+    };
+    for (auto *slider : {this->wallpaperZoom_, this->wallpaperFocusX_,
+                         this->wallpaperFocusY_, this->wallpaperOpacity_,
+                         this->wallpaperOverlayOpacity_, this->wallpaperBlur_})
+    {
+        QObject::connect(slider, &QSlider::valueChanged, this, update);
+    }
+    QObject::connect(this->wallpaperMode_, &QComboBox::currentIndexChanged,
+                     this, update);
+    QObject::connect(choose, &QPushButton::clicked, this, [this] {
+        this->chooseWallpaper();
+    });
+    QObject::connect(clear, &QPushButton::clicked, this, [this] {
+        this->clearWallpaper();
+    });
+    QObject::connect(this->wallpaperColors_, &QPushButton::clicked, this,
+                     [this] {
+                         this->suggestWallpaperPalette();
+                     });
+    return page;
+}
+
+void CustomizationPage::chooseWallpaper()
+{
+    const auto generation = this->profileGeneration_;
+    const auto path = QFileDialog::getOpenFileName(this, u"Choose an image"_s,
+                                                   {}, wallpaperFileFilter());
+    if (path.isEmpty() || generation != this->profileGeneration_)
+    {
+        return;
+    }
+    if (QFileInfo(path).size() > MAX_WALLPAPER_FILE_SIZE ||
+        loadThemeWallpaper(path, 256).isNull())
+    {
+        this->setStatus(
+            u"That image couldn't be read. Use a PNG, JPEG, WebP, GIF or "
+            u"BMP of up to 50 MB."_s,
+            true);
+        return;
+    }
+    this->readControlsIntoProfile();
+    this->profile_.wallpaperSource = path;
+    this->profile_.wallpaperId.clear();
+    this->loadProfileIntoControls();
+    this->setStatus({});
+}
+
+void CustomizationPage::clearWallpaper()
+{
+    this->readControlsIntoProfile();
+    this->profile_.wallpaperSource.clear();
+    this->profile_.wallpaperId.clear();
+    this->loadProfileIntoControls();
+    this->setStatus({});
+}
+
+void CustomizationPage::suggestWallpaperPalette()
+{
+    auto image = this->preview_->wallpaper();
+    if (image.isNull())
+    {
+        this->setStatus(u"Choose a wallpaper first."_s, true);
+        return;
+    }
+    this->readControlsIntoProfile();
+    image = image.scaled(80, 80, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    qint64 red = 0;
+    qint64 green = 0;
+    qint64 blue = 0;
+    qint64 count = 0;
+    QColor accent = this->profile_.accent;
+    qreal bestAccent = -1;
+    for (int y = 0; y < image.height(); ++y)
+    {
+        for (int x = 0; x < image.width(); ++x)
+        {
+            const QColor color = image.pixelColor(x, y);
+            red += color.red();
+            green += color.green();
+            blue += color.blue();
+            ++count;
+            // colorful and neither too dark nor too bright
+            const qreal score = color.hsvSaturationF() *
+                                (0.35 + color.valueF()) *
+                                (1.0 - qAbs(color.valueF() - 0.62));
+            if (score > bestAccent)
+            {
+                bestAccent = score;
+                accent = color;
+            }
+        }
+    }
+    if (count == 0)
+    {
+        return;
+    }
+    QColor average(static_cast<int>(red / count),
+                   static_cast<int>(green / count),
+                   static_cast<int>(blue / count));
+    if (average.lightnessF() > 0.35)
+    {
+        average = average.darker(250);
+    }
+    this->profile_.background = average.darker(145);
+    this->profile_.chatBackground = average.darker(125);
+    this->profile_.surface = average.lighter(135);
+    this->profile_.raisedSurface = average.lighter(165);
+    this->profile_.accent =
+        accent.lightnessF() < 0.48 ? accent.lighter(150) : accent;
+    this->profile_.text = Qt::white;
+    this->profile_.chatText = this->profile_.text;
+    this->profile_.separateChatText = false;
+    this->profile_.mutedText = QColor(u"#b9b9c2"_s);
+    this->profile_.systemText = this->profile_.mutedText;
+    this->profile_.timestampText = this->profile_.mutedText;
+    this->profile_.chatBorderColor = this->profile_.mutedText;
+    this->profile_.wallpaperOverlayColor = average.darker(160);
+    this->loadProfileIntoControls();
+    this->setStatus(
+        u"Wallpaper colors applied. You can fine tune them in the Colors "
+        u"tab."_s);
+}
+
+QString CustomizationPage::managedWallpaperSource(const QString &source,
+                                                  QString *error) const
+{
+    if (source.isEmpty() || source.startsWith(u":/"_s))
+    {
+        return source;
+    }
+
+    const QFileInfo sourceInfo(source);
+    if (!sourceInfo.isFile() || sourceInfo.size() > MAX_WALLPAPER_FILE_SIZE)
+    {
+        *error = u"The background image is missing or larger than 50 MB."_s;
+        return {};
+    }
+
+    const QDir themes(getTheme()->themesDirectory());
+    const auto directoryPath = themes.filePath(u"Wallpapers"_s);
+    if (!QDir().mkpath(directoryPath))
+    {
+        *error = u"The folder for background images couldn't be created."_s;
+        return {};
+    }
+    const auto absoluteSource = QDir::fromNativeSeparators(
+        QDir::cleanPath(sourceInfo.absoluteFilePath()));
+    if (loadThemeWallpaper(absoluteSource, 256).isNull())
+    {
+        *error = u"That background image couldn't be read."_s;
+        return {};
+    }
+    // Already one of our copies.
+    if (normalizedLocalPath(absoluteSource)
+            .startsWith(normalizedLocalPath(directoryPath) + u'/'))
+    {
+        return absoluteSource;
+    }
+
+    const auto fingerprint =
+        u"%1\n%2\n%3"_s.arg(absoluteSource)
+            .arg(sourceInfo.size())
+            .arg(sourceInfo.lastModified().toMSecsSinceEpoch())
+            .toUtf8();
+    const auto digest =
+        QCryptographicHash::hash(fingerprint, QCryptographicHash::Sha256)
+            .toHex()
+            .left(16);
+    auto suffix = sourceInfo.suffix().toLower();
+    if (suffix.isEmpty())
+    {
+        suffix = u"png"_s;
+    }
+    const auto destination = QDir(directoryPath)
+                                 .filePath(u"wallpaper-%1.%2"_s.arg(
+                                     QString::fromLatin1(digest), suffix));
+    if (!QFileInfo::exists(destination) &&
+        !QFile::copy(absoluteSource, destination))
+    {
+        *error = u"A copy of the background image couldn't be saved."_s;
+        return {};
+    }
+    return destination;
+}
+
+void CustomizationPage::cleanupManagedWallpapers() const
+{
+    const QDir themes(getTheme()->themesDirectory());
+    const QDir wallpapers(themes.filePath(u"Wallpapers"_s));
+    if (!wallpapers.exists())
+    {
+        return;
+    }
+
+    // Every background a theme file still names. If one theme can't be read
+    // we don't know what it uses, so nothing is removed.
+    QSet<QString> referenced;
+    const auto themeFiles = themes.entryInfoList(
+        {u"*.json"_s}, QDir::Files | QDir::Hidden, QDir::Name);
+    for (const auto &themeInfo : themeFiles)
+    {
+        QFile file(themeInfo.absoluteFilePath());
+        if (!file.open(QIODevice::ReadOnly))
+        {
+            return;
+        }
+        QJsonParseError parseError{};
+        const auto document =
+            QJsonDocument::fromJson(file.readAll(), &parseError);
+        if (parseError.error != QJsonParseError::NoError ||
+            !document.isObject())
+        {
+            return;
+        }
+        const auto source = document.object()
+                                .value(u"metadata"_s)
+                                .toObject()
+                                .value(u"moltorino"_s)
+                                .toObject()
+                                .value(u"wallpaper"_s)
+                                .toObject()
+                                .value(u"source"_s)
+                                .toString();
+        if (!source.isEmpty() && !source.startsWith(u":/"_s))
+        {
+            referenced.insert(normalizedLocalPath(source));
+        }
+    }
+    if (!this->profile_.wallpaperSource.isEmpty() &&
+        !this->profile_.wallpaperSource.startsWith(u":/"_s))
+    {
+        referenced.insert(normalizedLocalPath(this->profile_.wallpaperSource));
+    }
+
+    static const QRegularExpression managedName(
+        uR"(^wallpaper-[0-9a-f]{16}\.[a-z0-9]+$)"_s,
+        QRegularExpression::CaseInsensitiveOption);
+    const auto files =
+        wallpapers.entryInfoList(QDir::Files | QDir::NoSymLinks, QDir::Name);
+    for (const auto &file : files)
+    {
+        if (managedName.match(file.fileName()).hasMatch() &&
+            !referenced.contains(normalizedLocalPath(file.absoluteFilePath())))
+        {
+            QFile::remove(file.absoluteFilePath());
+        }
+    }
+}
+
 QWidget *CustomizationPage::buildShareTab()
 {
     auto *page = new QWidget;
@@ -950,8 +1361,9 @@ QWidget *CustomizationPage::buildShareTab()
     auto *description = new QLabel(
         u"Save the selected theme as a file to share it, or import a theme "
         u"file. Theme files from Moltorino and Bluzyrino can be imported "
-        u"too; their backgrounds and fonts are kept in the theme but aren't "
-        u"shown here yet."_s);
+        u"too; their fonts and video backgrounds are kept in the theme but "
+        u"aren't used here. A background image stored on your computer "
+        u"isn't part of a saved theme file."_s);
     description->setWordWrap(true);
     layout->addWidget(description);
 
@@ -992,6 +1404,7 @@ bool CustomizationPage::filterElements(const QString &query)
            u"customization themes colors palette chat interface text tabs "
            u"contrast timestamps system messages accent background surface "
            u"rows highlights corners rounding border shadow shape spacing "
+           u"wallpaper image blur overlay "
            u"import export moltorino bluzyrino"_s.contains(
                query, Qt::CaseInsensitive) ||
            SettingsPage::filterElements(query);
@@ -1107,6 +1520,18 @@ void CustomizationPage::loadProfileIntoControls()
         static_cast<int>(this->profile_.accentStrength));
     this->inactiveTabContrast_->setValue(this->profile_.inactiveTabContrast);
     this->channelBarContrast_->setValue(this->profile_.channelBarContrast);
+    this->wallpaperPath_->setText(
+        QFileInfo(this->profile_.wallpaperSource).fileName());
+    this->wallpaperPath_->setToolTip(this->profile_.wallpaperSource);
+    this->wallpaperMode_->setCurrentIndex(
+        static_cast<int>(this->profile_.wallpaperMode));
+    this->wallpaperZoom_->setValue(this->profile_.wallpaperZoom);
+    this->wallpaperFocusX_->setValue(this->profile_.wallpaperFocalX);
+    this->wallpaperFocusY_->setValue(this->profile_.wallpaperFocalY);
+    this->wallpaperOpacity_->setValue(this->profile_.wallpaperOpacity);
+    this->wallpaperOverlayOpacity_->setValue(
+        this->profile_.wallpaperOverlayOpacity);
+    this->wallpaperBlur_->setValue(this->profile_.wallpaperBlur);
     this->alternateMessageRows_->setChecked(
         this->profile_.alternateMessageRows);
     this->alternateMessageOpacity_->setValue(
@@ -1161,6 +1586,15 @@ void CustomizationPage::readControlsIntoProfile()
         std::clamp(this->accentStrength_->currentIndex(), 0, 2));
     this->profile_.inactiveTabContrast = this->inactiveTabContrast_->value();
     this->profile_.channelBarContrast = this->channelBarContrast_->value();
+    this->profile_.wallpaperMode = static_cast<ThemeWallpaperMode>(
+        std::clamp(this->wallpaperMode_->currentIndex(), 0, 4));
+    this->profile_.wallpaperZoom = this->wallpaperZoom_->value();
+    this->profile_.wallpaperFocalX = this->wallpaperFocusX_->value();
+    this->profile_.wallpaperFocalY = this->wallpaperFocusY_->value();
+    this->profile_.wallpaperOpacity = this->wallpaperOpacity_->value();
+    this->profile_.wallpaperOverlayOpacity =
+        this->wallpaperOverlayOpacity_->value();
+    this->profile_.wallpaperBlur = this->wallpaperBlur_->value();
     // Rows are the theme's choice once it is edited here.
     this->profile_.useThemeMessageRows = true;
     this->profile_.alternateMessageRows =
@@ -1268,6 +1702,17 @@ void CustomizationPage::updateControlState()
     this->colorsEditor_->setEnabled(editable);
     this->chatEditor_->setEnabled(editable);
     this->interfaceEditor_->setEnabled(editable);
+    this->backgroundEditor_->setEnabled(editable);
+    const bool wallpaper =
+        editable && !this->profile_.wallpaperSource.isEmpty();
+    for (QWidget *widget : std::initializer_list<QWidget *>{
+             this->wallpaperMode_, this->wallpaperZoom_, this->wallpaperFocusX_,
+             this->wallpaperFocusY_, this->wallpaperOpacity_,
+             this->wallpaperOverlayColor_, this->wallpaperOverlayOpacity_,
+             this->wallpaperBlur_, this->wallpaperColors_})
+    {
+        widget->setEnabled(wallpaper);
+    }
     const bool rows = editable && this->profile_.alternateMessageRows;
     this->alternateMessageOpacity_->setEnabled(rows);
     this->alternateMessageContrast_->setEnabled(rows);
@@ -1412,6 +1857,7 @@ void CustomizationPage::deleteProfile()
         getTheme()->themeName.setValue(u"Dark"_s);
     }
     this->reloadProfiles(getTheme()->themeName.getValue());
+    this->cleanupManagedWallpapers();
     this->setStatus(u"Theme deleted."_s);
 }
 
@@ -1422,6 +1868,15 @@ bool CustomizationPage::saveCustomProfile(bool apply)
         return false;
     }
     this->readControlsIntoProfile();
+    QString wallpaperError;
+    const auto managedWallpaper = this->managedWallpaperSource(
+        this->profile_.wallpaperSource, &wallpaperError);
+    if (!wallpaperError.isEmpty())
+    {
+        QMessageBox::warning(this, u"Couldn't save theme"_s, wallpaperError);
+        return false;
+    }
+    this->profile_.wallpaperSource = managedWallpaper;
     if (!writeThemeFile(this->selectedPath_,
                         buildCustomizedTheme(this->profile_)))
     {
@@ -1430,6 +1885,7 @@ bool CustomizationPage::saveCustomProfile(bool apply)
         return false;
     }
     this->savedProfile_ = this->profile_;
+    this->cleanupManagedWallpapers();
     this->loadProfileIntoControls();
     getTheme()->reloadAvailableThemes();
     const bool active = getTheme()->themeName.getValue() == this->selectedKey_;
@@ -1692,7 +2148,7 @@ void CustomizationPage::importThemeFile()
     }
     if (profile.hasWallpaper() || imported->localWallpaperRemoved)
     {
-        details.append(u"\nIts background isn't shown here yet."_s);
+        details.append(u"\nIts background isn't included."_s);
     }
     prompt.setInformativeText(details);
     auto *add = prompt.addButton(u"Import"_s, QMessageBox::AcceptRole);

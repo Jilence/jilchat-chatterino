@@ -302,6 +302,11 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
 
     ctx.painter.drawPixmap(QPoint{0, ctx.y}, *pixmap);
 
+    // The buffer is in device pixels. On a scaled screen its height is more
+    // than the message takes up, and what is drawn below the message shows
+    // through the next one when message backgrounds are transparent.
+    const auto messageHeight = static_cast<int>(this->container_.getHeight());
+
     result.animatedRegion = this->container_.paintAnimatedElements(
         ctx.painter, ctx.y, ctx.isCollapsed);
 
@@ -312,7 +317,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
                 0,
                 ctx.y,
                 pixmap->width(),
-                pixmap->height(),
+                messageHeight,
             },
             ctx.messageColors.disabled);
     }
@@ -325,7 +330,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
                 0,
                 ctx.y,
                 pixmap->width(),
-                pixmap->height(),
+                messageHeight,
             },
             ctx.messageColors.disabled);
     }
@@ -341,7 +346,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
                 0,
                 ctx.y,
                 static_cast<int>(this->scale_ * 4),
-                pixmap->height(),
+                messageHeight,
             },
             *ColorProvider::instance().color(ColorType::RedeemedHighlight));
     }

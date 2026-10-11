@@ -487,6 +487,14 @@ private:
     /// border.
     void paintChatFrame(QPainter &painter);
 
+    /// Fills the view with the theme's background image.
+    void paintWallpaper(QPainter &painter);
+
+    /// What `wallpaperPixmap_` was loaded for. Empty: look again.
+    QString wallpaperCacheKey_;
+    /// Shared between all views showing the same background.
+    std::shared_ptr<QPixmap> wallpaperPixmap_;
+
     QPainterPath chatFrameContentPath_;
     QPainterPath chatFrameOutsidePath_;
     QPainterPath chatFrameBorderPath_;

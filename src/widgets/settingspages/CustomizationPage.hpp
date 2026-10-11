@@ -34,6 +34,7 @@ private:
     QWidget *buildColorsTab();
     QWidget *buildChatTab();
     QWidget *buildInterfaceTab();
+    QWidget *buildBackgroundTab();
     /// A color button with a hex field for a color that isn't part of the
     /// palette (borders, shadows).
     QWidget *makeColorControl(const QString &tooltip,
@@ -56,6 +57,16 @@ private:
     void deleteProfile();
     bool saveCustomProfile(bool apply);
     void resetDraft();
+
+    void chooseWallpaper();
+    void clearWallpaper();
+    /// Derives the palette from the colors of the background image.
+    void suggestWallpaperPalette();
+    /// Copies a background image into the Themes folder, so the theme keeps
+    /// working when the original file is moved. Returns the path of the copy.
+    QString managedWallpaperSource(const QString &source, QString *error) const;
+    /// Removes copies of background images no theme uses anymore.
+    void cleanupManagedWallpapers() const;
 
     void markColorEdited(const QString &role);
     void buildPalette();
@@ -90,6 +101,7 @@ private:
     QWidget *colorsEditor_{};
     QWidget *chatEditor_{};
     QWidget *interfaceEditor_{};
+    QWidget *backgroundEditor_{};
     QLabel *readability_{};
     QLabel *status_{};
     QCheckBox *chatTextFollowsText_{};
@@ -123,6 +135,17 @@ private:
     QSlider *messageShadowOffsetX_{};
     QSlider *messageShadowOffsetY_{};
     QSlider *messageShadowBlur_{};
+
+    QLineEdit *wallpaperPath_{};
+    QComboBox *wallpaperMode_{};
+    QSlider *wallpaperZoom_{};
+    QSlider *wallpaperOpacity_{};
+    QWidget *wallpaperOverlayColor_{};
+    QSlider *wallpaperOverlayOpacity_{};
+    QSlider *wallpaperBlur_{};
+    QSlider *wallpaperFocusX_{};
+    QSlider *wallpaperFocusY_{};
+    QPushButton *wallpaperColors_{};
 
     QComboBox *foundation_{};
     QComboBox *tabShape_{};

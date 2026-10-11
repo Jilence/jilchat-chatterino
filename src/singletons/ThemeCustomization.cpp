@@ -1,6 +1,7 @@
 #include "singletons/ThemeCustomization.hpp"
 
 #include <QImage>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QLinearGradient>
 #include <QPainter>
@@ -21,12 +22,7 @@ using namespace Qt::StringLiterals;
 namespace chatterino {
 namespace {
 
-/// Backgrounds behind the chat aren't drawn yet. Themes keep their background
-/// settings, but the messages keep an opaque background until they are.
-bool drawsWallpaper(const ThemeCustomizationProfile & /*profile*/)
-{
-    return false;
-}
+constexpr int MAX_WALLPAPER_DIMENSION = 1536;
 
 QColor mix(const QColor &a, const QColor &b, qreal amount)
 {
@@ -503,6 +499,66 @@ QColor relatedTone(const QColor &seed, bool light, qreal value)
         QColor::fromHsvF(hue, saturation, std::clamp(value, 0.0, 1.0)));
 }
 
+QImage boxBlurPass(const QImage &source, int radius, bool horizontal)
+{
+    if (radius <= 0 || source.isNull())
+    {
+        return source;
+    }
+
+    QImage output(source.size(), QImage::Format_ARGB32_Premultiplied);
+    output.setDevicePixelRatio(source.devicePixelRatio());
+    const int width = source.width();
+    const int height = source.height();
+    const int window = radius * 2 + 1;
+    const int major = horizontal ? height : width;
+    const int minor = horizontal ? width : height;
+
+    for (int line = 0; line < major; ++line)
+    {
+        qint64 alphaSum = 0;
+        qint64 redSum = 0;
+        qint64 greenSum = 0;
+        qint64 blueSum = 0;
+        const auto pixelAt = [&](int position) {
+            const int x =
+                horizontal ? std::clamp(position, 0, width - 1) : line;
+            const int y =
+                horizontal ? line : std::clamp(position, 0, height - 1);
+            return source.pixel(x, y);
+        };
+        for (int offset = -radius; offset <= radius; ++offset)
+        {
+            const auto pixel = pixelAt(offset);
+            alphaSum += qAlpha(pixel);
+            redSum += qRed(pixel);
+            greenSum += qGreen(pixel);
+            blueSum += qBlue(pixel);
+        }
+        for (int position = 0; position < minor; ++position)
+        {
+            const auto blurred = qRgba(redSum / window, greenSum / window,
+                                       blueSum / window, alphaSum / window);
+            if (horizontal)
+            {
+                output.setPixel(position, line, blurred);
+            }
+            else
+            {
+                output.setPixel(line, position, blurred);
+            }
+
+            const auto leaving = pixelAt(position - radius);
+            const auto entering = pixelAt(position + radius + 1);
+            alphaSum += qAlpha(entering) - qAlpha(leaving);
+            redSum += qRed(entering) - qRed(leaving);
+            greenSum += qGreen(entering) - qGreen(leaving);
+            blueSum += qBlue(entering) - qBlue(leaving);
+        }
+    }
+    return output;
+}
+
 void boxBlurAlphaPass(const std::vector<uint16_t> &source,
                       std::vector<uint16_t> &output, int width, int height,
                       int radius, bool horizontal)
@@ -551,6 +607,59 @@ bool isThemeWallpaperId(const QString &id)
     static const QRegularExpression pattern(
         QStringLiteral("\\A[A-Za-z0-9_-]{5,64}\\z"));
     return pattern.match(id).hasMatch();
+}
+
+QImage loadThemeWallpaper(const QString &source, int maxDimension)
+{
+    if (source.trimmed().isEmpty())
+    {
+        return {};
+    }
+
+    QImageReader reader(source);
+    reader.setAutoTransform(true);
+    const auto sourceSize = reader.size();
+    const auto format = reader.format().toLower();
+    if (!sourceSize.isValid() ||
+        qint64(sourceSize.width()) * sourceSize.height() > 32LL * 1024 * 1024 ||
+        (format != "png" && format != "jpeg" && format != "webp" &&
+         format != "gif" && format != "bmp"))
+    {
+        return {};
+    }
+    maxDimension = std::clamp(maxDimension, 1, MAX_WALLPAPER_DIMENSION);
+    if (sourceSize.width() > maxDimension || sourceSize.height() > maxDimension)
+    {
+        reader.setScaledSize(
+            sourceSize.scaled(maxDimension, maxDimension, Qt::KeepAspectRatio));
+    }
+
+    auto image = reader.read();
+    if (!image.isNull() &&
+        (image.width() > maxDimension || image.height() > maxDimension))
+    {
+        image = image.scaled(maxDimension, maxDimension, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+    }
+    return image;
+}
+
+QImage blurThemeWallpaper(QImage image, int radius)
+{
+    radius = std::clamp(radius, 0, 30);
+    if (image.isNull() || radius == 0)
+    {
+        return image;
+    }
+    image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+
+    const int passRadius = std::max(1, (radius + 1) / 2);
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        image = boxBlurPass(image, passRadius, true);
+        image = boxBlurPass(image, passRadius, false);
+    }
+    return image;
 }
 
 QImage blurThemeShadow(QImage image, int radius)
@@ -735,6 +844,59 @@ QColor blendThemeHighlight(const QColor &base, QColor highlight,
         (highlight.blueF() * sourceAlpha + base.blueF() * baseContribution) /
             outputAlpha,
         outputAlpha);
+    return result;
+}
+
+ThemeWallpaperLayout layoutThemeWallpaper(const QSizeF &imageSize,
+                                          const QRectF &target,
+                                          ThemeWallpaperMode mode, int focalX,
+                                          int focalY, int zoom)
+{
+    ThemeWallpaperLayout result{target, QRectF(QPointF(), imageSize)};
+    if (imageSize.isEmpty() || target.isEmpty() ||
+        mode == ThemeWallpaperMode::Tile)
+    {
+        return result;
+    }
+
+    if (mode == ThemeWallpaperMode::Stretch)
+    {
+        const auto size = imageSize / (std::clamp(zoom, 100, 300) / 100.0);
+        result.source = QRectF(QPointF((imageSize.width() - size.width()) *
+                                           std::clamp(focalX, 0, 100) / 100.0,
+                                       (imageSize.height() - size.height()) *
+                                           std::clamp(focalY, 0, 100) / 100.0),
+                               size);
+        return result;
+    }
+
+    qreal scale = 1;
+    if (mode != ThemeWallpaperMode::Center)
+    {
+        const auto x = target.width() / imageSize.width();
+        const auto y = target.height() / imageSize.height();
+        scale =
+            mode == ThemeWallpaperMode::Fit ? std::min(x, y) : std::max(x, y);
+    }
+    scale *= std::clamp(zoom, 100, 300) / 100.0;
+    if (mode == ThemeWallpaperMode::Center && zoom <= 100)
+    {
+        focalX = focalY = 50;
+    }
+    const auto size = imageSize * scale;
+
+    const auto offset = [](qreal spare, int focus) {
+        return spare * (spare < 0 ? std::clamp(focus, 0, 100) / 100.0 : 0.5);
+    };
+    const QRectF placed(
+        target.topLeft() +
+            QPointF(offset(target.width() - size.width(), focalX),
+                    offset(target.height() - size.height(), focalY)),
+        size);
+    result.destination = placed.intersected(target);
+    result.source =
+        QRectF((result.destination.topLeft() - placed.topLeft()) / scale,
+               result.destination.size() / scale);
     return result;
 }
 
@@ -1171,7 +1333,7 @@ QJsonObject buildCustomizedTheme(const ThemeCustomizationProfile &input)
     const qreal headerContrast = profile.channelBarContrast / 100.0;
     const QColor channelBar =
         mix(effectiveSurface, effectiveRaisedSurface, headerContrast * 0.52);
-    const QColor messageRegular = drawsWallpaper(profile)
+    const QColor messageRegular = profile.hasWallpaper()
                                       ? alpha(profile.chatBackground, 0)
                                       : profile.chatBackground;
     const qreal rowContrast = profile.alternateMessageContrast / 100.0;
@@ -1181,7 +1343,7 @@ QJsonObject buildCustomizedTheme(const ThemeCustomizationProfile &input)
     if (profile.alternateMessageRows)
     {
         const auto proposedAlternate =
-            drawsWallpaper(profile)
+            profile.hasWallpaper()
                 ? alternateTarget
                 : mix(profile.chatBackground, alternateTarget,
                       profile.alternateMessageOpacity / 100.0);
@@ -1193,7 +1355,7 @@ QJsonObject buildCustomizedTheme(const ThemeCustomizationProfile &input)
     }
     const QColor messageAlternate =
         !profile.alternateMessageRows ? messageRegular
-        : drawsWallpaper(profile)
+        : profile.hasWallpaper()
             ? alpha(solidMessageAlternate, profile.alternateMessageOpacity)
             : solidMessageAlternate;
 
