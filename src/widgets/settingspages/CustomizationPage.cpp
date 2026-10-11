@@ -1,6 +1,8 @@
 #include "widgets/settingspages/CustomizationPage.hpp"
 
 #include "Application.hpp"
+#include "common/network/NetworkRequest.hpp"
+#include "common/network/NetworkResult.hpp"
 #include "common/Version.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
@@ -10,8 +12,10 @@
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/Clipboard.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
 
+#include <QBuffer>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
@@ -26,9 +30,12 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHttpMultiPart>
 #include <QImageReader>
+#include <QImageWriter>
 #include <QInputDialog>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLinearGradient>
 #include <QLineEdit>
@@ -139,6 +146,164 @@ QString normalizedLocalPath(const QString &path)
     resolved = resolved.toCaseFolded();
 #endif
     return resolved;
+}
+
+/// Where shared themes are stored: Moltorino's paste service, so codes work
+/// in both programs. Backgrounds go to kappa.lol, as Moltorino does it.
+constexpr auto SHARE_SERVICE = "https://h.moltorino.com";
+constexpr auto WALLPAPER_SERVICE = "https://kappa.lol";
+constexpr int MAX_SHARED_WALLPAPER_DIMENSION = 1536;
+
+/// The code from what the user pasted, which may be the whole link. Empty if
+/// it can't be a code.
+QString cleanCode(QString input)
+{
+    static const QRegularExpression url(
+        uR"((?:https?://)?h\.moltorino\.com/([A-Za-z0-9]+)(?:/raw)?)"_s,
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression valid(u"^[A-Za-z0-9]{4,20}$"_s);
+    input = input.trimmed();
+    if (const auto match = url.match(input); match.hasMatch())
+    {
+        input = match.captured(1);
+    }
+    return valid.match(input).hasMatch() ? input : QString();
+}
+
+struct PreparedWallpaper {
+    QByteArray bytes;
+    /// "webp", or "jpg" if this build can't write WebP.
+    QString extension;
+    QString error;
+};
+
+/// Turns an image into what is shared: scaled down and re-encoded, so no
+/// metadata of the original file leaves the computer.
+PreparedWallpaper prepareSharedWallpaper(const QByteArray &source)
+{
+    if (source.isEmpty() || source.size() > MAX_WALLPAPER_FILE_SIZE)
+    {
+        return {.bytes = {},
+                .extension = {},
+                .error = u"The background is missing or larger than 50 MB."_s};
+    }
+    QBuffer input;
+    input.setData(source);
+    input.open(QIODevice::ReadOnly);
+    QImageReader reader(&input);
+    reader.setAutoTransform(true);
+    const auto size = reader.size();
+    if (!size.isValid() ||
+        static_cast<qint64>(size.width()) * size.height() > 32LL * 1024 * 1024)
+    {
+        return {.bytes = {},
+                .extension = {},
+                .error = u"The background isn't a supported image."_s};
+    }
+    if (size.width() > MAX_SHARED_WALLPAPER_DIMENSION ||
+        size.height() > MAX_SHARED_WALLPAPER_DIMENSION)
+    {
+        reader.setScaledSize(size.scaled(MAX_SHARED_WALLPAPER_DIMENSION,
+                                         MAX_SHARED_WALLPAPER_DIMENSION,
+                                         Qt::KeepAspectRatio));
+    }
+    const auto image = reader.read();
+    if (image.isNull())
+    {
+        return {.bytes = {},
+                .extension = {},
+                .error = u"The background couldn't be read."_s};
+    }
+
+    const bool webp = QImageWriter::supportedImageFormats().contains("webp");
+    PreparedWallpaper result;
+    result.extension = webp ? u"webp"_s : u"jpg"_s;
+    QBuffer output(&result.bytes);
+    output.open(QIODevice::WriteOnly);
+    QImageWriter writer(&output, webp ? "webp" : "jpeg");
+    writer.setQuality(92);
+    if (!writer.write(image) || result.bytes.isEmpty())
+    {
+        return {.bytes = {},
+                .extension = {},
+                .error = u"The background couldn't be prepared."_s};
+    }
+    return result;
+}
+
+/// Stores a prepared background in the Themes folder, named after its
+/// content. Returns its path, empty on failure.
+QString storeSharedWallpaper(const PreparedWallpaper &data,
+                             const QString &themesDirectory)
+{
+    const QDir directory(QDir(themesDirectory).filePath(u"Wallpapers"_s));
+    if (data.bytes.isEmpty() || !QDir().mkpath(directory.absolutePath()))
+    {
+        return {};
+    }
+    const auto digest =
+        QCryptographicHash::hash(data.bytes, QCryptographicHash::Sha256)
+            .toHex()
+            .left(16);
+    const auto path = directory.filePath(
+        u"wallpaper-%1.%2"_s.arg(QString::fromLatin1(digest), data.extension));
+    if (QFileInfo::exists(path))
+    {
+        return path;
+    }
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly) ||
+        file.write(data.bytes) != data.bytes.size() || !file.commit())
+    {
+        return {};
+    }
+    return path;
+}
+
+/// The id a stored background was uploaded under, kept in a file next to it
+/// so it isn't uploaded twice. Empty if it wasn't uploaded.
+QString wallpaperUploadId(const QString &storedPath)
+{
+    QFile file(storedPath + u".kappa"_s);
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 64)
+    {
+        return {};
+    }
+    const auto id = QString::fromLatin1(file.readAll()).trimmed();
+    return isThemeWallpaperId(id) ? id : QString();
+}
+
+bool saveWallpaperUploadId(const QString &storedPath, const QString &id)
+{
+    if (!isThemeWallpaperId(id))
+    {
+        return false;
+    }
+    QSaveFile file(storedPath + u".kappa"_s);
+    const auto bytes = id.toLatin1();
+    return file.open(QIODevice::WriteOnly) &&
+           file.write(bytes) == bytes.size() && file.commit();
+}
+
+/// The stored background that was up- or downloaded under `id`, if any.
+QString findWallpaperById(const QString &id, const QString &themesDirectory)
+{
+    if (!isThemeWallpaperId(id))
+    {
+        return {};
+    }
+    const QDir directory(QDir(themesDirectory).filePath(u"Wallpapers"_s));
+    for (const auto &entry : directory.entryInfoList(
+             {u"wallpaper-*.kappa"_s}, QDir::Files | QDir::NoSymLinks))
+    {
+        const auto path = entry.absoluteFilePath().chopped(6);
+        if (wallpaperUploadId(path) == id &&
+            !loadThemeWallpaper(path, 64).isNull())
+        {
+            return path;
+        }
+    }
+    return {};
 }
 
 QString wallpaperFileFilter()
@@ -2826,6 +2991,7 @@ void CustomizationPage::cleanupManagedWallpapers() const
             !referenced.contains(normalizedLocalPath(file.absoluteFilePath())))
         {
             QFile::remove(file.absoluteFilePath());
+            QFile::remove(file.absoluteFilePath() + u".kappa"_s);
         }
     }
 }
@@ -2837,32 +3003,477 @@ QWidget *CustomizationPage::buildShareTab()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(8);
     auto *description = new QLabel(
-        u"Save the selected theme as a file to share it, or import a theme "
-        u"file. Theme files from Moltorino and Bluzyrino can be imported "
-        u"too; their video backgrounds are kept in the theme but aren't "
-        u"used here. A background image stored on your computer "
-        u"isn't part of a saved theme file."_s);
+        u"Share the selected theme or import one. Themes from Moltorino and "
+        u"Bluzyrino can be imported too; video backgrounds aren't used "
+        u"here."_s);
     description->setWordWrap(true);
     layout->addWidget(description);
 
-    auto *files = new QGroupBox(u"Theme files"_s);
-    auto *fileLayout = new QHBoxLayout(files);
+    auto *share = new QGroupBox(u"Share this theme"_s);
+    auto *shareForm = new QFormLayout(share);
+    auto *shareNote = new QLabel(
+        u"A share code uploads the theme to h.moltorino.com, where anyone "
+        u"with the code can read it."_s);
+    shareNote->setWordWrap(true);
+    shareForm->addRow(shareNote);
+    this->shareWallpaper_ = new QCheckBox(u"Include background"_s);
+    this->shareWallpaper_->setToolTip(
+        u"Uploads the background image to kappa.lol, where it is public."_s);
+    shareForm->addRow(this->shareWallpaper_);
+    this->shareExpiry_ = new QComboBox;
+    this->shareExpiry_->addItem(u"Never"_s, QVariant());
+    this->shareExpiry_->addItem(u"1 day"_s, 1);
+    this->shareExpiry_->addItem(u"7 days"_s, 7);
+    this->shareExpiry_->addItem(u"30 days"_s, 30);
+    this->createCodeButton_ = new QPushButton(u"Create share code"_s);
+    auto *expiryRow = new QWidget;
+    auto *expiryLayout = new QHBoxLayout(expiryRow);
+    expiryLayout->setContentsMargins(0, 0, 0, 0);
+    expiryLayout->setSpacing(6);
+    expiryLayout->addWidget(this->shareExpiry_);
+    expiryLayout->addWidget(this->createCodeButton_);
+    expiryLayout->addStretch(1);
+    shareForm->addRow(u"Expires after:"_s, expiryRow);
+    this->shareCode_ = new QLineEdit;
+    this->shareCode_->setReadOnly(true);
+    this->shareCode_->setPlaceholderText(u"Your share code"_s);
+    auto *codeRow = new QWidget;
+    auto *codeLayout = new QHBoxLayout(codeRow);
+    codeLayout->setContentsMargins(0, 0, 0, 0);
+    auto *copy = new QPushButton(u"Copy"_s);
+    codeLayout->addWidget(this->shareCode_, 1);
+    codeLayout->addWidget(copy);
+    shareForm->addRow(u"Share code:"_s, codeRow);
     this->exportFileButton_ = new QPushButton(u"Save theme file…"_s);
-    auto *importFileButton = new QPushButton(u"Import theme file…"_s);
+    this->exportFileButton_->setToolTip(
+        u"Nothing is uploaded. A background image stored on your computer "
+        u"isn't part of the file."_s);
+    auto *fileRow = new QWidget;
+    auto *fileLayout = new QHBoxLayout(fileRow);
+    fileLayout->setContentsMargins(0, 0, 0, 0);
     fileLayout->addWidget(this->exportFileButton_);
-    fileLayout->addWidget(importFileButton);
     fileLayout->addStretch(1);
-    layout->addWidget(files);
+    shareForm->addRow(u"Theme file:"_s, fileRow);
+    layout->addWidget(share);
+
+    auto *import = new QGroupBox(u"Import a theme"_s);
+    auto *importForm = new QFormLayout(import);
+    this->importCode_ = new QLineEdit;
+    this->importCode_->setPlaceholderText(u"Paste a share code"_s);
+    auto *importRow = new QWidget;
+    auto *importLayout = new QHBoxLayout(importRow);
+    importLayout->setContentsMargins(0, 0, 0, 0);
+    this->importCodeButton_ = new QPushButton(u"Import code"_s);
+    importLayout->addWidget(this->importCode_, 1);
+    importLayout->addWidget(this->importCodeButton_);
+    importForm->addRow(u"Share code:"_s, importRow);
+    this->importFileButton_ = new QPushButton(u"Open theme file…"_s);
+    auto *importFileRow = new QWidget;
+    auto *importFileLayout = new QHBoxLayout(importFileRow);
+    importFileLayout->setContentsMargins(0, 0, 0, 0);
+    importFileLayout->addWidget(this->importFileButton_);
+    importFileLayout->addStretch(1);
+    importForm->addRow(u"Theme file:"_s, importFileRow);
+    layout->addWidget(import);
     layout->addStretch(1);
 
+    QObject::connect(this->createCodeButton_, &QPushButton::clicked, this,
+                     [this] {
+                         this->createThemeCode();
+                     });
+    QObject::connect(this->importCodeButton_, &QPushButton::clicked, this,
+                     [this] {
+                         this->importThemeCode();
+                     });
     QObject::connect(this->exportFileButton_, &QPushButton::clicked, this,
                      [this] {
                          this->exportThemeFile();
                      });
-    QObject::connect(importFileButton, &QPushButton::clicked, this, [this] {
-        this->importThemeFile();
+    QObject::connect(this->importFileButton_, &QPushButton::clicked, this,
+                     [this] {
+                         this->importThemeFile();
+                     });
+    QObject::connect(copy, &QPushButton::clicked, this, [this] {
+        if (!this->shareCode_->text().isEmpty())
+        {
+            crossPlatformCopy(this->shareCode_->text());
+        }
     });
     return page;
+}
+
+void CustomizationPage::setTransferBusy(bool busy)
+{
+    this->transferBusy_ = busy;
+    for (auto *button : {this->createCodeButton_, this->exportFileButton_,
+                         this->importCodeButton_, this->importFileButton_})
+    {
+        button->setEnabled(!busy);
+    }
+    this->shareWallpaper_->setEnabled(!busy);
+    this->profileBox_->setEnabled(!busy);
+}
+
+void CustomizationPage::createThemeCode()
+{
+    if (this->transferBusy_)
+    {
+        return;
+    }
+    if (this->selectedCustom_)
+    {
+        this->readControlsIntoProfile();
+    }
+    auto profile = this->profile_;
+    if (!profile.useThemeMessageRows)
+    {
+        profile.useThemeMessageRows = true;
+        profile.alternateMessageRows =
+            getSettings()->alternateMessages.getValue();
+    }
+    const bool includeWallpaper = this->shareWallpaper_->isChecked();
+    const auto expiry = this->shareExpiry_->currentData();
+    const auto generation = ++this->transferGeneration_;
+    this->shareCode_->clear();
+    this->setTransferBusy(true);
+
+    // Last step: send the theme itself and show the code.
+    const auto upload = [this, expiry,
+                         generation](ThemeCustomizationProfile shared) {
+        bool removed = false;
+        const auto theme = makeShareableCustomizedTheme(
+            buildCustomizedTheme(shared), &removed);
+        const QJsonObject payload{
+            {u"source"_s, u"appearance"_s},
+            {u"title"_s,
+             theme.value(u"metadata"_s).toObject().value(u"name"_s)},
+            {u"language"_s, u"json"_s},
+            {u"content"_s,
+             QString::fromUtf8(QJsonDocument(appearanceEnvelope(theme))
+                                   .toJson(QJsonDocument::Compact))},
+            {u"expiresInDays"_s, expiry.isValid()
+                                     ? QJsonValue(expiry.toInt())
+                                     : QJsonValue(QJsonValue::Null)},
+        };
+        this->setStatus(u"Creating share code…"_s);
+        NetworkRequest(
+            QUrl(QString::fromLatin1(SHARE_SERVICE) + u"/api/paste"_s),
+            NetworkRequestType::Post)
+            .timeout(15000)
+            .hideRequestBody()
+            .followRedirects(false)
+            .json(payload)
+            .caller(this)
+            .onSuccess([this, removed, expiry,
+                        generation](const NetworkResult &result) {
+                if (generation != this->transferGeneration_)
+                {
+                    return;
+                }
+                const auto json = result.parseJson();
+                const auto code = json.value(u"slug"_s).toString();
+                if (code.isEmpty() || cleanCode(code) != code)
+                {
+                    this->setStatus(u"The server returned an invalid code."_s,
+                                    true);
+                    return;
+                }
+                if (!expiry.isValid() && !json.value(u"expiresAt"_s).isNull())
+                {
+                    this->setStatus(
+                        u"Could not create a code that never expires. "
+                        u"Choose an expiry and try again."_s,
+                        true);
+                    return;
+                }
+                this->shareCode_->setText(code);
+                crossPlatformCopy(code);
+                this->setStatus(
+                    removed ? u"Share code copied without the background."_s
+                            : u"Share code copied."_s);
+            })
+            .onError([this, generation](const NetworkResult &) {
+                if (generation == this->transferGeneration_)
+                {
+                    this->setStatus(
+                        u"Couldn't create a share code. Try again."_s, true);
+                }
+            })
+            .finally([this, generation] {
+                if (generation == this->transferGeneration_)
+                {
+                    this->setTransferBusy(false);
+                }
+            })
+            .execute();
+    };
+
+    const bool bundled =
+        profile.wallpaperSource.startsWith(u":/themes/wallpapers/"_s);
+    if (!includeWallpaper)
+    {
+        profile.wallpaperSource.clear();
+        profile.wallpaperId.clear();
+        upload(std::move(profile));
+        return;
+    }
+    if (profile.wallpaperSource.isEmpty() || bundled)
+    {
+        upload(std::move(profile));
+        return;
+    }
+
+    // The background first: it is shared as an upload the theme points to.
+    this->setStatus(u"Preparing background…"_s);
+    QFile file(profile.wallpaperSource);
+    PreparedWallpaper prepared;
+    if (!file.open(QIODevice::ReadOnly) ||
+        file.size() > MAX_WALLPAPER_FILE_SIZE)
+    {
+        prepared.error = u"The background is missing or larger than 50 MB."_s;
+    }
+    else
+    {
+        prepared = prepareSharedWallpaper(file.readAll());
+    }
+    const auto stored =
+        prepared.error.isEmpty()
+            ? storeSharedWallpaper(prepared, getTheme()->themesDirectory())
+            : QString();
+    if (stored.isEmpty())
+    {
+        this->setTransferBusy(false);
+        this->setStatus(prepared.error.isEmpty()
+                            ? u"The background couldn't be prepared."_s
+                            : prepared.error,
+                        true);
+        return;
+    }
+    if (const auto id = wallpaperUploadId(stored); !id.isEmpty())
+    {
+        profile.wallpaperId = id;
+        // the path on this computer is of no use to others
+        profile.wallpaperSource.clear();
+        upload(std::move(profile));
+        return;
+    }
+
+    auto *payload = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart part;
+    part.setHeader(
+        QNetworkRequest::ContentTypeHeader,
+        prepared.extension == u"webp"_s ? u"image/webp"_s : u"image/jpeg"_s);
+    part.setHeader(
+        QNetworkRequest::ContentDispositionHeader,
+        u"form-data; name=\"file\"; filename=\"background.%1\""_s.arg(
+            prepared.extension));
+    part.setBody(prepared.bytes);
+    payload->append(part);
+    this->setStatus(u"Uploading background…"_s);
+    NetworkRequest(
+        QUrl(QString::fromLatin1(WALLPAPER_SERVICE) + u"/api/upload"_s),
+        NetworkRequestType::Post)
+        .multiPart(payload)
+        .hideRequestBody()
+        .followRedirects(false)
+        .timeout(60000)
+        .caller(this)
+        .onSuccess([this, profile, stored, upload,
+                    generation](const NetworkResult &result) mutable {
+            if (generation != this->transferGeneration_)
+            {
+                return;
+            }
+            const auto id = result.parseJson().value(u"id"_s).toString();
+            if (!isThemeWallpaperId(id) || !saveWallpaperUploadId(stored, id))
+            {
+                this->setTransferBusy(false);
+                this->setStatus(
+                    u"Couldn't save the upload details. Try again."_s, true);
+                return;
+            }
+            profile.wallpaperId = id;
+            profile.wallpaperSource.clear();
+            upload(std::move(profile));
+        })
+        .onError([this, generation](const NetworkResult &) {
+            if (generation == this->transferGeneration_)
+            {
+                this->setTransferBusy(false);
+                this->setStatus(u"Couldn't upload the background. Try again."_s,
+                                true);
+            }
+        })
+        .execute();
+}
+
+void CustomizationPage::importThemeCode()
+{
+    if (this->transferBusy_)
+    {
+        return;
+    }
+    const auto code = cleanCode(this->importCode_->text());
+    if (code.isEmpty())
+    {
+        this->setStatus(u"Enter a valid share code."_s, true);
+        return;
+    }
+    const auto generation = ++this->transferGeneration_;
+    this->setTransferBusy(true);
+    this->setStatus(u"Loading theme…"_s);
+    NetworkRequest(
+        QUrl(u"%1/%2/raw"_s.arg(QString::fromLatin1(SHARE_SERVICE), code)))
+        .timeout(15000)
+        .followRedirects(false)
+        .caller(this)
+        .onSuccess([this, generation](const NetworkResult &result) {
+            if (generation != this->transferGeneration_)
+            {
+                return;
+            }
+            this->setTransferBusy(false);
+            if (result.getData().size() > MAX_THEME_FILE_SIZE)
+            {
+                this->setStatus(u"That shared theme is too large."_s, true);
+                return;
+            }
+            QString error;
+            const auto imported =
+                themeFromImport(result.getData(), u"Shared theme"_s, &error);
+            if (!imported)
+            {
+                this->setStatus(error, true);
+                return;
+            }
+            this->installImportedTheme(imported->profile, imported->adapted,
+                                       imported->localWallpaperRemoved);
+        })
+        .onError([this, generation](const NetworkResult &) {
+            if (generation == this->transferGeneration_)
+            {
+                this->setTransferBusy(false);
+                this->setStatus(u"Couldn't load that share code."_s, true);
+            }
+        })
+        .execute();
+}
+
+void CustomizationPage::installImportedTheme(ThemeCustomizationProfile profile,
+                                             bool adapted,
+                                             bool localWallpaperRemoved)
+{
+    const auto generation = this->profileGeneration_;
+    const bool sharedWallpaper =
+        !profile.wallpaperId.isEmpty() && profile.wallpaperSource.isEmpty();
+    QMessageBox prompt(this);
+    prompt.setIcon(QMessageBox::Question);
+    prompt.setWindowTitle(u"Import theme"_s);
+    prompt.setText(u"Import %1?"_s.arg(profile.name));
+    auto details =
+        u"Accent: %1"_s.arg(profile.accent.name(QColor::HexRgb).toUpper());
+    if (adapted)
+    {
+        details.prepend(u"Adapted from a Bluzyrino palette.\n"_s);
+    }
+    if (sharedWallpaper)
+    {
+        details.append(u"\nIts background is downloaded from kappa.lol."_s);
+    }
+    else if (localWallpaperRemoved)
+    {
+        details.append(u"\nIts background isn't included."_s);
+    }
+    prompt.setInformativeText(details);
+    auto *add = prompt.addButton(u"Import"_s, QMessageBox::AcceptRole);
+    prompt.addButton(QMessageBox::Cancel);
+    prompt.exec();
+    if (prompt.clickedButton() != add ||
+        generation != this->profileGeneration_ || !this->confirmProfileChange())
+    {
+        this->setStatus(u"Theme wasn't imported."_s);
+        return;
+    }
+
+    if (!sharedWallpaper)
+    {
+        this->writeImportedTheme(std::move(profile), adapted);
+        return;
+    }
+
+    // Already here from an earlier import or from sharing it ourselves?
+    profile.wallpaperSource =
+        findWallpaperById(profile.wallpaperId, getTheme()->themesDirectory());
+    if (!profile.wallpaperSource.isEmpty())
+    {
+        this->writeImportedTheme(std::move(profile), adapted);
+        return;
+    }
+
+    const auto transfer = ++this->transferGeneration_;
+    this->setTransferBusy(true);
+    this->setStatus(u"Downloading background…"_s);
+    NetworkRequest(QUrl(QString::fromLatin1(WALLPAPER_SERVICE) + u'/' +
+                        profile.wallpaperId))
+        .followRedirects(false)
+        .timeout(60000)
+        .caller(this)
+        .onSuccess([this, profile, adapted,
+                    transfer](const NetworkResult &result) mutable {
+            if (transfer != this->transferGeneration_)
+            {
+                return;
+            }
+            this->setTransferBusy(false);
+            const auto prepared = prepareSharedWallpaper(result.getData());
+            const auto stored =
+                prepared.error.isEmpty()
+                    ? storeSharedWallpaper(prepared,
+                                           getTheme()->themesDirectory())
+                    : QString();
+            if (stored.isEmpty())
+            {
+                // Videos end up here too; the theme is still useful.
+                profile.wallpaperSource.clear();
+                this->writeImportedTheme(std::move(profile), adapted);
+                this->setStatus(
+                    u"Theme imported, but its background can't be used "
+                    u"here."_s,
+                    true);
+                return;
+            }
+            saveWallpaperUploadId(stored, profile.wallpaperId);
+            profile.wallpaperSource = stored;
+            this->writeImportedTheme(std::move(profile), adapted);
+        })
+        .onError([this, transfer](const NetworkResult &) {
+            if (transfer == this->transferGeneration_)
+            {
+                this->setTransferBusy(false);
+                this->setStatus(
+                    u"Couldn't download the background. Try importing "
+                    u"again."_s,
+                    true);
+            }
+        })
+        .execute();
+}
+
+void CustomizationPage::writeImportedTheme(ThemeCustomizationProfile profile,
+                                           bool adapted)
+{
+    profile.name = profile.name.trimmed() + u" (Imported)"_s;
+    const auto target = this->uniqueThemePath(profile.name);
+    if (!QDir().mkpath(getTheme()->themesDirectory()) ||
+        !writeThemeFile(target, buildCustomizedTheme(profile)))
+    {
+        this->setStatus(u"The imported theme couldn't be saved."_s, true);
+        return;
+    }
+    this->reloadProfiles(QFileInfo(target).fileName());
+    this->setStatus(
+        adapted ? u"Theme adapted and imported. Choose Apply theme to use it."_s
+                : u"Theme imported. Choose Apply theme to use it."_s);
 }
 
 void CustomizationPage::onShow()
@@ -2883,6 +3494,7 @@ bool CustomizationPage::filterElements(const QString &query)
            u"contrast timestamps system messages accent background surface "
            u"rows highlights corners rounding border shadow shape spacing "
            u"wallpaper image blur overlay fonts typography username weight "
+           u"share code "
            u"import export moltorino bluzyrino"_s.contains(
                query, Qt::CaseInsensitive) ||
            SettingsPage::filterElements(query);
@@ -2953,6 +3565,7 @@ void CustomizationPage::loadSelectedProfile()
             return;
         }
         ++this->profileGeneration_;
+        this->shareCode_->clear();
         this->selectedKey_ = key;
         this->selectedPath_ = descriptor.path;
         this->selectedCustom_ = descriptor.custom;
@@ -3691,46 +4304,8 @@ void CustomizationPage::importThemeFile()
         return;
     }
 
-    auto profile = imported->profile;
-    const auto generation = this->profileGeneration_;
-    QMessageBox prompt(this);
-    prompt.setIcon(QMessageBox::Question);
-    prompt.setWindowTitle(u"Import theme"_s);
-    prompt.setText(u"Import %1?"_s.arg(profile.name));
-    auto details =
-        u"Accent: %1"_s.arg(profile.accent.name(QColor::HexRgb).toUpper());
-    if (imported->adapted)
-    {
-        details.prepend(u"Adapted from a Bluzyrino palette.\n"_s);
-    }
-    if (profile.hasWallpaper() || imported->localWallpaperRemoved)
-    {
-        details.append(u"\nIts background isn't included."_s);
-    }
-    prompt.setInformativeText(details);
-    auto *add = prompt.addButton(u"Import"_s, QMessageBox::AcceptRole);
-    prompt.addButton(QMessageBox::Cancel);
-    prompt.exec();
-    if (prompt.clickedButton() != add ||
-        generation != this->profileGeneration_ || !this->confirmProfileChange())
-    {
-        this->setStatus(u"Theme wasn't imported."_s);
-        return;
-    }
-
-    profile.name = profile.name.trimmed() + u" (Imported)"_s;
-    const auto target = this->uniqueThemePath(profile.name);
-    if (!QDir().mkpath(getTheme()->themesDirectory()) ||
-        !writeThemeFile(target, buildCustomizedTheme(profile)))
-    {
-        this->setStatus(u"The imported theme couldn't be saved."_s, true);
-        return;
-    }
-    this->reloadProfiles(QFileInfo(target).fileName());
-    this->setStatus(
-        imported->adapted
-            ? u"Theme adapted and imported. Choose Apply theme to use it."_s
-            : u"Theme imported. Choose Apply theme to use it."_s);
+    this->installImportedTheme(imported->profile, imported->adapted,
+                               imported->localWallpaperRemoved);
 }
 
 void CustomizationPage::setStatus(const QString &text, bool error)

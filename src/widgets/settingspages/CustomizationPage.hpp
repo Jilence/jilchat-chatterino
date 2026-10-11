@@ -77,6 +77,16 @@ private:
 
     void exportThemeFile();
     void importThemeFile();
+    /// Uploads the theme to the paste service and shows the code for it.
+    void createThemeCode();
+    void importThemeCode();
+    /// Asks whether to import the theme, fetches its background if it has
+    /// one, and adds it to the Themes folder.
+    void installImportedTheme(ThemeCustomizationProfile profile, bool adapted,
+                              bool localWallpaperRemoved);
+    void writeImportedTheme(ThemeCustomizationProfile profile, bool adapted);
+    /// Disables the share controls while something is up- or downloading.
+    void setTransferBusy(bool busy);
 
     QString uniqueThemePath(const QString &name) const;
     void setStatus(const QString &text, bool error = false);
@@ -90,6 +100,9 @@ private:
     /// Bumped whenever another theme is loaded, so dialogs that were open
     /// meanwhile don't change the wrong theme.
     std::uint64_t profileGeneration_ = 0;
+    /// Bumped to drop the answers of transfers that are no longer wanted.
+    std::uint64_t transferGeneration_ = 0;
+    bool transferBusy_ = false;
     QSet<QString> editedColorRoles_;
 
     QComboBox *profileBox_{};
@@ -101,6 +114,13 @@ private:
     QPushButton *saveButton_{};
     QPushButton *resetButton_{};
     QPushButton *exportFileButton_{};
+    QPushButton *importFileButton_{};
+    QPushButton *createCodeButton_{};
+    QPushButton *importCodeButton_{};
+    QCheckBox *shareWallpaper_{};
+    QComboBox *shareExpiry_{};
+    QLineEdit *shareCode_{};
+    QLineEdit *importCode_{};
     ThemePreviewWidget *preview_{};
     QWidget *colorsEditor_{};
     QWidget *chatEditor_{};
