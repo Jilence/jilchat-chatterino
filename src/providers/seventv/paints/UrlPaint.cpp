@@ -14,6 +14,15 @@ UrlPaint::UrlPaint(QString name, QString id, ImagePtr image,
 {
 }
 
+qint64 UrlPaint::sourcePixmapCacheKey() const
+{
+    if (const auto pixmap = this->image_->pixmapOrLoad())
+    {
+        return pixmap->cacheKey();
+    }
+    return 0;
+}
+
 bool UrlPaint::animated() const
 {
     return image_->animated();

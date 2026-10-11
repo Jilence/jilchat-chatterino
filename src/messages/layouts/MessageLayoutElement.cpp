@@ -17,6 +17,7 @@
 #include "providers/twitch/TwitchEmotes.hpp"
 #include "singletons/helper/GifTimer.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/ThemeCustomization.hpp"
 #include "util/DebugCount.hpp"
 
 #include <QCache>
@@ -25,6 +26,7 @@
 #include <QFontMetricsF>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsPixmapItem>
+#include <QImage>
 #include <QLabel>
 #include <QMetaObject>
 #include <QPainter>
@@ -32,6 +34,7 @@
 #include <QPixmap>
 #include <QSet>
 #include <QThreadPool>
+#include <QtMath>
 
 #include <algorithm>
 #include <array>
@@ -39,7 +42,9 @@
 #include <cmath>
 #include <limits>
 #include <ranges>
+#include <span>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -87,6 +92,152 @@ void drawPixmapWithOptionalSmoothing(
     {
         painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
     }
+}
+
+/// One pixmap of an animated element and where it is drawn.
+struct AnimatedShadowLayer {
+    const QPixmap *pixmap{};
+    QRectF target;
+    /// What the shape of the pixmap depends on, for pixmaps that are made
+    /// anew every time and have no lasting identity of their own (text with
+    /// an animated paint: its colors move, its outline doesn't).
+    QString cacheIdentity;
+};
+
+/// Draws the theme's shadow of what is about to be painted: the pixmaps in
+/// one color, blurred and moved a bit. A finished shadow is kept under the
+/// identity of the frames it was made from, so every frame of an animation is
+/// tinted and blurred only once, however often and wherever it is shown.
+QRegion paintAnimatedShadow(QPainter &painter,
+                            std::span<const AnimatedShadowLayer> layers,
+                            const chatterino::AnimatedMessageShadow *shadow)
+{
+    if (shadow == nullptr || shadow->opacity <= 0 || layers.empty())
+    {
+        return {};
+    }
+    const auto usable = [](const AnimatedShadowLayer &layer) {
+        return layer.pixmap != nullptr && !layer.pixmap->isNull() &&
+               !layer.target.isEmpty();
+    };
+
+    QRectF bounds;
+    for (const auto &layer : layers)
+    {
+        if (!usable(layer))
+        {
+            continue;
+        }
+        const auto snapped = snapRectToDevicePixels(layer.target, painter);
+        bounds = bounds.isNull() ? snapped : bounds.united(snapped);
+    }
+    if (bounds.isEmpty())
+    {
+        return {};
+    }
+
+    const qreal dpr = std::max<qreal>(
+        1.0, painter.device() != nullptr ? painter.device()->devicePixelRatioF()
+                                         : 1.0);
+    const int pixelRadius =
+        std::max(0, qRound(std::max<qreal>(0, shadow->blurRadius) * dpr));
+    const int pixelPadding = std::max(2, pixelRadius * 2 + 2);
+    const int pixelWidth =
+        std::max(1, qCeil(bounds.width() * dpr) + pixelPadding * 2);
+    const int pixelHeight =
+        std::max(1, qCeil(bounds.height() * dpr) + pixelPadding * 2);
+
+    QString key;
+    key.reserve(96 + static_cast<qsizetype>(layers.size()) * 64);
+    key += QString::number(pixelWidth) + u'x' + QString::number(pixelHeight) +
+           u'/' + QString::number(pixelRadius) + u'/' +
+           QString::number(shadow->color.rgba()) + u'/' +
+           QString::number(qRound(dpr * 1000));
+    for (const auto &layer : layers)
+    {
+        if (!usable(layer))
+        {
+            continue;
+        }
+        const auto target = snapRectToDevicePixels(layer.target, painter);
+        if (layer.cacheIdentity.isEmpty())
+        {
+            key += u"/p" + QString::number(static_cast<qulonglong>(
+                               layer.pixmap->cacheKey()));
+        }
+        else
+        {
+            key += u"/s" + QString::number(layer.cacheIdentity.size()) + u':' +
+                   layer.cacheIdentity;
+        }
+        key += u'@' + QString::number(qRound((target.x() - bounds.x()) * dpr)) +
+               u',' + QString::number(qRound((target.y() - bounds.y()) * dpr)) +
+               u',' + QString::number(qRound(target.width() * dpr)) + u',' +
+               QString::number(qRound(target.height() * dpr));
+    }
+
+    // in KiB
+    static QCache<QString, QImage> cache(8 * 1024);
+    auto *cached = cache.object(key);
+    if (cached == nullptr)
+    {
+        QImage image(QSize(pixelWidth, pixelHeight),
+                     QImage::Format_ARGB32_Premultiplied);
+        if (image.isNull())
+        {
+            return {};
+        }
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        {
+            QPainter shadowPainter(&image);
+            shadowPainter.setRenderHint(QPainter::SmoothPixmapTransform);
+            const QPointF origin(pixelPadding / dpr - bounds.x(),
+                                 pixelPadding / dpr - bounds.y());
+            shadowPainter.translate(origin);
+            for (const auto &layer : layers)
+            {
+                if (!usable(layer))
+                {
+                    continue;
+                }
+                shadowPainter.drawPixmap(
+                    snapRectToDevicePixels(layer.target, painter),
+                    *layer.pixmap, QRectF());
+            }
+            shadowPainter.resetTransform();
+            shadowPainter.setCompositionMode(
+                QPainter::CompositionMode_SourceIn);
+            shadowPainter.fillRect(
+                QRectF(QPointF(), image.deviceIndependentSize()),
+                shadow->color);
+        }
+        if (pixelRadius > 0)
+        {
+            image = chatterino::blurThemeShadow(std::move(image), pixelRadius);
+        }
+        const auto costKiB =
+            std::max<qsizetype>(1, (image.sizeInBytes() + 1023) / 1024);
+        const int cost = static_cast<int>(
+            std::min<qsizetype>(costKiB, std::numeric_limits<int>::max()));
+        cache.insert(key, new QImage(std::move(image)), cost);
+        // null if it was too large to keep
+        cached = cache.object(key);
+    }
+    if (cached == nullptr)
+    {
+        return {};
+    }
+
+    const QPointF topLeft = bounds.topLeft() -
+                            QPointF(pixelPadding / dpr, pixelPadding / dpr) +
+                            shadow->offset;
+    painter.save();
+    painter.setOpacity(std::clamp(shadow->opacity, 0.0, 1.0));
+    painter.drawImage(topLeft, *cached);
+    painter.restore();
+    return QRegion(
+        QRectF(topLeft, cached->deviceIndependentSize()).toAlignedRect());
 }
 
 constexpr int MODIFIER_FILTER_CACHE_KIB = 8 * 1024;
@@ -673,7 +824,8 @@ void ImageLayoutElement::paint(QPainter &painter,
     }
 }
 
-QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
+QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset,
+                                          const AnimatedMessageShadow *shadow)
 {
     if (this->image_ == nullptr)
     {
@@ -687,11 +839,19 @@ QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset)
             auto rect = this->getRect();
             rect.moveTop(rect.y() + yOffset);
             const auto drawRect = QRectF(rect);
+            const AnimatedShadowLayer layer{
+                .pixmap = &*pixmap,
+                .target = drawRect,
+                .cacheIdentity = {},
+            };
+            const auto shadowRegion =
+                paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
             drawPixmapWithOptionalSmoothing(painter, drawRect, *pixmap,
                                             this->getFlags());
             return QRegion(rect.toAlignedRect()) |
                    QRegion(snapRectToDevicePixels(drawRect, painter)
-                               .toAlignedRect());
+                               .toAlignedRect()) |
+                   shadowRegion;
         }
     }
     return {};
@@ -816,14 +976,14 @@ void LayeredImageLayoutElement::paint(QPainter &painter,
     }
 }
 
-QRegion LayeredImageLayoutElement::paintAnimated(QPainter &painter,
-                                                 qreal yOffset)
+QRegion LayeredImageLayoutElement::paintAnimated(
+    QPainter &painter, qreal yOffset, const AnimatedMessageShadow *shadow)
 {
     if (this->modifierFlags_ != 0)
     {
         if (this->needsAnimatedPaint())
         {
-            return this->paintModified(painter, yOffset);
+            return this->paintModified(painter, yOffset, shadow);
         }
         return {};
     }
@@ -831,6 +991,15 @@ QRegion LayeredImageLayoutElement::paintAnimated(QPainter &painter,
     auto fullRect = QRectF(this->getRect());
     fullRect.moveTop(fullRect.y() + yOffset);
     bool animatedFlag = false;
+
+    // What gets painted. Collected first, so the shadow of all layers can be
+    // drawn beneath them.
+    struct Frame {
+        QPixmap pixmap;
+        QRectF target;
+    };
+    std::vector<Frame> frames;
+    frames.reserve(this->images_.size());
 
     for (size_t i = 0; i < this->images_.size(); ++i)
     {
@@ -853,8 +1022,7 @@ QRegion LayeredImageLayoutElement::paintAnimated(QPainter &painter,
                 QRectF destRect(0, 0, size.width(), size.height());
                 alignRectBottomCenter(destRect, fullRect);
 
-                painter.drawPixmap(snapRectToDevicePixels(destRect, painter),
-                                   *pixmap, QRectF());
+                frames.push_back({.pixmap = *pixmap, .target = destRect});
                 animatedFlag = true;
             }
         }
@@ -863,7 +1031,28 @@ QRegion LayeredImageLayoutElement::paintAnimated(QPainter &painter,
     {
         return {};
     }
-    return QRegion(fullRect.toAlignedRect());
+
+    QRegion shadowRegion;
+    if (shadow != nullptr && shadow->opacity > 0)
+    {
+        std::vector<AnimatedShadowLayer> layers;
+        layers.reserve(frames.size());
+        for (const auto &frame : frames)
+        {
+            layers.push_back({
+                .pixmap = &frame.pixmap,
+                .target = frame.target,
+                .cacheIdentity = {},
+            });
+        }
+        shadowRegion = paintAnimatedShadow(painter, layers, shadow);
+    }
+    for (const auto &frame : frames)
+    {
+        painter.drawPixmap(snapRectToDevicePixels(frame.target, painter),
+                           frame.pixmap, QRectF());
+    }
+    return QRegion(fullRect.toAlignedRect()) | shadowRegion;
 }
 
 bool LayeredImageLayoutElement::needsAnimatedPaint() const
@@ -878,8 +1067,8 @@ bool LayeredImageLayoutElement::needsAnimatedPaint() const
     });
 }
 
-QRegion LayeredImageLayoutElement::paintModified(QPainter &painter,
-                                                 qreal yOffset)
+QRegion LayeredImageLayoutElement::paintModified(
+    QPainter &painter, qreal yOffset, const AnimatedMessageShadow *shadow)
 {
     using namespace emote_modifiers;
 
@@ -1065,12 +1254,14 @@ QRegion LayeredImageLayoutElement::paintModified(QPainter &painter,
     transform.translate(-origin.x(), -origin.y());
 
     const auto phase = modifierColorPhase(this->modifierFlags_, time);
-    bool painted = false;
-    QRegion paintedRegion;
-    painter.save();
-    painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
-    painter.setWorldTransform(transform, true);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    // What gets painted, collected first so the shadow of all layers can go
+    // beneath them.
+    struct Frame {
+        QPixmap pixmap;
+        QRectF target;
+    };
+    std::vector<Frame> frames;
+    frames.reserve(this->images_.size());
     for (size_t i = 0; i < this->images_.size(); ++i)
     {
         const auto &image = this->images_[i];
@@ -1085,22 +1276,57 @@ QRegion LayeredImageLayoutElement::paintModified(QPainter &painter,
         }
         QRectF target(QPointF{}, this->sizes_[i]);
         alignRectBottomCenter(target, contentRect);
-        const auto filtered =
-            filteredModifierPixmap(*pixmap, this->modifierFlags_, phase, image);
-        const auto snapped = snapRectToDevicePixels(target, painter);
-        painter.drawPixmap(snapped, filtered, QRectF());
-        paintedRegion += transform.mapRect(snapped).toAlignedRect();
-        painted = true;
+        frames.push_back({
+            .pixmap = filteredModifierPixmap(*pixmap, this->modifierFlags_,
+                                             phase, image),
+            .target = target,
+        });
     }
-    painter.restore();
-    if (!painted)
+    if (frames.empty())
     {
         return {};
     }
 
-    paintedRegion += modifierVisualEnvelope(fullRect, this->contentSize_,
-                                            this->modifierFlags_)
-                         .toAlignedRect();
+    QRegion paintedRegion;
+    painter.save();
+    painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
+    painter.setWorldTransform(transform, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    if (shadow != nullptr && shadow->opacity > 0)
+    {
+        // Drawn in the transformed space, so it turns and moves with the
+        // emote.
+        std::vector<AnimatedShadowLayer> layers;
+        layers.reserve(frames.size());
+        for (const auto &frame : frames)
+        {
+            layers.push_back({
+                .pixmap = &frame.pixmap,
+                .target = frame.target,
+                .cacheIdentity = {},
+            });
+        }
+        (void)paintAnimatedShadow(painter, layers, shadow);
+    }
+    for (const auto &frame : frames)
+    {
+        const auto snapped = snapRectToDevicePixels(frame.target, painter);
+        painter.drawPixmap(snapped, frame.pixmap, QRectF());
+        paintedRegion += transform.mapRect(snapped).toAlignedRect();
+    }
+    painter.restore();
+
+    auto envelope = modifierVisualEnvelope(fullRect, this->contentSize_,
+                                           this->modifierFlags_);
+    if (shadow != nullptr && shadow->opacity > 0)
+    {
+        // room for the shadow around everything the emote can reach
+        const qreal margin =
+            std::max<qreal>(2.0, shadow->blurRadius * 2.0 + 2.0) +
+            std::hypot(shadow->offset.x(), shadow->offset.y());
+        envelope.adjust(-margin, -margin, margin, margin);
+    }
+    paintedRegion += envelope.toAlignedRect();
     return paintedRegion;
 }
 
@@ -1292,7 +1518,8 @@ void TextLayoutElement::paint(QPainter &painter,
     }
 }
 
-QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
+QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
+                                         const AnimatedMessageShadow *shadow)
 {
     if (this->getRect().isEmpty())
     {
@@ -1325,8 +1552,26 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset)
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
     rect.adjust(-overflow, -overflow, overflow, overflow);
+    QRegion paintedRegion;
+    if (shadow != nullptr && shadow->opacity > 0)
+    {
+        // Names with an animated paint aren't part of the message buffer, so
+        // they get the theme's shadow here. The key names the shape of the
+        // pixmap: with a gradient only the colors move, so the shadow is made
+        // once; with an animated image it is made per frame.
+        const AnimatedShadowLayer layer{
+            .pixmap = &paintPixmap,
+            .target = QRectF(rect),
+            .cacheIdentity = paint->getPixmapCacheKey(
+                this->getText(), font, this->color_, this->getRect().size(),
+                this->scale_, this->dpr_, false, overflow),
+        };
+        paintedRegion +=
+            paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
+    }
     painter.drawPixmap(rect, paintPixmap, QRectF());
-    return QRegion(rect.toAlignedRect());
+    paintedRegion += rect.toAlignedRect();
+    return paintedRegion;
 }
 
 int TextLayoutElement::getMouseOverIndex(QPointF abs) const
@@ -1451,8 +1696,9 @@ void TextIconLayoutElement::paint(QPainter &painter,
     }
 }
 
-QRegion TextIconLayoutElement::paintAnimated(QPainter & /*painter*/,
-                                             qreal /*yOffset*/)
+QRegion TextIconLayoutElement::paintAnimated(
+    QPainter & /*painter*/, qreal /*yOffset*/,
+    const AnimatedMessageShadow * /*shadow*/)
 {
     return {};
 }
@@ -1616,8 +1862,8 @@ void VoiceMessageLayoutElement::paint(QPainter &painter,
     painter.restore();
 }
 
-QRegion VoiceMessageLayoutElement::paintAnimated(QPainter &painter,
-                                                 qreal yOffset)
+QRegion VoiceMessageLayoutElement::paintAnimated(
+    QPainter &painter, qreal yOffset, const AnimatedMessageShadow * /*shadow*/)
 {
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
@@ -1734,8 +1980,9 @@ void ReplyCurveLayoutElement::paint(QPainter &painter,
     painter.drawPath(path);
 }
 
-QRegion ReplyCurveLayoutElement::paintAnimated(QPainter & /*painter*/,
-                                               qreal /*yOffset*/)
+QRegion ReplyCurveLayoutElement::paintAnimated(
+    QPainter & /*painter*/, qreal /*yOffset*/,
+    const AnimatedMessageShadow * /*shadow*/)
 {
     return {};
 }

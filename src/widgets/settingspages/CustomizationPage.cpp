@@ -2574,7 +2574,6 @@ QWidget *CustomizationPage::buildChatTab()
     auto *shadowForm = new QFormLayout(shadow);
     shadowForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     this->messageShadow_ = new QCheckBox(u"Add a shadow behind chat content"_s);
-    this->messageShadow_->setToolTip(u"Animated emotes don't get a shadow."_s);
     shadowForm->addRow(this->messageShadow_);
     this->messageShadowEmotes_ = new QCheckBox(u"Include emotes and emoji"_s);
     shadowForm->addRow(this->messageShadowEmotes_);

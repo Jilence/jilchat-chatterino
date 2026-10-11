@@ -307,8 +307,21 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
     // through the next one when message backgrounds are transparent.
     const auto messageHeight = static_cast<int>(this->container_.getHeight());
 
+    // Animated emotes aren't part of the buffer, so they get their shadow
+    // here, frame by frame.
+    const AnimatedMessageShadow animatedShadow{
+        .color = ctx.messageShadowColor,
+        .opacity = ctx.messageShadowOpacity / 100.0,
+        .offset =
+            QPointF(ctx.messageShadowOffset) * static_cast<qreal>(this->scale_),
+        .blurRadius = std::clamp(ctx.messageShadowBlur, 0, 8) *
+                      static_cast<qreal>(this->scale_),
+        .emotes = ctx.messageShadowEmotes,
+    };
     result.animatedRegion = this->container_.paintAnimatedElements(
-        ctx.painter, ctx.y, ctx.isCollapsed);
+        ctx.painter, ctx.y, ctx.isCollapsed,
+        ctx.paintMessageShadow && ctx.messageShadowOpacity > 0 ? &animatedShadow
+                                                               : nullptr);
 
     if (this->message_->flags.has(MessageFlag::Disabled))
     {
@@ -632,7 +645,7 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     {
         // Everything that will be drawn, in one color, blurred and moved a
         // bit: the shadow behind the text. Animated emotes are drawn on top
-        // of the buffer later and don't get one.
+        // of the buffer later and get theirs there.
         QImage shadow(buffer->size(), QImage::Format_ARGB32_Premultiplied);
         shadow.setDevicePixelRatio(buffer->devicePixelRatio());
         shadow.fill(Qt::transparent);

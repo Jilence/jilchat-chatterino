@@ -78,6 +78,18 @@ struct MessagePreferences {
                          pajlada::Signals::SignalHolder &holder);
 };
 
+/// The theme's text shadow as it is drawn behind animated elements, scaled
+/// to the message.
+struct AnimatedMessageShadow {
+    QColor color{Qt::black};
+    /// 0 to 1
+    qreal opacity{};
+    QPointF offset;
+    qreal blurRadius{};
+    /// Whether emotes, emoji and cheermotes get the shadow too.
+    bool emotes = true;
+};
+
 struct MessagePaintContext {
     QPainter &painter;
     const Selection &selection;
