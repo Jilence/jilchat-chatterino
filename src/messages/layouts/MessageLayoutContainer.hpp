@@ -51,7 +51,9 @@ struct MessageLayoutContainer {
 
     void breakLine();
 
-    void paintElements(QPainter &painter, const MessagePaintContext &ctx) const;
+    /// @param paintEmotes false leaves out emotes, emoji and cheermotes
+    void paintElements(QPainter &painter, const MessagePaintContext &ctx,
+                       bool paintEmotes = true) const;
 
     QRegion paintAnimatedElements(QPainter &painter, qreal yOffset,
                                   bool isCollapsed = false) const;

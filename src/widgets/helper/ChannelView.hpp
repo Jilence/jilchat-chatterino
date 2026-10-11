@@ -18,6 +18,7 @@
 #include <QColor>
 #include <QGestureEvent>
 #include <QMenu>
+#include <QPainterPath>
 #include <QPaintEvent>
 #include <QPointer>
 #include <QRegion>
@@ -475,6 +476,23 @@ private:
     /// @see #hasSourceChannel()
     ChannelPtr sourceChannel_ = nullptr;
     Split *split_;
+
+    /// Builds the outline of the rounded message area if the theme has one.
+    /// False if the area isn't rounded.
+    bool ensureChatFramePaths();
+    /// Keeps the scrollbar and the "More messages below" button inside the
+    /// rounded message area.
+    void updateRoundedChildMasks();
+    /// Covers the corners outside of the rounded message area and draws its
+    /// border.
+    void paintChatFrame(QPainter &painter);
+
+    QPainterPath chatFrameContentPath_;
+    QPainterPath chatFrameOutsidePath_;
+    QPainterPath chatFrameBorderPath_;
+    QSize chatFramePathSize_;
+    qreal chatFramePathRadius_ = -1;
+    qreal chatFramePathWidth_ = -1;
 
     Scrollbar *scrollBar_;
     LabelButton *goToBottom_{};

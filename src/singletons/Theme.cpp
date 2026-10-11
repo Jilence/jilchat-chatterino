@@ -9,7 +9,6 @@
 #include "common/QLogging.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Resources.hpp"
-#include "singletons/ThemeCustomization.hpp"
 #include "singletons/WindowManager.hpp"
 
 #include <QColor>
@@ -663,6 +662,41 @@ void Theme::parseFrom(const QJsonObject &root, bool isCustomTheme)
     }
 
     parseColors(root, fallbackTheme.value_or(QJsonObject()), *this);
+
+    if (auto customization = customizationProfileFromTheme(root))
+    {
+        this->customization = std::move(*customization);
+    }
+    else
+    {
+        this->customization = ThemeCustomizationProfile{};
+        this->customization.name = u"Classic"_s;
+        this->customization.background = this->window.background;
+        this->customization.chatBackground = this->splits.background;
+        this->customization.surface = this->tabs.regular.backgrounds.regular;
+        this->customization.raisedSurface =
+            this->tabs.selected.backgrounds.regular;
+        this->customization.text = this->window.text;
+        this->customization.chatText = this->messages.textColors.regular;
+        this->customization.separateChatText =
+            this->customization.chatText != this->customization.text;
+        this->customization.mutedText = this->tabs.regular.text;
+        this->customization.systemText = this->messages.textColors.system;
+        this->customization.timestampText = this->messages.textColors.timestamp;
+        this->customization.accent = this->accent;
+        this->customization.foundation = ThemeFoundation::ChatterinoClassic;
+        this->customization.useThemeMessageRows = false;
+        this->customization.cornerStyle = ThemeCornerStyle::Classic;
+        this->customization.tabCornerRadius = 0;
+        this->customization.chatCornerRadius = 0;
+        this->customization.roundChat = false;
+        this->customization.messageShadow = false;
+        this->customization.highlightOpacityAdjustment = 0;
+    }
+    // Fonts of a theme aren't applied yet.
+    this->customization.useThemeFonts = false;
+    this->customization.useThemeFontSizes = false;
+    this->customization.clearDisabledFontOverrides();
 
     this->splits.input.styleSheet = uR"(
         background: %1;

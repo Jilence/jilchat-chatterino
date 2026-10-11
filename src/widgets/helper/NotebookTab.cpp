@@ -35,6 +35,7 @@
 #include <QLineEdit>
 #include <QMimeData>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 
 #include <algorithm>
@@ -125,6 +126,90 @@ QColor makeTabHighlightLineColor(const QColor &color, bool windowFocused)
     }
 
     return adjusted;
+}
+
+/// The outline of a tab whose outer corners are rounded as the theme asks.
+QPainterPath tabBackgroundPath(const QRectF &rect, NotebookTabLocation location,
+                               qreal radius, bool roundStart, bool roundEnd)
+{
+    if (location == NotebookTabLocation::Top)
+    {
+        return themeTopTabPath(rect, radius, roundStart, roundEnd);
+    }
+
+    QPainterPath path;
+    if (radius <= 0 || (!roundStart && !roundEnd))
+    {
+        path.addRect(rect);
+        return path;
+    }
+
+    const auto left = rect.left();
+    const auto right = rect.right();
+    const auto top = rect.top();
+    const auto bottom = rect.bottom();
+
+    const auto shoulder = themeTabCornerShoulder(radius, rect.height());
+    constexpr qreal K = 0.58;
+    switch (location)
+    {
+        case NotebookTabLocation::Top:
+            break;
+        case NotebookTabLocation::Bottom:
+            path.moveTo(left, top);
+            path.lineTo(left, roundStart ? bottom - shoulder : bottom);
+            if (roundStart)
+            {
+                path.cubicTo(left, bottom - shoulder * (1.0 - K),
+                             left + radius * (1.0 - K), bottom, left + radius,
+                             bottom);
+            }
+            path.lineTo(roundEnd ? right - radius : right, bottom);
+            if (roundEnd)
+            {
+                path.cubicTo(right - radius * (1.0 - K), bottom, right,
+                             bottom - shoulder * (1.0 - K), right,
+                             bottom - shoulder);
+            }
+            path.lineTo(right, top);
+            break;
+        case NotebookTabLocation::Left:
+            path.moveTo(right, top);
+            path.lineTo(roundStart ? left + shoulder : left, top);
+            if (roundStart)
+            {
+                path.cubicTo(left + shoulder * (1.0 - K), top, left,
+                             top + radius * (1.0 - K), left, top + radius);
+            }
+            path.lineTo(left, roundEnd ? bottom - radius : bottom);
+            if (roundEnd)
+            {
+                path.cubicTo(left, bottom - radius * (1.0 - K),
+                             left + shoulder * (1.0 - K), bottom,
+                             left + shoulder, bottom);
+            }
+            path.lineTo(right, bottom);
+            break;
+        case NotebookTabLocation::Right:
+            path.moveTo(left, top);
+            path.lineTo(roundStart ? right - shoulder : right, top);
+            if (roundStart)
+            {
+                path.cubicTo(right - shoulder * (1.0 - K), top, right,
+                             top + radius * (1.0 - K), right, top + radius);
+            }
+            path.lineTo(right, roundEnd ? bottom - radius : bottom);
+            if (roundEnd)
+            {
+                path.cubicTo(right, bottom - radius * (1.0 - K),
+                             right - shoulder * (1.0 - K), bottom,
+                             right - shoulder, bottom);
+            }
+            path.lineTo(left, bottom);
+            break;
+    }
+    path.closeSubpath();
+    return path;
 }
 
 QColor tabColorFill(QColor color, bool selected, bool windowFocused)
@@ -1107,6 +1192,18 @@ void NotebookTab::moveAnimated(QPoint targetPos, bool animated)
     this->positionChangedAnimation_.start();
 }
 
+void NotebookTab::setVisibleEdgeFlags(bool first, bool last)
+{
+    if (this->isFirstVisible_ == first && this->isLastVisible_ == last)
+    {
+        return;
+    }
+
+    this->isFirstVisible_ = first;
+    this->isLastVisible_ = last;
+    this->update();
+}
+
 void NotebookTab::paintEvent(QPaintEvent *)
 {
     auto *app = getApp();
@@ -1181,13 +1278,42 @@ void NotebookTab::paintEvent(QPaintEvent *)
             break;
     }
 
-    painter.fillRect(bgRect, tabBackground);
+    const auto &appearance = this->theme->customization;
+    const auto tabRadius =
+        std::min(appearance.tabCornerRadius * scale, 10.0F * scale);
+    const bool individual = appearance.tabShape == ThemeTabShape::Individual;
+    auto shapedRect = QRectF(bgRect);
+    if (individual)
+    {
+        const auto gap = appearance.tabSpacing * scale;
+        if (this->tabLocation_ == NotebookTabLocation::Top ||
+            this->tabLocation_ == NotebookTabLocation::Bottom)
+        {
+            shapedRect.adjust(gap / 2, 0, -gap / 2, 0);
+        }
+        else
+        {
+            shapedRect.adjust(0, gap / 2, 0, -gap / 2);
+        }
+    }
+    const auto backgroundPath =
+        tabBackgroundPath(shapedRect, this->tabLocation_, tabRadius,
+                          individual || this->isFirstVisible_,
+                          individual || this->isLastVisible_);
+    painter.setRenderHint(QPainter::Antialiasing, tabRadius > 0);
+    painter.fillPath(backgroundPath, tabBackground);
 
     if (this->hasCustomTabColor())
     {
-        painter.fillRect(bgRect, tabColorFill(this->customTabColor_,
-                                              this->selected_, windowFocused));
+        painter.fillPath(backgroundPath,
+                         tabColorFill(this->customTabColor_, this->selected_,
+                                      windowFocused));
     }
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    // The line follows the shape of the tab.
+    painter.save();
+    painter.setClipPath(backgroundPath);
 
     // draw color indicator line
     auto lineThickness = ceil((this->selected_ ? 2.f : 1.f) * scale);
@@ -1268,6 +1394,7 @@ void NotebookTab::paintEvent(QPaintEvent *)
     {
         painter.fillRect(lineRect, lineColor);
     }
+    painter.restore();
 
     // draw live indicator
     if ((this->isLive_ || this->isRerun_) && getSettings()->showTabLive)

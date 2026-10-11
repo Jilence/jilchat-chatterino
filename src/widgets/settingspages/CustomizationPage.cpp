@@ -23,6 +23,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -259,6 +260,7 @@ public:
 
     void setProfile(const ThemeCustomizationProfile &profile)
     {
+        this->profile_ = profile;
         this->colors_ =
             buildCustomizedTheme(profile).value(u"colors"_s).toObject();
         this->update();
@@ -288,7 +290,16 @@ protected:
                                   const QString &name) {
             return nestedColor(c, {u"tabs"_s, tab, group, name}, fallback);
         };
-        const bool alternate = getSettings()->alternateMessages.getValue();
+        const bool alternate =
+            this->profile_.useThemeMessageRows
+                ? this->profile_.alternateMessageRows
+                : getSettings()->alternateMessages.getValue();
+        const bool individualTabs =
+            this->profile_.tabShape == ThemeTabShape::Individual;
+        const int tabGap =
+            individualTabs ? std::clamp(this->profile_.tabSpacing, 0, 4) : 0;
+        const qreal tabRadius =
+            std::clamp(this->profile_.tabCornerRadius, 0, 10);
 
         painter.fillRect(this->rect(), windowBackground);
 
@@ -313,14 +324,24 @@ protected:
         {
             const int width = metrics.horizontalAdvance(tab.name) + 20;
             const QRect rect(x, pad, width, tabHeight);
-            painter.fillRect(rect,
+            const bool first = &tab == &tabs.front();
+            const bool last = &tab == &tabs.back();
+            const auto shape = themeTopTabPath(QRectF(rect), tabRadius,
+                                               individualTabs || first,
+                                               individualTabs || last);
+            painter.setRenderHint(QPainter::Antialiasing, tabRadius > 0);
+            painter.fillPath(shape,
                              tabColor(tab.key, u"backgrounds"_s, u"regular"_s));
+            painter.setRenderHint(QPainter::Antialiasing, false);
+            painter.save();
+            painter.setClipPath(shape);
             painter.fillRect(QRect(x, pad, width, 2),
                              tabColor(tab.key, u"line"_s, u"regular"_s));
+            painter.restore();
             painter.setPen(
                 nestedColor(c, {u"tabs"_s, tab.key, u"text"_s}, fallbackText));
             painter.drawText(rect, Qt::AlignCenter, tab.name);
-            x += width + 1;
+            x += width + tabGap;
         }
 
         // the split below the tabs
@@ -401,10 +422,29 @@ protected:
             y += rowHeight;
         }
         painter.setClipping(false);
+
+        if (this->profile_.roundChat && this->profile_.cornerRadius() > 0)
+        {
+            const QRectF area(split.left(), header.bottom() + 1, split.width(),
+                              input.top() - header.bottom() - 1);
+            paintThemeChatFrame(
+                painter, area, this->profile_.cornerRadius(),
+                this->profile_.chatBorder
+                    ? std::clamp(this->profile_.chatBorderWidth, 1, 4)
+                    : 0,
+                nestedColor(c, {u"splits"_s, u"header"_s, u"background"_s},
+                            fallback),
+                nestedColor(c, {u"splits"_s, u"input"_s, u"background"_s},
+                            fallback),
+                this->profile_.chatBorderColor,
+                this->profile_.chatBorder ? this->profile_.chatBorderOpacity
+                                          : 0);
+        }
     }
 
 private:
     QJsonObject colors_;
+    ThemeCustomizationProfile profile_;
 };
 
 CustomizationPage::CustomizationPage()
@@ -468,6 +508,8 @@ void CustomizationPage::buildUi()
     auto *tabs = new QTabWidget;
     tabs->setMinimumWidth(380);
     tabs->addTab(this->buildColorsTab(), u"Colors"_s);
+    tabs->addTab(this->buildChatTab(), u"Chat"_s);
+    tabs->addTab(this->buildInterfaceTab(), u"Interface"_s);
     tabs->addTab(this->buildShareTab(), u"Import and export"_s);
     workspace->addWidget(tabs);
     workspace->setStretchFactor(0, 2);
@@ -712,6 +754,193 @@ QWidget *CustomizationPage::buildColorsTab()
     return page;
 }
 
+QWidget *CustomizationPage::makeColorControl(
+    const QString &tooltip, QColor ThemeCustomizationProfile::*member)
+{
+    auto *container = new QWidget;
+    auto *rowLayout = new QHBoxLayout(container);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(5);
+    auto *button = new QPushButton;
+    button->setFixedWidth(34);
+    auto *input = new QLineEdit;
+    input->setMaxLength(9);
+    input->setMaximumWidth(110);
+    container->setToolTip(tooltip);
+    button->setToolTip(tooltip);
+    input->setToolTip(tooltip);
+    rowLayout->addWidget(button);
+    rowLayout->addWidget(input);
+    rowLayout->addStretch(1);
+    this->colorControls_.append({button, input, member});
+    QObject::connect(button, &QPushButton::clicked, this, [this, member] {
+        auto *picker = new ColorPickerDialog(this->profile_.*member, this);
+        QObject::connect(picker, &ColorPickerDialog::colorConfirmed, this,
+                         [this, member, generation = this->profileGeneration_](
+                             const QColor &color) {
+                             if (generation != this->profileGeneration_)
+                             {
+                                 return;
+                             }
+                             this->profile_.*member = color;
+                             this->loadProfileIntoControls();
+                         });
+        picker->show();
+    });
+    QObject::connect(input, &QLineEdit::editingFinished, this, [this] {
+        this->readControlsIntoProfile();
+        this->loadProfileIntoControls();
+    });
+    return container;
+}
+
+QWidget *CustomizationPage::buildChatTab()
+{
+    auto *page = new QWidget;
+    this->chatEditor_ = page;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(8);
+
+    auto *messages = new QGroupBox(u"Messages"_s);
+    auto *messageForm = new QFormLayout(messages);
+    messageForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->alternateMessageRows_ =
+        new QCheckBox(u"Alternate message backgrounds"_s);
+    this->alternateMessageRows_->setToolTip(
+        u"With a theme from this page, this replaces the \"Alternate "
+        u"background color\" setting."_s);
+    messageForm->addRow(this->alternateMessageRows_);
+    messageForm->addRow(
+        u"Row strength:"_s,
+        makeSlider(0, 100, &this->alternateMessageOpacity_, u"%"_s));
+    messageForm->addRow(
+        u"Row contrast:"_s,
+        makeSlider(0, 100, &this->alternateMessageContrast_, u"%"_s));
+    messageForm->addRow(
+        u"Highlighted messages:"_s,
+        makeSlider(-100, 100, &this->highlightOpacityAdjustment_, u"%"_s));
+    this->highlightOpacityAdjustment_->setToolTip(
+        u"Makes highlight colors fainter (left) or stronger (right)."_s);
+    layout->addWidget(messages);
+
+    auto *frame = new QGroupBox(u"Message area"_s);
+    auto *frameForm = new QFormLayout(frame);
+    frameForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->roundChat_ = new QCheckBox(u"Round the message area"_s);
+    frameForm->addRow(this->roundChat_);
+    frameForm->addRow(u"Corner radius:"_s,
+                      makeSlider(0, 16, &this->chatCornerRadius_));
+    this->chatBorder_ = new QCheckBox(u"Draw an inner border"_s);
+    frameForm->addRow(this->chatBorder_);
+    this->chatBorderColor_ = this->makeColorControl(
+        u"Color of the border."_s, &ThemeCustomizationProfile::chatBorderColor);
+    frameForm->addRow(u"Border color:"_s, this->chatBorderColor_);
+    frameForm->addRow(u"Border width:"_s,
+                      makeSlider(1, 4, &this->chatBorderWidth_));
+    frameForm->addRow(u"Border strength:"_s,
+                      makeSlider(0, 100, &this->chatBorderOpacity_, u"%"_s));
+    layout->addWidget(frame);
+
+    auto *shadow = new QGroupBox(u"Readability shadow"_s);
+    auto *shadowForm = new QFormLayout(shadow);
+    shadowForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->messageShadow_ = new QCheckBox(u"Add a shadow behind chat content"_s);
+    this->messageShadow_->setToolTip(
+        u"Shown in chat, not in the preview. Animated emotes don't get a "
+        u"shadow."_s);
+    shadowForm->addRow(this->messageShadow_);
+    this->messageShadowEmotes_ = new QCheckBox(u"Include emotes and emoji"_s);
+    shadowForm->addRow(this->messageShadowEmotes_);
+    this->messageShadowColor_ =
+        this->makeColorControl(u"Color of the shadow."_s,
+                               &ThemeCustomizationProfile::messageShadowColor);
+    shadowForm->addRow(u"Color:"_s, this->messageShadowColor_);
+    shadowForm->addRow(
+        u"Strength:"_s,
+        makeSlider(0, 100, &this->messageShadowOpacity_, u"%"_s));
+    shadowForm->addRow(u"Move right:"_s,
+                       makeSlider(-8, 8, &this->messageShadowOffsetX_));
+    shadowForm->addRow(u"Move down:"_s,
+                       makeSlider(-8, 8, &this->messageShadowOffsetY_));
+    shadowForm->addRow(u"Blur:"_s, makeSlider(0, 8, &this->messageShadowBlur_));
+    layout->addWidget(shadow);
+    layout->addStretch(1);
+
+    const auto update = [this] {
+        if (!this->loadingControls_)
+        {
+            this->readControlsIntoProfile();
+        }
+    };
+    for (auto *slider :
+         {this->alternateMessageOpacity_, this->alternateMessageContrast_,
+          this->highlightOpacityAdjustment_, this->chatCornerRadius_,
+          this->chatBorderWidth_, this->chatBorderOpacity_,
+          this->messageShadowOpacity_, this->messageShadowOffsetX_,
+          this->messageShadowOffsetY_, this->messageShadowBlur_})
+    {
+        QObject::connect(slider, &QSlider::valueChanged, this, update);
+    }
+    for (auto *box :
+         {this->alternateMessageRows_, this->roundChat_, this->chatBorder_,
+          this->messageShadow_, this->messageShadowEmotes_})
+    {
+        QObject::connect(box, &QCheckBox::toggled, this, update);
+    }
+    return page;
+}
+
+QWidget *CustomizationPage::buildInterfaceTab()
+{
+    auto *page = new QWidget;
+    this->interfaceEditor_ = page;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(8);
+
+    auto *style = new QGroupBox(u"Style"_s);
+    auto *styleForm = new QFormLayout(style);
+    this->foundation_ = new QComboBox;
+    this->foundation_->addItems({u"Classic"_s, u"Polished"_s});
+    this->foundation_->setToolTip(
+        u"Classic has lines around splits and the input and marks the "
+        u"focused split. Polished leaves them out."_s);
+    styleForm->addRow(u"Look:"_s, this->foundation_);
+    layout->addWidget(style);
+
+    auto *tabs = new QGroupBox(u"Tabs"_s);
+    auto *tabForm = new QFormLayout(tabs);
+    tabForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    this->tabShape_ = new QComboBox;
+    this->tabShape_->addItems({u"Connected"_s, u"Individual"_s});
+    this->tabShape_->setToolTip(
+        u"Connected rounds the ends of the row of tabs, Individual rounds "
+        u"every tab."_s);
+    tabForm->addRow(u"Shape:"_s, this->tabShape_);
+    tabForm->addRow(u"Corner radius:"_s,
+                    makeSlider(0, 10, &this->tabCornerRadius_));
+    tabForm->addRow(u"Spacing:"_s, makeSlider(0, 4, &this->tabSpacing_));
+    layout->addWidget(tabs);
+    layout->addStretch(1);
+
+    const auto update = [this] {
+        if (!this->loadingControls_)
+        {
+            this->readControlsIntoProfile();
+        }
+    };
+    for (auto *slider : {this->tabCornerRadius_, this->tabSpacing_})
+    {
+        QObject::connect(slider, &QSlider::valueChanged, this, update);
+    }
+    for (auto *box : {this->foundation_, this->tabShape_})
+    {
+        QObject::connect(box, &QComboBox::currentIndexChanged, this, update);
+    }
+    return page;
+}
+
 QWidget *CustomizationPage::buildShareTab()
 {
     auto *page = new QWidget;
@@ -721,8 +950,8 @@ QWidget *CustomizationPage::buildShareTab()
     auto *description = new QLabel(
         u"Save the selected theme as a file to share it, or import a theme "
         u"file. Theme files from Moltorino and Bluzyrino can be imported "
-        u"too; settings that aren't supported here yet are kept in the "
-        u"theme but have no effect."_s);
+        u"too; their backgrounds and fonts are kept in the theme but aren't "
+        u"shown here yet."_s);
     description->setWordWrap(true);
     layout->addWidget(description);
 
@@ -762,6 +991,7 @@ bool CustomizationPage::filterElements(const QString &query)
     return query.isEmpty() ||
            u"customization themes colors palette chat interface text tabs "
            u"contrast timestamps system messages accent background surface "
+           u"rows highlights corners rounding border shadow shape spacing "
            u"import export moltorino bluzyrino"_s.contains(
                query, Qt::CaseInsensitive) ||
            SettingsPage::filterElements(query);
@@ -877,6 +1107,32 @@ void CustomizationPage::loadProfileIntoControls()
         static_cast<int>(this->profile_.accentStrength));
     this->inactiveTabContrast_->setValue(this->profile_.inactiveTabContrast);
     this->channelBarContrast_->setValue(this->profile_.channelBarContrast);
+    this->alternateMessageRows_->setChecked(
+        this->profile_.alternateMessageRows);
+    this->alternateMessageOpacity_->setValue(
+        this->profile_.alternateMessageOpacity);
+    this->alternateMessageContrast_->setValue(
+        this->profile_.alternateMessageContrast);
+    this->highlightOpacityAdjustment_->setValue(
+        this->profile_.highlightOpacityAdjustment);
+    this->roundChat_->setChecked(this->profile_.roundChat);
+    this->chatCornerRadius_->setValue(this->profile_.chatCornerRadius);
+    this->chatBorder_->setChecked(this->profile_.chatBorder);
+    this->chatBorderWidth_->setValue(this->profile_.chatBorderWidth);
+    this->chatBorderOpacity_->setValue(this->profile_.chatBorderOpacity);
+    this->messageShadow_->setChecked(this->profile_.messageShadow);
+    this->messageShadowEmotes_->setChecked(this->profile_.messageShadowEmotes);
+    this->messageShadowOpacity_->setValue(this->profile_.messageShadowOpacity);
+    this->messageShadowOffsetX_->setValue(this->profile_.messageShadowOffsetX);
+    this->messageShadowOffsetY_->setValue(this->profile_.messageShadowOffsetY);
+    this->messageShadowBlur_->setValue(this->profile_.messageShadowBlur);
+    this->foundation_->setCurrentIndex(
+        this->profile_.foundation == ThemeFoundation::MoltorinoPolished ? 1
+                                                                        : 0);
+    this->tabShape_->setCurrentIndex(
+        this->profile_.tabShape == ThemeTabShape::Individual ? 1 : 0);
+    this->tabCornerRadius_->setValue(this->profile_.tabCornerRadius);
+    this->tabSpacing_->setValue(this->profile_.tabSpacing);
     this->loadingControls_ = false;
     this->updatePreview();
 }
@@ -905,6 +1161,36 @@ void CustomizationPage::readControlsIntoProfile()
         std::clamp(this->accentStrength_->currentIndex(), 0, 2));
     this->profile_.inactiveTabContrast = this->inactiveTabContrast_->value();
     this->profile_.channelBarContrast = this->channelBarContrast_->value();
+    // Rows are the theme's choice once it is edited here.
+    this->profile_.useThemeMessageRows = true;
+    this->profile_.alternateMessageRows =
+        this->alternateMessageRows_->isChecked();
+    this->profile_.alternateMessageOpacity =
+        this->alternateMessageOpacity_->value();
+    this->profile_.alternateMessageContrast =
+        this->alternateMessageContrast_->value();
+    this->profile_.highlightOpacityAdjustment =
+        this->highlightOpacityAdjustment_->value();
+    this->profile_.roundChat = this->roundChat_->isChecked();
+    this->profile_.chatCornerRadius = this->chatCornerRadius_->value();
+    this->profile_.chatBorder = this->chatBorder_->isChecked();
+    this->profile_.chatBorderWidth = this->chatBorderWidth_->value();
+    this->profile_.chatBorderOpacity = this->chatBorderOpacity_->value();
+    this->profile_.messageShadow = this->messageShadow_->isChecked();
+    this->profile_.messageShadowEmotes =
+        this->messageShadowEmotes_->isChecked();
+    this->profile_.messageShadowOpacity = this->messageShadowOpacity_->value();
+    this->profile_.messageShadowOffsetX = this->messageShadowOffsetX_->value();
+    this->profile_.messageShadowOffsetY = this->messageShadowOffsetY_->value();
+    this->profile_.messageShadowBlur = this->messageShadowBlur_->value();
+    this->profile_.foundation = this->foundation_->currentIndex() == 1
+                                    ? ThemeFoundation::MoltorinoPolished
+                                    : ThemeFoundation::ChatterinoClassic;
+    this->profile_.tabShape = this->tabShape_->currentIndex() == 1
+                                  ? ThemeTabShape::Individual
+                                  : ThemeTabShape::Connected;
+    this->profile_.tabCornerRadius = this->tabCornerRadius_->value();
+    this->profile_.tabSpacing = this->tabSpacing_->value();
     this->updatePreview();
 }
 
@@ -978,7 +1264,29 @@ void CustomizationPage::updateControlState()
     this->resetButton_->setEnabled(dirty);
     this->useButton_->setEnabled(this->selectedKey_ !=
                                  getTheme()->themeName.getValue());
-    this->colorsEditor_->setEnabled(this->selectedCustom_);
+    const bool editable = this->selectedCustom_;
+    this->colorsEditor_->setEnabled(editable);
+    this->chatEditor_->setEnabled(editable);
+    this->interfaceEditor_->setEnabled(editable);
+    const bool rows = editable && this->profile_.alternateMessageRows;
+    this->alternateMessageOpacity_->setEnabled(rows);
+    this->alternateMessageContrast_->setEnabled(rows);
+    const bool round = editable && this->profile_.roundChat;
+    this->chatCornerRadius_->setEnabled(round);
+    this->chatBorder_->setEnabled(round);
+    const bool border = round && this->profile_.chatBorder;
+    this->chatBorderColor_->setEnabled(border);
+    this->chatBorderWidth_->setEnabled(border);
+    this->chatBorderOpacity_->setEnabled(border);
+    const bool shadow = editable && this->profile_.messageShadow;
+    this->messageShadowEmotes_->setEnabled(shadow);
+    this->messageShadowColor_->setEnabled(shadow);
+    this->messageShadowOpacity_->setEnabled(shadow);
+    this->messageShadowOffsetX_->setEnabled(shadow);
+    this->messageShadowOffsetY_->setEnabled(shadow);
+    this->messageShadowBlur_->setEnabled(shadow);
+    this->tabSpacing_->setEnabled(editable && this->profile_.tabShape ==
+                                                  ThemeTabShape::Individual);
 }
 
 void CustomizationPage::applySelectedTheme()

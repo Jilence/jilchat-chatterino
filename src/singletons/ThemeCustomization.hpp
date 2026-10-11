@@ -1,12 +1,17 @@
 #pragma once
 
 #include <QColor>
+#include <QImage>
 #include <QJsonObject>
 #include <QPoint>
+#include <QRectF>
 #include <QString>
 
 #include <cstdint>
 #include <optional>
+
+class QPainter;
+class QPainterPath;
 
 namespace chatterino {
 
@@ -45,6 +50,16 @@ enum class ThemeWallpaperMode : uint8_t {
     Tile,
     Stretch,
 };
+
+constexpr bool themeUsesClassicSplitFrame(ThemeFoundation foundation)
+{
+    return foundation == ThemeFoundation::ChatterinoClassic;
+}
+
+qreal themeTabCornerShoulder(qreal radius, qreal height);
+
+QPainterPath themeTopTabPath(const QRectF &rect, qreal radius, bool roundLeft,
+                             bool roundRight);
 
 struct ThemeCustomizationProfile {
     static constexpr int CURRENT_VERSION = 16;
@@ -175,5 +190,20 @@ double colorContrastRatio(const QColor &foreground, const QColor &background);
 std::optional<ThemeCustomizationProfile> buildThemePalette(
     const ThemeCustomizationProfile &profile,
     const ThemePaletteSelection &selection, ThemePaletteMode mode);
+
+QImage blurThemeShadow(QImage image, int radius);
+
+void buildThemeChatFramePaths(const QRectF &rect, qreal radius, qreal width,
+                              QPainterPath &outside, QPainterPath &innerBorder);
+
+void paintThemeChatFrame(QPainter &painter, const QRectF &rect, qreal radius,
+                         qreal width, const QColor &topSurface,
+                         const QColor &bottomSurface, const QColor &borderColor,
+                         int borderOpacity,
+                         const QPainterPath *cachedOutside = nullptr,
+                         const QPainterPath *cachedInnerBorder = nullptr);
+
+QColor blendThemeHighlight(const QColor &base, QColor highlight,
+                           int opacityAdjustment);
 
 }  // namespace chatterino

@@ -15,11 +15,13 @@
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
+#include "singletons/ThemeCustomization.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/DebugCount.hpp"
 
 #include <QApplication>
 #include <QDebug>
+#include <QImage>
 #include <QPainter>
 #include <QtGlobal>
 #include <QThread>
@@ -539,7 +541,17 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
 
     if (!highlights.empty())
     {
-        backgroundColor = blendColors(backgroundColor, highlights.front());
+        auto highlight = highlights.front();
+        if (ctx.highlightOpacityAdjustment != 0)
+        {
+            // Themes can make highlights stronger or fainter.
+            highlight.setAlphaF(std::clamp(
+                highlight.alphaF() +
+                    std::clamp(ctx.highlightOpacityAdjustment, -100, 100) /
+                        100.0,
+                0.0, 1.0));
+        }
+        backgroundColor = blendColors(backgroundColor, highlight);
     }
     else if (replacement)
     {
@@ -609,6 +621,46 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
 
         painter.drawPixmap(QRect(left, top, int(size), int(size)),
                            clientDetectionIcon.value());
+    }
+
+    if (ctx.paintMessageShadow && ctx.messageShadowOpacity > 0)
+    {
+        // Everything that will be drawn, in one color, blurred and moved a
+        // bit: the shadow behind the text. Animated emotes are drawn on top
+        // of the buffer later and don't get one.
+        QImage shadow(buffer->size(), QImage::Format_ARGB32_Premultiplied);
+        shadow.setDevicePixelRatio(buffer->devicePixelRatio());
+        shadow.fill(Qt::transparent);
+        {
+            QPainter shadowPainter(&shadow);
+            shadowPainter.setRenderHint(QPainter::SmoothPixmapTransform);
+
+            this->container_.paintElements(shadowPainter, ctx,
+                                           ctx.messageShadowEmotes);
+            shadowPainter.setCompositionMode(
+                QPainter::CompositionMode_SourceIn);
+            shadowPainter.fillRect(
+                QRectF(QPointF(), shadow.deviceIndependentSize()),
+                ctx.messageShadowColor);
+        }
+        const int blur = std::clamp(ctx.messageShadowBlur, 0, 8);
+        if (blur > 0)
+        {
+            const auto pixelRadius =
+                qRound(blur * static_cast<qreal>(this->scale_) *
+                       shadow.devicePixelRatio());
+            shadow = blurThemeShadow(std::move(shadow), pixelRadius);
+        }
+        const auto shadowPixmap = QPixmap::fromImage(std::move(shadow));
+
+        painter.save();
+        const QPointF offset{
+            ctx.messageShadowOffset.x() * static_cast<qreal>(this->scale_),
+            ctx.messageShadowOffset.y() * static_cast<qreal>(this->scale_),
+        };
+        painter.setOpacity(ctx.messageShadowOpacity / 100.0);
+        painter.drawPixmap(offset, shadowPixmap);
+        painter.restore();
     }
 
     this->container_.paintElements(painter, ctx);

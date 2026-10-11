@@ -6,6 +6,7 @@
 
 #include "common/ChatterinoSetting.hpp"
 #include "singletons/Paths.hpp"
+#include "singletons/ThemeCustomization.hpp"
 #include "util/RapidJsonSerializeQString.hpp"
 
 #include <pajlada/settings/setting.hpp>
@@ -159,6 +160,9 @@ public:
     } buttons;
 
     QPalette palette;
+    /// Shape and effects of the current theme. Themes that weren't made on
+    /// the Customization page get the classic look.
+    ThemeCustomizationProfile customization;
 
     void normalizeColor(QColor &color) const;
     void update();

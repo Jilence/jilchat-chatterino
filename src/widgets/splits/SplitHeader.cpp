@@ -1977,6 +1977,13 @@ void SplitHeader::paintEvent(QPaintEvent * /*event*/)
     QColor background = this->theme->splits.header.background;
     QColor border = this->theme->splits.header.border;
 
+    // The polished look has no outline and doesn't mark the focused split.
+    if (!themeUsesClassicSplitFrame(this->theme->customization.foundation))
+    {
+        painter.fillRect(this->rect(), background);
+        return;
+    }
+
     if (this->split_->hasFocus())
     {
         background = this->theme->splits.header.focusedBackground;
@@ -2096,7 +2103,9 @@ void SplitHeader::themeChangedEvent()
 {
     auto palette = QPalette();
 
-    if (this->split_->hasFocus())
+    const bool polished =
+        !themeUsesClassicSplitFrame(this->theme->customization.foundation);
+    if (this->split_->hasFocus() && !polished)
     {
         palette.setColor(QPalette::WindowText,
                          this->theme->splits.header.focusedText);
@@ -2107,11 +2116,18 @@ void SplitHeader::themeChangedEvent()
     }
     this->titleLabel_->setPalette(palette);
 
-    auto bg = this->theme->splits.header.background;
-    this->addButton_->setOptions({
-        .background = bg,
-        .backgroundHover = bg,
-    });
+    if (polished)
+    {
+        this->addButton_->setOptions({});
+    }
+    else
+    {
+        auto bg = this->theme->splits.header.background;
+        this->addButton_->setOptions({
+            .background = bg,
+            .backgroundHover = bg,
+        });
+    }
 
     this->update();
 }

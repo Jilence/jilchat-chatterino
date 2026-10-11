@@ -8,6 +8,7 @@
 
 #include <QColor>
 #include <QPainter>
+#include <QPoint>
 
 namespace pajlada::Signals {
 class SignalHolder;
@@ -102,6 +103,17 @@ struct MessagePaintContext {
     bool isCollapsed{};
 
     bool tintByPlatform{};
+
+    // A shadow behind text and emotes, as the theme asks for it.
+    bool paintMessageShadow{};
+    bool messageShadowEmotes = true;
+    QColor messageShadowColor{Qt::black};
+    // In percent.
+    int messageShadowOpacity{};
+    QPoint messageShadowOffset{1, 1};
+    int messageShadowBlur{};
+    // Added to the opacity of highlight colors, in percent points.
+    int highlightOpacityAdjustment{};
 };
 
 struct MessageLayoutContext {

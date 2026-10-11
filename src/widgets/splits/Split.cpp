@@ -190,7 +190,14 @@ Split::Split(QWidget *parent)
     this->setFocusProxy(this->input_->ui_.textEdit);
 
     this->vbox_->setSpacing(0);
-    this->vbox_->setContentsMargins(1, 1, 1, 1);
+    {
+        const int frameWidth =
+            themeUsesClassicSplitFrame(this->theme->customization.foundation)
+                ? 1
+                : 0;
+        this->vbox_->setContentsMargins(frameWidth, frameWidth, frameWidth,
+                                        frameWidth);
+    }
 
     this->vbox_->addWidget(this->header_);
     this->vbox_->addWidget(this->voiceMessagePanel_);
@@ -2312,6 +2319,17 @@ void Split::recoverDismissedBanners()
 void Split::updateLastReadMessage()
 {
     this->view_->updateLastReadMessage();
+}
+
+void Split::themeChangedEvent()
+{
+    // The polished look has no line around the split.
+    const int frameWidth =
+        themeUsesClassicSplitFrame(this->theme->customization.foundation) ? 1
+                                                                          : 0;
+    this->vbox_->setContentsMargins(frameWidth, frameWidth, frameWidth,
+                                    frameWidth);
+    this->update();
 }
 
 void Split::paintEvent(QPaintEvent *)

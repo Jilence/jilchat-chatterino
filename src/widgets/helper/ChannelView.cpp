@@ -85,10 +85,12 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPainterPath>
 #include <QScreen>
 #include <QSet>
 #include <QSlider>
 #include <QStringBuilder>
+#include <QTransform>
 #include <QUrl>
 #include <QVariantAnimation>
 #include <QWidgetAction>
@@ -1525,6 +1527,7 @@ void ChannelView::themeChangedEvent()
     this->messageColors_.applyTheme(getTheme(), this->isOverlay_,
                                     getSettings()->overlayBackgroundOpacity);
     this->invalidateBuffers();
+    this->updateRoundedChildMasks();
 }
 
 void ChannelView::updateColorTheme()
@@ -1639,6 +1642,110 @@ void ChannelView::updateScrollWidgetGeometries()
         this->goToBottom_->setGeometry(0, this->height() - goToBottomHeight,
                                        this->width(), goToBottomHeight);
     }
+
+    this->updateRoundedChildMasks();
+}
+
+bool ChannelView::ensureChatFramePaths()
+{
+    const auto &profile = getTheme()->customization;
+    if (this->isOverlay_ || this->transparentBackground_ ||
+        !profile.roundChat || profile.cornerRadius() <= 0)
+    {
+        return false;
+    }
+
+    const qreal radius = profile.cornerRadius() * this->scale();
+    const qreal width =
+        profile.chatBorder && profile.chatBorderOpacity > 0
+            ? std::clamp(profile.chatBorderWidth, 1, 4) * this->scale()
+            : 0.0;
+    if (this->chatFramePathSize_ != this->size() ||
+        !qFuzzyCompare(this->chatFramePathRadius_ + 1, radius + 1) ||
+        !qFuzzyCompare(this->chatFramePathWidth_ + 1, width + 1))
+    {
+        const auto frameRect = QRectF(this->rect());
+        this->chatFramePathSize_ = this->size();
+        this->chatFramePathRadius_ = radius;
+        this->chatFramePathWidth_ = width;
+        this->chatFrameContentPath_ = {};
+        this->chatFrameContentPath_.addRoundedRect(frameRect, radius, radius);
+        buildThemeChatFramePaths(frameRect, radius, width,
+                                 this->chatFrameOutsidePath_,
+                                 this->chatFrameBorderPath_);
+    }
+
+    return true;
+}
+
+void ChannelView::updateRoundedChildMasks()
+{
+    if (!this->scrollBar_)
+    {
+        return;
+    }
+
+    if (!this->ensureChatFramePaths())
+    {
+        this->scrollBar_->clearMask();
+        if (this->goToBottom_)
+        {
+            this->goToBottom_->clearMask();
+        }
+        return;
+    }
+
+    const qreal inset = std::min(
+        this->chatFramePathWidth_,
+        std::max<qreal>(0.0, std::min(this->width(), this->height()) / 2.0));
+    const auto innerRect =
+        QRectF(this->rect()).adjusted(inset, inset, -inset, -inset);
+    const auto innerRadius =
+        std::max<qreal>(0.0, this->chatFramePathRadius_ - inset);
+    QPainterPath childClipPath;
+    childClipPath.addRoundedRect(innerRect, innerRadius, innerRadius);
+
+    const auto applyMask = [&childClipPath](QWidget *widget) {
+        QTransform transform;
+        transform.translate(-widget->x(), -widget->y());
+        const auto localPath = transform.map(childClipPath);
+        widget->setMask(QRegion(localPath.toFillPolygon().toPolygon()));
+    };
+    applyMask(this->scrollBar_);
+    if (this->goToBottom_)
+    {
+        applyMask(this->goToBottom_);
+    }
+}
+
+void ChannelView::paintChatFrame(QPainter &painter)
+{
+    if (!this->ensureChatFramePaths())
+    {
+        return;
+    }
+
+    const auto *theme = getTheme();
+    const auto &profile = theme->customization;
+    // What shows in the corners: the channel bar above and the input below.
+    // Usercards and other popups have the window around the messages.
+    auto topSurface = theme->window.background;
+    auto bottomSurface = theme->window.background;
+    if (this->context_ == Context::None)
+    {
+        const bool focused = this->split_ != nullptr &&
+                             this->split_->hasFocus() &&
+                             themeUsesClassicSplitFrame(profile.foundation);
+        topSurface = focused ? theme->splits.header.focusedBackground
+                             : theme->splits.header.background;
+        bottomSurface = theme->splits.input.background;
+    }
+    paintThemeChatFrame(painter, QRectF(this->rect()),
+                        this->chatFramePathRadius_, this->chatFramePathWidth_,
+                        topSurface, bottomSurface, profile.chatBorderColor,
+                        profile.chatBorder ? profile.chatBorderOpacity : 0,
+                        &this->chatFrameOutsidePath_,
+                        &this->chatFrameBorderPath_);
 }
 
 void ChannelView::queueUpdate()
@@ -2995,13 +3102,20 @@ void ChannelView::paintEvent(QPaintEvent *event)
 
     QPainter painter(this);
 
+    const bool rounded = this->ensureChatFramePaths();
+    if (rounded)
+    {
+        painter.save();
+        painter.setClipPath(this->chatFrameContentPath_);
+    }
+
+    // Clip painting strictly to the widget's bounds to hide wrapped text when collapsed
+    painter.setClipRect(this->rect(), Qt::IntersectClip);
+
     if (!this->transparentBackground_)
     {
         painter.fillRect(this->rect(), this->messageColors_.channelBackground);
     }
-
-    // Clip painting strictly to the widget's bounds to hide wrapped text when collapsed
-    painter.setClipRect(this->rect());
 
     // draw messages
     this->drawMessages(painter, event->region());
@@ -3041,6 +3155,13 @@ void ChannelView::paintEvent(QPaintEvent *event)
         painter.drawText(QRectF(textX, pausedY, textWidth, indicatorSize),
                          Qt::AlignLeft | Qt::AlignVCenter, text);
     }
+
+    if (rounded)
+    {
+        painter.restore();
+    }
+
+    this->paintChatFrame(painter);
 }
 
 // if overlays is false then it draws the message, if true then it draws things
@@ -3063,6 +3184,12 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     if (this->overrideSeparateMessages_.has_value())
     {
         messagePreferences.separateMessages = *this->overrideSeparateMessages_;
+    }
+    const auto &appearance = getTheme()->customization;
+    if (appearance.useThemeMessageRows)
+    {
+        // The theme decides whether rows alternate.
+        messagePreferences.alternateMessages = appearance.alternateMessageRows;
     }
 
     bool tintByPlatform = false;
@@ -3091,6 +3218,14 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
         .isLastReadMessage = false,
         .isCollapsed = this->collapseMessages_,
         .tintByPlatform = tintByPlatform,
+
+        .paintMessageShadow = appearance.messageShadow && !this->isOverlay_,
+        .messageShadowEmotes = appearance.messageShadowEmotes,
+        .messageShadowColor = appearance.messageShadowColor,
+        .messageShadowOpacity = appearance.messageShadowOpacity,
+        .messageShadowOffset = appearance.messageShadowOffset(),
+        .messageShadowBlur = appearance.messageShadowBlur,
+        .highlightOpacityAdjustment = appearance.highlightOpacityAdjustment,
     };
     bool showLastMessageIndicator = getSettings()->showLastMessageIndicator;
 

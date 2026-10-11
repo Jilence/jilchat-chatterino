@@ -302,7 +302,8 @@ void MessageLayoutContainer::breakLine()
 }
 
 void MessageLayoutContainer::paintElements(QPainter &painter,
-                                           const MessagePaintContext &ctx) const
+                                           const MessagePaintContext &ctx,
+                                           bool paintEmotes) const
 {
 #ifdef FOURTF
     static constexpr std::array<QColor, 5> lineColors{
@@ -323,6 +324,14 @@ void MessageLayoutContainer::paintElements(QPainter &painter,
 
     for (const auto &element : this->elements_)
     {
+        if (!paintEmotes &&
+            element->getCreator().getFlags().hasAny(
+                MessageElementFlag::EmoteImage, MessageElementFlag::EmojiImage,
+                MessageElementFlag::BitsStatic,
+                MessageElementFlag::BitsAnimated))
+        {
+            continue;
+        }
         if (ctx.isCollapsed && element->getLine() > 0)
         {
             continue;

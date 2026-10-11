@@ -1,6 +1,10 @@
 #include "singletons/ThemeCustomization.hpp"
 
+#include <QImage>
 #include <QJsonArray>
+#include <QLinearGradient>
+#include <QPainter>
+#include <QPainterPath>
 #include <QRegularExpression>
 #include <QtMath>
 
@@ -22,13 +26,6 @@ namespace {
 bool drawsWallpaper(const ThemeCustomizationProfile & /*profile*/)
 {
     return false;
-}
-
-/// Whether rows alternate is still the "Alternate background color" setting
-/// and not the theme's choice, so the theme always provides the color for it.
-bool alternatesRows(const ThemeCustomizationProfile & /*profile*/)
-{
-    return true;
 }
 
 QColor mix(const QColor &a, const QColor &b, qreal amount)
@@ -506,6 +503,47 @@ QColor relatedTone(const QColor &seed, bool light, qreal value)
         QColor::fromHsvF(hue, saturation, std::clamp(value, 0.0, 1.0)));
 }
 
+void boxBlurAlphaPass(const std::vector<uint16_t> &source,
+                      std::vector<uint16_t> &output, int width, int height,
+                      int radius, bool horizontal)
+{
+    if (radius <= 0)
+    {
+        output = source;
+        return;
+    }
+
+    const int window = radius * 2 + 1;
+    const int major = horizontal ? height : width;
+    const int minor = horizontal ? width : height;
+
+    for (int line = 0; line < major; ++line)
+    {
+        qint64 alphaSum = 0;
+        const auto alphaAt = [&](int position) {
+            const int x =
+                horizontal ? std::clamp(position, 0, width - 1) : line;
+            const int y =
+                horizontal ? line : std::clamp(position, 0, height - 1);
+            return source[size_t(y) * size_t(width) + size_t(x)];
+        };
+        for (int offset = -radius; offset <= radius; ++offset)
+        {
+            alphaSum += alphaAt(offset);
+        }
+        for (int position = 0; position < minor; ++position)
+        {
+            const int x = horizontal ? position : line;
+            const int y = horizontal ? line : position;
+            output[size_t(y) * size_t(width) + size_t(x)] =
+                uint16_t(alphaSum / window);
+
+            alphaSum +=
+                alphaAt(position + radius + 1) - alphaAt(position - radius);
+        }
+    }
+}
+
 }  // namespace
 
 bool isThemeWallpaperId(const QString &id)
@@ -513,6 +551,228 @@ bool isThemeWallpaperId(const QString &id)
     static const QRegularExpression pattern(
         QStringLiteral("\\A[A-Za-z0-9_-]{5,64}\\z"));
     return pattern.match(id).hasMatch();
+}
+
+QImage blurThemeShadow(QImage image, int radius)
+{
+    radius = std::clamp(radius, 0, 32);
+    if (image.isNull() || radius == 0)
+    {
+        return image;
+    }
+    image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const auto dpr = image.devicePixelRatio();
+    const int width = image.width();
+    const int height = image.height();
+    QColor shadowColor(Qt::black);
+    int strongestAlpha = 0;
+
+    std::vector<uint16_t> alphaMask(size_t(width) * size_t(height));
+    std::vector<uint16_t> scratch(alphaMask.size());
+    for (int y = 0; y < height; ++y)
+    {
+        const auto *line =
+            reinterpret_cast<const QRgb *>(image.constScanLine(y));
+        for (int x = 0; x < width; ++x)
+        {
+            const int alpha = qAlpha(line[x]);
+            alphaMask[size_t(y) * size_t(width) + size_t(x)] =
+                uint16_t(alpha * 257);
+
+            if (alpha > strongestAlpha)
+            {
+                strongestAlpha = alpha;
+                shadowColor = image.pixelColor(x, y);
+            }
+        }
+    }
+
+    const qreal sigma = 0.55 + radius * 0.72;
+    constexpr int PASS_COUNT = 3;
+    const qreal idealWidth = qSqrt((12.0 * sigma * sigma / PASS_COUNT) + 1.0);
+    int narrowWidth = qFloor(idealWidth);
+    if ((narrowWidth & 1) == 0)
+    {
+        --narrowWidth;
+    }
+    narrowWidth = std::max(1, narrowWidth);
+    const int wideWidth = narrowWidth + 2;
+    const qreal narrowPasses =
+        (12.0 * sigma * sigma - PASS_COUNT * narrowWidth * narrowWidth -
+         4.0 * PASS_COUNT * narrowWidth - 3.0 * PASS_COUNT) /
+        (-4.0 * narrowWidth - 4.0);
+    const int useNarrow = std::clamp(qRound(narrowPasses), 0, PASS_COUNT);
+
+    for (int pass = 0; pass < PASS_COUNT; ++pass)
+    {
+        const int boxWidth = pass < useNarrow ? narrowWidth : wideWidth;
+        const int passRadius = (boxWidth - 1) / 2;
+        if (passRadius == 0)
+        {
+            continue;
+        }
+        boxBlurAlphaPass(alphaMask, scratch, width, height, passRadius, true);
+        boxBlurAlphaPass(scratch, alphaMask, width, height, passRadius, false);
+    }
+
+    QImage blurred(image.size(), QImage::Format_ARGB32_Premultiplied);
+    blurred.setDevicePixelRatio(dpr);
+    for (int y = 0; y < height; ++y)
+    {
+        auto *line = reinterpret_cast<QRgb *>(blurred.scanLine(y));
+        for (int x = 0; x < width; ++x)
+        {
+            const auto alpha =
+                (alphaMask[size_t(y) * size_t(width) + size_t(x)] + 128) / 257;
+            line[x] = qPremultiply(qRgba(shadowColor.red(), shadowColor.green(),
+                                         shadowColor.blue(), alpha));
+        }
+    }
+    return blurred;
+}
+
+void buildThemeChatFramePaths(const QRectF &rect, qreal radius, qreal width,
+                              QPainterPath &outside, QPainterPath &innerBorder)
+{
+    outside = {};
+    innerBorder = {};
+    if (rect.isEmpty() || radius <= 0)
+    {
+        return;
+    }
+
+    radius = std::min(radius, std::min(rect.width(), rect.height()) / 2.0);
+    width = std::clamp(width, 0.0, radius);
+
+    QPainterPath outer;
+    outer.addRoundedRect(rect, radius, radius);
+    outside.setFillRule(Qt::OddEvenFill);
+    outside.addRect(rect);
+    outside.addPath(outer);
+
+    if (width <= 0)
+    {
+        return;
+    }
+
+    const QRectF innerRect = rect.adjusted(width, width, -width, -width);
+    QPainterPath inner;
+    if (!innerRect.isEmpty())
+    {
+        const auto innerRadius = std::max<qreal>(0, radius - width);
+        inner.addRoundedRect(innerRect, innerRadius, innerRadius);
+    }
+    innerBorder.setFillRule(Qt::OddEvenFill);
+    innerBorder.addPath(outer);
+    innerBorder.addPath(inner);
+}
+
+void paintThemeChatFrame(QPainter &painter, const QRectF &rect, qreal radius,
+                         qreal width, const QColor &topSurface,
+                         const QColor &bottomSurface, const QColor &borderColor,
+                         int borderOpacity, const QPainterPath *cachedOutside,
+                         const QPainterPath *cachedInnerBorder)
+{
+    if (rect.isEmpty() || radius <= 0)
+    {
+        return;
+    }
+    borderOpacity = std::clamp(borderOpacity, 0, 100);
+
+    QPainterPath localOutside;
+    QPainterPath localInnerBorder;
+    if (!cachedOutside || !cachedInnerBorder)
+    {
+        buildThemeChatFramePaths(rect, radius, width, localOutside,
+                                 localInnerBorder);
+        cachedOutside = &localOutside;
+        cachedInnerBorder = &localInnerBorder;
+    }
+
+    QLinearGradient outsideGradient(rect.topLeft(), rect.bottomLeft());
+    outsideGradient.setColorAt(0.0, topSurface);
+    outsideGradient.setColorAt(1.0, bottomSurface);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.fillPath(*cachedOutside, outsideGradient);
+    if (borderOpacity > 0 && borderColor.isValid() &&
+        !cachedInnerBorder->isEmpty())
+    {
+        auto color = borderColor;
+        color.setAlphaF(color.alphaF() * borderOpacity / 100.0);
+        painter.fillPath(*cachedInnerBorder, color);
+    }
+    painter.restore();
+}
+
+QColor blendThemeHighlight(const QColor &base, QColor highlight,
+                           int opacityAdjustment)
+{
+    if (opacityAdjustment != 0)
+    {
+        highlight.setAlphaF(
+            std::clamp(highlight.alphaF() +
+                           std::clamp(opacityAdjustment, -100, 100) / 100.0,
+                       0.0, 1.0));
+    }
+    const qreal sourceAlpha = highlight.alphaF();
+    const qreal baseAlpha = base.alphaF();
+    const qreal outputAlpha = sourceAlpha + baseAlpha * (1.0 - sourceAlpha);
+    if (outputAlpha <= 0.0)
+    {
+        return Qt::transparent;
+    }
+
+    const qreal baseContribution = baseAlpha * (1.0 - sourceAlpha);
+    QColor result;
+    result.setRgbF(
+        (highlight.redF() * sourceAlpha + base.redF() * baseContribution) /
+            outputAlpha,
+        (highlight.greenF() * sourceAlpha + base.greenF() * baseContribution) /
+            outputAlpha,
+        (highlight.blueF() * sourceAlpha + base.blueF() * baseContribution) /
+            outputAlpha,
+        outputAlpha);
+    return result;
+}
+
+qreal themeTabCornerShoulder(qreal radius, qreal height)
+{
+    return std::min(radius, height);
+}
+
+QPainterPath themeTopTabPath(const QRectF &rect, qreal radius, bool roundLeft,
+                             bool roundRight)
+{
+    QPainterPath path;
+    if (radius <= 0 || (!roundLeft && !roundRight))
+    {
+        path.addRect(rect);
+        return path;
+    }
+
+    radius = std::min({radius, rect.width() / 2.0, rect.height()});
+    constexpr qreal K = 0.5522847498;
+    path.moveTo(rect.left(), rect.bottom());
+    path.lineTo(rect.left(), roundLeft ? rect.top() + radius : rect.top());
+    if (roundLeft)
+    {
+        path.cubicTo(rect.left(), rect.top() + radius * (1.0 - K),
+                     rect.left() + radius * (1.0 - K), rect.top(),
+                     rect.left() + radius, rect.top());
+    }
+    path.lineTo(roundRight ? rect.right() - radius : rect.right(), rect.top());
+    if (roundRight)
+    {
+        path.cubicTo(rect.right() - radius * (1.0 - K), rect.top(),
+                     rect.right(), rect.top() + radius * (1.0 - K),
+                     rect.right(), rect.top() + radius);
+    }
+    path.lineTo(rect.right(), rect.bottom());
+    path.closeSubpath();
+    return path;
 }
 
 bool ThemeCustomizationProfile::isValid() const
@@ -918,7 +1178,7 @@ QJsonObject buildCustomizedTheme(const ThemeCustomizationProfile &input)
     const QColor alternateTarget = mix(profile.chatBackground, effectiveSurface,
                                        0.15 + rowContrast * 0.70);
     QColor solidMessageAlternate = profile.chatBackground;
-    if (alternatesRows(profile))
+    if (profile.alternateMessageRows)
     {
         const auto proposedAlternate =
             drawsWallpaper(profile)
@@ -932,7 +1192,7 @@ QJsonObject buildCustomizedTheme(const ThemeCustomizationProfile &input)
                                       {profile.timestampText, 2.5}});
     }
     const QColor messageAlternate =
-        !alternatesRows(profile) ? messageRegular
+        !profile.alternateMessageRows ? messageRegular
         : drawsWallpaper(profile)
             ? alpha(solidMessageAlternate, profile.alternateMessageOpacity)
             : solidMessageAlternate;

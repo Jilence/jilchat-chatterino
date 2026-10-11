@@ -147,6 +147,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void themeChangedEvent() override;
     void showEvent(QShowEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;

@@ -32,6 +32,12 @@ public:
 private:
     void buildUi();
     QWidget *buildColorsTab();
+    QWidget *buildChatTab();
+    QWidget *buildInterfaceTab();
+    /// A color button with a hex field for a color that isn't part of the
+    /// palette (borders, shadows).
+    QWidget *makeColorControl(const QString &tooltip,
+                              QColor ThemeCustomizationProfile::*member);
     QWidget *buildShareTab();
 
     void reloadProfiles(const QString &preferredKey = {});
@@ -82,6 +88,8 @@ private:
     QPushButton *exportFileButton_{};
     ThemePreviewWidget *preview_{};
     QWidget *colorsEditor_{};
+    QWidget *chatEditor_{};
+    QWidget *interfaceEditor_{};
     QLabel *readability_{};
     QLabel *status_{};
     QCheckBox *chatTextFollowsText_{};
@@ -97,6 +105,29 @@ private:
     QComboBox *accentStrength_{};
     QSlider *inactiveTabContrast_{};
     QSlider *channelBarContrast_{};
+
+    QCheckBox *alternateMessageRows_{};
+    QSlider *alternateMessageOpacity_{};
+    QSlider *alternateMessageContrast_{};
+    QSlider *highlightOpacityAdjustment_{};
+    QCheckBox *roundChat_{};
+    QSlider *chatCornerRadius_{};
+    QCheckBox *chatBorder_{};
+    QWidget *chatBorderColor_{};
+    QSlider *chatBorderWidth_{};
+    QSlider *chatBorderOpacity_{};
+    QCheckBox *messageShadow_{};
+    QCheckBox *messageShadowEmotes_{};
+    QWidget *messageShadowColor_{};
+    QSlider *messageShadowOpacity_{};
+    QSlider *messageShadowOffsetX_{};
+    QSlider *messageShadowOffsetY_{};
+    QSlider *messageShadowBlur_{};
+
+    QComboBox *foundation_{};
+    QComboBox *tabShape_{};
+    QSlider *tabCornerRadius_{};
+    QSlider *tabSpacing_{};
 };
 
 }  // namespace chatterino

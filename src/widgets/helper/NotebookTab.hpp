@@ -58,6 +58,9 @@ public:
 
     bool isSelected() const;
     void setSelected(bool value);
+    /// Whether this is the first and/or last tab shown. Themes can round
+    /// the outer corners of the row of tabs.
+    void setVisibleEdgeFlags(bool first, bool last);
 
     void setInLastRow(bool value);
     void setTabLocation(NotebookTabLocation location);
@@ -184,6 +187,8 @@ private:
     QString defaultTitle_;
 
     bool selected_{};
+    bool isFirstVisible_{};
+    bool isLastVisible_{};
     bool mouseOver_{};
     bool mouseDown_{};
     bool mouseOverX_{};
