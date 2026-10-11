@@ -388,6 +388,14 @@ Split::Split(QWidget *parent)
                                            // Forward textEdit's focusLost event
                                            this->focusLost.invoke();
                                        });
+    // A rounded message area shows the channel bar in its corners, and that
+    // changes color with the focus.
+    this->signalHolder_.managedConnect(this->focused, [this] {
+        this->view_->update();
+    });
+    this->signalHolder_.managedConnect(this->focusLost, [this] {
+        this->view_->update();
+    });
 
     this->deferredTwitchRefreshTimer_ = new QTimer(this);
     this->deferredTwitchRefreshTimer_->setSingleShot(true);

@@ -1,5 +1,8 @@
 #include "singletons/ThemeCustomization.hpp"
 
+#include "singletons/Settings.hpp"
+
+#include <QFont>
 #include <QImage>
 #include <QImageReader>
 #include <QJsonArray>
@@ -1914,6 +1917,243 @@ std::optional<ThemeCustomizationProfile> buildThemePalette(
     profile.timestampText =
         moveTextToContrast(mix(profile.chatText, profile.chatBackground, 0.46),
                            profile.chatText, {profile.chatBackground}, 2.5);
+    return profile;
+}
+
+std::optional<ThemeCustomizationProfile> builtInCustomizationProfile(
+    QStringView id)
+{
+    ThemeCustomizationProfile profile;
+    if (id == u"moltorino-midnight")
+    {
+        profile.useThemeFonts = false;
+        profile.useThemeFontSizes = false;
+        profile.name = u"Moltorino"_s;
+        profile.background = QColor(u"#0f0e0d"_s);
+        profile.chatBackground = QColor(u"#131210"_s);
+        profile.surface = QColor(u"#191817"_s);
+        profile.raisedSurface = QColor(u"#22211f"_s);
+        profile.text = QColor(u"#e8e7e4"_s);
+        profile.mutedText = QColor(u"#9c9b97"_s);
+        profile.accent = QColor(u"#f3922b"_s);
+        profile.foundation = ThemeFoundation::MoltorinoPolished;
+        profile.surfaceDepth = ThemeSurfaceDepth::Flat;
+        profile.panelContrast = 25;
+        profile.accentStrength = ThemeAccentStrength::Balanced;
+        profile.tabShape = ThemeTabShape::Connected;
+        profile.tabCornerRadius = 5;
+        profile.tabSpacing = 0;
+        profile.inactiveTabContrast = 66;
+        profile.channelBarContrast = 38;
+        profile.roundChat = true;
+        profile.chatCornerRadius = 8;
+        profile.chatBorderColor = QColor(u"#8b8984"_s);
+        profile.chatBorderOpacity = 18;
+        profile.alternateMessageRows = true;
+        profile.alternateMessageOpacity = 14;
+        profile.alternateMessageContrast = 28;
+        profile.chatFontFamily = QStringLiteral(DEFAULT_FONT_FAMILY);
+        profile.chatFontSize = 14;
+        profile.chatFontWeight = QFont::Normal;
+        profile.usernameFontFamily = QStringLiteral(DEFAULT_FONT_FAMILY);
+        profile.usernameFontSize = 14;
+        profile.usernameFontWeight = QFont::DemiBold;
+        profile.interfaceFontFamily = QStringLiteral(DEFAULT_FONT_FAMILY);
+        profile.interfaceFontSize = 10;
+    }
+    else if (id == u"sakura-dream")
+    {
+        profile.name = u"Sakura"_s;
+        profile.baseTheme = u"Light"_s;
+        profile.background = QColor(u"#f39aba"_s);
+        profile.chatBackground = QColor(u"#ffd9e7"_s);
+        profile.surface = QColor(u"#ef84ab"_s);
+        profile.raisedSurface = QColor(u"#ffb6cf"_s);
+        profile.text = QColor(u"#3f1f2d"_s);
+        profile.mutedText = QColor(u"#775262"_s);
+        profile.accent = QColor(u"#bd2f67"_s);
+        profile.foundation = ThemeFoundation::MoltorinoPolished;
+        profile.surfaceDepth = ThemeSurfaceDepth::Flat;
+        profile.panelContrast = 20;
+        profile.accentStrength = ThemeAccentStrength::Balanced;
+        profile.tabShape = ThemeTabShape::Individual;
+        profile.tabCornerRadius = 3;
+        profile.tabSpacing = 2;
+        profile.inactiveTabContrast = 69;
+        profile.channelBarContrast = 49;
+        profile.wallpaperSource = u":/themes/wallpapers/sakura-bloom-v2.jpg"_s;
+        profile.wallpaperOverlayColor = QColor(u"#f58db5"_s);
+        profile.wallpaperOverlayOpacity = 46;
+        profile.wallpaperFocalX = 82;
+        profile.wallpaperFocalY = 76;
+        profile.alternateMessageRows = true;
+        profile.alternateMessageOpacity = 13;
+        profile.alternateMessageContrast = 24;
+        profile.messageShadow = true;
+        profile.messageShadowOpacity = 37;
+        profile.messageShadowOffsetX = 0;
+        profile.messageShadowOffsetY = 0;
+        profile.messageShadowBlur = 1;
+        profile.cornerStyle = ThemeCornerStyle::Rounded;
+        profile.roundChat = true;
+        profile.chatCornerRadius = 13;
+        profile.chatBorderColor = QColor(u"#a92157"_s);
+        profile.chatBorderOpacity = 30;
+        profile.chatFontFamily = u"Segoe UI"_s;
+        profile.chatFontSize = 13;
+
+        profile.chatFontWeight = 600;
+        profile.usernameFontFamily = u"Segoe UI"_s;
+        profile.usernameFontSize = 13;
+        profile.usernameFontWeight = 700;
+        profile.interfaceFontFamily = u"Segoe UI"_s;
+        profile.interfaceFontSize = 10;
+    }
+    else if (id == u"aurora-calm")
+    {
+        profile.name = u"Garden"_s;
+        profile.background = QColor(u"#08100d"_s);
+        profile.chatBackground = QColor(u"#0b1511"_s);
+        profile.surface = QColor(u"#15251d"_s);
+        profile.raisedSurface = QColor(u"#20362a"_s);
+        profile.text = QColor(u"#eff8f1"_s);
+        profile.mutedText = QColor(u"#9db5a5"_s);
+        profile.accent = QColor(u"#8addaa"_s);
+        profile.foundation = ThemeFoundation::MoltorinoPolished;
+        profile.surfaceDepth = ThemeSurfaceDepth::Layered;
+        profile.panelContrast = 76;
+        profile.accentStrength = ThemeAccentStrength::Subtle;
+        profile.tabShape = ThemeTabShape::Connected;
+        profile.tabCornerRadius = 6;
+        profile.tabSpacing = 0;
+        profile.inactiveTabContrast = 64;
+        profile.channelBarContrast = 42;
+        profile.wallpaperSource = u":/themes/wallpapers/midnight-garden.jpg"_s;
+        profile.wallpaperOverlayColor = QColor(u"#082215"_s);
+        profile.wallpaperOverlayOpacity = 52;
+        profile.alternateMessageRows = true;
+        profile.alternateMessageOpacity = 14;
+        profile.alternateMessageContrast = 38;
+        profile.wallpaperFocalX = 79;
+        profile.wallpaperFocalY = 13;
+        profile.messageShadow = true;
+        profile.messageShadowOpacity = 52;
+        profile.messageShadowBlur = 3;
+        profile.cornerStyle = ThemeCornerStyle::Soft;
+        profile.roundChat = true;
+        profile.chatCornerRadius = 9;
+        profile.chatBorderColor = QColor(u"#8bb49a"_s);
+        profile.chatBorderOpacity = 22;
+        profile.chatFontFamily = u"Inter"_s;
+        profile.chatFontSize = 13;
+        profile.chatFontWeight = 500;
+        profile.usernameFontFamily = u"Inter"_s;
+        profile.usernameFontSize = 13;
+        profile.usernameFontWeight = 700;
+        profile.interfaceFontFamily = u"Segoe UI"_s;
+        profile.interfaceFontSize = 10;
+    }
+    else if (id == u"ember-arcade")
+    {
+        profile.name = u"Arcade"_s;
+        profile.background = QColor(u"#070814"_s);
+        profile.chatBackground = QColor(u"#090b18"_s);
+        profile.surface = QColor(u"#171833"_s);
+        profile.raisedSurface = QColor(u"#242552"_s);
+        profile.text = QColor(u"#faf8ff"_s);
+        profile.mutedText = QColor(u"#aaa8c8"_s);
+        profile.accent = QColor(u"#22d7ff"_s);
+        profile.foundation = ThemeFoundation::MoltorinoPolished;
+        profile.surfaceDepth = ThemeSurfaceDepth::Flat;
+        profile.panelContrast = 22;
+        profile.accentStrength = ThemeAccentStrength::Bold;
+        profile.tabShape = ThemeTabShape::Individual;
+        profile.tabCornerRadius = 0;
+        profile.tabSpacing = 1;
+        profile.inactiveTabContrast = 58;
+        profile.channelBarContrast = 57;
+        profile.wallpaperSource.clear();
+        profile.alternateMessageRows = true;
+        profile.alternateMessageOpacity = 13;
+        profile.alternateMessageContrast = 46;
+        profile.messageShadow = true;
+        profile.messageShadowOpacity = 68;
+        profile.messageShadowBlur = 3;
+        profile.cornerStyle = ThemeCornerStyle::Rounded;
+        profile.roundChat = true;
+        profile.chatCornerRadius = 12;
+        profile.chatBorderColor = QColor(u"#a971ff"_s);
+        profile.chatBorderOpacity = 30;
+        profile.chatFontFamily = u"Consolas"_s;
+        profile.chatFontSize = 13;
+        profile.chatFontWeight = 600;
+        profile.usernameFontFamily = u"Consolas"_s;
+        profile.usernameFontSize = 13;
+        profile.usernameFontWeight = 700;
+        profile.interfaceFontFamily = u"Segoe UI"_s;
+        profile.interfaceFontSize = 10;
+    }
+    else if (id == u"violet-dusk")
+    {
+        profile.name = u"Afterhours"_s;
+        profile.background = QColor(u"#1a1110"_s);
+        profile.chatBackground = QColor(u"#241714"_s);
+        profile.surface = QColor(u"#39231e"_s);
+        profile.raisedSurface = QColor(u"#53332a"_s);
+        profile.text = QColor(u"#fff1df"_s);
+        profile.mutedText = QColor(u"#c9a894"_s);
+        profile.accent = QColor(u"#ff9a52"_s);
+        profile.foundation = ThemeFoundation::MoltorinoPolished;
+        profile.surfaceDepth = ThemeSurfaceDepth::Layered;
+        profile.panelContrast = 72;
+        profile.accentStrength = ThemeAccentStrength::Balanced;
+        profile.tabShape = ThemeTabShape::Connected;
+        profile.tabCornerRadius = 6;
+        profile.tabSpacing = 0;
+        profile.inactiveTabContrast = 62;
+        profile.channelBarContrast = 48;
+        profile.wallpaperSource = u":/themes/wallpapers/cozy-afterhours.jpg"_s;
+        profile.wallpaperOverlayColor = QColor(u"#171514"_s);
+        profile.wallpaperOverlayOpacity = 65;
+        profile.wallpaperBlur = 12;
+        profile.wallpaperFocalX = 74;
+        profile.wallpaperFocalY = 56;
+        profile.alternateMessageRows = true;
+        profile.alternateMessageOpacity = 15;
+        profile.alternateMessageContrast = 40;
+        profile.messageShadow = true;
+        profile.messageShadowOpacity = 58;
+        profile.messageShadowBlur = 3;
+        profile.cornerStyle = ThemeCornerStyle::Soft;
+        profile.roundChat = true;
+        profile.chatCornerRadius = 7;
+        profile.chatBorderColor = QColor(u"#d18a63"_s);
+        profile.chatBorderOpacity = 26;
+        profile.chatFontFamily = u"Google Sans"_s;
+        profile.chatFontSize = 13;
+        profile.chatFontWeight = 900;
+        profile.usernameFontFamily = u"Google Sans"_s;
+        profile.usernameFontSize = 14;
+        profile.usernameFontWeight = 800;
+        profile.interfaceFontFamily = u"Segoe UI"_s;
+        profile.interfaceFontSize = 10;
+    }
+    else
+    {
+        return std::nullopt;
+    }
+    if (!profile.systemText.isValid())
+    {
+        profile.systemText = profile.mutedText;
+    }
+    if (!profile.timestampText.isValid())
+    {
+        profile.timestampText = profile.systemText;
+    }
+    if (!profile.separateChatText)
+    {
+        profile.chatText = profile.text;
+    }
     return profile;
 }
 

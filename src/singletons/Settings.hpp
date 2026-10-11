@@ -1096,6 +1096,10 @@ public:
     BoolSetting rememberUsercardGeometry = {"/usercard/rememberGeometry", true};
     QStringSetting lastUsercardPosition = {"/usercard/lastPosition", ""};
     QStringSetting lastUsercardSize = {"/usercard/lastSize", ""};
+    /// One background image across all splits of a tab instead of one per
+    /// split.
+    BoolSetting continuousSplitBackground = {
+        "/moltorino/appearance/continuousSplitBackground", false};
     BoolSetting alwaysLoadMoreUsercardMessages = {
         "/usercard/alwaysLoadMoreMessages", false};
     BoolSetting loadOlderUsercardMessages = {"/usercard/loadOlderMessages",

@@ -271,6 +271,16 @@ std::optional<QJsonObject> loadThemeFromPath(const QString &path)
 
 std::optional<QJsonObject> loadTheme(const ThemeDescriptor &theme)
 {
+    if (theme.path.startsWith(u"builtin:"_s))
+    {
+        // Not a file: built from a profile in the code.
+        if (auto profile =
+                builtInCustomizationProfile(QStringView(theme.path).sliced(8)))
+        {
+            return buildCustomizedTheme(*profile);
+        }
+        return std::nullopt;
+    }
     return loadThemeFromPath(theme.path);
 }
 
@@ -363,6 +373,31 @@ const std::vector<ThemeDescriptor> Theme::builtInThemes{
         .key = "Wine",
         .path = ":/themes/Wine.json",
         .name = "Wine",
+    },
+    {
+        .key = "Moltorino Midnight",
+        .path = "builtin:moltorino-midnight",
+        .name = "Moltorino",
+    },
+    {
+        .key = "Sakura Dream",
+        .path = "builtin:sakura-dream",
+        .name = "Sakura",
+    },
+    {
+        .key = "Aurora Calm",
+        .path = "builtin:aurora-calm",
+        .name = "Garden",
+    },
+    {
+        .key = "Ember Arcade",
+        .path = "builtin:ember-arcade",
+        .name = "Arcade",
+    },
+    {
+        .key = "Violet Dusk",
+        .path = "builtin:violet-dusk",
+        .name = "Afterhours",
     },
 };
 

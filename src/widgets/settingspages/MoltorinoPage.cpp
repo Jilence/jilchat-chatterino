@@ -1110,6 +1110,13 @@ MoltorinoPage::MoltorinoPage()
         ->setTooltip("Start lazy-loading older usercard messages without "
                      "clicking the load button.")
         ->addTo(*view);
+    SettingWidget::checkbox("Continuous background across splits",
+                            s.continuousSplitBackground)
+        ->setTooltip("With a theme that has a background image, show one "
+                     "image across all splits of a tab instead of one per "
+                     "split.")
+        ->addKeywords({"wallpaper", "image", "theme"})
+        ->addTo(*view);
     SettingWidget::checkbox("Remember usercard size and position",
                             s.rememberUsercardGeometry)
         ->setTooltip("Open usercards with the size you last gave one and "

@@ -63,6 +63,7 @@
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
+#include "widgets/splits/SplitContainer.hpp"
 #include "widgets/splits/SplitInput.hpp"
 #include "widgets/TooltipWidget.hpp"
 #include "widgets/Window.hpp"
@@ -1380,6 +1381,12 @@ void ChannelView::initializeSignals()
         },
         this->signalHolder_);
 
+    getSettings()->continuousSplitBackground.connect(
+        [this] {
+            this->update();
+        },
+        this->signalHolder_, false);
+
     this->signalHolder_.managedConnect(
         getApp()->getWindows()->gifRepaintRequested, [&] {
             if (!this->isVisible() || this->animationRegion_.isEmpty())
@@ -1782,7 +1789,18 @@ void ChannelView::paintWallpaper(QPainter &painter)
     painter.save();
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.setOpacity(profile.wallpaperOpacity / 100.0);
-    const QRectF target(this->rect());
+    QRectF target(this->rect());
+    if (getSettings()->continuousSplitBackground && this->split_ != nullptr &&
+        this->context_ == Context::None && this->parentWidget() == this->split_)
+    {
+        // One image for the whole tab: every split shows its part of it.
+        if (auto *container =
+                dynamic_cast<SplitContainer *>(this->split_->parentWidget()))
+        {
+            painter.translate(-this->mapTo(container, QPoint()));
+            target = container->rect();
+        }
+    }
     if (profile.wallpaperMode == ThemeWallpaperMode::Tile)
     {
         const auto zoom = std::clamp(profile.wallpaperZoom, 100, 300) / 100.0;

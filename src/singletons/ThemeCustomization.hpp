@@ -192,6 +192,11 @@ std::optional<ThemeCustomizationProfile> buildThemePalette(
     const ThemeCustomizationProfile &profile,
     const ThemePaletteSelection &selection, ThemePaletteMode mode);
 
+/// One of the themes that are built in as a profile ("moltorino-midnight",
+/// "sakura-dream", ...).
+std::optional<ThemeCustomizationProfile> builtInCustomizationProfile(
+    QStringView id);
+
 /// Loads a background image, scaled down to at most `maxDimension`. Null if
 /// the file isn't a supported image.
 QImage loadThemeWallpaper(const QString &source, int maxDimension = 1536);

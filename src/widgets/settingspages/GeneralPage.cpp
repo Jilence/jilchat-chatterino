@@ -140,26 +140,55 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         available.emplace(available.begin(), "System", "System");
 #endif
 
-        SettingWidget::dropdown("Theme", themes->themeName, available)
-            ->addTo(layout);
+        auto *themeDropdown =
+            SettingWidget::dropdown("Theme", themes->themeName, available);
+        themeDropdown->addTo(layout);
+        SettingWidget *darkSystemTheme = nullptr;
+        SettingWidget *lightSystemTheme = nullptr;
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-        SettingWidget::dropdown("Dark system theme",
-                                themes->darkSystemThemeName,
-                                themes->availableThemes())
+        darkSystemTheme = SettingWidget::dropdown("Dark system theme",
+                                                  themes->darkSystemThemeName,
+                                                  themes->availableThemes());
+        darkSystemTheme
             ->setTooltip("This theme is selected if your system is in a dark "
                          "theme and you enabled the adaptive 'System' theme.")
             ->conditionallyEnabledBy(themes->themeName, "System")
             ->addTo(layout);
 
-        SettingWidget::dropdown("Light system theme",
-                                themes->lightSystemThemeName,
-                                themes->availableThemes())
+        lightSystemTheme = SettingWidget::dropdown("Light system theme",
+                                                   themes->lightSystemThemeName,
+                                                   themes->availableThemes());
+        lightSystemTheme
             ->setTooltip("This theme is selected if your system is in a light "
                          "theme and you enabled the adaptive 'System' theme.")
             ->conditionallyEnabledBy(themes->themeName, "System")
             ->addTo(layout);
 #endif
+
+        // Themes can be added, renamed and removed on the Customization page.
+        this->managedConnections_.managedConnect(
+            themes->availableThemesChanged,
+            [themes, themeDropdown, darkSystemTheme, lightSystemTheme] {
+                auto withSystem = themes->availableThemes();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+                withSystem.emplace(withSystem.begin(), "System", "System");
+#endif
+                themeDropdown->setDropdownItems(withSystem,
+                                                themes->themeName.getValue());
+                if (darkSystemTheme != nullptr)
+                {
+                    darkSystemTheme->setDropdownItems(
+                        themes->availableThemes(),
+                        themes->darkSystemThemeName.getValue());
+                }
+                if (lightSystemTheme != nullptr)
+                {
+                    lightSystemTheme->setDropdownItems(
+                        themes->availableThemes(),
+                        themes->lightSystemThemeName.getValue());
+                }
+            });
     }
 
     layout.addDropdown<float>(

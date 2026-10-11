@@ -65,6 +65,29 @@ ThemeFontOverrides themeFonts;
 /// The one Fonts instance, to rebuild its fonts when the theme changes.
 Fonts *fontsInstance = nullptr;
 
+/// Registers the Gabarito faces that come with the program, so themes can use
+/// them without the font being installed.
+void registerBundledFonts()
+{
+    static bool done = false;
+    if (done)
+    {
+        return;
+    }
+    done = true;
+
+    for (const auto *face :
+         {"Regular", "Medium", "SemiBold", "Bold", "ExtraBold", "Black"})
+    {
+        const auto path = QStringLiteral(":/fonts/Gabarito/Gabarito-%1.ttf")
+                              .arg(QLatin1StringView(face));
+        if (QFontDatabase::addApplicationFont(path) < 0)
+        {
+            qWarning() << "Could not load the bundled font face" << path;
+        }
+    }
+}
+
 float fontSize(FontStyle style)
 {
     auto chatSize = [] {
@@ -219,6 +242,7 @@ Fonts::Fonts(Settings &settings)
     this->fontsByType_.resize(size_t(FontStyle::EndType));
 
     fontsInstance = this;
+    registerBundledFonts();
 
     this->fontChangedListener.setCB([this] {
         this->invalidate();

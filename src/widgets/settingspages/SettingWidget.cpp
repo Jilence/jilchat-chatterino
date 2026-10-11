@@ -22,6 +22,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPixmap>
+#include <QSignalBlocker>
 #include <QSvgRenderer>
 #include <Qt>
 
@@ -596,6 +597,28 @@ SettingWidget *SettingWidget::setDescription(const QString &text)
     this->keywords.append(text);
 
     return this;
+}
+
+void SettingWidget::setDropdownItems(
+    const std::vector<std::pair<QString, QVariant>> &items,
+    const QVariant &selectedValue)
+{
+    auto *combo = dynamic_cast<QComboBox *>(this->actionWidget);
+    if (combo == nullptr)
+    {
+        qCWarning(chatterinoWidget)
+            << "Tried to update choices on a non-dropdown setting widget";
+        return;
+    }
+
+    const QSignalBlocker blocker(combo);
+    combo->clear();
+    for (const auto &[itemText, itemData] : items)
+    {
+        combo->addItem(itemText, itemData);
+    }
+    combo->setCurrentIndex(combo->findData(selectedValue));
+    combo->setMinimumWidth(combo->minimumSizeHint().width() + 30);
 }
 
 SettingWidget *SettingWidget::addKeywords(const QStringList &newKeywords)
