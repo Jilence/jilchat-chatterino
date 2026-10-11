@@ -162,12 +162,14 @@ QRegion paintAnimatedShadow(QPainter &painter,
         const auto target = snapRectToDevicePixels(layer.target, painter);
         if (layer.cacheIdentity.isEmpty())
         {
-            key += u"/p" + QString::number(static_cast<qulonglong>(
-                               layer.pixmap->cacheKey()));
+            key += QStringLiteral("/p") +
+                   QString::number(
+                       static_cast<qulonglong>(layer.pixmap->cacheKey()));
         }
         else
         {
-            key += u"/s" + QString::number(layer.cacheIdentity.size()) + u':' +
+            key += QStringLiteral("/s") +
+                   QString::number(layer.cacheIdentity.size()) + u':' +
                    layer.cacheIdentity;
         }
         key += u'@' + QString::number(qRound((target.x() - bounds.x()) * dpr)) +
