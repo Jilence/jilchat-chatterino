@@ -18,6 +18,9 @@ class QSlider;
 namespace chatterino {
 
 class ThemePreviewWidget;
+class TypographyPreviewWidget;
+class WallpaperFocusWidget;
+class ShadowPositionWidget;
 
 /// Makes and edits the user's own themes. A theme is a regular theme file in
 /// the Themes folder that also stores the few colors it was built from.
@@ -134,8 +137,8 @@ private:
     QCheckBox *messageShadowEmotes_{};
     QWidget *messageShadowColor_{};
     QSlider *messageShadowOpacity_{};
-    QSlider *messageShadowOffsetX_{};
-    QSlider *messageShadowOffsetY_{};
+    ShadowPositionWidget *messageShadowPosition_{};
+    QPushButton *messageShadowCenter_{};
     QSlider *messageShadowBlur_{};
 
     QLineEdit *wallpaperPath_{};
@@ -145,8 +148,8 @@ private:
     QWidget *wallpaperOverlayColor_{};
     QSlider *wallpaperOverlayOpacity_{};
     QSlider *wallpaperBlur_{};
-    QSlider *wallpaperFocusX_{};
-    QSlider *wallpaperFocusY_{};
+    WallpaperFocusWidget *wallpaperFocus_{};
+    QPushButton *wallpaperCenterFocus_{};
     QPushButton *wallpaperColors_{};
 
     QCheckBox *useThemeFonts_{};
@@ -158,6 +161,7 @@ private:
     QSlider *usernameFontWeight_{};
     QComboBox *interfaceFont_{};
     QSlider *interfaceFontSize_{};
+    TypographyPreviewWidget *typographyPreview_{};
 
     QComboBox *foundation_{};
     QComboBox *tabShape_{};

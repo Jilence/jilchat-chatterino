@@ -1,6 +1,11 @@
 #include "widgets/settingspages/CustomizationPage.hpp"
 
 #include "Application.hpp"
+#include "common/Version.hpp"
+#include "messages/Emote.hpp"
+#include "messages/Image.hpp"
+#include "providers/colors/ColorProvider.hpp"
+#include "providers/twitch/TwitchBadges.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
@@ -25,8 +30,10 @@
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
@@ -36,12 +43,19 @@
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSplitter>
+#include <QStyle>
+#include <QStyleOptionSlider>
 #include <QTabWidget>
+#include <QTextLayout>
+#include <QTimer>
+#include <QtMath>
 #include <QUuid>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 #include <vector>
@@ -144,6 +158,142 @@ QString wallpaperFileFilter()
     return u"Images (%1)"_s.arg(patterns.join(u' '));
 }
 
+/// The fonts of the previews. The real ones are built by Fonts, which also
+/// honors the "bold scale" setting for usernames.
+QFont makeResolvedFont(const QString &family, qreal pointSize, int weight,
+                       bool italic = false)
+{
+    QFont font(family);
+    font.setPointSizeF(std::max<qreal>(1, pointSize));
+    font.setWeight(static_cast<QFont::Weight>(
+        std::clamp(weight, static_cast<int>(QFont::Thin),
+                   static_cast<int>(QFont::Black))));
+    font.setItalic(italic);
+    return font;
+}
+
+QFont makeResolvedFont(const QFont &base, int weight)
+{
+    auto font = base;
+    font.setWeight(static_cast<QFont::Weight>(
+        std::clamp(weight, static_cast<int>(QFont::Thin),
+                   static_cast<int>(QFont::Black))));
+    return font;
+}
+
+int getUsernameBoldness()
+{
+    return QFont::Bold;
+}
+
+/// A slider that jumps to where it is clicked.
+class PositionSlider final : public QSlider
+{
+public:
+    explicit PositionSlider(QWidget *parent = nullptr)
+        : QSlider(Qt::Horizontal, parent)
+    {
+        this->setTracking(true);
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton)
+        {
+            QSlider::mousePressEvent(event);
+            return;
+        }
+        this->setSliderDown(true);
+        this->setFromPosition(event->position().x());
+        event->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!this->isSliderDown())
+        {
+            QSlider::mouseMoveEvent(event);
+            return;
+        }
+        this->setFromPosition(event->position().x());
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && this->isSliderDown())
+        {
+            this->setFromPosition(event->position().x());
+            this->setSliderDown(false);
+            event->accept();
+            return;
+        }
+        QSlider::mouseReleaseEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            this->setFromPosition(event->position().x());
+            event->accept();
+            return;
+        }
+        QSlider::mouseDoubleClickEvent(event);
+    }
+
+private:
+    void setFromPosition(qreal x)
+    {
+        QStyleOptionSlider option;
+        this->initStyleOption(&option);
+        const auto groove = this->style()->subControlRect(
+            QStyle::CC_Slider, &option, QStyle::SC_SliderGroove, this);
+        const auto handle = this->style()->subControlRect(
+            QStyle::CC_Slider, &option, QStyle::SC_SliderHandle, this);
+        const int span = std::max(1, groove.width() - handle.width());
+        const int position =
+            std::clamp(qRound(x) - groove.left() - handle.width() / 2, 0, span);
+        this->setValue(
+            QStyle::sliderValueFromPosition(this->minimum(), this->maximum(),
+                                            position, span, option.upsideDown));
+    }
+};
+
+QWidget *makeOpacityAdjustmentSlider(QSlider **slider)
+{
+    auto *container = new QWidget;
+    auto *layout = new QHBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+
+    auto *less = new QLabel(u"Fainter"_s, container);
+    auto *more = new QLabel(u"Stronger"_s, container);
+    auto *value = new QLabel(u"Original"_s, container);
+    value->setMinimumWidth(58);
+    value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    *slider = new PositionSlider(container);
+    (*slider)->setRange(-100, 100);
+    (*slider)->setSingleStep(1);
+    (*slider)->setPageStep(10);
+    (*slider)->setValue(0);
+    QObject::connect(
+        *slider, &QSlider::valueChanged, value, [value](int amount) {
+            value->setText(amount == 0 ? u"Original"_s
+                                       : QStringLiteral("%1%2%").arg(
+                                             amount > 0 ? u"+"_s : QString(),
+                                             QString::number(amount)));
+        });
+
+    layout->addWidget(less);
+    layout->addWidget(*slider, 1);
+    layout->addWidget(more);
+    layout->addWidget(value);
+    return container;
+}
+
 QWidget *makeSlider(int minimum, int maximum, QSlider **slider,
                     const QString &suffix = {})
 {
@@ -151,7 +301,7 @@ QWidget *makeSlider(int minimum, int maximum, QSlider **slider,
     auto *layout = new QHBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
-    *slider = new QSlider(Qt::Horizontal, container);
+    *slider = new PositionSlider(container);
     (*slider)->setRange(minimum, maximum);
     auto *value = new QLabel(container);
     value->setMinimumWidth(42);
@@ -287,255 +437,1447 @@ bool writeThemeFile(const QString &path, const QJsonObject &theme)
            file.write(contents) == contents.size() && file.commit();
 }
 
+QFont previewTimestampFont(QFont chatFont)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    chatFont.setFeature(QFont::Tag("tnum"), 1);
+#endif
+    return chatFont;
+}
+
+template <typename PaintMask>
+QImage renderPreviewShadow(const QWidget &widget, const QPainterPath &clip,
+                           const QColor &color, int blurRadius,
+                           PaintMask &&paintMask)
+{
+    const qreal dpr = widget.devicePixelRatioF();
+    QImage image(
+        QSize(qCeil(widget.width() * dpr), qCeil(widget.height() * dpr)),
+        QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(dpr);
+    image.fill(Qt::transparent);
+
+    QPainter shadowPainter(&image);
+    shadowPainter.setRenderHint(QPainter::Antialiasing, true);
+    shadowPainter.setRenderHint(QPainter::TextAntialiasing, true);
+    shadowPainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    shadowPainter.setClipPath(clip);
+    paintMask(shadowPainter);
+    shadowPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    shadowPainter.fillRect(widget.rect(), color);
+    shadowPainter.end();
+
+    return blurThemeShadow(std::move(image), qRound(blurRadius * dpr));
+}
+
 }  // namespace
 
-/// A small mock-up of a window with the colors of the theme being edited.
-class ThemePreviewWidget final : public QWidget
+/// Picks the part of the background image that stays in view.
+class WallpaperFocusWidget final : public QWidget
 {
 public:
-    explicit ThemePreviewWidget(QWidget *parent = nullptr)
+    explicit WallpaperFocusWidget(QWidget *parent = nullptr)
         : QWidget(parent)
     {
-        this->setMinimumHeight(260);
+        this->setFixedHeight(94);
+        this->setMinimumWidth(180);
+        this->setCursor(Qt::CrossCursor);
+        this->setToolTip(u"Click or drag to set the focus point."_s);
     }
 
     void setProfile(const ThemeCustomizationProfile &profile)
     {
-        const auto wallpaperKey =
-            u"%1\n%2"_s.arg(profile.wallpaperSource).arg(profile.wallpaperBlur);
-        if (wallpaperKey != this->wallpaperKey_)
-        {
-            this->wallpaperKey_ = wallpaperKey;
-            this->wallpaper_ = blurThemeWallpaper(
-                loadThemeWallpaper(profile.wallpaperSource, 512),
-                // the preview image is a third of the real one
-                profile.wallpaperBlur / 3);
-        }
+        const QFileInfo info(profile.wallpaperSource);
+        const auto key =
+            QStringLiteral("%1:%2")
+                .arg(profile.wallpaperSource)
+                .arg(info.exists() ? info.lastModified().toMSecsSinceEpoch()
+                                   : 0);
         this->profile_ = profile;
-        this->colors_ =
-            buildCustomizedTheme(profile).value(u"colors"_s).toObject();
+        if (key != this->sourceKey_)
+        {
+            this->sourceKey_ = key;
+            this->image_ = this->isVisible() ? loadThemeWallpaper(
+                                                   profile.wallpaperSource, 256)
+                                             : QImage();
+        }
+        this->setEnabled(profile.hasWallpaper() &&
+                         profile.wallpaperMode != ThemeWallpaperMode::Tile &&
+                         (profile.wallpaperMode == ThemeWallpaperMode::Fill ||
+                          profile.wallpaperZoom > 100));
+        this->update();
+    }
+
+    std::function<void(int, int)> focusChanged;
+
+protected:
+    void showEvent(QShowEvent *event) override
+    {
+        QWidget::showEvent(event);
+        this->image_ = loadThemeWallpaper(this->profile_.wallpaperSource, 256);
+    }
+
+    void hideEvent(QHideEvent *event) override
+    {
+        this->image_ = {};
+        QWidget::hideEvent(event);
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.fillRect(this->rect(), this->profile_.chatBackground);
+        const QRectF bounds = this->rect().adjusted(1, 1, -1, -1);
+        if (this->image_.isNull())
+        {
+            painter.setPen(this->profile_.mutedText);
+            painter.drawText(bounds, Qt::AlignCenter,
+                             u"Choose a wallpaper to set its focus"_s);
+            painter.setPen(this->profile_.raisedSurface);
+            painter.drawRect(bounds);
+            this->imageRect_ = {};
+            return;
+        }
+
+        const auto size = QSizeF(this->image_.size())
+                              .scaled(bounds.size(), Qt::KeepAspectRatio);
+        this->imageRect_ = QRectF(QPointF(), size);
+        this->imageRect_.moveCenter(bounds.center());
+        painter.drawImage(this->imageRect_, this->image_);
+        painter.fillRect(this->imageRect_, QColor(0, 0, 0, 42));
+
+        const QPointF focus(this->imageRect_.left() +
+                                this->imageRect_.width() *
+                                    this->profile_.wallpaperFocalX / 100.0,
+                            this->imageRect_.top() +
+                                this->imageRect_.height() *
+                                    this->profile_.wallpaperFocalY / 100.0);
+        painter.setPen(QPen(Qt::black, 4));
+        painter.drawEllipse(focus, 7, 7);
+        painter.setPen(QPen(this->profile_.accent, 2));
+        painter.drawEllipse(focus, 7, 7);
+        painter.drawLine(focus + QPointF(-11, 0), focus + QPointF(-5, 0));
+        painter.drawLine(focus + QPointF(5, 0), focus + QPointF(11, 0));
+        painter.drawLine(focus + QPointF(0, -11), focus + QPointF(0, -5));
+        painter.drawLine(focus + QPointF(0, 5), focus + QPointF(0, 11));
+        painter.setPen(this->profile_.raisedSurface);
+        painter.drawRect(bounds);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            this->setFocusFrom(event->position());
+            event->accept();
+            return;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (event->buttons().testFlag(Qt::LeftButton))
+        {
+            this->setFocusFrom(event->position());
+        }
+    }
+
+private:
+    void setFocusFrom(const QPointF &position)
+    {
+        if (!this->isEnabled() || this->imageRect_.isEmpty())
+        {
+            return;
+        }
+        const int x =
+            qRound(std::clamp((position.x() - this->imageRect_.left()) /
+                                  this->imageRect_.width(),
+                              0.0, 1.0) *
+                   100);
+        const int y =
+            qRound(std::clamp((position.y() - this->imageRect_.top()) /
+                                  this->imageRect_.height(),
+                              0.0, 1.0) *
+                   100);
+        if (this->focusChanged)
+        {
+            this->focusChanged(x, y);
+        }
+    }
+
+    ThemeCustomizationProfile profile_;
+    QImage image_;
+    QRectF imageRect_;
+    QString sourceKey_;
+};
+
+/// Sets where the text shadow falls by dragging.
+class ShadowPositionWidget final : public QWidget
+{
+public:
+    explicit ShadowPositionWidget(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        this->setFixedSize(118, 76);
+        this->setCursor(Qt::CrossCursor);
+        this->setToolTip(u"Drag to position the shadow. Center to reset."_s);
+    }
+
+    void setOffset(QPoint offset)
+    {
+        offset.setX(std::clamp(offset.x(), -8, 8));
+        offset.setY(std::clamp(offset.y(), -8, 8));
+        if (this->offset_ == offset)
+        {
+            return;
+        }
+        this->offset_ = offset;
+        this->update();
+    }
+
+    QPoint offset() const
+    {
+        return this->offset_;
+    }
+
+    void setShadowColor(QColor color)
+    {
+        if (!color.isValid() || this->shadowColor_ == color)
+        {
+            return;
+        }
+        this->shadowColor_ = color;
+        this->update();
+    }
+
+    std::function<void(QPoint)> positionChanged;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const auto bounds = QRectF(this->rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter.fillRect(bounds, this->palette().color(QPalette::Base));
+        painter.setPen(this->palette().color(QPalette::Mid));
+        painter.drawRect(bounds);
+        painter.setPen(
+            QPen(this->palette().color(QPalette::Mid), 1, Qt::DashLine));
+        painter.drawLine(QPointF(bounds.center().x(), bounds.top() + 7),
+                         QPointF(bounds.center().x(), bounds.bottom() - 7));
+        painter.drawLine(QPointF(bounds.left() + 9, bounds.center().y()),
+                         QPointF(bounds.right() - 9, bounds.center().y()));
+
+        auto sample = makeResolvedFont(this->font(), QFont::Bold);
+        sample.setPointSizeF(sample.pointSizeF() + 2);
+        painter.setFont(sample);
+        const QPointF center = bounds.center() + QPointF(-10, 5);
+        const QPointF shadowOffset(this->offset_.x() * 1.8,
+                                   this->offset_.y() * 1.8);
+        auto shadow = this->shadowColor_;
+        shadow.setAlpha(160);
+        painter.setPen(shadow);
+        painter.drawText(center + shadowOffset, u"Aa"_s);
+        painter.setPen(this->palette().color(QPalette::Text));
+        painter.drawText(center, u"Aa"_s);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(this->palette().color(QPalette::Highlight));
+        painter.drawEllipse(this->pointForOffset(this->offset_), 3.5, 3.5);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            this->setFromPoint(event->position());
+            event->accept();
+            return;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (event->buttons().testFlag(Qt::LeftButton))
+        {
+            this->setFromPoint(event->position());
+            event->accept();
+            return;
+        }
+        QWidget::mouseMoveEvent(event);
+    }
+
+private:
+    QRectF controlRect() const
+    {
+        return QRectF(this->rect()).adjusted(10, 9, -10, -9);
+    }
+
+    QPointF pointForOffset(QPoint offset) const
+    {
+        const auto area = this->controlRect();
+        return {area.center().x() + area.width() * offset.x() / 16.0,
+                area.center().y() + area.height() * offset.y() / 16.0};
+    }
+
+    void setFromPoint(QPointF point)
+    {
+        const auto area = this->controlRect();
+        const QPoint next{
+            std::clamp(
+                qRound((point.x() - area.center().x()) * 16.0 / area.width()),
+                -8, 8),
+            std::clamp(
+                qRound((point.y() - area.center().y()) * 16.0 / area.height()),
+                -8, 8),
+        };
+        if (next == this->offset_)
+        {
+            return;
+        }
+        this->offset_ = next;
+        this->update();
+        if (this->positionChanged)
+        {
+            this->positionChanged(next);
+        }
+    }
+
+    QPoint offset_{1, 1};
+    QColor shadowColor_{Qt::black};
+};
+
+/// A mock-up of a window with the theme being edited.
+class ThemePreviewWidget final : public QWidget
+{
+public:
+    QImage wallpaperFrame() const
+    {
+        return loadThemeWallpaper(this->profile_.wallpaperSource);
+    }
+
+    explicit ThemePreviewWidget(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        this->setMinimumSize(290, 420);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        this->setToolTip(u"Live theme preview."_s);
+        this->blurTimer_.setSingleShot(true);
+        this->blurTimer_.setInterval(90);
+        QObject::connect(&this->blurTimer_, &QTimer::timeout, this, [this] {
+            this->rebuildWallpaper();
+        });
+
+        this->badgeRefreshTimer_.setInterval(120);
+        QObject::connect(
+            &this->badgeRefreshTimer_, &QTimer::timeout, this, [this] {
+                ++this->badgeRefreshAttempts_;
+                if (!this->refreshBadgeAssets() ||
+                    this->badgeRefreshAttempts_ >= MaxBadgeRefreshAttempts)
+                {
+                    this->badgeRefreshTimer_.stop();
+                }
+            });
+        if (this->refreshBadgeAssets())
+        {
+            this->badgeRefreshTimer_.start();
+        }
+    }
+
+    void setProfile(ThemeCustomizationProfile profile)
+    {
+        const QFileInfo info(profile.wallpaperSource);
+        const auto sourceKey =
+            QStringLiteral("%1:%2")
+                .arg(profile.wallpaperSource)
+                .arg(info.exists() ? info.lastModified().toMSecsSinceEpoch()
+                                   : 0);
+        profile.clearDisabledFontOverrides();
+        this->profile_ = std::move(profile);
+        this->generatedTheme_ = buildCustomizedTheme(this->profile_);
+        this->shadowPreview_ = {};
+        if (this->wallpaperSourceKey_ != sourceKey)
+        {
+            this->wallpaperSourceKey_ = sourceKey;
+            this->wallpaperRenderKey_.clear();
+            this->sourceWallpaper_ = {};
+            this->wallpaper_ = {};
+            if (this->isVisible() && this->profile_.hasWallpaper())
+            {
+                const auto image =
+                    loadThemeWallpaper(this->profile_.wallpaperSource, 768);
+                if (!image.isNull())
+                {
+                    this->sourceWallpaper_ = image;
+                    const auto size =
+                        QImageReader(this->profile_.wallpaperSource).size();
+                    const int fullDimension =
+                        std::min(1536, std::max(size.width(), size.height()));
+                    this->wallpaperScale_ =
+                        fullDimension > 0
+                            ? qreal(std::max(image.width(), image.height())) /
+                                  fullDimension
+                            : 1.0;
+                }
+            }
+        }
+        const auto renderKey = QStringLiteral("%1:%2").arg(sourceKey).arg(
+            this->profile_.wallpaperBlur);
+        if (this->wallpaperRenderKey_ != renderKey)
+        {
+            this->wallpaperRenderKey_ = renderKey;
+            this->blurTimer_.start();
+        }
+        if (this->refreshBadgeAssets() &&
+            !this->badgeRefreshTimer_.isActive() &&
+            this->badgeRefreshAttempts_ < MaxBadgeRefreshAttempts)
+        {
+            this->badgeRefreshTimer_.start();
+        }
         this->update();
     }
 
 protected:
-    void paintEvent(QPaintEvent * /*event*/) override
+    void showEvent(QShowEvent *event) override
+    {
+        QWidget::showEvent(event);
+
+        this->wallpaperSourceKey_.clear();
+        this->setProfile(this->profile_);
+        if (this->refreshBadgeAssets() && !this->badgeRefreshTimer_.isActive())
+        {
+            this->badgeRefreshAttempts_ = 0;
+            this->badgeRefreshTimer_.start();
+        }
+    }
+
+    void resizeEvent(QResizeEvent *event) override
+    {
+        this->shadowPreview_ = {};
+        QWidget::resizeEvent(event);
+    }
+
+    void hideEvent(QHideEvent *event) override
+    {
+        this->blurTimer_.stop();
+        this->badgeRefreshTimer_.stop();
+        this->sourceWallpaper_ = {};
+        this->wallpaper_ = {};
+        this->shadowPreview_ = {};
+        this->wallpaperSourceKey_.clear();
+        this->wallpaperRenderKey_.clear();
+        QWidget::hideEvent(event);
+    }
+
+    void paintEvent(QPaintEvent *) override
     {
         QPainter painter(this);
-        const auto &c = this->colors_;
-        const QColor fallback = this->palette().color(QPalette::Window);
-        const QColor fallbackText = this->palette().color(QPalette::WindowText);
-
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const QRectF bounds = this->rect().adjusted(1, 1, -1, -1);
+        const auto color = [this](std::initializer_list<QString> path,
+                                  const QColor &fallback) {
+            return nestedColor(this->generatedTheme_, path, fallback);
+        };
         const auto windowBackground =
-            nestedColor(c, {u"window"_s, u"background"_s}, fallback);
-        const auto chatBackground =
-            nestedColor(c, {u"splits"_s, u"background"_s}, fallback);
-        const auto regularRow = nestedColor(
-            c, {u"messages"_s, u"backgrounds"_s, u"regular"_s}, chatBackground);
-        const auto alternateRow = nestedColor(
-            c, {u"messages"_s, u"backgrounds"_s, u"alternate"_s}, regularRow);
-        const auto textColor = [&](const QString &name) {
-            return nestedColor(c, {u"messages"_s, u"textColors"_s, name},
-                               fallbackText);
-        };
-        const auto tabColor = [&](const QString &tab, const QString &group,
-                                  const QString &name) {
-            return nestedColor(c, {u"tabs"_s, tab, group, name}, fallback);
-        };
-        const bool alternate =
-            this->profile_.useThemeMessageRows
-                ? this->profile_.alternateMessageRows
-                : getSettings()->alternateMessages.getValue();
-        const bool individualTabs =
-            this->profile_.tabShape == ThemeTabShape::Individual;
-        const int tabGap =
-            individualTabs ? std::clamp(this->profile_.tabSpacing, 0, 4) : 0;
-        const qreal tabRadius =
-            std::clamp(this->profile_.tabCornerRadius, 0, 10);
+            color({u"colors"_s, u"window"_s, u"background"_s},
+                  this->profile_.background);
+        const auto regularTab = color({u"colors"_s, u"tabs"_s, u"regular"_s,
+                                       u"backgrounds"_s, u"regular"_s},
+                                      this->profile_.surface);
+        const auto selectedTab = color({u"colors"_s, u"tabs"_s, u"selected"_s,
+                                        u"backgrounds"_s, u"regular"_s},
+                                       this->profile_.raisedSurface);
+        const auto selectedTabLine = color(
+            {u"colors"_s, u"tabs"_s, u"selected"_s, u"line"_s, u"regular"_s},
+            this->profile_.accent);
+        const auto regularTabLine = color(
+            {u"colors"_s, u"tabs"_s, u"regular"_s, u"line"_s, u"regular"_s},
+            this->profile_.raisedSurface);
+        const auto tabDivider =
+            color({u"colors"_s, u"tabs"_s, u"dividerLine"_s},
+                  this->profile_.raisedSurface);
+        const auto headerBackground =
+            color({u"colors"_s, u"splits"_s, u"header"_s, u"background"_s},
+                  this->profile_.surface);
+        const auto focusedHeaderBackground = color(
+            {u"colors"_s, u"splits"_s, u"header"_s, u"focusedBackground"_s},
+            headerBackground);
+        const auto headerBorder = color(
+            {u"colors"_s, u"splits"_s, u"header"_s, u"border"_s}, tabDivider);
+        const auto focusedHeaderBorder =
+            color({u"colors"_s, u"splits"_s, u"header"_s, u"focusedBorder"_s},
+                  headerBorder);
+        const auto inputBackground =
+            color({u"colors"_s, u"splits"_s, u"input"_s, u"background"_s},
+                  regularTab);
+        const auto messageRegular =
+            color({u"colors"_s, u"messages"_s, u"backgrounds"_s, u"regular"_s},
+                  this->profile_.chatBackground);
+        const auto messageAlternate = color(
+            {u"colors"_s, u"messages"_s, u"backgrounds"_s, u"alternate"_s},
+            this->profile_.surface);
+        const auto interfaceText =
+            color({u"colors"_s, u"window"_s, u"text"_s}, this->profile_.text);
+        const auto chatText =
+            color({u"colors"_s, u"messages"_s, u"textColors"_s, u"regular"_s},
+                  this->profile_.effectiveChatText());
+        const auto mutedText = this->profile_.mutedText;
+        const auto systemText = color(
+            {u"colors"_s, u"messages"_s, u"textColors"_s, u"system"_s},
+            this->profile_.systemText.isValid() ? this->profile_.systemText
+                                                : this->profile_.mutedText);
+        const auto linkText =
+            color({u"colors"_s, u"messages"_s, u"textColors"_s, u"link"_s},
+                  this->profile_.accent);
+        const auto timestampText =
+            color({u"colors"_s, u"messages"_s, u"textColors"_s, u"timestamp"_s},
+                  this->profile_.timestampText.isValid()
+                      ? this->profile_.timestampText
+                      : systemText);
+        const auto accent =
+            color({u"colors"_s, u"accent"_s}, this->profile_.accent);
 
-        painter.fillRect(this->rect(), windowBackground);
+        painter.fillRect(bounds, windowBackground);
 
-        const auto metrics = this->fontMetrics();
-        const int pad = 8;
-        const int tabHeight = metrics.height() + 10;
-        const int rowHeight = metrics.height() + 8;
+        const int radius = this->profile_.cornerRadius();
+        const int tabRadius = this->profile_.tabCornerRadius;
+        const auto interfaceFont =
+            makeResolvedFont(this->profile_.interfaceFontFamily.isEmpty()
+                                 ? QStringLiteral(DEFAULT_FONT_FAMILY)
+                                 : this->profile_.interfaceFontFamily,
+                             this->profile_.interfaceFontSize > 0
+                                 ? this->profile_.interfaceFontSize
+                                 : 9,
+                             QFont::Normal);
+        painter.setFont(interfaceFont);
 
-        // tabs
-        struct Tab {
-            QString name;
-            QString key;
+        const QRectF titleBar(bounds.left(), bounds.top(), bounds.width(), 25);
+        painter.setPen(interfaceText);
+        painter.drawText(titleBar.adjusted(8, 0, -8, 0), Qt::AlignVCenter,
+                         Version::instance().fullVersion());
+
+        constexpr qreal TAB_HEIGHT = 28;
+        constexpr qreal TAB_SPACER = 1;
+        const TabStyle tabStyle = getSettings()->tabStyle;
+        const int tabLineWidth = 1;
+        const bool compactTabs = tabStyle == TabStyle::Compact;
+        const bool showTabCloseButton =
+            getSettings()->showTabCloseButton.getValue();
+        const QRectF tabStrip(bounds.left(), titleBar.bottom(), bounds.width(),
+                              TAB_HEIGHT + 2);
+        painter.fillRect(tabStrip, windowBackground);
+        const auto drawTab = [&](const QRectF &rect, const QString &text,
+                                 bool selected, bool roundStart,
+                                 bool roundEnd) {
+            auto backgroundRect = rect;
+            backgroundRect.setTop(backgroundRect.top() +
+                                  (selected ? 0 : tabLineWidth));
+            auto shapedRect = backgroundRect;
+            if (this->profile_.tabShape == ThemeTabShape::Individual)
+            {
+                const qreal gap = this->profile_.tabSpacing;
+                shapedRect.adjust(gap / 2, 0, -gap / 2, 0);
+                roundStart = true;
+                roundEnd = true;
+            }
+            const auto path =
+                themeTopTabPath(shapedRect, tabRadius, roundStart, roundEnd);
+            painter.fillPath(path, selected ? selectedTab : regularTab);
+            painter.setPen(selected ? interfaceText : mutedText);
+            const bool showClose = selected && showTabCloseButton;
+            const qreal compactDivider = compactTabs ? 1.5 : 1.0;
+            auto labelRect =
+                rect.adjusted(4 / compactDivider, 0, -4 / compactDivider, 0);
+            labelRect.translate(0, selected ? 1 : 2);
+            if (showClose)
+            {
+                labelRect.setRight(labelRect.right() - rect.height() / 2);
+            }
+            painter.drawText(labelRect, Qt::AlignCenter,
+                             QFontMetrics(painter.font())
+                                 .elidedText(text, Qt::ElideRight,
+                                             qRound(labelRect.width())));
+            if (showClose)
+            {
+                painter.setRenderHint(QPainter::Antialiasing, false);
+                const auto closeX = rect.right() - 12;
+                const auto closeY = rect.center().y();
+                painter.setPen(QPen(interfaceText, 1));
+                painter.drawLine(QPointF(closeX - 3, closeY - 3),
+                                 QPointF(closeX + 3, closeY + 3));
+                painter.drawLine(QPointF(closeX + 3, closeY - 3),
+                                 QPointF(closeX - 3, closeY + 3));
+                painter.setRenderHint(QPainter::Antialiasing, true);
+            }
+            if (selected)
+            {
+                painter.save();
+                painter.setClipPath(path);
+                painter.fillRect(
+                    QRectF(backgroundRect.left(), backgroundRect.top(),
+                           backgroundRect.width(), tabLineWidth + 1),
+                    selectedTabLine);
+                painter.restore();
+            }
+            else
+            {
+                painter.save();
+                painter.setClipPath(path);
+                painter.fillRect(
+                    QRectF(backgroundRect.left(), backgroundRect.top(),
+                           backgroundRect.width(), tabLineWidth),
+                    regularTabLine);
+                painter.restore();
+            }
         };
-        const std::array tabs{
-            Tab{.name = u"channel"_s, .key = u"selected"_s},
-            Tab{.name = u"other"_s, .key = u"regular"_s},
-            Tab{.name = u"unread"_s, .key = u"newMessage"_s},
-            Tab{.name = u"mention"_s, .key = u"highlighted"_s},
-        };
-        int x = pad;
-        for (const auto &tab : tabs)
+        constexpr int TAB_COUNT = 4;
+        constexpr int SELECTED_TAB = 0;
+        const qreal tabStart = tabStrip.left() + 2;
+        const qreal tabAreaWidth = std::max<qreal>(
+            0, tabStrip.width() - 4 - TAB_SPACER * (TAB_COUNT - 1));
+        const std::array tabNames{u"yusuf7n"_s, u"itsbr0dyy"_s, u"wyydogg"_s,
+                                  u"randomkid"_s};
+        std::array<qreal, TAB_COUNT> tabWidths{};
+        qreal naturalWidth = 0;
+        const QFontMetricsF tabMetrics(interfaceFont);
+        const qreal compactDivider = compactTabs ? 1.5 : 1.0;
+        const qreal tabPadding =
+            showTabCloseButton ? 32 / compactDivider : 16 / compactDivider;
+        for (int index = 0; index < TAB_COUNT; ++index)
         {
-            const int width = metrics.horizontalAdvance(tab.name) + 20;
-            const QRect rect(x, pad, width, tabHeight);
-            const bool first = &tab == &tabs.front();
-            const bool last = &tab == &tabs.back();
-            const auto shape = themeTopTabPath(QRectF(rect), tabRadius,
-                                               individualTabs || first,
-                                               individualTabs || last);
-            painter.setRenderHint(QPainter::Antialiasing, tabRadius > 0);
-            painter.fillPath(shape,
-                             tabColor(tab.key, u"backgrounds"_s, u"regular"_s));
-            painter.setRenderHint(QPainter::Antialiasing, false);
-            painter.save();
-            painter.setClipPath(shape);
-            painter.fillRect(QRect(x, pad, width, 2),
-                             tabColor(tab.key, u"line"_s, u"regular"_s));
-            painter.restore();
-            painter.setPen(
-                nestedColor(c, {u"tabs"_s, tab.key, u"text"_s}, fallbackText));
-            painter.drawText(rect, Qt::AlignCenter, tab.name);
-            x += width + tabGap;
+            tabWidths[index] = std::clamp<qreal>(
+                tabMetrics.horizontalAdvance(tabNames[index]) + tabPadding,
+                TAB_HEIGHT, 150);
+            naturalWidth += tabWidths[index];
+        }
+        if (naturalWidth > tabAreaWidth && naturalWidth > 0)
+        {
+            const auto scale = tabAreaWidth / naturalWidth;
+            for (auto &width : tabWidths)
+            {
+                width = std::max<qreal>(38, width * scale);
+            }
+
+            const qreal selectedTarget =
+                std::min(tabMetrics.horizontalAdvance(tabNames[SELECTED_TAB]) +
+                             tabPadding,
+                         tabAreaWidth - 38 * (TAB_COUNT - 1));
+            if (tabWidths[SELECTED_TAB] < selectedTarget)
+            {
+                const qreal otherWidth =
+                    naturalWidth -
+                    (tabMetrics.horizontalAdvance(tabNames[SELECTED_TAB]) +
+                     tabPadding);
+                const qreal remaining = tabAreaWidth - selectedTarget;
+                const qreal otherScale =
+                    otherWidth > 0 ? remaining / otherWidth : 1;
+                for (int index = 0; index < TAB_COUNT; ++index)
+                {
+                    if (index != SELECTED_TAB)
+                    {
+                        tabWidths[index] = std::max<qreal>(
+                            38, tabWidths[index] * otherScale / scale);
+                    }
+                }
+                tabWidths[SELECTED_TAB] = selectedTarget;
+            }
+        }
+        qreal tabX = tabStart;
+        for (int index = 0; index < TAB_COUNT; ++index)
+        {
+            drawTab(QRectF(tabX, tabStrip.top(), tabWidths[index], TAB_HEIGHT),
+                    tabNames[index], index == SELECTED_TAB, index == 0,
+                    index == TAB_COUNT - 1);
+            tabX += tabWidths[index] + TAB_SPACER;
         }
 
-        // the split below the tabs
-        const QRect split(pad, pad + tabHeight, this->width() - 2 * pad,
-                          this->height() - 2 * pad - tabHeight);
-        painter.fillRect(split, chatBackground);
+        painter.fillRect(QRectF(tabStrip.left(), tabStrip.top() + TAB_HEIGHT,
+                                tabStrip.width(), 2),
+                         tabDivider);
 
-        const QRect header(split.left(), split.top(), split.width(), rowHeight);
-        painter.fillRect(
-            header, nestedColor(c, {u"splits"_s, u"header"_s, u"background"_s},
-                                fallback));
-        painter.setPen(nestedColor(c, {u"splits"_s, u"header"_s, u"text"_s},
-                                   fallbackText));
-        painter.drawText(header.adjusted(pad, 0, -pad, 0),
-                         Qt::AlignVCenter | Qt::AlignLeft, u"channel"_s);
-        painter.setPen(
-            nestedColor(c, {u"splits"_s, u"header"_s, u"border"_s}, fallback));
-        painter.drawLine(header.bottomLeft(), header.bottomRight());
+        const QRectF split(bounds.left(), tabStrip.bottom(), bounds.width(),
+                           bounds.bottom() - tabStrip.bottom());
+        const QRectF channelHeader(split.left(), split.top(), split.width(),
+                                   25);
+        const QRectF input(split.left(), split.bottom() - 27, split.width(),
+                           27);
+        const QRectF messages(split.left(), channelHeader.bottom(),
+                              split.width(),
+                              input.top() - channelHeader.bottom());
 
-        const QRect input(split.left(), split.bottom() - rowHeight - 3,
-                          split.width(), rowHeight + 4);
-        painter.fillRect(
-            input, nestedColor(c, {u"splits"_s, u"input"_s, u"background"_s},
-                               fallback));
-        painter.setPen(textColor(u"chatPlaceholder"_s));
-        painter.drawText(input.adjusted(pad, 0, -pad, 0),
-                         Qt::AlignVCenter | Qt::AlignLeft, u"Send message"_s);
-
-        // messages
-        struct Part {
-            QString text;
-            QColor color;
-        };
-        const auto timestamp = textColor(u"timestamp"_s);
-        const auto regular = textColor(u"regular"_s);
-        const auto accent = nestedColor(c, {u"accent"_s}, fallbackText);
-        const std::vector<std::vector<Part>> rows{
-            std::vector<Part>{
-                Part{.text = u"12:01"_s, .color = timestamp},
-                Part{.text = u"viewer:"_s, .color = QColor(0x1e, 0x90, 0xff)},
-                Part{.text = u"hello chat"_s, .color = regular},
-            },
-            std::vector<Part>{
-                Part{.text = u"12:02"_s, .color = timestamp},
-                Part{.text = u"someone:"_s, .color = QColor(0xff, 0x69, 0xb4)},
-                Part{.text = u"look at"_s, .color = regular},
-                Part{.text = u"twitch.tv"_s, .color = textColor(u"link"_s)},
-            },
-            std::vector<Part>{
-                Part{.text = u"12:02"_s, .color = timestamp},
-                Part{.text = u"joined channel"_s,
-                     .color = textColor(u"system"_s)},
-            },
-            std::vector<Part>{
-                Part{.text = u"12:03"_s, .color = timestamp},
-                Part{.text = u"mod:"_s, .color = accent},
-                Part{.text = u"welcome everyone"_s, .color = regular},
-            },
-        };
-        painter.setClipRect(QRect(split.left(), header.bottom() + 1,
-                                  split.width(),
-                                  input.top() - header.bottom() - 1));
-        if (!this->wallpaper_.isNull() && this->profile_.wallpaperOpacity > 0)
+        const bool polished =
+            this->profile_.foundation == ThemeFoundation::MoltorinoPolished;
+        painter.fillRect(channelHeader,
+                         polished ? headerBackground : focusedHeaderBackground);
+        if (!polished)
         {
-            const QRectF area(split.left(), header.bottom() + 1, split.width(),
-                              input.top() - header.bottom() - 1);
-            painter.save();
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.setPen(focusedHeaderBorder);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(channelHeader.adjusted(0.5, 0.5, -0.5, -1.5));
+        }
+        painter.fillRect(input, inputBackground);
+        if (!polished)
+        {
+            const QColor inputBorder = windowBackground.lightnessF() > 0.5
+                                           ? QColor(u"#cccccc"_s)
+                                           : QColor(u"#333333"_s);
+            painter.setPen(inputBorder);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(input.adjusted(0.5, 0.5, -0.5, -0.5));
+        }
+
+        QPainterPath messageClip;
+        if (this->profile_.roundChat && radius > 0)
+        {
+            messageClip.addRoundedRect(messages, radius, radius);
+        }
+        else
+        {
+            messageClip.addRect(messages);
+        }
+        painter.save();
+        painter.setClipPath(messageClip);
+        painter.fillRect(messages, this->profile_.chatBackground);
+        if (!this->wallpaper_.isNull())
+        {
             painter.setOpacity(this->profile_.wallpaperOpacity / 100.0);
+            const QSizeF imageSize =
+                QSizeF(this->wallpaper_.size()) / this->wallpaperScale_;
             if (this->profile_.wallpaperMode == ThemeWallpaperMode::Tile)
             {
-                painter.fillRect(area, QBrush(this->wallpaper_));
+                painter.save();
+                painter.translate(messages.topLeft());
+                const auto zoom =
+                    std::clamp(this->profile_.wallpaperZoom, 100, 300) / 100.0;
+                painter.scale(zoom, zoom);
+                painter.scale(1.0 / this->wallpaperScale_,
+                              1.0 / this->wallpaperScale_);
+                painter.drawTiledPixmap(
+                    QRectF(QPointF(),
+                           messages.size() * this->wallpaperScale_ / zoom),
+                    this->wallpaper_);
+                painter.restore();
             }
             else
             {
                 const auto layout = layoutThemeWallpaper(
-                    this->wallpaper_.size(), area, this->profile_.wallpaperMode,
+                    imageSize, messages, this->profile_.wallpaperMode,
                     this->profile_.wallpaperFocalX,
                     this->profile_.wallpaperFocalY,
                     this->profile_.wallpaperZoom);
-                painter.drawImage(layout.destination, this->wallpaper_,
-                                  layout.source);
+                painter.drawPixmap(
+                    layout.destination, this->wallpaper_,
+                    QRectF(layout.source.topLeft() * this->wallpaperScale_,
+                           layout.source.size() * this->wallpaperScale_));
             }
-            painter.restore();
-            if (this->profile_.wallpaperOverlayOpacity > 0)
+            painter.setOpacity(1.0);
+            if (this->profile_.wallpaperOpacity > 0)
             {
                 auto overlay = this->profile_.wallpaperOverlayColor;
                 overlay.setAlphaF(overlay.alphaF() *
                                   this->profile_.wallpaperOverlayOpacity /
                                   100.0);
-                painter.fillRect(area, overlay);
+                painter.fillRect(messages, overlay);
             }
         }
-        int y = header.bottom() + 1;
-        for (size_t index = 0; index < rows.size(); ++index)
-        {
-            const QRect row(split.left(), y, split.width(), rowHeight);
-            painter.fillRect(
-                row, alternate && index % 2 == 1 ? alternateRow : regularRow);
-            int textX = row.left() + pad;
-            for (const auto &part : rows.at(index))
-            {
-                painter.setPen(part.color);
-                painter.drawText(
-                    QRect(textX, row.top(), row.width(), row.height()),
-                    Qt::AlignVCenter | Qt::AlignLeft, part.text);
-                textX += metrics.horizontalAdvance(part.text) + 5;
-            }
-            y += rowHeight;
-        }
-        painter.setClipping(false);
 
-        if (this->profile_.roundChat && this->profile_.cornerRadius() > 0)
+        const auto chatFamily = this->profile_.chatFontFamily.isEmpty()
+                                    ? getSettings()->chatFontFamily.getValue()
+                                    : this->profile_.chatFontFamily;
+        const auto chatFont =
+            makeResolvedFont(chatFamily,
+                             this->profile_.chatFontSize > 0
+                                 ? this->profile_.chatFontSize
+                                 : getSettings()->chatFontSize.getValue(),
+                             this->profile_.chatFontWeight > 0
+                                 ? this->profile_.chatFontWeight
+                                 : getSettings()->chatFontWeight.getValue());
+        const auto usernameFont =
+            makeResolvedFont(this->profile_.usernameFontFamily.isEmpty()
+                                 ? chatFamily
+                                 : this->profile_.usernameFontFamily,
+                             this->profile_.usernameFontSize > 0
+                                 ? this->profile_.usernameFontSize
+                                 : chatFont.pointSizeF(),
+                             this->profile_.usernameFontWeight > 0
+                                 ? this->profile_.usernameFontWeight
+                                 : getUsernameBoldness());
+        const QFontMetricsF chatMetrics(chatFont);
+        const QFontMetricsF usernameMetrics(usernameFont);
+        const auto timestampFont = previewTimestampFont(chatFont);
+
+        const auto systemFont = chatFont;
+        const qreal timestampWidth =
+            QFontMetricsF(timestampFont).horizontalAdvance(u"12:34"_s) + 5;
+        const qreal lineHeight = std::ceil(std::max(chatMetrics.height(),
+                                                    usernameMetrics.height())) +
+                                 2;
+        const qreal textAscent =
+            std::max(chatMetrics.ascent(), usernameMetrics.ascent());
+        const qreal badgeSize = std::clamp(lineHeight - 3, 12.0, 18.0);
+        const qreal contentLeft = messages.left() + 6;
+        const qreal contentRight = messages.right() - 5;
+        const qreal wordSpacing = chatMetrics.horizontalAdvance(u" "_s);
+        const bool showAlternates =
+            this->profile_.useThemeMessageRows
+                ? this->profile_.alternateMessageRows
+                : getSettings()->alternateMessages.getValue();
+
+        struct PreviewMessage {
+            QString username;
+            QString message;
+            QColor usernameColor;
+            int paint = 0;
+            std::array<ImagePtr, 3> badges{};
+            int badgeCount = 0;
+            bool highlighted = false;
+            QString linkWord;
+            bool system = false;
+        };
+        const std::array<PreviewMessage, 7> chatMessages{
+            PreviewMessage{
+                u"viewer_one"_s,
+                u"nah i finally got this theme right"_s,
+                linkText,
+                1,
+                {this->moderatorBadge_, this->subscriberBadge_,
+                 this->partnerBadge_},
+                3,
+            },
+            PreviewMessage{
+                u"itsbr0dyy"_s,
+                u"lemme see what you did"_s,
+                QColor(u"#63e6be"_s),
+                2,
+                {this->subscriberBadge_, this->vipBadge_, nullptr},
+                2,
+            },
+            PreviewMessage{
+                u"randomkid"_s,
+                u"wait where yall get that theme"_s,
+                QColor(u"#b998ff"_s),
+                3,
+                {this->vipBadge_, nullptr, nullptr},
+                1,
+            },
+            PreviewMessage{
+                u"wyydogg"_s,
+                u"made it myself https://example.com"_s,
+                QColor(u"#66d9ef"_s),
+                0,
+                {this->subGifterBadge_, nullptr, nullptr},
+                1,
+                false,
+                u"https://example.com"_s,
+            },
+            PreviewMessage{
+                u"yusuf7n"_s,
+                u"okay wait the pink kinda hard"_s,
+                QColor(u"#f2b45b"_s),
+                0,
+                {this->broadcasterBadge_, this->partnerBadge_, nullptr},
+                2,
+            },
+            PreviewMessage{
+                u"itsbr0dyy"_s,
+                u"@viewer_one send the theme when you done"_s,
+                QColor(u"#63e6be"_s),
+                2,
+                {this->subscriberBadge_, this->vipBadge_, nullptr},
+                2,
+                true,
+            },
+            PreviewMessage{
+                {},
+                u"Theme saved. New messages use this look."_s,
+                systemText,
+                0,
+                {},
+                0,
+                false,
+                {},
+                true,
+            },
+        };
+
+        struct PreviewPiece {
+            enum class Kind : uint8_t {
+                Text,
+                Image,
+            };
+
+            Kind kind = Kind::Text;
+            QPointF baseline;
+            QRectF imageRect;
+            QString text;
+            QFont font;
+            QBrush brush;
+            ImagePtr image;
+        };
+        struct PreviewRow {
+            QRectF rect;
+            int sourceIndex = 0;
+            bool highlighted = false;
+            std::vector<PreviewPiece> pieces;
+        };
+
+        std::vector<PreviewRow> rows;
+        rows.reserve(chatMessages.size());
+        qreal rowTop = messages.top() + 3;
+        for (int index = 0; index < int(chatMessages.size()); ++index)
         {
-            const QRectF area(split.left(), header.bottom() + 1, split.width(),
-                              input.top() - header.bottom() - 1);
+            if (rowTop >= messages.bottom())
+            {
+                break;
+            }
+
+            const auto &message = chatMessages[index];
+            PreviewRow row;
+            row.sourceIndex = index;
+            row.highlighted = message.highlighted;
+            row.pieces.reserve(size_t(message.badgeCount) + 12);
+
+            int line = 0;
+            qreal x = contentLeft;
+            const auto lineTop = [&] {
+                return rowTop + line * lineHeight;
+            };
+            const auto baseline = [&] {
+                return QPointF(x, lineTop() + textAscent);
+            };
+            const auto nextLine = [&] {
+                ++line;
+                x = contentLeft;
+            };
+
+            PreviewPiece timestampPiece;
+            timestampPiece.baseline = baseline();
+            timestampPiece.text = index < 3 ? u"12:34"_s : u"12:35"_s;
+            timestampPiece.font = timestampFont;
+            timestampPiece.brush = QBrush(timestampText);
+            row.pieces.push_back(std::move(timestampPiece));
+            x += timestampWidth;
+
+            for (int badgeIndex = 0;
+                 !message.system && badgeIndex < message.badgeCount;
+                 ++badgeIndex)
+            {
+                const auto &badge = message.badges[badgeIndex];
+                if (!badge || badge->isEmpty())
+                {
+                    continue;
+                }
+                PreviewPiece piece;
+                piece.kind = PreviewPiece::Kind::Image;
+                piece.image = badge;
+                piece.imageRect =
+                    QRectF(x, lineTop() + (lineHeight - badgeSize) / 2,
+                           badgeSize, badgeSize);
+                row.pieces.push_back(std::move(piece));
+                x += badgeSize + 2;
+            }
+
+            if (!message.system)
+            {
+                const auto username = message.username + u":"_s;
+                const qreal usernameWidth =
+                    usernameMetrics.horizontalAdvance(username);
+                QBrush usernameBrush(message.usernameColor);
+                if (message.paint != 0)
+                {
+                    QLinearGradient paint(x, 0, x + usernameWidth, 0);
+                    if (message.paint == 1)
+                    {
+                        paint.setColorAt(0, QColor(u"#ffd86f"_s));
+                        paint.setColorAt(0.52, linkText);
+                        paint.setColorAt(1, QColor(u"#ff8c42"_s));
+                    }
+                    else if (message.paint == 2)
+                    {
+                        paint.setColorAt(0, QColor(u"#62d8ff"_s));
+                        paint.setColorAt(0.5, QColor(u"#d56dff"_s));
+                        paint.setColorAt(1, QColor(u"#ff6b91"_s));
+                    }
+                    else
+                    {
+                        paint.setColorAt(0, QColor(u"#8effa0"_s));
+                        paint.setColorAt(0.5, QColor(u"#54d8ff"_s));
+                        paint.setColorAt(1, QColor(u"#b998ff"_s));
+                    }
+                    usernameBrush = QBrush(paint);
+                }
+                PreviewPiece usernamePiece;
+                usernamePiece.baseline = baseline();
+                usernamePiece.text = username;
+                usernamePiece.font = usernameFont;
+                usernamePiece.brush = usernameBrush;
+                row.pieces.push_back(std::move(usernamePiece));
+                x += usernameWidth + wordSpacing;
+            }
+
+            const auto words = message.message.split(u' ', Qt::SkipEmptyParts);
+            for (int wordIndex = 0; wordIndex < words.size(); ++wordIndex)
+            {
+                const auto &word = words[wordIndex];
+                const qreal width = chatMetrics.horizontalAdvance(word);
+                if (x + width > contentRight && x > contentLeft)
+                {
+                    nextLine();
+                }
+                PreviewPiece wordPiece;
+                wordPiece.baseline = baseline();
+                wordPiece.text = word;
+                wordPiece.font = message.system ? systemFont : chatFont;
+                auto wordColor = chatText;
+                if (message.system)
+                {
+                    wordColor = systemText;
+                }
+                else if (word == message.linkWord)
+                {
+                    wordColor = linkText;
+                }
+                wordPiece.brush = QBrush(wordColor);
+                row.pieces.push_back(std::move(wordPiece));
+                x += width;
+                if (wordIndex + 1 < words.size())
+                {
+                    x += wordSpacing;
+                }
+            }
+
+            const qreal rowHeight = (line + 1) * lineHeight + 2;
+            row.rect = QRectF(messages.left(), rowTop - 1, messages.width(),
+                              rowHeight);
+            rows.push_back(std::move(row));
+            rowTop += rowHeight;
+        }
+
+        enum class RowPass : uint8_t {
+            Background,
+            Shadow,
+            Content,
+        };
+        const auto paintRows = [&](QPainter &target, RowPass pass) {
+            target.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            for (const auto &row : rows)
+            {
+                if (pass == RowPass::Background)
+                {
+                    auto rowBackground =
+                        showAlternates && row.sourceIndex % 2 == 1
+                            ? messageAlternate
+                            : messageRegular;
+                    if (row.highlighted)
+                    {
+                        rowBackground = blendThemeHighlight(
+                            rowBackground,
+                            *ColorProvider::instance().color(
+                                ColorType::SelfHighlight),
+                            this->profile_.highlightOpacityAdjustment);
+                    }
+                    target.fillRect(row.rect, rowBackground);
+                    continue;
+                }
+
+                const QPointF offset =
+                    pass == RowPass::Shadow
+                        ? this->profile_.messageShadowOffset()
+                        : QPointF();
+                for (const auto &piece : row.pieces)
+                {
+                    if (piece.kind == PreviewPiece::Kind::Image)
+                    {
+                        if (const auto pixmap = piece.image->pixmapOrLoad())
+                        {
+                            target.drawPixmap(
+                                piece.imageRect.translated(offset), *pixmap,
+                                pixmap->rect());
+                        }
+                        continue;
+                    }
+                    target.setFont(piece.font);
+                    target.setPen(pass == RowPass::Shadow
+                                      ? QPen(Qt::black)
+                                      : QPen(piece.brush, 1));
+                    target.drawText(piece.baseline + offset, piece.text);
+                }
+            }
+        };
+
+        paintRows(painter, RowPass::Background);
+        if (this->profile_.messageShadow &&
+            this->profile_.messageShadowOpacity > 0)
+        {
+            const qreal dpr = this->devicePixelRatioF();
+            const QSize shadowSize(qCeil(this->width() * dpr),
+                                   qCeil(this->height() * dpr));
+            if (this->shadowPreview_.size() != shadowSize ||
+                !qFuzzyCompare(this->shadowPreview_.devicePixelRatio(), dpr))
+            {
+                this->shadowPreview_ = renderPreviewShadow(
+                    *this, messageClip, this->profile_.messageShadowColor,
+                    this->profile_.messageShadowBlur,
+                    [&paintRows](QPainter &shadowPainter) {
+                        paintRows(shadowPainter, RowPass::Shadow);
+                    });
+            }
+            painter.save();
+            painter.setOpacity(this->profile_.messageShadowOpacity / 100.0);
+            painter.drawImage(QPointF(), this->shadowPreview_);
+            painter.restore();
+        }
+        paintRows(painter, RowPass::Content);
+        painter.restore();
+
+        if (this->profile_.roundChat && radius > 0)
+        {
             paintThemeChatFrame(
-                painter, area, this->profile_.cornerRadius(),
+                painter, messages, radius,
                 this->profile_.chatBorder
                     ? std::clamp(this->profile_.chatBorderWidth, 1, 4)
                     : 0,
-                nestedColor(c, {u"splits"_s, u"header"_s, u"background"_s},
-                            fallback),
-                nestedColor(c, {u"splits"_s, u"input"_s, u"background"_s},
-                            fallback),
-                this->profile_.chatBorderColor,
+                polished ? headerBackground : focusedHeaderBackground,
+                inputBackground, this->profile_.chatBorderColor,
                 this->profile_.chatBorder ? this->profile_.chatBorderOpacity
                                           : 0);
+        }
+
+        painter.setFont(interfaceFont);
+        painter.setPen(color({u"colors"_s, u"splits"_s, u"header"_s,
+                              polished ? u"text"_s : u"focusedText"_s},
+                             interfaceText));
+        painter.drawText(channelHeader.adjusted(8, 0, -8, 0),
+                         Qt::AlignVCenter | Qt::AlignHCenter,
+                         u"yusuf7n (live)"_s);
+        painter.setPen(color(
+            {u"colors"_s, u"messages"_s, u"textColors"_s, u"chatPlaceholder"_s},
+            mutedText));
+        painter.drawText(input.adjusted(8, 0, -8, 0), Qt::AlignVCenter,
+                         u"Send message..."_s);
+
+        painter.setPen(QPen(tabDivider));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(bounds);
+    }
+
+private:
+    bool refreshBadgeAssets()
+    {
+        bool pending = false;
+        bool visualChanged = false;
+        size_t badgeIndex = 0;
+        const auto load = [&](ImagePtr &target, const QString &set,
+                              const QString &version) {
+            if (!target)
+            {
+                if (const auto badge =
+                        getApp()->getTwitchBadges()->badge(set, version))
+                {
+                    target = (*badge)->images.getImage1();
+                }
+            }
+            qint64 pixmapKey = 0;
+            if (target)
+            {
+                if (const auto pixmap = target->pixmapOrLoad())
+                {
+                    pixmapKey = pixmap->cacheKey();
+                }
+                else
+                {
+                    pending = true;
+                }
+            }
+            else
+            {
+                pending = true;
+            }
+            if (this->badgePixmapKeys_[badgeIndex] != pixmapKey)
+            {
+                this->badgePixmapKeys_[badgeIndex] = pixmapKey;
+                visualChanged = true;
+            }
+            ++badgeIndex;
+        };
+        load(this->moderatorBadge_, u"moderator"_s, u"1"_s);
+        load(this->subscriberBadge_, u"subscriber"_s, u"0"_s);
+        load(this->vipBadge_, u"vip"_s, u"1"_s);
+        load(this->partnerBadge_, u"partner"_s, u"1"_s);
+        load(this->broadcasterBadge_, u"broadcaster"_s, u"1"_s);
+        load(this->subGifterBadge_, u"sub-gifter"_s, u"1"_s);
+        if (visualChanged)
+        {
+            this->shadowPreview_ = {};
+            this->update();
+        }
+        return pending;
+    }
+
+    void rebuildWallpaper()
+    {
+        this->wallpaper_ = {};
+        if (!this->sourceWallpaper_.isNull())
+        {
+            this->wallpaper_ = QPixmap::fromImage(blurThemeWallpaper(
+                this->sourceWallpaper_,
+                qRound(this->profile_.wallpaperBlur * this->wallpaperScale_)));
+        }
+        this->update();
+    }
+
+    ThemeCustomizationProfile profile_;
+    QJsonObject generatedTheme_;
+    QImage sourceWallpaper_;
+    qreal wallpaperScale_ = 1.0;
+    QImage shadowPreview_;
+    QPixmap wallpaper_;
+    QString wallpaperSourceKey_;
+    QString wallpaperRenderKey_;
+    QTimer blurTimer_;
+    QTimer badgeRefreshTimer_;
+    static constexpr int MaxBadgeRefreshAttempts = 50;
+    int badgeRefreshAttempts_ = 0;
+    std::array<qint64, 6> badgePixmapKeys_{};
+    ImagePtr moderatorBadge_;
+    ImagePtr subscriberBadge_;
+    ImagePtr vipBadge_;
+    ImagePtr partnerBadge_;
+    ImagePtr broadcasterBadge_;
+    ImagePtr subGifterBadge_;
+};
+
+/// One line of chat in the fonts of the theme being edited.
+class TypographyPreviewWidget final : public QWidget
+{
+public:
+    explicit TypographyPreviewWidget(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        this->setMinimumHeight(68);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        this->setToolTip(u"Preview the fonts and shadow."_s);
+    }
+
+    void setProfile(ThemeCustomizationProfile profile)
+    {
+        profile.clearDisabledFontOverrides();
+        this->profile_ = std::move(profile);
+        this->generatedTheme_ = buildCustomizedTheme(this->profile_);
+        this->shadowPreview_ = {};
+        this->updateGeometry();
+        this->update();
+    }
+
+    QSize sizeHint() const override
+    {
+        const auto chatFont = this->chatPreviewFont();
+        const auto usernameFont = this->usernamePreviewFont(chatFont);
+        const QFontMetricsF chatMetrics(chatFont);
+        const QFontMetricsF usernameMetrics(usernameFont);
+        const int contentHeight =
+            qCeil(std::max(chatMetrics.height(), usernameMetrics.height())) +
+            24;
+        return {300, std::max(68, contentHeight)};
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        this->shadowPreview_ = {};
+        QWidget::resizeEvent(event);
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
+
+        const auto color = [this](std::initializer_list<QString> path,
+                                  const QColor &fallback) {
+            return nestedColor(this->generatedTheme_, path, fallback);
+        };
+        const auto background =
+            color({u"colors"_s, u"messages"_s, u"backgrounds"_s, u"regular"_s},
+                  this->profile_.chatBackground);
+        const auto text =
+            color({u"colors"_s, u"messages"_s, u"textColors"_s, u"regular"_s},
+                  this->profile_.effectiveChatText());
+        const auto usernameColor =
+            color({u"colors"_s, u"messages"_s, u"textColors"_s, u"link"_s},
+                  this->profile_.effectiveChatText());
+        const auto frame =
+            color({u"colors"_s, u"splits"_s, u"input"_s, u"border"_s},
+                  this->profile_.raisedSurface);
+
+        const QRectF bounds = this->rect().adjusted(1, 1, -1, -1);
+        const int radius =
+            this->profile_.roundChat ? this->profile_.cornerRadius() : 0;
+        QPainterPath clip;
+        if (radius > 0)
+        {
+            clip.addRoundedRect(bounds, radius, radius);
+        }
+        else
+        {
+            clip.addRect(bounds);
+        }
+        painter.setClipPath(clip);
+        painter.fillRect(bounds, background);
+
+        const auto chatFont = this->chatPreviewFont();
+        const auto usernameFont = this->usernamePreviewFont(chatFont);
+        const QFontMetricsF chatMetrics(chatFont);
+        const QFontMetricsF usernameMetrics(usernameFont);
+
+        const qreal horizontalPadding = 14;
+        const qreal contentWidth =
+            std::max<qreal>(1, bounds.width() - horizontalPadding * 2);
+        const QString username = u"viewer_one:"_s;
+        const QString message = u"this theme feels like mine"_s;
+        const qreal usernameWidth = usernameMetrics.horizontalAdvance(username);
+        const qreal gap = chatMetrics.horizontalAdvance(u" "_s);
+        const qreal inlineOffset = usernameWidth + gap;
+        const qreal messageWidth = chatMetrics.horizontalAdvance(message);
+        const qreal inlineWidth = contentWidth - inlineOffset;
+        const bool startMessageOnNextLine = inlineWidth < messageWidth;
+        const qreal rowWidth = inlineOffset + messageWidth;
+        const qreal rowLeft =
+            !startMessageOnNextLine
+                ? bounds.left() +
+                      std::max<qreal>(horizontalPadding,
+                                      (bounds.width() - rowWidth) / 2)
+                : bounds.left() + horizontalPadding;
+        const qreal messageX =
+            rowLeft + (startMessageOnNextLine ? 0 : inlineOffset);
+
+        QTextOption option;
+        option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        QTextLayout messageLayout(message, chatFont);
+        messageLayout.setTextOption(option);
+        messageLayout.beginLayout();
+        qreal messageHeight = 0;
+        qreal firstLineAscent = chatMetrics.ascent();
+        int lineIndex = 0;
+        while (true)
+        {
+            auto line = messageLayout.createLine();
+            if (!line.isValid())
+            {
+                break;
+            }
+            const bool firstLine = lineIndex++ == 0;
+            const qreal width = firstLine && !startMessageOnNextLine
+                                    ? std::max<qreal>(1, inlineWidth)
+                                    : contentWidth;
+            line.setLineWidth(width);
+            line.setPosition(
+                QPointF(firstLine || startMessageOnNextLine ? 0 : -inlineOffset,
+                        messageHeight));
+            if (firstLine)
+            {
+                firstLineAscent = line.ascent();
+            }
+            messageHeight += line.height();
+        }
+        messageLayout.endLayout();
+
+        const qreal usernameTop =
+            startMessageOnNextLine ? usernameMetrics.height() + 3 : 0;
+        const qreal aboveBaseline =
+            std::max(usernameMetrics.ascent(),
+                     startMessageOnNextLine ? 0.0 : firstLineAscent);
+        const qreal belowBaseline = std::max(
+            usernameMetrics.descent(),
+            startMessageOnNextLine
+                ? usernameTop + messageHeight - usernameMetrics.ascent()
+                : messageHeight - firstLineAscent);
+        const qreal baseline =
+            bounds.center().y() + (aboveBaseline - belowBaseline) / 2;
+        const QPointF usernamePosition(rowLeft, baseline);
+        const qreal messageTop = startMessageOnNextLine
+                                     ? baseline + usernameMetrics.descent() + 3
+                                     : baseline - firstLineAscent;
+        const QPointF messagePosition(messageX, messageTop);
+
+        const auto paintSample = [&](QPainter &target, bool shadow) {
+            target.setFont(usernameFont);
+            target.setPen(shadow ? QColor(Qt::black) : usernameColor);
+            target.drawText(usernamePosition, username);
+            target.setFont(chatFont);
+            target.setPen(shadow ? QColor(Qt::black) : text);
+            messageLayout.draw(&target, messagePosition);
+        };
+
+        if (this->profile_.messageShadow &&
+            this->profile_.messageShadowOpacity > 0)
+        {
+            const qreal dpr = this->devicePixelRatioF();
+            const QSize shadowSize(qCeil(this->width() * dpr),
+                                   qCeil(this->height() * dpr));
+            if (this->shadowPreview_.size() != shadowSize ||
+                !qFuzzyCompare(this->shadowPreview_.devicePixelRatio(), dpr))
+            {
+                this->shadowPreview_ = renderPreviewShadow(
+                    *this, clip, this->profile_.messageShadowColor,
+                    this->profile_.messageShadowBlur,
+                    [this, &paintSample](QPainter &shadowPainter) {
+                        shadowPainter.translate(
+                            this->profile_.messageShadowOffset());
+                        paintSample(shadowPainter, true);
+                    });
+            }
+            painter.save();
+            painter.setOpacity(this->profile_.messageShadowOpacity / 100.0);
+            painter.drawImage(QPointF(), this->shadowPreview_);
+            painter.restore();
+        }
+        paintSample(painter, false);
+
+        painter.setClipping(false);
+        painter.setPen(QPen(frame, 1));
+        painter.setBrush(Qt::NoBrush);
+        if (radius > 0)
+        {
+            painter.drawRoundedRect(bounds, radius, radius);
+        }
+        else
+        {
+            painter.drawRect(bounds);
         }
     }
 
 private:
-    QJsonObject colors_;
-    ThemeCustomizationProfile profile_;
-    QString wallpaperKey_;
-    QImage wallpaper_;
-
-public:
-    /// The background image of the theme, null if it has none.
-    const QImage &wallpaper() const
+    QFont chatPreviewFont() const
     {
-        return this->wallpaper_;
+        const auto family = this->profile_.chatFontFamily.isEmpty()
+                                ? getSettings()->chatFontFamily.getValue()
+                                : this->profile_.chatFontFamily;
+        const auto weight = this->profile_.chatFontWeight > 0
+                                ? this->profile_.chatFontWeight
+                                : getSettings()->chatFontWeight.getValue();
+
+        return makeResolvedFont(family, 14, weight);
     }
+
+    QFont usernamePreviewFont(const QFont &chatFont) const
+    {
+        const auto family = this->profile_.usernameFontFamily.isEmpty()
+                                ? chatFont.family()
+                                : this->profile_.usernameFontFamily;
+        const auto weight = this->profile_.usernameFontWeight > 0
+                                ? this->profile_.usernameFontWeight
+                                : getUsernameBoldness();
+        return makeResolvedFont(family, chatFont.pointSizeF(), weight);
+    }
+
+    ThemeCustomizationProfile profile_;
+    QJsonObject generatedTheme_;
+    QImage shadowPreview_;
 };
 
 CustomizationPage::CustomizationPage()
@@ -912,7 +2254,7 @@ QWidget *CustomizationPage::buildChatTab()
         makeSlider(0, 100, &this->alternateMessageContrast_, u"%"_s));
     messageForm->addRow(
         u"Highlighted messages:"_s,
-        makeSlider(-100, 100, &this->highlightOpacityAdjustment_, u"%"_s));
+        makeOpacityAdjustmentSlider(&this->highlightOpacityAdjustment_));
     this->highlightOpacityAdjustment_->setToolTip(
         u"Makes highlight colors fainter (left) or stronger (right)."_s);
     layout->addWidget(messages);
@@ -939,9 +2281,7 @@ QWidget *CustomizationPage::buildChatTab()
     auto *shadowForm = new QFormLayout(shadow);
     shadowForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     this->messageShadow_ = new QCheckBox(u"Add a shadow behind chat content"_s);
-    this->messageShadow_->setToolTip(
-        u"Shown in chat, not in the preview. Animated emotes don't get a "
-        u"shadow."_s);
+    this->messageShadow_->setToolTip(u"Animated emotes don't get a shadow."_s);
     shadowForm->addRow(this->messageShadow_);
     this->messageShadowEmotes_ = new QCheckBox(u"Include emotes and emoji"_s);
     shadowForm->addRow(this->messageShadowEmotes_);
@@ -952,10 +2292,31 @@ QWidget *CustomizationPage::buildChatTab()
     shadowForm->addRow(
         u"Strength:"_s,
         makeSlider(0, 100, &this->messageShadowOpacity_, u"%"_s));
-    shadowForm->addRow(u"Move right:"_s,
-                       makeSlider(-8, 8, &this->messageShadowOffsetX_));
-    shadowForm->addRow(u"Move down:"_s,
-                       makeSlider(-8, 8, &this->messageShadowOffsetY_));
+    this->messageShadowPosition_ = new ShadowPositionWidget;
+    this->messageShadowPosition_->positionChanged = [this](QPoint offset) {
+        if (this->loadingControls_)
+        {
+            return;
+        }
+        this->profile_.messageShadowOffsetX = offset.x();
+        this->profile_.messageShadowOffsetY = offset.y();
+        this->updatePreview();
+    };
+    auto *positionRow = new QWidget;
+    auto *positionLayout = new QHBoxLayout(positionRow);
+    positionLayout->setContentsMargins(0, 0, 0, 0);
+    positionLayout->setSpacing(8);
+    positionLayout->addWidget(this->messageShadowPosition_);
+    this->messageShadowCenter_ = new QPushButton(u"Center shadow"_s);
+    positionLayout->addWidget(this->messageShadowCenter_);
+    positionLayout->addStretch(1);
+    shadowForm->addRow(u"Position:"_s, positionRow);
+    QObject::connect(this->messageShadowCenter_, &QPushButton::clicked, this,
+                     [this] {
+                         this->profile_.messageShadowOffsetX = 0;
+                         this->profile_.messageShadowOffsetY = 0;
+                         this->loadProfileIntoControls();
+                     });
     shadowForm->addRow(u"Blur:"_s, makeSlider(0, 8, &this->messageShadowBlur_));
     layout->addWidget(shadow);
     layout->addStretch(1);
@@ -970,8 +2331,7 @@ QWidget *CustomizationPage::buildChatTab()
          {this->alternateMessageOpacity_, this->alternateMessageContrast_,
           this->highlightOpacityAdjustment_, this->chatCornerRadius_,
           this->chatBorderWidth_, this->chatBorderOpacity_,
-          this->messageShadowOpacity_, this->messageShadowOffsetX_,
-          this->messageShadowOffsetY_, this->messageShadowBlur_})
+          this->messageShadowOpacity_, this->messageShadowBlur_})
     {
         QObject::connect(slider, &QSlider::valueChanged, this, update);
     }
@@ -1046,6 +2406,9 @@ QWidget *CustomizationPage::buildTextTab()
         u"General settings are used."_s);
     description->setWordWrap(true);
     layout->addWidget(description);
+
+    this->typographyPreview_ = new TypographyPreviewWidget;
+    layout->addWidget(this->typographyPreview_);
 
     this->useThemeFonts_ = new QCheckBox(u"Use theme fonts"_s);
     this->useThemeFonts_->setToolTip(
@@ -1166,13 +2529,30 @@ QWidget *CustomizationPage::buildBackgroundTab()
     form->addRow(u"Zoom:"_s,
                  makeSlider(100, 300, &this->wallpaperZoom_, u"%"_s));
     this->wallpaperZoom_->setToolTip(u"Zoom around the focus point."_s);
-    form->addRow(u"Focus left to right:"_s,
-                 makeSlider(0, 100, &this->wallpaperFocusX_, u"%"_s));
-    form->addRow(u"Focus top to bottom:"_s,
-                 makeSlider(0, 100, &this->wallpaperFocusY_, u"%"_s));
-    this->wallpaperFocusX_->setToolTip(
-        u"The part of the image that stays in view when it is cropped."_s);
-    this->wallpaperFocusY_->setToolTip(this->wallpaperFocusX_->toolTip());
+    this->wallpaperFocus_ = new WallpaperFocusWidget;
+    this->wallpaperFocus_->focusChanged = [this](int x, int y) {
+        this->profile_.wallpaperFocalX = x;
+        this->profile_.wallpaperFocalY = y;
+        this->updatePreview();
+    };
+    form->addRow(u"Focus:"_s, this->wallpaperFocus_);
+    auto *focusHelp = new QWidget;
+    auto *focusHelpLayout = new QHBoxLayout(focusHelp);
+    focusHelpLayout->setContentsMargins(0, 0, 0, 0);
+    focusHelpLayout->setSpacing(6);
+    auto *focusHint = new QLabel(u"Keep this part in view."_s);
+    focusHint->setWordWrap(true);
+    focusHelpLayout->addWidget(focusHint, 1);
+    this->wallpaperCenterFocus_ = new QPushButton(u"Center"_s);
+    this->wallpaperCenterFocus_->setToolTip(u"Center the focus point."_s);
+    focusHelpLayout->addWidget(this->wallpaperCenterFocus_);
+    form->addRow(QString(), focusHelp);
+    QObject::connect(this->wallpaperCenterFocus_, &QPushButton::clicked, this,
+                     [this] {
+                         this->profile_.wallpaperFocalX = 50;
+                         this->profile_.wallpaperFocalY = 50;
+                         this->updatePreview();
+                     });
     form->addRow(u"Wallpaper opacity:"_s,
                  makeSlider(0, 100, &this->wallpaperOpacity_, u"%"_s));
     this->wallpaperOverlayColor_ = this->makeColorControl(
@@ -1203,8 +2583,7 @@ QWidget *CustomizationPage::buildBackgroundTab()
             this->readControlsIntoProfile();
         }
     };
-    for (auto *slider : {this->wallpaperZoom_, this->wallpaperFocusX_,
-                         this->wallpaperFocusY_, this->wallpaperOpacity_,
+    for (auto *slider : {this->wallpaperZoom_, this->wallpaperOpacity_,
                          this->wallpaperOverlayOpacity_, this->wallpaperBlur_})
     {
         QObject::connect(slider, &QSlider::valueChanged, this, update);
@@ -1260,7 +2639,7 @@ void CustomizationPage::clearWallpaper()
 
 void CustomizationPage::suggestWallpaperPalette()
 {
-    auto image = this->preview_->wallpaper();
+    auto image = this->preview_->wallpaperFrame();
     if (image.isNull())
     {
         this->setStatus(u"Choose a wallpaper first."_s, true);
@@ -1666,8 +3045,6 @@ void CustomizationPage::loadProfileIntoControls()
     this->wallpaperMode_->setCurrentIndex(
         static_cast<int>(this->profile_.wallpaperMode));
     this->wallpaperZoom_->setValue(this->profile_.wallpaperZoom);
-    this->wallpaperFocusX_->setValue(this->profile_.wallpaperFocalX);
-    this->wallpaperFocusY_->setValue(this->profile_.wallpaperFocalY);
     this->wallpaperOpacity_->setValue(this->profile_.wallpaperOpacity);
     this->wallpaperOverlayOpacity_->setValue(
         this->profile_.wallpaperOverlayOpacity);
@@ -1688,8 +3065,10 @@ void CustomizationPage::loadProfileIntoControls()
     this->messageShadow_->setChecked(this->profile_.messageShadow);
     this->messageShadowEmotes_->setChecked(this->profile_.messageShadowEmotes);
     this->messageShadowOpacity_->setValue(this->profile_.messageShadowOpacity);
-    this->messageShadowOffsetX_->setValue(this->profile_.messageShadowOffsetX);
-    this->messageShadowOffsetY_->setValue(this->profile_.messageShadowOffsetY);
+    this->messageShadowPosition_->setOffset(
+        this->profile_.messageShadowOffset());
+    this->messageShadowPosition_->setShadowColor(
+        this->profile_.messageShadowColor);
     this->messageShadowBlur_->setValue(this->profile_.messageShadowBlur);
     this->foundation_->setCurrentIndex(
         this->profile_.foundation == ThemeFoundation::MoltorinoPolished ? 1
@@ -1751,8 +3130,6 @@ void CustomizationPage::readControlsIntoProfile()
     this->profile_.wallpaperMode = static_cast<ThemeWallpaperMode>(
         std::clamp(this->wallpaperMode_->currentIndex(), 0, 4));
     this->profile_.wallpaperZoom = this->wallpaperZoom_->value();
-    this->profile_.wallpaperFocalX = this->wallpaperFocusX_->value();
-    this->profile_.wallpaperFocalY = this->wallpaperFocusY_->value();
     this->profile_.wallpaperOpacity = this->wallpaperOpacity_->value();
     this->profile_.wallpaperOverlayOpacity =
         this->wallpaperOverlayOpacity_->value();
@@ -1776,8 +3153,6 @@ void CustomizationPage::readControlsIntoProfile()
     this->profile_.messageShadowEmotes =
         this->messageShadowEmotes_->isChecked();
     this->profile_.messageShadowOpacity = this->messageShadowOpacity_->value();
-    this->profile_.messageShadowOffsetX = this->messageShadowOffsetX_->value();
-    this->profile_.messageShadowOffsetY = this->messageShadowOffsetY_->value();
     this->profile_.messageShadowBlur = this->messageShadowBlur_->value();
     this->profile_.foundation = this->foundation_->currentIndex() == 1
                                     ? ThemeFoundation::MoltorinoPolished
@@ -1793,6 +3168,8 @@ void CustomizationPage::readControlsIntoProfile()
 void CustomizationPage::updatePreview()
 {
     this->preview_->setProfile(this->profile_);
+    this->wallpaperFocus_->setProfile(this->profile_);
+    this->typographyPreview_->setProfile(this->profile_);
     this->updateReadability();
     this->updateControlState();
 }
@@ -1879,13 +3256,20 @@ void CustomizationPage::updateControlState()
     const bool wallpaper =
         editable && !this->profile_.wallpaperSource.isEmpty();
     for (QWidget *widget : std::initializer_list<QWidget *>{
-             this->wallpaperMode_, this->wallpaperZoom_, this->wallpaperFocusX_,
-             this->wallpaperFocusY_, this->wallpaperOpacity_,
-             this->wallpaperOverlayColor_, this->wallpaperOverlayOpacity_,
-             this->wallpaperBlur_, this->wallpaperColors_})
+             this->wallpaperMode_, this->wallpaperZoom_,
+             this->wallpaperOpacity_, this->wallpaperOverlayColor_,
+             this->wallpaperOverlayOpacity_, this->wallpaperBlur_,
+             this->wallpaperColors_})
     {
         widget->setEnabled(wallpaper);
     }
+    // The focus only matters while part of the image is cut off.
+    const bool focusEditable =
+        wallpaper && this->profile_.wallpaperMode != ThemeWallpaperMode::Tile &&
+        (this->profile_.wallpaperMode == ThemeWallpaperMode::Fill ||
+         this->profile_.wallpaperZoom > 100);
+    this->wallpaperFocus_->setEnabled(focusEditable);
+    this->wallpaperCenterFocus_->setEnabled(focusEditable);
     const bool rows = editable && this->profile_.alternateMessageRows;
     this->alternateMessageOpacity_->setEnabled(rows);
     this->alternateMessageContrast_->setEnabled(rows);
@@ -1900,8 +3284,8 @@ void CustomizationPage::updateControlState()
     this->messageShadowEmotes_->setEnabled(shadow);
     this->messageShadowColor_->setEnabled(shadow);
     this->messageShadowOpacity_->setEnabled(shadow);
-    this->messageShadowOffsetX_->setEnabled(shadow);
-    this->messageShadowOffsetY_->setEnabled(shadow);
+    this->messageShadowPosition_->setEnabled(shadow);
+    this->messageShadowCenter_->setEnabled(shadow);
     this->messageShadowBlur_->setEnabled(shadow);
     this->tabSpacing_->setEnabled(editable && this->profile_.tabShape ==
                                                   ThemeTabShape::Individual);
