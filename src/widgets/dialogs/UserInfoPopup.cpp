@@ -3526,8 +3526,7 @@ void UserInfoPopup::fetchMoreUsercardMessages(int emptyPageSkipsLeft,
 
             if (!messages.empty())
             {
-                prependUsercardMessages(self->usercardMessagesChannel_,
-                                        messages);
+                self->prependLoadedUsercardMessages(messages);
                 if (enableLazyLoadOnSuccess)
                 {
                     self->usercardMessagesLazyLoadEnabled_ = true;
@@ -3567,6 +3566,23 @@ void UserInfoPopup::fetchMoreUsercardMessages(int emptyPageSkipsLeft,
             self->usercardMessagesLoading_ = false;
             self->updateUsercardMessagesVisibility();
         });
+}
+
+void UserInfoPopup::prependLoadedUsercardMessages(
+    const std::vector<MessagePtr> &messages)
+{
+    // While everything fits there is no scrollbar, and the view doesn't count
+    // as being at the bottom. Without this it would end up slightly above the
+    // bottom once the loaded messages make it scrollable.
+    auto &scrollbar = this->ui_.latestMessages->getScrollBar();
+    const bool stayAtBottom = scrollbar.isAtBottom() || !scrollbar.isVisible();
+
+    prependUsercardMessages(this->usercardMessagesChannel_, messages);
+
+    if (stayAtBottom)
+    {
+        scrollbar.scrollToBottom();
+    }
 }
 
 void UserInfoPopup::ensureUsercardMessagesChannel(const QString &channelName)
@@ -3741,8 +3757,7 @@ void UserInfoPopup::fetchMoreUsercardLogMessages(int emptyPageSkipsLeft,
 
             if (!messages.empty())
             {
-                prependUsercardMessages(self->usercardMessagesChannel_,
-                                        messages);
+                self->prependLoadedUsercardMessages(messages);
                 if (enableLazyLoadOnSuccess)
                 {
                     self->usercardMessagesLazyLoadEnabled_ = true;
