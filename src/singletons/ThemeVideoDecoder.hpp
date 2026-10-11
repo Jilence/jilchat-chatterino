@@ -1,11 +1,12 @@
 // Only built with CHATTERINO_THEME_VIDEO (needs libvpx, libwebm and libyuv).
 #pragma once
 
+#include "singletons/ThemeVideoCancellation.hpp"
+
 #include <QImage>
 #include <QString>
 
 #include <memory>
-#include <stop_token>
 
 namespace chatterino {
 
@@ -38,6 +39,6 @@ private:
 
 QImage themeVideoPoster(const QString &source, int maxDimension);
 QString validateThemeVideo(const QString &source,
-                           std::stop_token cancellation = {});
+                           ThemeVideoStopToken cancellation = {});
 
 }  // namespace chatterino

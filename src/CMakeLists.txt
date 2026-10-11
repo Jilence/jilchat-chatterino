@@ -1136,6 +1136,7 @@ if (CHATTERINO_HAVE_THEME_VIDEO)
         singletons/ThemeVideo.cpp
         singletons/ThemeVideo.hpp
         singletons/ThemeVideoDecoder.cpp
+        singletons/ThemeVideoCancellation.hpp
         singletons/ThemeVideoDecoder.hpp
         singletons/ThemeVideoImport.cpp
         singletons/ThemeVideoImport.hpp

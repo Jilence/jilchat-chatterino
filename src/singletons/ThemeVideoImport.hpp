@@ -1,12 +1,12 @@
 // Only built with CHATTERINO_THEME_VIDEO (needs libvpx, libwebm and libyuv).
 #pragma once
 
+#include "singletons/ThemeVideoCancellation.hpp"
+
 #include <QByteArray>
 #include <QSize>
 #include <QString>
 #include <QStringList>
-
-#include <stop_token>
 
 namespace chatterino {
 
@@ -27,10 +27,10 @@ struct ThemeVideoInfo {
 bool isThemeVideoInput(const QString &source);
 QStringList themeVideoInputExtensions();
 ThemeVideoInfo inspectThemeVideo(const QString &source,
-                                 std::stop_token cancellation = {});
+                                 ThemeVideoStopToken cancellation = {});
 
 ThemeWallpaperData prepareThemeVideo(const QString &source,
-                                     std::stop_token cancellation = {},
+                                     ThemeVideoStopToken cancellation = {},
                                      int seconds = 0);
 
 }  // namespace chatterino

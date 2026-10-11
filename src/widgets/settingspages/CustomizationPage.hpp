@@ -1,6 +1,9 @@
 #pragma once
 
 #include "singletons/ThemeCustomization.hpp"
+#ifdef CHATTERINO_THEME_VIDEO
+#    include "singletons/ThemeVideoCancellation.hpp"
+#endif
 #include "widgets/settingspages/SettingsPage.hpp"
 
 #include <QSet>
@@ -8,9 +11,6 @@
 
 #include <cstdint>
 #include <optional>
-#ifdef CHATTERINO_THEME_VIDEO
-#    include <stop_token>
-#endif
 
 class QCheckBox;
 class QComboBox;
@@ -80,7 +80,7 @@ private:
     /// user cancelled.
     std::optional<int> chooseVideoLength(double duration);
     /// Stops a running conversion.
-    std::stop_source wallpaperCancellation_;
+    ThemeVideoStopSource wallpaperCancellation_;
 #endif
     /// Bumped to drop the result of a conversion that is no longer wanted.
     std::uint64_t wallpaperGeneration_ = 0;

@@ -2994,7 +2994,7 @@ void CustomizationPage::prepareVideoWallpaper(const QString &path)
     const auto generation = this->profileGeneration_;
     const auto wallpaperGeneration = ++this->wallpaperGeneration_;
     this->wallpaperCancellation_.request_stop();
-    this->wallpaperCancellation_ = std::stop_source();
+    this->wallpaperCancellation_ = ThemeVideoStopSource();
     const auto cancellation = this->wallpaperCancellation_.get_token();
     this->setTransferBusy(true);
     this->cancelWallpaperButton_->show();

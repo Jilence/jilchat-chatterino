@@ -44,8 +44,8 @@ QString mediaTool(const QString &name)
 }
 
 bool runTool(const QString &name, const QStringList &arguments,
-             std::stop_token cancellation, QByteArray *output, int timeoutMs,
-             const QString &destination = {})
+             ThemeVideoStopToken cancellation, QByteArray *output,
+             int timeoutMs, const QString &destination = {})
 {
     if (cancellation.stop_requested())
     {
@@ -130,7 +130,7 @@ QStringList themeVideoInputExtensions()
 }
 
 ThemeVideoInfo inspectThemeVideo(const QString &source,
-                                 std::stop_token cancellation)
+                                 ThemeVideoStopToken cancellation)
 {
     const auto cancelled = [] {
         return ThemeVideoInfo{
@@ -242,7 +242,8 @@ ThemeVideoInfo inspectThemeVideo(const QString &source,
 }
 
 ThemeWallpaperData prepareThemeVideo(const QString &source,
-                                     std::stop_token cancellation, int seconds)
+                                     ThemeVideoStopToken cancellation,
+                                     int seconds)
 {
     const auto info = inspectThemeVideo(source, cancellation);
     if (!info.error.isEmpty())

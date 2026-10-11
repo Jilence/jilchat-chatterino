@@ -443,7 +443,8 @@ QImage themeVideoPoster(const QString &source, int maxDimension)
     return image;
 }
 
-QString validateThemeVideo(const QString &source, std::stop_token cancellation)
+QString validateThemeVideo(const QString &source,
+                           ThemeVideoStopToken cancellation)
 {
     ThemeVideoDecoder decoder(source);
     if (!decoder.open())
