@@ -1,0 +1,179 @@
+#pragma once
+
+#include <QColor>
+#include <QJsonObject>
+#include <QPoint>
+#include <QString>
+
+#include <cstdint>
+#include <optional>
+
+namespace chatterino {
+
+enum class ThemeFoundation : uint8_t {
+    ChatterinoClassic,
+    MoltorinoPolished,
+};
+
+enum class ThemeSurfaceDepth : uint8_t {
+    Flat,
+    Balanced,
+    Layered,
+};
+
+enum class ThemeAccentStrength : uint8_t {
+    Subtle,
+    Balanced,
+    Bold,
+};
+
+enum class ThemeCornerStyle : uint8_t {
+    Classic,
+    Soft,
+    Rounded,
+};
+
+enum class ThemeTabShape : uint8_t {
+    Connected,
+    Individual,
+};
+
+enum class ThemeWallpaperMode : uint8_t {
+    Fill,
+    Fit,
+    Center,
+    Tile,
+    Stretch,
+};
+
+struct ThemeCustomizationProfile {
+    static constexpr int CURRENT_VERSION = 16;
+
+    QString name;
+    QString baseTheme = QStringLiteral("Dark");
+    QJsonObject originalColors;
+    QJsonObject originalGeneratedColors;
+
+    QColor background = QColor(QStringLiteral("#111111"));
+    QColor chatBackground = QColor(QStringLiteral("#191919"));
+    QColor surface = QColor(QStringLiteral("#222222"));
+    QColor raisedSurface = QColor(QStringLiteral("#303030"));
+    QColor text = QColor(QStringLiteral("#eeeeee"));
+    QColor chatText = QColor(QStringLiteral("#eeeeee"));
+    bool separateChatText = false;
+    QColor mutedText = QColor(QStringLiteral("#999999"));
+
+    QColor systemText;
+    QColor timestampText;
+    QColor accent = QColor(QStringLiteral("#4fc3f7"));
+
+    ThemeFoundation foundation = ThemeFoundation::MoltorinoPolished;
+    ThemeSurfaceDepth surfaceDepth = ThemeSurfaceDepth::Balanced;
+
+    int panelContrast = 50;
+    ThemeAccentStrength accentStrength = ThemeAccentStrength::Balanced;
+    ThemeCornerStyle cornerStyle = ThemeCornerStyle::Soft;
+    ThemeTabShape tabShape = ThemeTabShape::Connected;
+    int tabCornerRadius = 3;
+    int tabSpacing = 1;
+    int inactiveTabContrast = 72;
+    int channelBarContrast = 52;
+    bool roundChat = false;
+    int chatCornerRadius = 6;
+    bool chatBorder = true;
+    QColor chatBorderColor = QColor(QStringLiteral("#999999"));
+    int chatBorderWidth = 1;
+    int chatBorderOpacity = 22;
+
+    bool useThemeMessageRows = true;
+    bool alternateMessageRows = false;
+    int alternateMessageOpacity = 24;
+    int alternateMessageContrast = 42;
+
+    int highlightOpacityAdjustment = 0;
+
+    bool messageShadow = false;
+    bool messageShadowEmotes = true;
+    QColor messageShadowColor = QColor(Qt::black);
+    int messageShadowOpacity = 58;
+    int messageShadowOffsetX = 1;
+    int messageShadowOffsetY = 1;
+    int messageShadowBlur = 2;
+
+    QString wallpaperSource;
+    QString wallpaperId;
+    ThemeWallpaperMode wallpaperMode = ThemeWallpaperMode::Fill;
+    int wallpaperOpacity = 100;
+    QColor wallpaperOverlayColor = QColor(Qt::black);
+    int wallpaperOverlayOpacity = 42;
+    int wallpaperBlur = 0;
+    int wallpaperZoom = 100;
+    int wallpaperFocalX = 50;
+    int wallpaperFocalY = 50;
+
+    bool useThemeFonts = true;
+    bool useThemeFontSizes = true;
+    QString chatFontFamily;
+    int chatFontSize = 0;
+    int chatFontWeight = 0;
+    QString usernameFontFamily;
+    int usernameFontSize = 0;
+    int usernameFontWeight = 0;
+    QString interfaceFontFamily;
+    int interfaceFontSize = 0;
+
+    bool operator==(const ThemeCustomizationProfile &) const = default;
+
+    bool isValid() const;
+    QColor effectiveChatText() const;
+    bool hasWallpaper() const;
+    int cornerRadius() const;
+    QPoint messageShadowOffset() const;
+
+    void clearDisabledFontOverrides();
+};
+
+struct ThemePaletteSelection {
+    bool background = false;
+    bool chatBackground = false;
+    bool surface = false;
+    bool raisedSurface = false;
+    bool accent = false;
+
+    bool any() const;
+};
+
+enum class ThemePaletteMode : uint8_t {
+    Dark,
+    Light,
+};
+
+/// Whether `id` can be the id of an uploaded background.
+bool isThemeWallpaperId(const QString &id);
+
+std::optional<ThemeCustomizationProfile> customizationProfileFromTheme(
+    const QJsonObject &theme);
+
+ThemeCustomizationProfile customizationProfileFromClassicTheme(
+    const QJsonObject &theme, const QString &name, const QString &key);
+
+std::optional<ThemeCustomizationProfile> customizationProfileFromBluzyrinoTheme(
+    const QJsonObject &theme, const QString &name);
+
+std::optional<ThemeCustomizationProfile>
+    customizationProfileFromBluzyrinoSettings(const QJsonObject &settings);
+
+QJsonObject buildCustomizedTheme(const ThemeCustomizationProfile &profile);
+
+/// The theme without anything that only works on this computer (a background
+/// stored in a local file).
+QJsonObject makeShareableCustomizedTheme(const QJsonObject &theme,
+                                         bool *wallpaperRemoved = nullptr);
+
+double colorContrastRatio(const QColor &foreground, const QColor &background);
+
+std::optional<ThemeCustomizationProfile> buildThemePalette(
+    const ThemeCustomizationProfile &profile,
+    const ThemePaletteSelection &selection, ThemePaletteMode mode);
+
+}  // namespace chatterino

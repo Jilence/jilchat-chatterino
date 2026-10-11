@@ -38,6 +38,7 @@ struct MessageColors {
     QColor regularText;
     QColor linkText;
     QColor systemText;
+    QColor timestampText;
 
     QColor messageSeperator;
 

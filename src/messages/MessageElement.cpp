@@ -2105,8 +2105,9 @@ TextElement *TimestampElement::formatTime(const QTime &time)
 
     QString format = locale.toString(time, getSettings()->timestampFormat);
 
-    auto *text = new TextElement(format, this->getFlags(), MessageColor::System,
-                                 FontStyle::TimestampMedium);
+    auto *text =
+        new TextElement(format, this->getFlags(), MessageColor::Timestamp,
+                        FontStyle::TimestampMedium);
     text->setLink(this->getLink());
     text->setTooltip(this->getTooltip());
     return text;

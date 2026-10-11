@@ -704,6 +704,8 @@ set(SOURCE_FILES
         singletons/StreamerMode.hpp
         singletons/Theme.cpp
         singletons/Theme.hpp
+        singletons/ThemeCustomization.cpp
+        singletons/ThemeCustomization.hpp
         singletons/Toasts.cpp
         singletons/Toasts.hpp
         singletons/Updates.cpp
@@ -1062,6 +1064,8 @@ set(SOURCE_FILES
         widgets/settingspages/GeneralPage.hpp
         widgets/settingspages/GeneralPageView.cpp
         widgets/settingspages/GeneralPageView.hpp
+        widgets/settingspages/CustomizationPage.cpp
+        widgets/settingspages/CustomizationPage.hpp
         widgets/settingspages/LeafyrinoPage.cpp
         widgets/settingspages/LeafyrinoPage.hpp
         widgets/settingspages/TechnorinoPage.cpp
