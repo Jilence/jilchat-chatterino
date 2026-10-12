@@ -11,6 +11,11 @@
 #include <QJsonValue>
 #include <QUrl>
 
+#include <functional>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 namespace chatterino {
 
 ChatterinoBadges::ChatterinoBadges()
@@ -51,16 +56,24 @@ void ChatterinoBadges::setKickMapping(const QString &twitchID, uint64_t kickID)
     this->kickMapping.emplace(kickID, existing->second);
 }
 
-void ChatterinoBadges::loadChatterinoBadges()
+void ChatterinoBadges::reload(std::function<void(bool)> onDone)
+{
+    this->loadChatterinoBadges(std::move(onDone));
+}
+
+void ChatterinoBadges::loadChatterinoBadges(std::function<void(bool)> onDone)
 {
     static QUrl url("https://api.chatterino.com/badges");
 
     NetworkRequest(url)
         .concurrent()
-        .onSuccess([this](auto result) {
+        .onSuccess([this, onDone](auto result) {
             auto jsonRoot = result.parseJson();
 
-            std::unique_lock lock(this->mutex_);
+            // built on the side and swapped in, so loading again replaces
+            // the badges instead of adding to them
+            std::vector<EmotePtr> newEmotes;
+            std::unordered_map<QString, int> newBadgeMap;
 
             int index = 0;
             for (const auto &jsonBadgeValue :
@@ -88,17 +101,61 @@ void ChatterinoBadges::loadChatterinoBadges()
                     .homePage = Url{},
                 };
 
-                this->emotes.push_back(
+                newEmotes.push_back(
                     std::make_shared<const Emote>(std::move(emote)));
 
                 for (const auto &user : jsonBadge.value("users").toArray())
                 {
-                    this->badgeMap[user.toString()] = index;
+                    newBadgeMap[user.toString()] = index;
                 }
                 ++index;
             }
 
+            if (newEmotes.empty())
+            {
+                // an answer without badges: keep what was loaded before
+                if (onDone)
+                {
+                    onDone(false);
+                }
+                return;
+            }
+
+            {
+                std::unique_lock lock(this->mutex_);
+
+                // The Kick mapping points into the list of badges. Keep the
+                // entries whose badge still exists, at its new place.
+                std::unordered_map<uint64_t, int> newKickMapping;
+                for (const auto &[kickID, oldIndex] : this->kickMapping)
+                {
+                    const auto &name = this->emotes[oldIndex]->name;
+                    for (int i = 0; i < static_cast<int>(newEmotes.size()); i++)
+                    {
+                        if (newEmotes[i]->name == name)
+                        {
+                            newKickMapping.emplace(kickID, i);
+                            break;
+                        }
+                    }
+                }
+
+                this->emotes = std::move(newEmotes);
+                this->badgeMap = std::move(newBadgeMap);
+                this->kickMapping = std::move(newKickMapping);
+            }
+
             WindowManager::notifyBadgesUpdated();
+            if (onDone)
+            {
+                onDone(true);
+            }
+        })
+        .onError([onDone](const auto & /*result*/) {
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }

@@ -13,6 +13,8 @@
 #include <QStringBuilder>
 #include <QTimer>
 
+#include <functional>
+
 namespace chatterino {
 
 using namespace chatterino::literals;
@@ -46,12 +48,12 @@ std::optional<FfzApBadges::Badge> FfzApBadges::getBadge(
     return std::nullopt;
 }
 
-void FfzApBadges::load()
+void FfzApBadges::load(std::function<void(bool)> onDone)
 {
     NetworkRequest(u"https://api.ffzap.com/v1/supporters"_s)
         .concurrent()
         .timeout(10000)
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, onDone](const NetworkResult &result) {
             const auto arr = result.parseJsonArray();
 
             std::unordered_map<QString, Badge> map;
@@ -106,10 +108,18 @@ void FfzApBadges::load()
 
             qCDebug(chatterinoApp)
                 << "[FFZ:AP] Loaded" << this->badgeMap_.size() << "badges";
+            if (onDone)
+            {
+                onDone(true);
+            }
         })
-        .onError([](const NetworkResult &result) {
+        .onError([onDone](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[FFZ:AP] Failed to load badges:" << result.formatError();
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }

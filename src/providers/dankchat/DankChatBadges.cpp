@@ -18,6 +18,7 @@
 #include <QStringBuilder>
 #include <QTimer>
 
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -62,12 +63,12 @@ std::optional<EmotePtr> DankChatBadges::getBadge(const QString &userID) const
     return std::nullopt;
 }
 
-void DankChatBadges::load()
+void DankChatBadges::load(std::function<void(bool)> onDone)
 {
     NetworkRequest(u"https://flxrs.com/api/badges"_s)
         .concurrent()
         .timeout(10000)
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, onDone](const NetworkResult &result) {
             const auto arr = result.parseJsonArray();
 
             std::unordered_map<QString, EmotePtr> typeToEmote;
@@ -139,10 +140,18 @@ void DankChatBadges::load()
 
             qCDebug(chatterinoApp)
                 << "[DankChat] Loaded badges for" << count << "users";
+            if (onDone)
+            {
+                onDone(true);
+            }
         })
-        .onError([](const NetworkResult &result) {
+        .onError([onDone](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[DankChat] Failed to load badges:" << result.formatError();
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }

@@ -8,6 +8,7 @@
 
 #include <QJsonObject>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -39,7 +40,9 @@ public:
      */
     std::optional<EmotePtr> getBadge(const UserId &id);
 
-    void loadFolhinhaBadges();
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    void loadFolhinhaBadges(std::function<void(bool)> onDone = {});
 
 private:
     void applyBadgeJson(const QJsonObject &jsonRoot);

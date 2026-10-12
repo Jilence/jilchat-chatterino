@@ -2,6 +2,7 @@
 
 #include "common/Aliases.hpp"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -27,6 +28,18 @@ public:
     virtual std::optional<EmotePtr> getBadge(const UserId &id) = 0;
     virtual EmotePtr getKickBadge(uint64_t kickID) = 0;
     virtual void setKickMapping(const QString &twitchID, uint64_t kickID) = 0;
+
+    /// Loads the badges again, replacing the ones loaded before.
+    ///
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    virtual void reload(std::function<void(bool)> onDone = {})
+    {
+        if (onDone)
+        {
+            onDone(false);
+        }
+    }
 };
 
 class ChatterinoBadges : public IChatterinoBadges
@@ -40,8 +53,10 @@ public:
 
     void setKickMapping(const QString &twitchID, uint64_t kickID) override;
 
+    void reload(std::function<void(bool)> onDone = {}) override;
+
 private:
-    void loadChatterinoBadges();
+    void loadChatterinoBadges(std::function<void(bool)> onDone = {});
 
     std::shared_mutex mutex_;
 

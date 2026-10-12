@@ -151,13 +151,13 @@ std::optional<EmotePtr> FolhinhaBadges::getBadge(const UserId &id)
     return std::nullopt;
 }
 
-void FolhinhaBadges::loadFolhinhaBadges()
+void FolhinhaBadges::loadFolhinhaBadges(std::function<void(bool)> onDone)
 {
     static QUrl url("https://api.folhinhabot.com/plus");
 
     NetworkRequest(url)
         .concurrent()
-        .onSuccess([this](auto result) -> Outcome {
+        .onSuccess([this, onDone](auto result) -> Outcome {
             auto jsonRoot = result.parseJson();
 
             this->applyBadgeJson(jsonRoot);
@@ -200,7 +200,17 @@ void FolhinhaBadges::loadFolhinhaBadges()
             }
             */
 
+            if (onDone)
+            {
+                onDone(true);
+            }
             return Success;
+        })
+        .onError([onDone](const auto & /*result*/) {
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }
