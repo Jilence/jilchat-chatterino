@@ -137,6 +137,9 @@ private:
     void fetchMoreUsercardLogMessages(int emptyPageSkipsLeft,
                                       bool enableLazyLoadOnSuccess);
     void ensureUsercardMessagesChannel(const QString &channelName);
+    /// Adds loaded older messages above the shown ones. Stays at the bottom
+    /// if the view was there or wasn't scrollable yet.
+    void prependLoadedUsercardMessages(const std::vector<MessagePtr> &messages);
     /// Shows `text` once at the top of the usercard messages, e.g. when the
     /// public logs can't be loaded.
     void showUsercardLogNotice(const QString &channelName, const QString &text);
