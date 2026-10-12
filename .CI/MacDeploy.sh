@@ -81,6 +81,17 @@ else
     echo "No kimageformats archive provided; relying on Qt imageformats."
 fi
 
+# The programs that convert video backgrounds of themes aren't found by
+# macdeployqt, so they are signed here.
+if [ -n "$MACOS_CODESIGN_CERTIFICATE" ]; then
+    for _media_tool in "${_app_bundle}/Contents/Resources/support/media/ffmpeg"         "${_app_bundle}/Contents/Resources/support/media/ffprobe"; do
+        if [ -f "${_media_tool}" ]; then
+            echo "Codesigning $(basename "${_media_tool}")"
+            codesign -s "$MACOS_CODESIGN_CERTIFICATE" --force "${_media_tool}"
+        fi
+    done
+fi
+
 macdeployqt "${_app_bundle}" "${_macdeployqt_args[@]}" -verbose=1
 
 if [ -n "$MACOS_CODESIGN_CERTIFICATE" ]; then

@@ -49,11 +49,16 @@ jobs:
           mem: ${{ steps.mem.outputs.mem_mb }}
           cache-after-prepare: true
           prepare: |
-            pkg install -y boost-libs git libnotify qt6-base qt6-svg qt6-5compat qt6-charts qt6-imageformats qtkeychain-qt6 cmake pkgconf
+            pkg install -y boost-libs git libnotify qt6-base qt6-svg qt6-5compat qt6-charts qt6-imageformats qtkeychain-qt6 cmake pkgconf bash curl gmake nasm meson ninja
           run: |
             git config --global --add safe.directory "$GITHUB_WORKSPACE"
             git submodule init
             git submodule update
+            # libvpx, libwebm, libyuv and ffmpeg for the video backgrounds of
+            # themes; outside of the checkout, which has to stay clean
+            export CHATTERINO_VIDEO_WORKSPACE=/tmp/video-dependencies
+            export CHATTERINO_VIDEO_PREFIX=/tmp/video-dependencies/install
+            bash .CI/build-video-dependencies.sh
             mkdir build
             cd build
             c++ --version
@@ -68,6 +73,9 @@ jobs:
                 -DCMAKE_BUILD_TYPE="release" \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS="ON" \
                 -DSKIP_JSON_GENERATION="ON" \
+                -DCMAKE_PREFIX_PATH="$CHATTERINO_VIDEO_PREFIX" \
+                -DCHATTERINO_THEME_VIDEO="ON" \
+                -DCHATTERINO_MEDIA_TOOLS_DIR="$CHATTERINO_VIDEO_PREFIX/support/media" \
                 ..
             cat compile_commands.json
             make -j $(getconf _NPROCESSORS_ONLN)

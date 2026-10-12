@@ -78,11 +78,21 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          PACKAGES="cmake g++ git pkg-config libboost-dev libnotify-dev libssl-dev libsecret-1-dev hunspell libhunspell-dev file fuse libfuse2 patchelf"
+          PACKAGES="cmake g++ git pkg-config libboost-dev libnotify-dev libssl-dev libsecret-1-dev hunspell libhunspell-dev file fuse libfuse2 patchelf nasm meson ninja-build curl xz-utils"
           if [ "${{ matrix.os }}" = "ubuntu-24.04" ] || [ "${{ matrix.os }}" = "ubuntu-26.04" ]; then
             PACKAGES="$PACKAGES libboost-json-dev"
           fi
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PACKAGES
+
+      # libvpx, libwebm, libyuv and ffmpeg for the video backgrounds of themes
+      - name: Cache video dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/video-dependencies/install
+          key: video-dependencies-${{ matrix.os }}-${{ hashFiles('.CI/build-video-dependencies.sh') }}
+
+      - name: Build video dependencies
+        run: bash .CI/build-video-dependencies.sh
 
       - name: Cache Boost (Ubuntu 22.04)
         if: matrix.os == 'ubuntu-22.04'
@@ -143,6 +153,7 @@ jobs:
           if [ "${{ matrix.os }}" = "ubuntu-22.04" ]; then
             export CMAKE_PREFIX_PATH="$HOME/boost-1.83.0${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
           fi
+          export CMAKE_PREFIX_PATH="$CHATTERINO_VIDEO_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
           CXXFLAGS=-fno-sized-deallocation cmake \
             -DCMAKE_INSTALL_PREFIX=appdir/usr/ \
             -DCMAKE_BUILD_TYPE=Release \
@@ -153,6 +164,8 @@ jobs:
             -DCHATTERINO_NIGHTLY_BUILD=${{ steps.build-type.outputs.NIGHTLY_BUILD }} \
             -DFORCE_JSON_GENERATION=Off \
             -DCHATTERINO_PLUGINS=${{ case(matrix.plugins, 'On', 'Off') }} \
+            -DCHATTERINO_THEME_VIDEO=ON \
+            -DCHATTERINO_MEDIA_TOOLS_DIR="$CHATTERINO_VIDEO_PREFIX/support/media" \
             ..
           cmake --build . -j"$(nproc)"
 
@@ -285,12 +298,6 @@ jobs:
           version: ${{ matrix.qt-version }}
 
       # MARK: Windows
-      - name: Enable Developer Command Prompt (Windows)
-        if: startsWith(matrix.os, 'windows')
-        uses: Chatterino/msvc-dev-cmd@24444121cb2805a7adbd23d0f4455d0916af896b # v2.0.7
-        with:
-          arch: ${{env.C2_ARCH == 'arm' && 'arm64' || 'x64' }}
-
       - name: Setup sccache (Windows)
         # sccache v0.7.4
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
@@ -316,12 +323,6 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install Clang (Windows)
-        uses: Nerixyz/install-llvm-action@4af87402e075801cb1ba829dcee5bfafdc733616
-        if: startsWith(matrix.os, 'windows')
-        with:
-          version: 22
-
       - name: Install and Setup Conan (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
@@ -335,14 +336,65 @@ jobs:
         run: |
           mkdir build
           cd build
+          # with_theme_video: libvpx, libwebm, libyuv and the ffmpeg programs
+          # for the video backgrounds of themes
+          # libwebm only compiles in conformance mode with current MSVC
+          # (C2248 in master_value_parser.h otherwise)
+          # setup-python sets PKG_CONFIG_PATH to a Windows path. Conan puts its
+          # own folder in front of it, and that mix of both path styles isn't
+          # understood: ffmpeg's configure doesn't find dav1d then.
+          unset PKG_CONFIG_PATH
+          # libvpx assembles with yasm, and its build doesn't get the yasm conan
+          # provides on its search path; it would only work by the yasm that
+          # happens to be on the runner. Put conan's on the path ourselves.
+          if [ "${{ runner.arch }}" = "X64" ]; then
+            conan install --requires=yasm/1.3.0 \
+                --deployer=direct_deploy \
+                --deployer-folder=yasm-tool
+            PATH="$PWD/yasm-tool/direct_deploy/yasm/bin:$PATH"
+            export PATH
+          fi
           conan install .. \
               -s build_type=RelWithDebInfo \
               -c tools.cmake.cmaketoolchain:generator="Ninja" \
               -b missing \
               --output-folder=. \
-              -o with_openssl3=True
+              -o with_openssl3=True \
+              -o with_theme_video=True \
+              -c "libwebm/*:tools.build:cxxflags=['/permissive-']" || {
+            # what ffmpeg's configure tried, if that is what failed; also in
+            # the summary of the run, the log of this step gets very long
+            for log in ~/.conan2/p/b/ffmpe*/b/*/ffbuild/config.log; do
+              if [ -f "$log" ]; then
+                tail -n 80 "$log"
+                {
+                  echo "### ffmpeg configure (${{ matrix.os }})"
+                  echo '```'
+                  tail -n 80 "$log"
+                  echo '```'
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
+            done
+            exit 1
+          }
           conan cache clean --source --build --download "*"
         shell: bash
+
+      # After the dependencies on purpose: with the Visual Studio environment
+      # already active, conan's packages that build with msbuild (libvpx)
+      # can't run any program from the search path on the runner. Conan
+      # activates Visual Studio for its packages itself.
+      - name: Enable Developer Command Prompt (Windows)
+        if: startsWith(matrix.os, 'windows')
+        uses: Chatterino/msvc-dev-cmd@24444121cb2805a7adbd23d0f4455d0916af896b # v2.0.7
+        with:
+          arch: ${{env.C2_ARCH == 'arm' && 'arm64' || 'x64' }}
+
+      - name: Install Clang (Windows)
+        uses: Nerixyz/install-llvm-action@4af87402e075801cb1ba829dcee5bfafdc733616
+        if: startsWith(matrix.os, 'windows')
+        with:
+          version: 22
 
       - name: Build (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -377,6 +429,7 @@ jobs:
               -DCHATTERINO_NIGHTLY_BUILD="${{ steps.build-type.outputs.NIGHTLY_BUILD }}" `
               -DFORCE_JSON_GENERATION=Off `
               -DCHATTERINO_SPELLCHECK=On `
+              -DCHATTERINO_THEME_VIDEO=ON `
               ..
           ninja
 
@@ -426,6 +479,22 @@ jobs:
           brew install rapidjson p7zip create-dmg tree conan ninja
         shell: bash
 
+      # libvpx, libwebm, libyuv and ffmpeg for the video backgrounds of themes,
+      # for both architectures
+      - name: Cache video dependencies (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/video-dependencies/install
+          key: video-dependencies-${{ matrix.os }}-${{ matrix.macosx-deployment-target }}-${{ hashFiles('.CI/build-video-dependencies.sh') }}
+
+      - name: Build video dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install meson nasm pkg-config
+          bash .CI/build-video-dependencies.sh
+        shell: bash
+
       - name: Setup Conan (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -462,6 +531,9 @@ jobs:
               -DFORCE_JSON_GENERATION=Off \
               -DCHATTERINO_NIGHTLY_BUILD=${{ steps.build-type.outputs.NIGHTLY_BUILD }} \
               -DCHATTERINO_SPELLCHECK=On \
+              -DCMAKE_PREFIX_PATH="$CHATTERINO_VIDEO_PREFIX" \
+              -DCHATTERINO_THEME_VIDEO=ON \
+              -DCHATTERINO_MEDIA_TOOLS_DIR="$CHATTERINO_VIDEO_PREFIX/support/media" \
               -G Ninja \
               ..
           ninja
