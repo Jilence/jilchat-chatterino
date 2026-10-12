@@ -110,6 +110,9 @@ private:
     QSpinBox *userCooldown_{};
     QComboBox *cooldownUnit_{};
     QComboBox *userCooldownUnit_{};
+    QCheckBox *delayResponse_{};
+    QSpinBox *responseDelay_{};
+    QComboBox *responseDelayUnit_{};
     QComboBox *timeZone_{};
     QLabel *timeZoneLabel_{};
     QComboBox *timeFormat_{};
