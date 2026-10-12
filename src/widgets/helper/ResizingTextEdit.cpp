@@ -49,13 +49,13 @@ ResizingTextEdit::ResizingTextEdit()
         }
         qCDebug(chatterinoCommon)
             << "Finishing completion because cursor moved";
-        this->completionInProgress_ = false;
+        this->finishCompletion();
     });
 
     // Whenever the setting for emote completion changes, force a
     // refresh on the completion model the next time "Tab" is pressed
     getSettings()->prefixOnlyEmoteCompletion.connect([this] {
-        this->completionInProgress_ = false;
+        this->finishCompletion();
     });
 
     this->setFocusPolicy(Qt::ClickFocus);
@@ -297,6 +297,11 @@ void ResizingTextEdit::keyPressEvent(QKeyEvent *event)
                 QSignalBlocker dontTriggerCursorMovement(this);
                 this->completer_->complete();
             }
+            if (this->completer_->completionCount() > 0)
+            {
+                this->tabCompletionChanged.invoke(
+                    completionModel, this->completer_->currentRow());
+            }
             return;
         }
 
@@ -326,12 +331,14 @@ void ResizingTextEdit::keyPressEvent(QKeyEvent *event)
             QSignalBlocker dontTriggerCursorMovement(this);
             this->completer_->complete();
         }
+        this->tabCompletionChanged.invoke(completionModel,
+                                          this->completer_->currentRow());
         return;
     }
 
     if (!event->text().isEmpty())
     {
-        this->completionInProgress_ = false;
+        this->finishCompletion();
     }
 
     if (!event->isAccepted())
@@ -362,6 +369,7 @@ void ResizingTextEdit::focusOutEvent(QFocusEvent *event)
 
 void ResizingTextEdit::setCompleter(QCompleter *c)
 {
+    this->finishCompletion();
     delete this->completer_;
 
     this->completer_ = c;
@@ -383,7 +391,44 @@ void ResizingTextEdit::setCompleter(QCompleter *c)
 
 void ResizingTextEdit::resetCompletion()
 {
+    this->finishCompletion();
+}
+
+bool ResizingTextEdit::selectCompletionRow(int row)
+{
+    if (!this->completionInProgress_ || this->completer_ == nullptr ||
+        row < 0 || row >= this->completer_->completionCount() ||
+        !this->completer_->setCurrentRow(row))
+    {
+        return false;
+    }
+
+    auto *completionModel =
+        dynamic_cast<TabCompletionModel *>(this->completer_->model());
+    if (completionModel == nullptr)
+    {
+        this->finishCompletion();
+        return false;
+    }
+
+    {
+        // this blocks cursor movement events from updating tab completion
+        QSignalBlocker dontTriggerCursorMovement(this);
+        this->completer_->complete();
+    }
+    this->tabCompletionChanged.invoke(completionModel, row);
+    return true;
+}
+
+void ResizingTextEdit::finishCompletion()
+{
+    if (!this->completionInProgress_)
+    {
+        return;
+    }
+
     this->completionInProgress_ = false;
+    this->tabCompletionHidden.invoke();
 }
 
 void ResizingTextEdit::setGhostText(QString text)

@@ -11,9 +11,14 @@
 #include "controllers/commands/builtin/twitch/Nuke.hpp"
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/completion/sources/CommandSource.hpp"
+#include "controllers/completion/sources/EmoteSource.hpp"
 #include "controllers/completion/strategies/CommandStrategy.hpp"
+#include "controllers/completion/TabCompletionModel.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/spellcheck/SpellChecker.hpp"
+#include "messages/Emote.hpp"
+#include "messages/Image.hpp"
+#include "messages/ImageSet.hpp"
 #include "messages/Link.hpp"
 #include "messages/Message.hpp"
 #include "providers/kick/KickChannel.hpp"
@@ -65,6 +70,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -73,10 +79,12 @@
 #include <qwindow.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <ranges>
 #include <utility>
+#include <vector>
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -396,6 +404,397 @@ protected:
 
 }  // namespace
 
+/// Shows the emotes Tab cycles through as a row of images above the input.
+/// Taken from Moltorino.
+class EmoteTabCompletionCarousel final : public BaseWidget
+{
+public:
+    explicit EmoteTabCompletionCarousel(QWidget *parent = nullptr)
+        : BaseWidget(parent)
+    {
+        this->setMouseTracking(true);
+        this->setFocusPolicy(Qt::NoFocus);
+        this->setCursor(Qt::PointingHandCursor);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        this->hide();
+
+        this->signalHolder_.managedConnect(
+            getApp()->getWindows()->layoutRequested, [this](Channel *) {
+                if (this->isVisible())
+                {
+                    this->update();
+                }
+            });
+    }
+
+    /// Called with the row of the emote that was clicked
+    void setSelectionCallback(std::function<void(int)> callback)
+    {
+        this->selectionCallback_ = std::move(callback);
+    }
+
+    /// Called whenever the carousel appears, disappears or changes its height
+    void setVisibilityCallback(std::function<void()> callback)
+    {
+        this->visibilityCallback_ = std::move(callback);
+    }
+
+    void refreshAppearance()
+    {
+        const int previousHeight = this->height();
+        this->setFixedHeight(this->carouselHeight());
+        this->update();
+
+        if (this->isVisible() && previousHeight != this->height() &&
+            this->visibilityCallback_)
+        {
+            this->visibilityCallback_();
+        }
+    }
+
+    void setCompletion(TabCompletionModel *model, int selectedRow)
+    {
+        this->model_ = model;
+        this->selectedRow_ = selectedRow;
+
+        this->emoteRows_.clear();
+        if (model != nullptr)
+        {
+            this->emoteRows_.reserve(static_cast<size_t>(model->rowCount()));
+            for (int row = 0; row < model->rowCount(); ++row)
+            {
+                const auto *item = model->emoteAt(row);
+                if (item != nullptr && item->hasRenderableEmote())
+                {
+                    this->emoteRows_.push_back(row);
+                }
+            }
+        }
+
+        const auto *selectedItem =
+            model == nullptr ? nullptr : model->emoteAt(selectedRow);
+        if (selectedItem == nullptr || !selectedItem->hasRenderableEmote() ||
+            this->emoteRows_.empty())
+        {
+            this->clear();
+            return;
+        }
+
+        const bool changedVisibility = this->isHidden();
+        this->setFixedHeight(this->carouselHeight());
+        this->show();
+        this->update();
+        if (changedVisibility && this->visibilityCallback_)
+        {
+            this->visibilityCallback_();
+        }
+    }
+
+    void clear()
+    {
+        this->gifRepaintConnection_ = pajlada::Signals::ScopedConnection{};
+        this->model_.clear();
+        this->selectedRow_ = -1;
+        this->emoteRows_.clear();
+        this->cells_.clear();
+        if (this->isHidden())
+        {
+            return;
+        }
+
+        this->hide();
+        if (this->visibilityCallback_)
+        {
+            this->visibilityCallback_();
+        }
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.fillRect(this->rect(), this->theme->splits.input.background);
+
+        auto *model = this->model_.data();
+        if (model == nullptr || this->emoteRows_.empty())
+        {
+            return;
+        }
+
+        const int outerMargin = std::max(8, int(std::round(9 * this->scale())));
+        const int availableWidth = std::max(1, this->width() - outerMargin * 2);
+        const int minimumCellWidth = std::max(
+            46, int(std::round(this->minimumCellWidth() * this->scale())));
+        const int visibleCount =
+            std::clamp(availableWidth / minimumCellWidth, 1,
+                       std::min(7, static_cast<int>(this->emoteRows_.size())));
+        const int selectedIndex = this->selectedEmoteIndex();
+        const int maxStart = std::max(
+            0, static_cast<int>(this->emoteRows_.size()) - visibleCount);
+        const int first =
+            std::clamp(selectedIndex - visibleCount / 2, 0, maxStart);
+        const int cellWidth = availableWidth / visibleCount;
+
+        this->cells_.clear();
+        this->cells_.reserve(static_cast<size_t>(visibleCount));
+
+        const bool showNames = getSettings()->showEmoteTabCarouselNames;
+        QFont nameFont = this->font();
+        nameFont.setPointSizeF(std::max(7.0, nameFont.pointSizeF() * 0.80));
+        const QFontMetrics nameMetrics(nameFont);
+
+        for (int slot = 0; slot < visibleCount; ++slot)
+        {
+            const int emoteIndex = first + slot;
+            const int row = this->emoteRows_[static_cast<size_t>(emoteIndex)];
+            const auto *item = model->emoteAt(row);
+            if (item == nullptr || !item->hasRenderableEmote())
+            {
+                continue;
+            }
+
+            const auto emote = item->getEmote();
+            if (!emote)
+            {
+                continue;
+            }
+
+            const int left = outerMargin + slot * cellWidth;
+            const int width = slot == visibleCount - 1
+                                  ? availableWidth - slot * cellWidth
+                                  : cellWidth;
+            QRect cellRect(left, 2, width, this->height() - 4);
+            this->cells_.emplace_back(cellRect, row);
+
+            const bool selected = row == this->selectedRow_;
+            QColor cellColor = this->theme->tabs.regular.backgrounds.regular;
+            cellColor.setAlpha(selected ? 185 : 70);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(cellColor);
+            painter.drawRoundedRect(cellRect.adjusted(1, 0, -1, 0),
+                                    std::max(2.0, 3.0 * this->scale()),
+                                    std::max(2.0, 3.0 * this->scale()));
+
+            if (selected)
+            {
+                QPen accentPen(this->theme->accent,
+                               std::max(1.0, 1.5 * this->scale()));
+                painter.setPen(accentPen);
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(cellRect.adjusted(1, 0, -2, -1),
+                                        std::max(2.0, 3.0 * this->scale()),
+                                        std::max(2.0, 3.0 * this->scale()));
+            }
+
+            const int nameHeight = showNames ? nameMetrics.height() : 0;
+            const int imageMargin =
+                std::max(2, int(std::round(3 * this->scale())));
+            QRect imageArea =
+                cellRect.adjusted(imageMargin, imageMargin, -imageMargin,
+                                  -(nameHeight + imageMargin));
+            // an emote is 28 pixels high at scale 1: ask for the image that
+            // fits the space it gets here
+            const auto &image = emote->images.getImageOrLoaded(
+                std::max(1.F, static_cast<float>(imageArea.height()) / 28.F));
+            if (image != nullptr)
+            {
+                if (auto pixmap = image->pixmapOrLoad())
+                {
+                    const auto imageSize =
+                        QSize(image->width(), image->height());
+                    const auto drawn =
+                        imageSize.scaled(imageArea.size(), Qt::KeepAspectRatio);
+                    QRect imageRect(QPoint{}, drawn);
+                    imageRect.moveCenter(imageArea.center());
+                    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+                    painter.drawPixmap(imageRect, *pixmap);
+                }
+            }
+
+            if (showNames)
+            {
+                painter.setFont(nameFont);
+                auto textColor = this->theme->splits.input.text;
+                if (!selected)
+                {
+                    textColor.setAlphaF(0.78F);
+                }
+                painter.setPen(textColor);
+                const auto name = nameMetrics.elidedText(
+                    item->displayName, Qt::ElideRight,
+                    std::max(1, cellRect.width() - imageMargin * 2));
+                QRect nameRect(cellRect.left() + imageMargin,
+                               cellRect.bottom() - nameHeight - 1,
+                               cellRect.width() - imageMargin * 2, nameHeight);
+                painter.drawText(nameRect, Qt::AlignHCenter | Qt::AlignVCenter,
+                                 name);
+            }
+        }
+
+        // more emotes to the left or right
+        painter.setPen(this->theme->splits.input.text);
+        if (first > 0)
+        {
+            painter.drawText(QRect(0, 0, outerMargin, this->height()),
+                             Qt::AlignCenter, QString(QChar(0x2039)));
+        }
+        if (first + visibleCount < static_cast<int>(this->emoteRows_.size()))
+        {
+            painter.drawText(QRect(this->width() - outerMargin, 0, outerMargin,
+                                   this->height()),
+                             Qt::AlignCenter, QString(QChar(0x203A)));
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            for (const auto &[rect, row] : this->cells_)
+            {
+                if (rect.contains(event->pos()))
+                {
+                    this->selectRow(row);
+                    event->accept();
+                    return;
+                }
+            }
+        }
+        BaseWidget::mouseReleaseEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        auto *model = this->model_.data();
+        for (const auto &[rect, row] : this->cells_)
+        {
+            if (rect.contains(event->pos()) && model != nullptr)
+            {
+                if (const auto *item = model->emoteAt(row))
+                {
+                    this->setToolTip(item->displayName + QStringLiteral(" - ") +
+                                     item->providerName);
+                    BaseWidget::mouseMoveEvent(event);
+                    return;
+                }
+            }
+        }
+        this->setToolTip({});
+        BaseWidget::mouseMoveEvent(event);
+    }
+
+    void wheelEvent(QWheelEvent *event) override
+    {
+        if (this->emoteRows_.empty())
+        {
+            return;
+        }
+
+        const auto angleDelta = event->angleDelta();
+        const auto pixelDelta = event->pixelDelta();
+        const int amount = angleDelta.y() != 0   ? angleDelta.y()
+                           : angleDelta.x() != 0 ? angleDelta.x()
+                           : pixelDelta.y() != 0 ? pixelDelta.y()
+                                                 : pixelDelta.x();
+        if (amount == 0)
+        {
+            event->ignore();
+            return;
+        }
+
+        const int direction = amount < 0 ? 1 : -1;
+        const int current = this->selectedEmoteIndex();
+        const int next =
+            std::clamp(current + direction, 0,
+                       static_cast<int>(this->emoteRows_.size()) - 1);
+        this->selectRow(this->emoteRows_[static_cast<size_t>(next)]);
+        event->accept();
+    }
+
+    void scaleChangedEvent(float /*scale*/) override
+    {
+        this->refreshAppearance();
+    }
+
+    void themeChangedEvent() override
+    {
+        this->update();
+    }
+
+    void showEvent(QShowEvent *event) override
+    {
+        BaseWidget::showEvent(event);
+        if (!this->gifRepaintConnection_.isConnected())
+        {
+            // animated emotes keep moving
+            this->gifRepaintConnection_ =
+                getApp()->getWindows()->gifRepaintRequested.connect([this] {
+                    if (this->isVisible())
+                    {
+                        this->update();
+                    }
+                });
+        }
+    }
+
+    void hideEvent(QHideEvent *event) override
+    {
+        this->gifRepaintConnection_ = pajlada::Signals::ScopedConnection{};
+        QWidget::hideEvent(event);
+    }
+
+private:
+    int carouselHeight() const
+    {
+        const auto size = getSettings()->emoteTabCarouselSize.getValue();
+
+        const int logicalHeight = size == "extra-large" ? 74
+                                  : size == "large"     ? 59
+                                  : size == "standard"  ? 44
+                                                        : 29;
+        return std::max(28, int(std::round(logicalHeight * this->scale())));
+    }
+
+    int minimumCellWidth() const
+    {
+        const auto size = getSettings()->emoteTabCarouselSize.getValue();
+        return size == "extra-large" ? 84
+               : size == "large"     ? 72
+               : size == "standard"  ? 60
+                                     : 48;
+    }
+
+    /// Where the selected row is among the rows that are emotes
+    int selectedEmoteIndex() const
+    {
+        const auto it = std::ranges::find(this->emoteRows_, this->selectedRow_);
+        if (it == this->emoteRows_.end())
+        {
+            return 0;
+        }
+        return static_cast<int>(std::distance(this->emoteRows_.begin(), it));
+    }
+
+    void selectRow(int row)
+    {
+        if (this->selectionCallback_)
+        {
+            this->selectionCallback_(row);
+        }
+    }
+
+    QPointer<TabCompletionModel> model_;
+    int selectedRow_ = -1;
+    /// The rows of the model that are emotes
+    std::vector<int> emoteRows_;
+    /// What is painted right now: where, and which row
+    std::vector<std::pair<QRect, int>> cells_;
+    std::function<void(int)> selectionCallback_;
+    std::function<void()> visibilityCallback_;
+    pajlada::Signals::ScopedConnection gifRepaintConnection_;
+};
+
 SplitInput::SplitInput(Split *_chatWidget, bool enableInlineReplying)
     : SplitInput(_chatWidget, _chatWidget, _chatWidget->view_,
                  enableInlineReplying)
@@ -413,6 +812,29 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
 {
     this->installEventFilter(this);
     this->initLayout();
+    this->ui_.emoteTabCompletionCarousel->setSelectionCallback([this](int row) {
+        this->ui_.textEdit->selectCompletionRow(row);
+    });
+    this->ui_.emoteTabCompletionCarousel->setVisibilityCallback([this] {
+        this->setMaximumHeight(this->scaledMaxHeight());
+        this->relayoutParentWidgets();
+    });
+    this->managedConnections_.managedConnect(
+        this->ui_.textEdit->tabCompletionChanged,
+        [this](TabCompletionModel *model, int row) {
+            if (getSettings()->showEmoteTabCarousel)
+            {
+                this->ui_.emoteTabCompletionCarousel->setCompletion(model, row);
+            }
+            else
+            {
+                this->ui_.emoteTabCompletionCarousel->clear();
+            }
+        });
+    this->managedConnections_.managedConnect(
+        this->ui_.textEdit->tabCompletionHidden, [this] {
+            this->ui_.emoteTabCompletionCarousel->clear();
+        });
     this->raidStatusProgressAnimation_.setTargetObject(
         this->ui_.raidStatusProgress);
     this->raidStatusProgressAnimation_.setPropertyName("value"_ba);
@@ -448,6 +870,25 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
     this->signalHolder_.managedConnect(this->split_->channelChanged, [this] {
         this->updateChannel();
     });
+
+    getSettings()->showEmoteTabCarousel.connect(
+        [this](const bool enabled, auto) {
+            if (!enabled)
+            {
+                this->ui_.emoteTabCompletionCarousel->clear();
+            }
+        },
+        this->managedConnections_);
+    getSettings()->emoteTabCarouselSize.connect(
+        [this](const QString &, auto) {
+            this->ui_.emoteTabCompletionCarousel->refreshAppearance();
+        },
+        this->managedConnections_);
+    getSettings()->showEmoteTabCarouselNames.connect(
+        [this](const bool, auto) {
+            this->ui_.emoteTabCompletionCarousel->refreshAppearance();
+        },
+        this->managedConnections_);
 
     getSettings()->enablePredictions.connect(
         [this](const auto &, auto) {
@@ -862,6 +1303,9 @@ void SplitInput::initLayout()
                                                           Qt::AlignVCenter);
     rewardPromptWidget->hide();
 #endif
+
+    layout.emplace<EmoteTabCompletionCarousel>().assign(
+        &this->ui_.emoteTabCompletionCarousel);
 
     auto inputWrapper =
         layout.emplace<QWidget>().assign(&this->ui_.inputWrapper);
@@ -1797,14 +2241,19 @@ bool SplitInput::maybeSendMessageAsWarning(
 
 int SplitInput::scaledMaxHeight() const
 {
+    const int carouselHeight =
+        this->ui_.emoteTabCompletionCarousel != nullptr &&
+                this->ui_.emoteTabCompletionCarousel->isVisible()
+            ? this->ui_.emoteTabCompletionCarousel->height()
+            : 0;
     if (this->replyTarget_ != nullptr)
     {
         // give more space for showing the message being replied to
-        return int(250 * this->scale());
+        return int(250 * this->scale()) + carouselHeight;
     }
     else
     {
-        return int(150 * this->scale());
+        return int(150 * this->scale()) + carouselHeight;
     }
 }
 

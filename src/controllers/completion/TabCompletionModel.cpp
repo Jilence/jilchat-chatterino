@@ -56,15 +56,47 @@ void TabCompletionModel::updateResults(const QString &query,
         {
             auto uniqueResults = std::unique(results.begin(), results.end());
             results.erase(uniqueResults, results.end());
+            this->sourceRows_.clear();
             this->setStringList(results);
             return;
         }
 #endif
+        const auto pluginResultCount = results.size();
         this->source_->addToStringList(results, 0, isFirstWord);
-        auto uniqueResults = std::unique(results.begin(), results.end());
-        results.erase(uniqueResults, results.end());
-        this->setStringList(results);
+
+        // Leave out entries that repeat the one before, and remember where
+        // in the source the remaining ones came from.
+        QStringList uniqueResults;
+        uniqueResults.reserve(results.size());
+        this->sourceRows_.clear();
+        this->sourceRows_.reserve(static_cast<size_t>(results.size()));
+        for (qsizetype sourceRow = 0; sourceRow < results.size(); ++sourceRow)
+        {
+            if (!uniqueResults.isEmpty() &&
+                uniqueResults.back() == results.at(sourceRow))
+            {
+                continue;
+            }
+
+            uniqueResults.push_back(results.at(sourceRow));
+            this->sourceRows_.push_back(sourceRow < pluginResultCount
+                                            ? -1
+                                            : sourceRow - pluginResultCount);
+        }
+        this->setStringList(uniqueResults);
     }
+}
+
+const completion::EmoteItem *TabCompletionModel::emoteAt(int row) const
+{
+    if (this->source_ == nullptr || row < 0 ||
+        static_cast<size_t>(row) >= this->sourceRows_.size())
+    {
+        return nullptr;
+    }
+
+    return this->source_->emoteAtTabCompletionIndex(
+        this->sourceRows_[static_cast<size_t>(row)]);
 }
 
 void TabCompletionModel::updateSourceFromQuery(const QString &query,

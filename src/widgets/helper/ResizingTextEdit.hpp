@@ -11,6 +11,8 @@
 
 namespace chatterino {
 
+class TabCompletionModel;
+
 class ResizingTextEdit : public QTextEdit
 {
 public:
@@ -29,9 +31,16 @@ public:
     pajlada::Signals::NoArgSignal focusLost;
     pajlada::Signals::Signal<const QMimeData *> imagePasted;
     pajlada::Signals::Signal<QMenu *, QPoint> contextMenuRequested;
+    /// A tab completion was inserted: the model and the row that is selected
+    pajlada::Signals::Signal<TabCompletionModel *, int> tabCompletionChanged;
+    /// Cycling through tab completions ended
+    pajlada::Signals::NoArgSignal tabCompletionHidden;
 
     void setCompleter(QCompleter *c);
     void resetCompletion();
+    /// While cycling through tab completions, inserts the one at `row`.
+    /// @returns whether it did
+    bool selectCompletionRow(int row);
     void setGhostText(QString text);
     const QString &ghostText() const;
 
@@ -54,6 +63,9 @@ private:
     void invalidateAncestorLayouts();
 
     QString textUnderCursor(bool *hadSpace = nullptr) const;
+
+    /// Ends cycling through tab completions, if it is going on
+    void finishCompletion();
 
     QCompleter *completer_ = nullptr;
     QString ignoredCompletionPrefix_;
