@@ -55,12 +55,12 @@ std::optional<FfzBadges::Badge> FfzBadges::getBadge(const int badgeID) const
     return std::nullopt;
 }
 
-void FfzBadges::load(std::function<void(bool)> onDone)
+void FfzBadges::load(const std::function<void(bool)> &onDone)
 {
     static QUrl url("https://api.frankerfacez.com/v1/badges/ids");
 
     NetworkRequest(url)
-        .onSuccess([this, onDone](auto result) {
+        .onSuccess([this, onDone](const auto &result) {
             std::unique_lock lock(this->mutex_);
 
             auto jsonRoot = result.parseJson();
@@ -82,9 +82,9 @@ void FfzBadges::load(std::function<void(bool)> onDone)
             this->badges.clear();
             this->userBadges.clear();
 
-            for (const auto &jsonBadge_ : jsonBadges)
+            for (const auto &jsonBadgeValue : jsonBadges)
             {
-                auto jsonBadge = jsonBadge_.toObject();
+                auto jsonBadge = jsonBadgeValue.toObject();
                 auto jsonUrls = jsonBadge.value("urls").toObject();
                 QSize baseSize(jsonBadge["width"].toInt(18),
                                jsonBadge["height"].toInt(18));

@@ -31,7 +31,7 @@ public:
     ///
     /// @param onDone called once the answer is there, with whether loading
     ///               worked; from any thread
-    void load(std::function<void(bool)> onDone = {});
+    void load(const std::function<void(bool)> &onDone = {});
 
 private:
     mutable std::shared_mutex mutex_;

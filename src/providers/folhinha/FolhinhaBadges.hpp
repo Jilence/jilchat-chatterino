@@ -42,7 +42,7 @@ public:
 
     /// @param onDone called once the answer is there, with whether loading
     ///               worked; from any thread
-    void loadFolhinhaBadges(std::function<void(bool)> onDone = {});
+    void loadFolhinhaBadges(const std::function<void(bool)> &onDone = {});
 
 private:
     void applyBadgeJson(const QJsonObject &jsonRoot);

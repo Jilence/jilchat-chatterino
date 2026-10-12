@@ -33,7 +33,7 @@ public:
     ///
     /// @param onDone called once the answer is there, with whether loading
     ///               worked; from any thread
-    virtual void reload(std::function<void(bool)> onDone = {})
+    virtual void reload(const std::function<void(bool)> &onDone = {})
     {
         if (onDone)
         {
@@ -53,10 +53,10 @@ public:
 
     void setKickMapping(const QString &twitchID, uint64_t kickID) override;
 
-    void reload(std::function<void(bool)> onDone = {}) override;
+    void reload(const std::function<void(bool)> &onDone = {}) override;
 
 private:
-    void loadChatterinoBadges(std::function<void(bool)> onDone = {});
+    void loadChatterinoBadges(const std::function<void(bool)> &onDone = {});
 
     std::shared_mutex mutex_;
 

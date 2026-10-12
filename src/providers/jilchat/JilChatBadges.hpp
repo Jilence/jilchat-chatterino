@@ -27,7 +27,7 @@ public:
 
     /// @param onDone called once the answer is there, with whether loading
     ///               worked; from any thread
-    void loadJilChatBadges(std::function<void(bool)> onDone = {});
+    void loadJilChatBadges(const std::function<void(bool)> &onDone = {});
 
     std::vector<EmotePtr> getBadges(const UserId &id) const;
 

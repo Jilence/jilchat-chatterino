@@ -80,7 +80,7 @@ std::optional<EmotePtr> ChatsenBadges::getBadge(const QString &userID) const
     return std::nullopt;
 }
 
-void ChatsenBadges::load(std::function<void(bool)> onDone)
+void ChatsenBadges::load(const std::function<void(bool)> &onDone)
 {
     NetworkRequest(
         u"https://raw.githubusercontent.com/chatsen/resources/master/assets/data.json"_s)

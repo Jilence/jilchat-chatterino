@@ -63,7 +63,7 @@ std::optional<EmotePtr> DankChatBadges::getBadge(const QString &userID) const
     return std::nullopt;
 }
 
-void DankChatBadges::load(std::function<void(bool)> onDone)
+void DankChatBadges::load(const std::function<void(bool)> &onDone)
 {
     NetworkRequest(u"https://flxrs.com/api/badges"_s)
         .concurrent()

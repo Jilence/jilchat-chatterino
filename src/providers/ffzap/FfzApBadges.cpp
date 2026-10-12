@@ -48,7 +48,7 @@ std::optional<FfzApBadges::Badge> FfzApBadges::getBadge(
     return std::nullopt;
 }
 
-void FfzApBadges::load(std::function<void(bool)> onDone)
+void FfzApBadges::load(const std::function<void(bool)> &onDone)
 {
     NetworkRequest(u"https://api.ffzap.com/v1/supporters"_s)
         .concurrent()

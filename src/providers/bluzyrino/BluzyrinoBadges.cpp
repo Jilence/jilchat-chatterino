@@ -95,7 +95,8 @@ void BluzyrinoBadges::startLoading()
     this->refreshTimer_.start();
 }
 
-void BluzyrinoBadges::loadBluzyrinoBadges(std::function<void(bool)> onDone)
+void BluzyrinoBadges::loadBluzyrinoBadges(
+    const std::function<void(bool)> &onDone)
 {
     NetworkRequest(QUrl(BLUZYRINO_BADGE_URL))
         .header("Accept", "application/json")

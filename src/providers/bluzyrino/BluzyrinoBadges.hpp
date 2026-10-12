@@ -44,7 +44,7 @@ public:
     void startLoading();
     /// @param onDone called once the answer is there, with whether loading
     ///               worked; from any thread
-    void loadBluzyrinoBadges(std::function<void(bool)> onDone = {});
+    void loadBluzyrinoBadges(const std::function<void(bool)> &onDone = {});
 
     /// Badges to display in chat for the given user, in render order.
     std::vector<EmotePtr> getBadges(const UserId &id) const;

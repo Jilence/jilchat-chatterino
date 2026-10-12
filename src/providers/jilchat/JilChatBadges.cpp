@@ -80,13 +80,13 @@ JilChatBadges::JilChatBadges()
     this->refreshTimer_.start();
 }
 
-void JilChatBadges::loadJilChatBadges(std::function<void(bool)> onDone)
+void JilChatBadges::loadJilChatBadges(const std::function<void(bool)> &onDone)
 {
     static QUrl url("https://api.jil.chat/v1/badges");
 
     NetworkRequest(url)
         .concurrent()
-        .onSuccess([this, onDone](auto result) -> Outcome {
+        .onSuccess([this, onDone](const auto &result) -> Outcome {
             const auto jsonRoot = result.parseJsonValue();
             if (!jsonRoot.isArray())
             {

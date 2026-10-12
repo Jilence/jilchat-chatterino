@@ -56,18 +56,19 @@ void ChatterinoBadges::setKickMapping(const QString &twitchID, uint64_t kickID)
     this->kickMapping.emplace(kickID, existing->second);
 }
 
-void ChatterinoBadges::reload(std::function<void(bool)> onDone)
+void ChatterinoBadges::reload(const std::function<void(bool)> &onDone)
 {
-    this->loadChatterinoBadges(std::move(onDone));
+    this->loadChatterinoBadges(onDone);
 }
 
-void ChatterinoBadges::loadChatterinoBadges(std::function<void(bool)> onDone)
+void ChatterinoBadges::loadChatterinoBadges(
+    const std::function<void(bool)> &onDone)
 {
     static QUrl url("https://api.chatterino.com/badges");
 
     NetworkRequest(url)
         .concurrent()
-        .onSuccess([this, onDone](auto result) {
+        .onSuccess([this, onDone](const auto &result) {
             auto jsonRoot = result.parseJson();
 
             // built on the side and swapped in, so loading again replaces
@@ -75,9 +76,11 @@ void ChatterinoBadges::loadChatterinoBadges(std::function<void(bool)> onDone)
             std::vector<EmotePtr> newEmotes;
             std::unordered_map<QString, int> newBadgeMap;
 
+            const auto jsonBadges = jsonRoot.value("badges").toArray();
+            newEmotes.reserve(static_cast<size_t>(jsonBadges.size()));
+
             int index = 0;
-            for (const auto &jsonBadgeValue :
-                 jsonRoot.value("badges").toArray())
+            for (const auto &jsonBadgeValue : jsonBadges)
             {
                 auto jsonBadge = jsonBadgeValue.toObject();
 
@@ -130,11 +133,11 @@ void ChatterinoBadges::loadChatterinoBadges(std::function<void(bool)> onDone)
                 for (const auto &[kickID, oldIndex] : this->kickMapping)
                 {
                     const auto &name = this->emotes[oldIndex]->name;
-                    for (int i = 0; i < static_cast<int>(newEmotes.size()); i++)
+                    for (size_t i = 0; i < newEmotes.size(); i++)
                     {
                         if (newEmotes[i]->name == name)
                         {
-                            newKickMapping.emplace(kickID, i);
+                            newKickMapping.emplace(kickID, static_cast<int>(i));
                             break;
                         }
                     }
