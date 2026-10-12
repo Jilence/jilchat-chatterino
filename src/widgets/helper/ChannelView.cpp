@@ -45,6 +45,10 @@
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
 #include "singletons/Theme.hpp"
+#ifdef CHATTERINO_THEME_VIDEO
+#    include "singletons/ThemeVideo.hpp"
+#    include "singletons/ThemeVideoDecoder.hpp"
+#endif
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
 #include "util/DistanceBetweenPoints.hpp"
@@ -63,6 +67,7 @@
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
+#include "widgets/splits/SplitContainer.hpp"
 #include "widgets/splits/SplitInput.hpp"
 #include "widgets/TooltipWidget.hpp"
 #include "widgets/Window.hpp"
@@ -73,9 +78,11 @@
 #include <QClipboard>
 #include <QColor>
 #include <QDate>
+#include <QDateTime>
 #include <QDebug>
 #include <QDesktopServices>
 #include <QEasingCurve>
+#include <QFileInfo>
 #include <QFontMetricsF>
 #include <QGestureEvent>
 #include <QGraphicsBlurEffect>
@@ -85,10 +92,12 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPainterPath>
 #include <QScreen>
 #include <QSet>
 #include <QSlider>
 #include <QStringBuilder>
+#include <QTransform>
 #include <QUrl>
 #include <QVariantAnimation>
 #include <QWidgetAction>
@@ -105,6 +114,49 @@ namespace {
 constexpr size_t TOOLTIP_EMOTE_ENTRIES_LIMIT = 7;
 
 using namespace chatterino;
+
+QString wallpaperKey(const ThemeCustomizationProfile &profile)
+{
+    const QFileInfo info(profile.wallpaperSource);
+    const auto stamp =
+        info.exists() ? info.lastModified().toMSecsSinceEpoch() : 0;
+    return QStringLiteral("wallpaper:%1:%2:%3")
+        .arg(profile.wallpaperSource)
+        .arg(profile.wallpaperBlur)
+        .arg(stamp);
+}
+
+/// The blurred background image of the theme. Views with the same background
+/// share one pixmap.
+std::shared_ptr<QPixmap> loadWallpaper(const ThemeCustomizationProfile &profile)
+{
+    if (!profile.hasWallpaper() || profile.wallpaperOpacity <= 0)
+    {
+        return {};
+    }
+    const auto key = wallpaperKey(profile);
+
+    static QHash<QString, std::weak_ptr<QPixmap>> cache;
+    for (auto it = cache.begin(); it != cache.end();)
+    {
+        it = it.value().expired() ? cache.erase(it) : std::next(it);
+    }
+    if (auto cached = cache.value(key).lock())
+    {
+        return cached;
+    }
+
+    QImage image = loadThemeWallpaper(profile.wallpaperSource);
+    if (image.isNull())
+    {
+        return {};
+    }
+    image = blurThemeWallpaper(std::move(image), profile.wallpaperBlur);
+    auto cached =
+        std::make_shared<QPixmap>(QPixmap::fromImage(std::move(image)));
+    cache.insert(key, cached);
+    return cached;
+}
 
 constexpr int SCROLLBAR_PADDING = 8;
 constexpr int MAX_AUTO_TRANSLATIONS_IN_FLIGHT_PER_CHANNEL = 5;
@@ -1333,6 +1385,12 @@ void ChannelView::initializeSignals()
         },
         this->signalHolder_);
 
+    getSettings()->continuousSplitBackground.connect(
+        [this] {
+            this->update();
+        },
+        this->signalHolder_, false);
+
     this->signalHolder_.managedConnect(
         getApp()->getWindows()->gifRepaintRequested, [&] {
             if (!this->isVisible() || this->animationRegion_.isEmpty())
@@ -1524,7 +1582,11 @@ void ChannelView::themeChangedEvent()
     this->setupHighlightAnimationColors();
     this->messageColors_.applyTheme(getTheme(), this->isOverlay_,
                                     getSettings()->overlayBackgroundOpacity);
+    this->wallpaperCacheKey_.clear();
+    this->wallpaperPixmap_.reset();
+    this->releaseVideoWallpaper();
     this->invalidateBuffers();
+    this->updateRoundedChildMasks();
 }
 
 void ChannelView::updateColorTheme()
@@ -1639,6 +1701,220 @@ void ChannelView::updateScrollWidgetGeometries()
         this->goToBottom_->setGeometry(0, this->height() - goToBottomHeight,
                                        this->width(), goToBottomHeight);
     }
+
+    this->updateRoundedChildMasks();
+}
+
+bool ChannelView::ensureChatFramePaths()
+{
+    const auto &profile = getTheme()->customization;
+    if (this->isOverlay_ || this->transparentBackground_ ||
+        !profile.roundChat || profile.cornerRadius() <= 0)
+    {
+        return false;
+    }
+
+    const qreal radius = profile.cornerRadius() * this->scale();
+    const qreal width =
+        profile.chatBorder && profile.chatBorderOpacity > 0
+            ? std::clamp(profile.chatBorderWidth, 1, 4) * this->scale()
+            : 0.0;
+    if (this->chatFramePathSize_ != this->size() ||
+        !qFuzzyCompare(this->chatFramePathRadius_ + 1, radius + 1) ||
+        !qFuzzyCompare(this->chatFramePathWidth_ + 1, width + 1))
+    {
+        const auto frameRect = QRectF(this->rect());
+        this->chatFramePathSize_ = this->size();
+        this->chatFramePathRadius_ = radius;
+        this->chatFramePathWidth_ = width;
+        this->chatFrameContentPath_ = {};
+        this->chatFrameContentPath_.addRoundedRect(frameRect, radius, radius);
+        buildThemeChatFramePaths(frameRect, radius, width,
+                                 this->chatFrameOutsidePath_,
+                                 this->chatFrameBorderPath_);
+    }
+
+    return true;
+}
+
+void ChannelView::updateRoundedChildMasks()
+{
+    if (!this->scrollBar_)
+    {
+        return;
+    }
+
+    if (!this->ensureChatFramePaths())
+    {
+        this->scrollBar_->clearMask();
+        if (this->goToBottom_)
+        {
+            this->goToBottom_->clearMask();
+        }
+        return;
+    }
+
+    const qreal inset = std::min(
+        this->chatFramePathWidth_,
+        std::max<qreal>(0.0, std::min(this->width(), this->height()) / 2.0));
+    const auto innerRect =
+        QRectF(this->rect()).adjusted(inset, inset, -inset, -inset);
+    const auto innerRadius =
+        std::max<qreal>(0.0, this->chatFramePathRadius_ - inset);
+    QPainterPath childClipPath;
+    childClipPath.addRoundedRect(innerRect, innerRadius, innerRadius);
+
+    const auto applyMask = [&childClipPath](QWidget *widget) {
+        QTransform transform;
+        transform.translate(-widget->x(), -widget->y());
+        const auto localPath = transform.map(childClipPath);
+        widget->setMask(QRegion(localPath.toFillPolygon().toPolygon()));
+    };
+    applyMask(this->scrollBar_);
+    if (this->goToBottom_)
+    {
+        applyMask(this->goToBottom_);
+    }
+}
+
+void ChannelView::releaseVideoWallpaper()
+{
+#ifdef CHATTERINO_THEME_VIDEO
+    QObject::disconnect(this->wallpaperVideoConnection_);
+    if (this->wallpaperVideo_)
+    {
+        this->wallpaperVideo_->detach(this);
+    }
+#endif
+    this->wallpaperVideo_.reset();
+}
+
+void ChannelView::paintWallpaper(QPainter &painter)
+{
+    const auto &profile = getTheme()->customization;
+    painter.fillRect(this->rect(), profile.chatBackground);
+    if (this->wallpaperCacheKey_.isEmpty())
+    {
+        this->wallpaperCacheKey_ = wallpaperKey(profile);
+#ifdef CHATTERINO_THEME_VIDEO
+        if (isThemeVideo(profile.wallpaperSource) &&
+            profile.wallpaperOpacity > 0 && this->isVisible())
+        {
+            // All views showing this video share one player. It tells us
+            // when the next frame is there.
+            this->wallpaperVideo_ =
+                ThemeVideo::acquire(profile.wallpaperSource, this);
+            this->wallpaperVideoConnection_ =
+                QObject::connect(this->wallpaperVideo_.get(),
+                                 &ThemeVideo::frameChanged, this, [this] {
+                                     this->update();
+                                 });
+        }
+        else
+#endif
+        {
+            this->wallpaperPixmap_ = loadWallpaper(profile);
+        }
+    }
+    if (!this->wallpaperVideo_ &&
+        (!this->wallpaperPixmap_ || this->wallpaperPixmap_->isNull()))
+    {
+        return;
+    }
+
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.setOpacity(profile.wallpaperOpacity / 100.0);
+    QRectF target(this->rect());
+    if (getSettings()->continuousSplitBackground && this->split_ != nullptr &&
+        this->context_ == Context::None && this->parentWidget() == this->split_)
+    {
+        // One image for the whole tab: every split shows its part of it.
+        if (auto *container =
+                dynamic_cast<SplitContainer *>(this->split_->parentWidget()))
+        {
+            painter.translate(-this->mapTo(container, QPoint()));
+            target = container->rect();
+        }
+    }
+#ifdef CHATTERINO_THEME_VIDEO
+    if (this->wallpaperVideo_)
+    {
+        this->wallpaperVideo_->paint(painter, target, profile);
+    }
+    else
+#endif
+        if (profile.wallpaperMode == ThemeWallpaperMode::Tile)
+    {
+        const auto zoom = std::clamp(profile.wallpaperZoom, 100, 300) / 100.0;
+        painter.save();
+        painter.scale(zoom, zoom);
+        painter.drawTiledPixmap(
+            QRectF(target.topLeft() / zoom, target.size() / zoom),
+            *this->wallpaperPixmap_);
+        painter.restore();
+    }
+    else
+    {
+        const auto layout = layoutThemeWallpaper(
+            this->wallpaperPixmap_->size(), target, profile.wallpaperMode,
+            profile.wallpaperFocalX, profile.wallpaperFocalY,
+            profile.wallpaperZoom);
+        painter.drawPixmap(layout.destination, *this->wallpaperPixmap_,
+                           layout.source);
+    }
+    painter.restore();
+
+    if (profile.wallpaperOpacity > 0 && profile.wallpaperOverlayOpacity > 0)
+    {
+        // Darkens (or tints) the image so text stays readable.
+        auto overlay = profile.wallpaperOverlayColor;
+        overlay.setAlphaF(overlay.alphaF() * profile.wallpaperOverlayOpacity /
+                          100.0);
+        painter.fillRect(this->rect(), overlay);
+    }
+}
+
+void ChannelView::paintChatFrame(QPainter &painter)
+{
+    if (!this->ensureChatFramePaths())
+    {
+        return;
+    }
+
+    const auto *theme = getTheme();
+    const auto &profile = theme->customization;
+    // What shows in the corners: the channel bar above and the input below.
+    // Usercards and other popups have the window around the messages.
+    auto topSurface = theme->window.background;
+    auto bottomSurface = theme->window.background;
+    if (this->context_ == Context::None)
+    {
+        const bool hasBanner =
+            this->split_ != nullptr && this->split_->hasVisibleBanner();
+        const bool focused = !hasBanner && this->split_ != nullptr &&
+                             this->split_->hasFocus() &&
+                             themeUsesClassicSplitFrame(profile.foundation);
+        topSurface = focused ? theme->splits.header.focusedBackground
+                             : theme->splits.header.background;
+        if (hasBanner)
+        {
+            // A banner sits right above the chat; it can have its own color.
+            const QColor bannerSurface(
+                getSettings()->pinBannerBackgroundColor.getValue());
+            if (bannerSurface.isValid())
+            {
+                topSurface = bannerSurface;
+            }
+        }
+        bottomSurface = theme->splits.input.background;
+    }
+    paintThemeChatFrame(painter, QRectF(this->rect()),
+                        this->chatFramePathRadius_, this->chatFramePathWidth_,
+                        topSurface, bottomSurface, profile.chatBorderColor,
+                        profile.chatBorder ? profile.chatBorderOpacity : 0,
+                        &this->chatFrameOutsidePath_,
+                        &this->chatFrameBorderPath_);
 }
 
 void ChannelView::queueUpdate()
@@ -2142,6 +2418,7 @@ ChannelView::~ChannelView()
     // view while it's being destroyed.
     this->channelConnections_.clear();
     this->releaseRaisedMessageLimit();
+    this->releaseVideoWallpaper();
 }
 
 void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
@@ -2995,13 +3272,28 @@ void ChannelView::paintEvent(QPaintEvent *event)
 
     QPainter painter(this);
 
-    if (!this->transparentBackground_)
+    const bool rounded = this->ensureChatFramePaths();
+    if (rounded)
     {
-        painter.fillRect(this->rect(), this->messageColors_.channelBackground);
+        painter.save();
+        painter.setClipPath(this->chatFrameContentPath_);
     }
 
     // Clip painting strictly to the widget's bounds to hide wrapped text when collapsed
-    painter.setClipRect(this->rect());
+    painter.setClipRect(this->rect(), Qt::IntersectClip);
+
+    if (!this->transparentBackground_)
+    {
+        if (getTheme()->customization.hasWallpaper() && !this->isOverlay_)
+        {
+            this->paintWallpaper(painter);
+        }
+        else
+        {
+            painter.fillRect(this->rect(),
+                             this->messageColors_.channelBackground);
+        }
+    }
 
     // draw messages
     this->drawMessages(painter, event->region());
@@ -3041,6 +3333,13 @@ void ChannelView::paintEvent(QPaintEvent *event)
         painter.drawText(QRectF(textX, pausedY, textWidth, indicatorSize),
                          Qt::AlignLeft | Qt::AlignVCenter, text);
     }
+
+    if (rounded)
+    {
+        painter.restore();
+    }
+
+    this->paintChatFrame(painter);
 }
 
 // if overlays is false then it draws the message, if true then it draws things
@@ -3063,6 +3362,12 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     if (this->overrideSeparateMessages_.has_value())
     {
         messagePreferences.separateMessages = *this->overrideSeparateMessages_;
+    }
+    const auto &appearance = getTheme()->customization;
+    if (appearance.useThemeMessageRows)
+    {
+        // The theme decides whether rows alternate.
+        messagePreferences.alternateMessages = appearance.alternateMessageRows;
     }
 
     bool tintByPlatform = false;
@@ -3091,6 +3396,14 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
         .isLastReadMessage = false,
         .isCollapsed = this->collapseMessages_,
         .tintByPlatform = tintByPlatform,
+
+        .paintMessageShadow = appearance.messageShadow && !this->isOverlay_,
+        .messageShadowEmotes = appearance.messageShadowEmotes,
+        .messageShadowColor = appearance.messageShadowColor,
+        .messageShadowOpacity = appearance.messageShadowOpacity,
+        .messageShadowOffset = appearance.messageShadowOffset(),
+        .messageShadowBlur = appearance.messageShadowBlur,
+        .highlightOpacityAdjustment = appearance.highlightOpacityAdjustment,
     };
     bool showLastMessageIndicator = getSettings()->showLastMessageIndicator;
 

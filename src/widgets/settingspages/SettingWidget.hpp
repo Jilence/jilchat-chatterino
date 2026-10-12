@@ -94,6 +94,11 @@ public:
     [[nodiscard("Must use created setting widget")]] SettingWidget *
         setDescription(const QString &text);
 
+    /// Replaces the choices of a dropdown, e.g. after themes were added.
+    void setDropdownItems(
+        const std::vector<std::pair<QString, QVariant>> &items,
+        const QVariant &selectedValue);
+
     [[nodiscard("Must use created setting widget")]] SettingWidget *addKeywords(
         const QStringList &newKeywords);
 

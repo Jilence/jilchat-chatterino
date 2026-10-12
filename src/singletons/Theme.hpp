@@ -6,6 +6,7 @@
 
 #include "common/ChatterinoSetting.hpp"
 #include "singletons/Paths.hpp"
+#include "singletons/ThemeCustomization.hpp"
 #include "util/RapidJsonSerializeQString.hpp"
 
 #include <pajlada/settings/setting.hpp>
@@ -33,6 +34,8 @@ struct ThemeDescriptor {
     QString name;
 
     bool custom{};
+
+    bool operator==(const ThemeDescriptor &) const = default;
 };
 
 class Theme final
@@ -68,6 +71,8 @@ public:
         QColor caret;
         QColor link;
         QColor system;
+        /// Falls back to `system` in themes that don't set it.
+        QColor timestamp;
         QColor chatPlaceholder;
     };
 
@@ -155,6 +160,9 @@ public:
     } buttons;
 
     QPalette palette;
+    /// Shape and effects of the current theme. Themes that weren't made on
+    /// the Customization page get the classic look.
+    ThemeCustomizationProfile customization;
 
     void normalizeColor(QColor &color) const;
     void update();
@@ -164,7 +172,15 @@ public:
 
     std::vector<std::pair<QString, QVariant>> availableThemes() const;
 
+    const std::vector<ThemeDescriptor> &availableThemeDescriptors() const;
+    /// Looks for theme files again, e.g. after one was added or renamed.
+    void reloadAvailableThemes();
+    std::optional<QJsonObject> themeJson(const QString &key) const;
+    /// The folder the user's own themes are stored in.
+    const QString &themesDirectory() const;
+
     pajlada::Signals::NoArgSignal updated;
+    pajlada::Signals::NoArgSignal availableThemesChanged;
 
     QStringSetting themeName{"/appearance/theme/name", "Dark"};
     QStringSetting lightSystemThemeName{"/appearance/theme/lightSystem",
@@ -172,6 +188,7 @@ public:
     QStringSetting darkSystemThemeName{"/appearance/theme/darkSystem", "Dark"};
 
 private:
+    QString themesDirectory_;
     bool isLight_ = false;
 
     std::vector<ThemeDescriptor> availableThemes_;

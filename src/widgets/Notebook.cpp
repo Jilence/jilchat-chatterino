@@ -856,6 +856,12 @@ void Notebook::performLayout(bool animated)
         filteredItems.assign(this->items_.begin(), this->items_.end());
     }
 
+    for (std::size_t i = 0; i < filteredItems.size(); ++i)
+    {
+        filteredItems[i].tab->setVisibleEdgeFlags(
+            i == 0, i + 1 == filteredItems.size());
+    }
+
     const auto scale = this->scale();
     const auto tabHeight = int(NOTEBOOK_TAB_HEIGHT * scale);
     const auto spacing = static_cast<int>(2 * this->scale());

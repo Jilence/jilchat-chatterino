@@ -222,7 +222,8 @@ public:
         painter.drawText(rect, this->right_, rightOption);
     }
 
-    QRegion paintAnimated(QPainter &, qreal) override
+    QRegion paintAnimated(QPainter & /*painter*/, qreal /*yOffset*/,
+                          const AnimatedMessageShadow * /*shadow*/) override
     {
         return {};
     }

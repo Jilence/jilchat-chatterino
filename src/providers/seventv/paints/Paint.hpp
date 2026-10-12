@@ -31,6 +31,14 @@ public:
                               float dpr, bool centerVertically = false,
                               qreal padding = 0) const;
 
+    /// Names what getPixmap draws for these arguments. Two calls with the
+    /// same key give pixmaps of the same shape; used to keep things derived
+    /// from the pixmap, like a shadow, instead of making them again.
+    QString getPixmapCacheKey(const QString &text, const QFont &font,
+                              QColor userColor, QSizeF size, float scale,
+                              float dpr, bool centerVertically = false,
+                              qreal padding = 0) const;
+
     Paint(QString id, QString name = {})
         : id(std::move(id))
         , name(std::move(name))
@@ -47,6 +55,10 @@ public:
     QString name;
 
 protected:
+    /// The identity of the image the paint is made of right now, for paints
+    /// that are an (animated) image. 0 for all others.
+    virtual qint64 sourcePixmapCacheKey() const;
+
     static QColor overlayColors(QColor background, QColor foreground);
     static qreal offsetRepeatingStopPosition(qreal position,
                                              const QGradientStops &stops);

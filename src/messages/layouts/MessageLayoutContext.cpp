@@ -24,6 +24,7 @@ void MessageColors::applyTheme(Theme *theme, bool isOverlay,
         this->regularText = src.textColors.regular;
         this->linkText = src.textColors.link;
         this->systemText = src.textColors.system;
+        this->timestampText = src.textColors.timestamp;
     };
 
     if (isOverlay)

@@ -41,6 +41,42 @@ QString Paint::sourceName() const
     return QStringLiteral("7TV");
 }
 
+qint64 Paint::sourcePixmapCacheKey() const
+{
+    return 0;
+}
+
+QString Paint::getPixmapCacheKey(const QString &text, const QFont &font,
+                                 QColor userColor, QSizeF size, float scale,
+                                 float dpr, bool centerVertically,
+                                 qreal padding) const
+{
+    QString key;
+    const auto fontKey = font.key();
+    key.reserve(this->id.size() + text.size() + fontKey.size() + 96);
+    // lengths first, so no part can run into the next
+    const auto appendString = [&key](QStringView value) {
+        key += QString::number(value.size());
+        key += u':';
+        key += value;
+        key += u'/';
+    };
+
+    appendString(this->id);
+    appendString(text);
+    appendString(fontKey);
+    key += QString::number(this->sourcePixmapCacheKey()) + u'/' +
+           QString::number(userColor.rgba()) + u'/' +
+           QString::number(qRound64(size.width() * dpr)) + u'x' +
+           QString::number(qRound64(size.height() * dpr)) + u'/' +
+           QString::number(qRound64(scale * 1000)) + u'/' +
+           QString::number(qRound64(dpr * 1000)) + u'/' +
+           QString::number(qRound64(std::max<qreal>(0, padding) * dpr)) + u'/' +
+           (centerVertically ? u'1' : u'0') + u'/' +
+           (this->shadowsEnabled() ? u'1' : u'0');
+    return key;
+}
+
 QPixmap Paint::getPixmap(const QString &text, const QFont &font,
                          QColor userColor, QSizeF size, float scale, float dpr,
                          bool centerVertically, qreal padding) const

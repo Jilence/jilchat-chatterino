@@ -830,6 +830,7 @@ c2.FontStyle = {
     UiMedium = {}, ---@type c2.FontStyle.UiMedium
     UiMediumBold = {}, ---@type c2.FontStyle.UiMediumBold
     UiTabs = {}, ---@type c2.FontStyle.UiTabs
+    ChatUsername = {}, ---@type c2.FontStyle.ChatUsername
     EndType = {}, ---@type c2.FontStyle.EndType
     ChatStart = {}, ---@type c2.FontStyle.ChatStart
     ChatEnd = {}, ---@type c2.FontStyle.ChatEnd

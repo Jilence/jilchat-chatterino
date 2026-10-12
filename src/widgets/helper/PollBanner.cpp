@@ -545,8 +545,15 @@ void PollBanner::paintEvent(QPaintEvent *)
                         : this->theme->splits.header.border;
 
     painter.fillRect(this->rect(), background);
-    painter.setPen(border);
-    painter.drawRect(0, 0, this->width() - 1, this->height() - 1);
+    // With the polished look and a rounded message area the banner sits flush
+    // on the chat, without a line around it.
+    const auto &appearance = this->theme->customization;
+    if (appearance.foundation != ThemeFoundation::MoltorinoPolished ||
+        !appearance.roundChat || appearance.cornerRadius() <= 0)
+    {
+        painter.setPen(border);
+        painter.drawRect(0, 0, this->width() - 1, this->height() - 1);
+    }
 
     if (!this->poll_ || !this->distributionBar_->isVisible())
     {

@@ -44,6 +44,18 @@ int maxUncollapsedLines()
     return getSettings()->collpseMessagesMinLines.getValue();
 }
 
+/// Whether an animated element gets the theme's shadow: emotes only if the
+/// theme wants them shadowed, everything else (e.g. badges) always.
+bool animatedShadowApplies(const MessageLayoutElement &element,
+                           const AnimatedMessageShadow &shadow)
+{
+    return shadow.emotes ||
+           !element.getCreator().getFlags().hasAny(
+               MessageElementFlag::EmoteImage, MessageElementFlag::EmojiImage,
+               MessageElementFlag::BitsStatic,
+               MessageElementFlag::BitsAnimated);
+}
+
 }  // namespace
 
 namespace chatterino {
@@ -302,7 +314,8 @@ void MessageLayoutContainer::breakLine()
 }
 
 void MessageLayoutContainer::paintElements(QPainter &painter,
-                                           const MessagePaintContext &ctx) const
+                                           const MessagePaintContext &ctx,
+                                           bool paintEmotes) const
 {
 #ifdef FOURTF
     static constexpr std::array<QColor, 5> lineColors{
@@ -323,6 +336,14 @@ void MessageLayoutContainer::paintElements(QPainter &painter,
 
     for (const auto &element : this->elements_)
     {
+        if (!paintEmotes &&
+            element->getCreator().getFlags().hasAny(
+                MessageElementFlag::EmoteImage, MessageElementFlag::EmojiImage,
+                MessageElementFlag::BitsStatic,
+                MessageElementFlag::BitsAnimated))
+        {
+            continue;
+        }
         if (ctx.isCollapsed && element->getLine() > 0)
         {
             continue;
@@ -385,9 +406,9 @@ void MessageLayoutContainer::paintElements(QPainter &painter,
     }
 }
 
-QRegion MessageLayoutContainer::paintAnimatedElements(QPainter &painter,
-                                                      qreal yOffset,
-                                                      bool isCollapsed) const
+QRegion MessageLayoutContainer::paintAnimatedElements(
+    QPainter &painter, qreal yOffset, bool isCollapsed,
+    const AnimatedMessageShadow *shadow) const
 {
     QRegion paintedRegion;
     for (const auto &element : this->elements_)
@@ -396,7 +417,13 @@ QRegion MessageLayoutContainer::paintAnimatedElements(QPainter &painter,
         {
             continue;
         }
-        paintedRegion += element->paintAnimated(painter, yOffset);
+        const auto *elementShadow =
+            shadow != nullptr && shadow->opacity > 0 &&
+                    animatedShadowApplies(*element, *shadow)
+                ? shadow
+                : nullptr;
+        paintedRegion +=
+            element->paintAnimated(painter, yOffset, elementShadow);
     }
     return paintedRegion;
 }

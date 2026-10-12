@@ -7,6 +7,7 @@
 #include "Application.hpp"
 #include "common/Literals.hpp"
 #include "common/QLogging.hpp"
+#include "singletons/Fonts.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/WindowManager.hpp"
@@ -129,6 +130,13 @@ void parseTextColors(const QJsonObject &textColors,
     parseColor(messages, textColors, caret);
     parseColor(messages, textColors, link);
     parseColor(messages, textColors, system);
+
+    messages.textColors.timestamp = messages.textColors.system;
+    if (textColors.contains("timestamp"_L1) ||
+        textColorsFallback.contains("timestamp"_L1))
+    {
+        parseColor(messages, textColors, timestamp);
+    }
     parseColor(messages, textColors, chatPlaceholder);
 }
 
@@ -263,6 +271,16 @@ std::optional<QJsonObject> loadThemeFromPath(const QString &path)
 
 std::optional<QJsonObject> loadTheme(const ThemeDescriptor &theme)
 {
+    if (theme.path.startsWith(u"builtin:"_s))
+    {
+        // Not a file: built from a profile in the code.
+        if (auto profile =
+                builtInCustomizationProfile(QStringView(theme.path).sliced(8)))
+        {
+            return buildCustomizedTheme(*profile);
+        }
+        return std::nullopt;
+    }
     return loadThemeFromPath(theme.path);
 }
 
@@ -356,6 +374,31 @@ const std::vector<ThemeDescriptor> Theme::builtInThemes{
         .path = ":/themes/Wine.json",
         .name = "Wine",
     },
+    {
+        .key = "Moltorino Midnight",
+        .path = "builtin:moltorino-midnight",
+        .name = "Moltorino",
+    },
+    {
+        .key = "Sakura Dream",
+        .path = "builtin:sakura-dream",
+        .name = "Sakura",
+    },
+    {
+        .key = "Aurora Calm",
+        .path = "builtin:aurora-calm",
+        .name = "Garden",
+    },
+    {
+        .key = "Ember Arcade",
+        .path = "builtin:ember-arcade",
+        .name = "Arcade",
+    },
+    {
+        .key = "Violet Dusk",
+        .path = "builtin:violet-dusk",
+        .name = "Afterhours",
+    },
 };
 
 const ThemeDescriptor Theme::fallbackTheme = Theme::builtInThemes.at(2);
@@ -371,6 +414,7 @@ bool Theme::isSystemTheme() const
 }
 
 Theme::Theme(const Paths &paths)
+    : themesDirectory_(paths.themesDirectory)
 {
     this->themeName.connect(
         [this](auto themeName) {
@@ -476,7 +520,16 @@ void Theme::update()
         return;
     }
 
-    this->parseFrom(*themeJSON, isCustomTheme);
+    // Themes made on the Customization page store the colors they were built
+    // from. Rebuilding from those keeps older theme files up to date.
+    auto runtimeTheme = *themeJSON;
+    if (const auto profile = customizationProfileFromTheme(runtimeTheme))
+    {
+        runtimeTheme.insert(u"colors"_s,
+                            buildCustomizedTheme(*profile).value(u"colors"_s));
+    }
+
+    this->parseFrom(runtimeTheme, isCustomTheme);
     this->currentThemePath_ = themePath;
 
     auto parseTs = double(timer.nsecsElapsed()) * nsToMs;
@@ -520,28 +573,27 @@ std::vector<std::pair<QString, QVariant>> Theme::availableThemes() const
     return packagedThemes;
 }
 
-void Theme::loadAvailableThemes(const Paths &paths)
+const std::vector<ThemeDescriptor> &Theme::availableThemeDescriptors() const
 {
-    this->availableThemes_ = Theme::builtInThemes;
+    return this->availableThemes_;
+}
 
-    auto dir = QDir(paths.themesDirectory);
+void Theme::reloadAvailableThemes()
+{
+    auto availableThemes = Theme::builtInThemes;
+
+    auto dir = QDir(this->themesDirectory_);
     for (const auto &info :
          dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name))
     {
-        if (!info.isFile())
+        if (!info.isFile() ||
+            !info.fileName().endsWith(u".json"_s, Qt::CaseInsensitive))
         {
             continue;
         }
-
-        if (!info.fileName().endsWith(".json"))
-        {
-            continue;
-        }
-
-        auto themeName = info.baseName();
 
         auto themeDescriptor = ThemeDescriptor{
-            info.fileName(), info.absoluteFilePath(), themeName, true};
+            info.fileName(), info.absoluteFilePath(), info.baseName(), true};
 
         auto theme = loadTheme(themeDescriptor);
         if (!theme)
@@ -550,8 +602,50 @@ void Theme::loadAvailableThemes(const Paths &paths)
             continue;
         }
 
-        this->availableThemes_.emplace_back(std::move(themeDescriptor));
+        // Themes made on the Customization page carry their own name.
+        if (customizationProfileFromTheme(*theme))
+        {
+            const auto displayName =
+                (*theme)["metadata"_L1]["name"_L1].toString().trimmed();
+            if (!displayName.isEmpty())
+            {
+                themeDescriptor.name = displayName;
+            }
+        }
+
+        availableThemes.emplace_back(std::move(themeDescriptor));
     }
+
+    if (availableThemes == this->availableThemes_)
+    {
+        return;
+    }
+
+    this->availableThemes_ = std::move(availableThemes);
+    this->availableThemesChanged.invoke();
+}
+
+std::optional<QJsonObject> Theme::themeJson(const QString &key) const
+{
+    for (const auto &descriptor : this->availableThemes_)
+    {
+        if (descriptor.key == key)
+        {
+            return loadTheme(descriptor);
+        }
+    }
+    return std::nullopt;
+}
+
+const QString &Theme::themesDirectory() const
+{
+    return this->themesDirectory_;
+}
+
+void Theme::loadAvailableThemes(const Paths &paths)
+{
+    this->themesDirectory_ = paths.themesDirectory;
+    this->reloadAvailableThemes();
 }
 
 std::optional<ThemeDescriptor> Theme::findThemeByKey(const QString &key)
@@ -586,9 +680,68 @@ void Theme::parseFrom(const QJsonObject &root, bool isCustomTheme)
                 break;
             }
         }
+        if (!fallbackTheme)
+        {
+            // The theme names one we don't ship (e.g. it was made from
+            // another custom theme).
+            const auto fallbackKey =
+                this->isLightTheme() ? u"Light"_s : u"Dark"_s;
+            for (const auto &theme : Theme::builtInThemes)
+            {
+                if (theme.key == fallbackKey)
+                {
+                    fallbackTheme = loadTheme(theme);
+                    break;
+                }
+            }
+        }
     }
 
     parseColors(root, fallbackTheme.value_or(QJsonObject()), *this);
+
+    if (auto customization = customizationProfileFromTheme(root))
+    {
+        this->customization = std::move(*customization);
+    }
+    else
+    {
+        this->customization = ThemeCustomizationProfile{};
+        this->customization.name = u"Classic"_s;
+        this->customization.background = this->window.background;
+        this->customization.chatBackground = this->splits.background;
+        this->customization.surface = this->tabs.regular.backgrounds.regular;
+        this->customization.raisedSurface =
+            this->tabs.selected.backgrounds.regular;
+        this->customization.text = this->window.text;
+        this->customization.chatText = this->messages.textColors.regular;
+        this->customization.separateChatText =
+            this->customization.chatText != this->customization.text;
+        this->customization.mutedText = this->tabs.regular.text;
+        this->customization.systemText = this->messages.textColors.system;
+        this->customization.timestampText = this->messages.textColors.timestamp;
+        this->customization.accent = this->accent;
+        this->customization.foundation = ThemeFoundation::ChatterinoClassic;
+        this->customization.useThemeMessageRows = false;
+        this->customization.cornerStyle = ThemeCornerStyle::Classic;
+        this->customization.tabCornerRadius = 0;
+        this->customization.chatCornerRadius = 0;
+        this->customization.roundChat = false;
+        this->customization.messageShadow = false;
+        this->customization.highlightOpacityAdjustment = 0;
+        this->customization.useThemeFonts = false;
+        this->customization.useThemeFontSizes = false;
+    }
+    this->customization.clearDisabledFontOverrides();
+    Fonts::setThemeOverrides({
+        .chatFamily = this->customization.chatFontFamily,
+        .chatSize = this->customization.chatFontSize,
+        .chatWeight = this->customization.chatFontWeight,
+        .usernameFamily = this->customization.usernameFontFamily,
+        .usernameSize = this->customization.usernameFontSize,
+        .usernameWeight = this->customization.usernameFontWeight,
+        .interfaceFamily = this->customization.interfaceFontFamily,
+        .interfaceSize = this->customization.interfaceFontSize,
+    });
 
     this->splits.input.styleSheet = uR"(
         background: %1;

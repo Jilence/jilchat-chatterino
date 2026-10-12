@@ -190,7 +190,14 @@ Split::Split(QWidget *parent)
     this->setFocusProxy(this->input_->ui_.textEdit);
 
     this->vbox_->setSpacing(0);
-    this->vbox_->setContentsMargins(1, 1, 1, 1);
+    {
+        const int frameWidth =
+            themeUsesClassicSplitFrame(this->theme->customization.foundation)
+                ? 1
+                : 0;
+        this->vbox_->setContentsMargins(frameWidth, frameWidth, frameWidth,
+                                        frameWidth);
+    }
 
     this->vbox_->addWidget(this->header_);
     this->vbox_->addWidget(this->voiceMessagePanel_);
@@ -381,6 +388,14 @@ Split::Split(QWidget *parent)
                                            // Forward textEdit's focusLost event
                                            this->focusLost.invoke();
                                        });
+    // A rounded message area shows the channel bar in its corners, and that
+    // changes color with the focus.
+    this->signalHolder_.managedConnect(this->focused, [this] {
+        this->view_->update();
+    });
+    this->signalHolder_.managedConnect(this->focusLost, [this] {
+        this->view_->update();
+    });
 
     this->deferredTwitchRefreshTimer_ = new QTimer(this);
     this->deferredTwitchRefreshTimer_->setSingleShot(true);
@@ -2312,6 +2327,26 @@ void Split::recoverDismissedBanners()
 void Split::updateLastReadMessage()
 {
     this->view_->updateLastReadMessage();
+}
+
+bool Split::hasVisibleBanner() const
+{
+    return (this->pinnedBanner_ != nullptr &&
+            this->pinnedBanner_->isVisible()) ||
+           (this->predictionBanner_ != nullptr &&
+            this->predictionBanner_->isVisible()) ||
+           (this->pollBanner_ != nullptr && this->pollBanner_->isVisible());
+}
+
+void Split::themeChangedEvent()
+{
+    // The polished look has no line around the split.
+    const int frameWidth =
+        themeUsesClassicSplitFrame(this->theme->customization.foundation) ? 1
+                                                                          : 0;
+    this->vbox_->setContentsMargins(frameWidth, frameWidth, frameWidth,
+                                    frameWidth);
+    this->update();
 }
 
 void Split::paintEvent(QPaintEvent *)

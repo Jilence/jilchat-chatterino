@@ -16,6 +16,7 @@
 #include "widgets/settingspages/AboutPage.hpp"
 #include "widgets/settingspages/AccountsPage.hpp"
 #include "widgets/settingspages/CommandPage.hpp"
+#include "widgets/settingspages/CustomizationPage.hpp"
 #include "widgets/settingspages/ExternalToolsPage.hpp"
 #include "widgets/settingspages/FiltersPage.hpp"
 #include "widgets/settingspages/GeneralPage.hpp"
@@ -254,6 +255,7 @@ void SettingsDialog::addTabs()
 
     // clang-format off
     this->addTab([]{return new GeneralPage;},          "General",        ":/settings/about.svg", SettingsTabId::General);
+    this->addTab([]{return new CustomizationPage;},    "Customization",  ":/settings/customization.svg", SettingsTabId::Customization);
     this->addTab([]{return new SettingsProfilePage;},  "Import/Export",  ":/settings/commands.svg");
     this->addTab([]{return new LeafyrinoPage;},        "Leafyrino",      ":/settings/leafyrino.png", SettingsTabId::Leafyrino);
     this->addTab([]{return new MoltorinoPage;},        "Moltorino",      ":/settings/moltorino.svg", SettingsTabId::Moltorino);

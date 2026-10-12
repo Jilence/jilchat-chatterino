@@ -60,9 +60,41 @@ int getUsernameBoldness()
 #endif
 }
 
+/// What the theme wants, see Fonts::setThemeOverrides.
+ThemeFontOverrides themeFonts;
+/// The one Fonts instance, to rebuild its fonts when the theme changes.
+Fonts *fontsInstance = nullptr;
+
+/// Registers the Gabarito faces that come with the program, so themes can use
+/// them without the font being installed.
+void registerBundledFonts()
+{
+    static bool done = false;
+    if (done)
+    {
+        return;
+    }
+    done = true;
+
+    for (const auto *face :
+         {"Regular", "Medium", "SemiBold", "Bold", "ExtraBold", "Black"})
+    {
+        const auto path = QStringLiteral(":/fonts/Gabarito/Gabarito-%1.ttf")
+                              .arg(QLatin1StringView(face));
+        if (QFontDatabase::addApplicationFont(path) < 0)
+        {
+            qWarning() << "Could not load the bundled font face" << path;
+        }
+    }
+}
+
 float fontSize(FontStyle style)
 {
     auto chatSize = [] {
+        if (themeFonts.chatSize > 0)
+        {
+            return static_cast<float>(themeFonts.chatSize);
+        }
         return static_cast<float>(getSettings()->chatFontSize);
     };
     switch (style)
@@ -78,6 +110,10 @@ float fontSize(FontStyle style)
         case FontStyle::ChatMediumStrikethrough:
         case FontStyle::TimestampMedium:
             return chatSize();
+        case FontStyle::ChatUsername:
+            return themeFonts.usernameSize > 0
+                       ? static_cast<float>(themeFonts.usernameSize)
+                       : chatSize();
         case FontStyle::ChatLarge:
             return 1.2F * chatSize();
         case FontStyle::ChatVeryLarge:
@@ -89,7 +125,9 @@ float fontSize(FontStyle style)
         case FontStyle::UiMediumBold:
         case FontStyle::UiTabs:
         case FontStyle::EndType:
-            return 9;
+            return themeFonts.interfaceSize > 0
+                       ? static_cast<float>(themeFonts.interfaceSize)
+                       : 9.F;
     }
 
     assert(false);
@@ -109,10 +147,16 @@ int fontWeight(FontStyle style)
         case FontStyle::ChatLarge:
         case FontStyle::ChatVeryLarge:
         case FontStyle::TimestampMedium:
-            return getSettings()->chatFontWeight.getValue();
+            return themeFonts.chatWeight > 0
+                       ? themeFonts.chatWeight
+                       : getSettings()->chatFontWeight.getValue();
 
         case FontStyle::ChatMediumBold:
             return getUsernameBoldness();
+
+        case FontStyle::ChatUsername:
+            return themeFonts.usernameWeight > 0 ? themeFonts.usernameWeight
+                                                 : getUsernameBoldness();
 
         case FontStyle::Tiny:
         case FontStyle::UiMedium:
@@ -139,6 +183,7 @@ bool isItalic(FontStyle style)
         case FontStyle::ChatMediumMono:
         case FontStyle::ChatMediumStrikethrough:
         case FontStyle::ChatMediumBold:
+        case FontStyle::ChatUsername:
         case FontStyle::ChatLarge:
         case FontStyle::ChatVeryLarge:
         case FontStyle::TimestampMedium:
@@ -163,6 +208,12 @@ QString fontFamily(FontStyle style)
         case FontStyle::Tiny:
             return QStringLiteral("Monospace");
 
+        case FontStyle::ChatUsername:
+            if (!themeFonts.usernameFamily.isEmpty())
+            {
+                return themeFonts.usernameFamily;
+            }
+            [[fallthrough]];
         case FontStyle::ChatSmall:
         case FontStyle::ChatMediumSmall:
         case FontStyle::ChatMedium:
@@ -172,14 +223,18 @@ QString fontFamily(FontStyle style)
         case FontStyle::ChatLarge:
         case FontStyle::ChatVeryLarge:
         case FontStyle::TimestampMedium:
-            return getSettings()->chatFontFamily.getValue();
+            return themeFonts.chatFamily.isEmpty()
+                       ? getSettings()->chatFontFamily.getValue()
+                       : themeFonts.chatFamily;
         case FontStyle::ChatMediumMono:
             QFontDatabase::applicationFontFamilies(getApp()->monoFontId).at(0);
         case FontStyle::UiMedium:
         case FontStyle::UiMediumBold:
         case FontStyle::UiTabs:
         case FontStyle::EndType:
-            return QStringLiteral(DEFAULT_FONT_FAMILY);
+            return themeFonts.interfaceFamily.isEmpty()
+                       ? QStringLiteral(DEFAULT_FONT_FAMILY)
+                       : themeFonts.interfaceFamily;
     }
 
     assert(false);
@@ -194,19 +249,48 @@ Fonts::Fonts(Settings &settings)
 {
     this->fontsByType_.resize(size_t(FontStyle::EndType));
 
-    this->fontChangedListener.setCB([this] {
-        assertInGuiThread();
+    fontsInstance = this;
+    registerBundledFonts();
 
-        for (auto &map : this->fontsByType_)
-        {
-            map.clear();
-        }
-        this->fontChanged.invoke();
+    this->fontChangedListener.setCB([this] {
+        this->invalidate();
     });
     this->fontChangedListener.addSetting(settings.chatFontFamily);
     this->fontChangedListener.addSetting(settings.chatFontSize);
     this->fontChangedListener.addSetting(settings.chatFontWeight);
     this->fontChangedListener.addSetting(settings.boldScale);
+}
+
+Fonts::~Fonts()
+{
+    if (fontsInstance == this)
+    {
+        fontsInstance = nullptr;
+    }
+}
+
+void Fonts::setThemeOverrides(const ThemeFontOverrides &overrides)
+{
+    if (themeFonts == overrides)
+    {
+        return;
+    }
+    themeFonts = overrides;
+    if (fontsInstance != nullptr)
+    {
+        fontsInstance->invalidate();
+    }
+}
+
+void Fonts::invalidate()
+{
+    assertInGuiThread();
+
+    for (auto &map : this->fontsByType_)
+    {
+        map.clear();
+    }
+    this->fontChanged.invoke();
 }
 
 QFont Fonts::getFont(FontStyle type, float scale)

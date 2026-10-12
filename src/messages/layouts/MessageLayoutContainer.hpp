@@ -33,6 +33,7 @@ enum class TextDirection : uint8_t {
 class MessageLayoutElement;
 struct Selection;
 struct MessagePaintContext;
+struct AnimatedMessageShadow;
 
 struct MessageLayoutContainer {
     MessageLayoutContainer() = default;
@@ -51,10 +52,14 @@ struct MessageLayoutContainer {
 
     void breakLine();
 
-    void paintElements(QPainter &painter, const MessagePaintContext &ctx) const;
+    /// @param paintEmotes false leaves out emotes, emoji and cheermotes
+    void paintElements(QPainter &painter, const MessagePaintContext &ctx,
+                       bool paintEmotes = true) const;
 
-    QRegion paintAnimatedElements(QPainter &painter, qreal yOffset,
-                                  bool isCollapsed = false) const;
+    /// @param shadow drawn behind animated emotes and badges, if set
+    QRegion paintAnimatedElements(
+        QPainter &painter, qreal yOffset, bool isCollapsed = false,
+        const AnimatedMessageShadow *shadow = nullptr) const;
 
     void paintSelection(QPainter &painter, size_t messageIndex,
                         const Selection &selection, qreal yOffset) const;

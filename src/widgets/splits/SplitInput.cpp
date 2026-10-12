@@ -3901,8 +3901,11 @@ void SplitInput::paintEvent(QPaintEvent * /*event*/)
     const auto borderColor =
         this->theme->isLightTheme() ? QColor(0xcccccc) : QColor(0x333333);
 
-    const auto drawBorder = [&painter, &borderColor](QRect rect) {
-        if (rect.isEmpty())
+    // The polished look has no lines around the input.
+    const bool polished =
+        !themeUsesClassicSplitFrame(this->theme->customization.foundation);
+    const auto drawBorder = [&painter, &borderColor, polished](QRect rect) {
+        if (rect.isEmpty() || polished)
         {
             return;
         }
@@ -4095,6 +4098,11 @@ bool SplitInput::shouldPreventInput(const QString &text) const
 
 int SplitInput::marginForTheme() const
 {
+    if (!themeUsesClassicSplitFrame(this->theme->customization.foundation))
+    {
+        return 1;
+    }
+
     if (this->theme->isLightTheme())
     {
         return int(3 * this->scale());

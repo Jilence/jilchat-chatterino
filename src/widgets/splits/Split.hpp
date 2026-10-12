@@ -68,6 +68,9 @@ public:
     pajlada::Signals::NoArgSignal focusLost;
 
     ChannelView &getChannelView();
+    /// Whether a banner (pinned message, prediction or poll) is shown
+    /// between the channel bar and the chat.
+    bool hasVisibleBanner() const;
     SplitInput &getInput();
 
     /// Expanded pinned-message preview, or nullptr if unavailable.
@@ -147,6 +150,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void themeChangedEvent() override;
     void showEvent(QShowEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;

@@ -18,6 +18,7 @@
 #include <QColor>
 #include <QGestureEvent>
 #include <QMenu>
+#include <QPainterPath>
 #include <QPaintEvent>
 #include <QPointer>
 #include <QRegion>
@@ -54,6 +55,7 @@ class LabelButton;
 struct Link;
 class MessageLayoutElement;
 class Split;
+class ThemeVideo;
 class TwitchChannel;
 class FilterSet;
 using FilterSetPtr = std::shared_ptr<FilterSet>;
@@ -475,6 +477,36 @@ private:
     /// @see #hasSourceChannel()
     ChannelPtr sourceChannel_ = nullptr;
     Split *split_;
+
+    /// Builds the outline of the rounded message area if the theme has one.
+    /// False if the area isn't rounded.
+    bool ensureChatFramePaths();
+    /// Keeps the scrollbar and the "More messages below" button inside the
+    /// rounded message area.
+    void updateRoundedChildMasks();
+    /// Covers the corners outside of the rounded message area and draws its
+    /// border.
+    void paintChatFrame(QPainter &painter);
+
+    /// Fills the view with the theme's background image.
+    void paintWallpaper(QPainter &painter);
+
+    /// What `wallpaperPixmap_` was loaded for. Empty: look again.
+    QString wallpaperCacheKey_;
+    /// Shared between all views showing the same background.
+    std::shared_ptr<QPixmap> wallpaperPixmap_;
+    /// Set instead of `wallpaperPixmap_` when the background is a video.
+    /// Always empty in builds without video backgrounds.
+    std::shared_ptr<ThemeVideo> wallpaperVideo_;
+    QMetaObject::Connection wallpaperVideoConnection_;
+    void releaseVideoWallpaper();
+
+    QPainterPath chatFrameContentPath_;
+    QPainterPath chatFrameOutsidePath_;
+    QPainterPath chatFrameBorderPath_;
+    QSize chatFramePathSize_;
+    qreal chatFramePathRadius_ = -1;
+    qreal chatFramePathWidth_ = -1;
 
     Scrollbar *scrollBar_;
     LabelButton *goToBottom_{};

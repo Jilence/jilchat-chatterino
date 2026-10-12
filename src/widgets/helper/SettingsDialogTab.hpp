@@ -20,6 +20,7 @@ class SettingsDialog;
 enum class SettingsTabId {
     None,
     General,
+    Customization,
     Moltorino,
     Leafyrino,
     Accounts,
