@@ -2,6 +2,9 @@
 name: Build
 
 on:
+  # Not on a push to main: there the Build is started by hand ("Run workflow").
+  # Such a run on main is followed by "Create installer", which makes the
+  # installers and a draft release.
   push:
     branches:
       - leafyrino
