@@ -39,8 +39,15 @@ QString mediaTool(const QString &name)
     filename += QStringLiteral(".exe");
 #endif
 
+#ifdef Q_OS_MACOS
+    // in the bundle, next to the other resources
+    const auto directory = QStringLiteral("../Resources/support/media/");
+#else
+    const auto directory = QStringLiteral("support/media/");
+#endif
+
     return QDir(QCoreApplication::applicationDirPath())
-        .filePath(QStringLiteral("support/media/") + filename);
+        .filePath(directory + filename);
 }
 
 bool runTool(const QString &name, const QStringList &arguments,

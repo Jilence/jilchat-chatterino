@@ -19,9 +19,13 @@ permissions:
 jobs:
   create-installer:
     runs-on: ${{ matrix.os }}
+    # Only for a Build somebody started by hand on main of this repository.
+    # A pull request whose branch happens to be called main doesn't count.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     strategy:
       matrix:
         qt-version: ["6.9.3"]
@@ -36,7 +40,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          persist-credentials: true 
+          persist-credentials: true
 
       - name: Resolve Build workflow run
         id: resolve-build-run
@@ -140,6 +144,12 @@ jobs:
       actions: read
 
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the release notes are made from the history
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
       - name: Resolve Build workflow run
         id: build-run
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -216,8 +226,40 @@ jobs:
           set -euo pipefail
           tag="build-${BUILD_RUN_ID}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
+          # The changes are the commits since the last published release.
+          # A draft has no tag yet, so earlier drafts don't count.
+          previous="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [ -z "$previous" ] || ! git merge-base --is-ancestor "$previous" "$RELEASE_SHA" 2>/dev/null; then
+            previous="$(git describe --tags --abbrev=0 --exclude nightly-build "$RELEASE_SHA" 2>/dev/null || true)"
+          fi
+          range="$RELEASE_SHA"
+          if [ -n "$previous" ]; then
+            range="$previous..$RELEASE_SHA"
+          fi
+
+          # Like Leafyrino's nightly notes: one line per commit with its date,
+          # newest first, the first five shown and the rest folded away.
+          TZ=UTC git log --no-merges --date=format-local:%Y-%m-%d \
+              --pretty="%ct|%an|- [%cd] %s" "$range" |
+            awk -F"|" 'tolower($2) != "dependabot[bot]"' |
+            sort -s -t"|" -k1,1nr |
+            cut -d"|" -f3- > changes.txt
+          {
+            printf "### What's Changed\n\n"
+            if [ ! -s changes.txt ]; then
+              echo "No changes since last release."
+            fi
+            head -n 5 changes.txt
+            if [ "$(wc -l < changes.txt)" -gt 5 ]; then
+              printf "<details><summary>More Changes</summary>\n\n"
+              tail -n +6 changes.txt
+              echo "</details>"
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
           gh release create "$tag" release-files/* \
             --draft \
             --target "$RELEASE_SHA" \
             --title "JilChat Chatterino – Build ${BUILD_RUN_ID}" \
-            --generate-notes
+            --notes-file release-notes.md

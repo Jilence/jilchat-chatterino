@@ -79,6 +79,90 @@ modules:
       - type: shell
         commands:
           - autoreconf -vfi
+  # Video backgrounds of themes: libvpx, libwebm and libyuv play them, the
+  # ffmpeg and ffprobe programs (with dav1d) convert chosen videos. Same
+  # sources and options as .CI/build-video-dependencies.sh.
+  - name: dav1d
+    buildsystem: meson
+    config-opts:
+      - --buildtype=release
+      - --default-library=static
+      - -Denable_tools=false
+      - -Denable_tests=false
+    sources:
+      - type: archive
+        url: https://downloads.videolan.org/videolan/dav1d/1.5.3/dav1d-1.5.3.tar.xz
+        sha256: 732010aa5ef461fa93355ed2c6c5fedb48ddc4b74e697eaabe8907eaeb943011
+  - name: libvpx
+    buildsystem: autotools
+    no-autogen: true
+    config-opts:
+      - --disable-shared
+      - --enable-pic
+      - --disable-examples
+      - --disable-tools
+      - --disable-docs
+      - --disable-unit-tests
+      - --disable-vp9-encoder
+      - --disable-vp9-decoder
+    sources:
+      - type: archive
+        url: https://github.com/webmproject/libvpx/archive/refs/tags/v1.16.0.tar.gz
+        sha256: 7a479a3c66b9f5d5542a4c6a1b7d3768a983b1e5c14c60a9396edc9b649e015c
+  - name: libwebm
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+      - -DBUILD_SHARED_LIBS=OFF
+      - -DENABLE_WEBM_PARSER=ON
+      - -DENABLE_WEBMTS=OFF
+      - -DENABLE_WEBMINFO=OFF
+      - -DENABLE_SAMPLE_PROGRAMS=OFF
+      - -DENABLE_TESTS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/webmproject/libwebm/archive/refs/tags/libwebm-1.0.0.32.tar.gz
+        sha256: 7fd5e085bda9f8031cf2ad2a1e52d9b7b29cba9c0b96ad2ce794ce89e4249eb8
+  - name: libyuv
+    buildsystem: simple
+    build-commands:
+      # only the library; the project's install step wants its tools too
+      - cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_DISABLE_FIND_PACKAGE_JPEG=ON
+        -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON
+      - cmake --build build --target yuv
+      - install -Dm644 build/libyuv.a /app/lib/libyuv.a
+      - mkdir -p /app/include
+      - cp -R include/. /app/include/
+    sources:
+      - type: archive
+        url: https://github.com/lemenkov/libyuv/archive/4cd90347e78ff76755df2107009e900374aee9cd.tar.gz
+        sha256: d401d9610c17aa2d5bb6ba279af478dd70d29ed52484a01d51469d255792c50a
+  - name: ffmpeg
+    buildsystem: simple
+    build-commands:
+      # Only the two programs, without GPL or nonfree parts (LGPL 2.1 or later).
+      # They go next to the app binary, where it looks for them.
+      - ./configure --prefix=/app --disable-autodetect --disable-everything --disable-shared
+        --enable-static --disable-doc --disable-debug --disable-network --disable-avdevice
+        --disable-swresample --disable-postproc --enable-ffmpeg --enable-ffprobe --enable-libvpx
+        --enable-libdav1d --enable-zlib
+        --enable-decoder=h264,hevc,vp8,vp9,libdav1d,mpeg4,mjpeg,png,gif,webp
+        --enable-encoder=libvpx_vp8 --enable-demuxer=mov,matroska,avi,gif,image2,webp_anim
+        --enable-muxer=webm --enable-parser=h264,hevc,vp8,vp9,av1,mpeg4video,mjpeg,png,gif,webp
+        --enable-protocol=file,pipe
+        --enable-filter=scale,fps,setpts,setsar,format,transpose,hflip,vflip
+        --pkg-config-flags=--static
+      - make -j $FLATPAK_BUILDER_N_JOBS ffmpeg ffprobe
+      - install -Dm755 ffmpeg /app/bin/support/media/ffmpeg
+      - install -Dm755 ffprobe /app/bin/support/media/ffprobe
+      - install -Dm644 COPYING.LGPLv2.1 /app/bin/support/media/licenses/ffmpeg/COPYING.LGPLv2.1
+      - install -Dm644 LICENSE.md /app/bin/support/media/licenses/ffmpeg/LICENSE.md
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz
+        sha256: de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
   - name: chatterino
     buildsystem: cmake
     config-opts:
@@ -91,9 +175,13 @@ modules:
       - -DBUILD_BENCHMARKS=OFF
       - -DUSE_PRECOMPILED_HEADERS=OFF
       - -DCHATTERINO_STATIC_QT_BUILD=OFF
+      - -DCHATTERINO_THEME_VIDEO=ON
+      # ffmpeg and ffprobe are installed by the ffmpeg module
+      - -DCHATTERINO_MEDIA_TOOLS_OPTIONAL=ON
     sources:
       - type: dir
         path: ..
     post-install:
       - install -Dm755 ./resources/icon.png /app/share/icons/hicolor/256x256/apps/com.leafyzito.leafyrino.png
+      - install -Dm644 ./resources/licenses/ffmpeg-source.txt /app/bin/support/media/licenses/ffmpeg/ffmpeg-source.txt
       - install -Dm755 ./resources/com.chatterino.chatterino.appdata.xml /app/share/metainfo/com.leafyzito.leafyrino.xml

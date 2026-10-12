@@ -1,4 +1,5 @@
 ## Install for Windows
+
 Install the .exe and double click it: [Download here](https://github.com/Jilence/jilchat-chatterino/releases/download/0.1.5/Leafyrino.Nightly.Installer.exe)
 
 another fork but with [jilchat badges](https://jil.chat) :)

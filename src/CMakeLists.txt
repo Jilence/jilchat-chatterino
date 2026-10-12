@@ -1319,6 +1319,41 @@ if (BUILD_APP)
     set_target_directory_hierarchy(${EXECUTABLE_PROJECT})
     set_target_properties(${EXECUTABLE_PROJECT} PROPERTIES OUTPUT_NAME "Leafyrino")
 
+    # ffmpeg and ffprobe convert the videos chosen as theme backgrounds. They
+    # and their licenses sit in support/media next to the program, also in
+    # what gets installed and packaged. In a macOS bundle that is
+    # Contents/Resources: everything in Contents/MacOS has to be signed code,
+    # which the license texts aren't.
+    set(CHATTERINO_MEDIA_TOOLS_DIR "${CMAKE_BINARY_DIR}/bin/support/media" CACHE PATH
+        "Directory with the ffmpeg and ffprobe programs used to prepare video backgrounds, and their licenses")
+    if (CHATTERINO_HAVE_THEME_VIDEO AND EXISTS "${CHATTERINO_MEDIA_TOOLS_DIR}")
+        if (APPLE)
+            set(_media_tools_destination "$<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>/../Resources/support/media")
+        else ()
+            set(_media_tools_destination "$<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>/support/media")
+        endif ()
+        add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CHATTERINO_MEDIA_TOOLS_DIR}"
+                "${_media_tools_destination}"
+            VERBATIM)
+
+        if (WIN32)
+            install(DIRECTORY "${CHATTERINO_MEDIA_TOOLS_DIR}/"
+                DESTINATION support/media)
+        elseif (NOT APPLE)
+            # On macOS the copy above already put them into the app bundle.
+            install(DIRECTORY "${CHATTERINO_MEDIA_TOOLS_DIR}/"
+                DESTINATION bin/support/media
+                USE_SOURCE_PERMISSIONS)
+        endif ()
+    elseif (CHATTERINO_HAVE_THEME_VIDEO AND CHATTERINO_THEME_VIDEO STREQUAL "AUTO")
+        message(STATUS "Theme video backgrounds: no ffmpeg/ffprobe in ${CHATTERINO_MEDIA_TOOLS_DIR}; videos can be played but not imported")
+    elseif (CHATTERINO_HAVE_THEME_VIDEO AND NOT CHATTERINO_MEDIA_TOOLS_OPTIONAL)
+        # asked for explicitly: then everything has to be there
+        message(FATAL_ERROR "CHATTERINO_THEME_VIDEO is ON but there is no ffmpeg/ffprobe in ${CHATTERINO_MEDIA_TOOLS_DIR} (set CHATTERINO_MEDIA_TOOLS_DIR, or CHATTERINO_MEDIA_TOOLS_OPTIONAL=ON if the programs are provided some other way)")
+    endif ()
+
     if (WIN32)
         if (WINDEPLOYQT_PATH)
             file(TO_CMAKE_PATH "${WINDEPLOYQT_PATH}" WINDEPLOYQT_PATH)
@@ -1357,21 +1392,6 @@ if (BUILD_APP)
             list(APPEND WINDEPLOYQT_COMMAND_ARGV --force-openssl)
         endif()
         string(REPLACE ";" " " WINDEPLOYQT_COMMAND "${WINDEPLOYQT_COMMAND_ARGV}")
-
-        set(CHATTERINO_MEDIA_TOOLS_DIR "${CMAKE_BINARY_DIR}/bin/support/media" CACHE PATH
-            "Directory with the ffmpeg and ffprobe programs used to prepare video backgrounds, and their licenses")
-        if (CHATTERINO_HAVE_THEME_VIDEO AND EXISTS "${CHATTERINO_MEDIA_TOOLS_DIR}")
-            add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${CHATTERINO_MEDIA_TOOLS_DIR}"
-                    "$<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>/support/media"
-                VERBATIM)
-
-            install(DIRECTORY "${CHATTERINO_MEDIA_TOOLS_DIR}/"
-                DESTINATION support/media)
-        elseif (CHATTERINO_HAVE_THEME_VIDEO)
-            message(STATUS "Theme video backgrounds: no ffmpeg/ffprobe in ${CHATTERINO_MEDIA_TOOLS_DIR}; videos can be played but not imported")
-        endif ()
 
         set(MOLTORINO_SUPPORT_7ZIP_DIR "${CMAKE_SOURCE_DIR}/tools/support/7zip")
         if (EXISTS "${MOLTORINO_SUPPORT_7ZIP_DIR}/7z.exe")
