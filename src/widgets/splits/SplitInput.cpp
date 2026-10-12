@@ -523,9 +523,13 @@ protected:
         }
 
         const int outerMargin = std::max(8, int(std::round(9 * this->scale())));
-        const int availableWidth = std::max(1, this->width() - outerMargin * 2);
+        const int availableWidth =
+            std::max(1, this->width() - (outerMargin * 2));
         const int minimumCellWidth = std::max(
-            46, int(std::round(this->minimumCellWidth() * this->scale())));
+            46,
+            int(std::round(static_cast<float>(
+                               EmoteTabCompletionCarousel::minimumCellWidth()) *
+                           this->scale())));
         const int visibleCount =
             std::clamp(availableWidth / minimumCellWidth, 1,
                        std::min(7, static_cast<int>(this->emoteRows_.size())));
@@ -533,7 +537,7 @@ protected:
         const int maxStart = std::max(
             0, static_cast<int>(this->emoteRows_.size()) - visibleCount);
         const int first =
-            std::clamp(selectedIndex - visibleCount / 2, 0, maxStart);
+            std::clamp(selectedIndex - (visibleCount / 2), 0, maxStart);
         const int cellWidth = availableWidth / visibleCount;
 
         this->cells_.clear();
@@ -560,9 +564,9 @@ protected:
                 continue;
             }
 
-            const int left = outerMargin + slot * cellWidth;
+            const int left = outerMargin + (slot * cellWidth);
             const int width = slot == visibleCount - 1
-                                  ? availableWidth - slot * cellWidth
+                                  ? availableWidth - (slot * cellWidth)
                                   : cellWidth;
             QRect cellRect(left, 2, width, this->height() - 4);
             this->cells_.emplace_back(cellRect, row);
@@ -623,10 +627,11 @@ protected:
                 painter.setPen(textColor);
                 const auto name = nameMetrics.elidedText(
                     item->displayName, Qt::ElideRight,
-                    std::max(1, cellRect.width() - imageMargin * 2));
+                    std::max(1, cellRect.width() - (imageMargin * 2)));
                 QRect nameRect(cellRect.left() + imageMargin,
                                cellRect.bottom() - nameHeight - 1,
-                               cellRect.width() - imageMargin * 2, nameHeight);
+                               cellRect.width() - (imageMargin * 2),
+                               nameHeight);
                 painter.drawText(nameRect, Qt::AlignHCenter | Qt::AlignVCenter,
                                  name);
             }
@@ -693,10 +698,17 @@ protected:
 
         const auto angleDelta = event->angleDelta();
         const auto pixelDelta = event->pixelDelta();
-        const int amount = angleDelta.y() != 0   ? angleDelta.y()
-                           : angleDelta.x() != 0 ? angleDelta.x()
-                           : pixelDelta.y() != 0 ? pixelDelta.y()
-                                                 : pixelDelta.x();
+        // the first of these that says anything
+        int amount = 0;
+        for (const int delta :
+             {angleDelta.y(), angleDelta.x(), pixelDelta.y(), pixelDelta.x()})
+        {
+            if (delta != 0)
+            {
+                amount = delta;
+                break;
+            }
+        }
         if (amount == 0)
         {
             event->ignore();
@@ -749,20 +761,38 @@ private:
     {
         const auto size = getSettings()->emoteTabCarouselSize.getValue();
 
-        const int logicalHeight = size == "extra-large" ? 74
-                                  : size == "large"     ? 59
-                                  : size == "standard"  ? 44
-                                                        : 29;
+        float logicalHeight = 29;
+        if (size == "extra-large")
+        {
+            logicalHeight = 74;
+        }
+        else if (size == "large")
+        {
+            logicalHeight = 59;
+        }
+        else if (size == "standard")
+        {
+            logicalHeight = 44;
+        }
         return std::max(28, int(std::round(logicalHeight * this->scale())));
     }
 
-    int minimumCellWidth() const
+    static int minimumCellWidth()
     {
         const auto size = getSettings()->emoteTabCarouselSize.getValue();
-        return size == "extra-large" ? 84
-               : size == "large"     ? 72
-               : size == "standard"  ? 60
-                                     : 48;
+        if (size == "extra-large")
+        {
+            return 84;
+        }
+        if (size == "large")
+        {
+            return 72;
+        }
+        if (size == "standard")
+        {
+            return 60;
+        }
+        return 48;
     }
 
     /// Where the selected row is among the rows that are emotes
@@ -872,7 +902,7 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
     });
 
     getSettings()->showEmoteTabCarousel.connect(
-        [this](const bool enabled, auto) {
+        [this](const bool enabled, const auto &) {
             if (!enabled)
             {
                 this->ui_.emoteTabCompletionCarousel->clear();
@@ -880,12 +910,12 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
         },
         this->managedConnections_);
     getSettings()->emoteTabCarouselSize.connect(
-        [this](const QString &, auto) {
+        [this](const QString &, const auto &) {
             this->ui_.emoteTabCompletionCarousel->refreshAppearance();
         },
         this->managedConnections_);
     getSettings()->showEmoteTabCarouselNames.connect(
-        [this](const bool, auto) {
+        [this](const bool, const auto &) {
             this->ui_.emoteTabCompletionCarousel->refreshAppearance();
         },
         this->managedConnections_);
