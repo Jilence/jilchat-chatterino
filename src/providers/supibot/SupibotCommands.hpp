@@ -2,6 +2,7 @@
 
 #include <boost/signals2/connection.hpp>
 #include <pajlada/signals/signal.hpp>
+#include <QByteArray>
 #include <QDateTime>
 #include <QObject>
 #include <QSet>
@@ -15,7 +16,19 @@ struct SupibotCommand {
     QString name;
     QString usage;
     bool alias = false;
+    // User aliases are invoked with $$, separate from built-in $ shortcuts.
+    bool userAlias = false;
 };
+
+namespace supibot::detail {
+
+std::vector<SupibotCommand> parseUserAliases(const QByteArray &payload,
+                                             bool *ok);
+std::vector<SupibotCommand> mergeCommands(
+    std::vector<SupibotCommand> commands,
+    const std::vector<SupibotCommand> &userAliases);
+
+}  // namespace supibot::detail
 
 class SupibotCommands final : public QObject
 {

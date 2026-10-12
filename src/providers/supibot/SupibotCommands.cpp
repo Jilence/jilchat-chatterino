@@ -244,7 +244,8 @@ std::vector<SupibotCommand> parseAliases(const QByteArray &payload, bool *ok)
         aliases.push_back({
             .name = name,
             .usage = std::move(usage),
-            .alias = true,
+            .alias = false,
+            .userAlias = true,
         });
     }
     *ok = true;
@@ -259,6 +260,27 @@ void sortCommands(std::vector<SupibotCommand> &commands)
 }
 
 }  // namespace
+
+namespace supibot::detail {
+
+std::vector<SupibotCommand> parseUserAliases(const QByteArray &payload,
+                                             bool *ok)
+{
+    return parseAliases(payload, ok);
+}
+
+std::vector<SupibotCommand> mergeCommands(
+    std::vector<SupibotCommand> commands,
+    const std::vector<SupibotCommand> &userAliases)
+{
+    // $name and $$name are different invocations, so a shared name stays.
+    commands.insert(commands.end(), userAliases.begin(), userAliases.end());
+    sortCommands(commands);
+    return commands;
+}
+
+}  // namespace supibot::detail
+
 SupibotCommands::SupibotCommands() = default;
 
 void SupibotCommands::ensureLoaded()
@@ -574,21 +596,8 @@ bool SupibotCommands::applyPayload(Catalog catalog, const QByteArray &payload)
 
 void SupibotCommands::rebuild()
 {
-    std::vector<SupibotCommand> commands = this->baseCommands_;
-    std::unordered_set<QString> names;
-    for (const auto &command : commands)
-    {
-        names.insert(command.name.toLower());
-    }
-    for (const auto &alias : this->userAliases_)
-    {
-        if (names.insert(alias.name.toLower()).second)
-        {
-            commands.push_back(alias);
-        }
-    }
-    sortCommands(commands);
-    this->commands_ = std::move(commands);
+    this->commands_ =
+        supibot::detail::mergeCommands(this->baseCommands_, this->userAliases_);
 }
 
 void SupibotCommands::noteFailure(FetchState &state) const

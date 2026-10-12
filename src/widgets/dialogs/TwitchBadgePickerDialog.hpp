@@ -131,6 +131,7 @@ private:
                         const std::function<void(const QJsonObject &)> &onData,
                         const std::function<void(const QString &)> &onError);
     void clearContent();
+    void deselectGlobal();
     void deselectChannel();
     void setFlairHidden(bool hidden);
     void refreshStyle();

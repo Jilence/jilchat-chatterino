@@ -17,6 +17,7 @@
 #include "controllers/plugins/LuaUtilities.hpp"
 #include "controllers/plugins/Plugin.hpp"
 #include "controllers/plugins/PluginController.hpp"
+#include "providers/potat/PotatCommands.hpp"
 #include "singletons/Settings.hpp"
 
 namespace chatterino {
@@ -31,6 +32,13 @@ void TabCompletionModel::updateResults(const QString &query,
                                        const QString &fullTextContent,
                                        int cursorPosition, bool isFirstWord)
 {
+    if (this->channel_.getType() == Channel::Type::Twitch)
+    {
+        if (auto *potat = getApp()->getPotatCommands())
+        {
+            potat->ensureChannel(this->channel_.getName());
+        }
+    }
     this->updateSourceFromQuery(query, isFirstWord);
 
     if (this->source_)
@@ -76,8 +84,18 @@ std::optional<TabCompletionModel::SourceKind>
     TabCompletionModel::deduceSourceKind(const QString &query,
                                          bool isFirstWord) const
 {
-    const bool botPrefix =
-        isFirstWord && (query.startsWith('#') || query.startsWith('$'));
+    bool potatQuery = false;
+    if (isFirstWord && getSettings()->includePotatCommands &&
+        this->channel_.getType() == Channel::Type::Twitch)
+    {
+        if (auto *potat = getApp()->getPotatCommands())
+        {
+            potatQuery =
+                query.startsWith('#') ||
+                potat->suggestionQuery(this->channel_.getName(), query);
+        }
+    }
+    const bool botPrefix = isFirstWord && (potatQuery || query.startsWith('$'));
     if ((query.length() < 2 && !botPrefix) ||
         !this->channel_.isTwitchOrKickChannel())
     {
@@ -93,7 +111,7 @@ std::optional<TabCompletionModel::SourceKind>
         return SourceKind::Emote;
     }
     else if (isFirstWord && (query.startsWith('/') || query.startsWith('.') ||
-                             query.startsWith('#') || query.startsWith('$')))
+                             potatQuery || query.startsWith('$')))
     {
         return SourceKind::Command;
     }
