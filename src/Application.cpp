@@ -28,6 +28,7 @@
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "singletons/ImageUploader.hpp"
 #include "singletons/NativeMessaging.hpp"
+#include "util/MemoryReclaimer.hpp"
 #ifdef CHATTERINO_HAVE_PLUGINS
 #    include "controllers/plugins/PluginController.hpp"
 #endif
@@ -101,6 +102,8 @@ const QString BTTV_LIVE_UPDATES_URL = "wss://sockets.betterttv.net/ws";
 const QString SEVENTV_EVENTAPI_URL = "wss://events.7tv.io/v3";
 
 std::atomic<bool> STOPPED{false};
+
+constexpr int STARTUP_MEMORY_RELIEF_DELAY_MS = 30'000;
 std::atomic<bool> ABOUT_TO_QUIT{false};
 
 ISoundController *makeSoundController(Settings &settings)
@@ -406,6 +409,12 @@ void Application::initialize(Settings &settings, const Paths &paths)
 
     this->monoFontId =
         QFontDatabase::addApplicationFont(":/fonts/consolas.otf");
+
+    // Starting up leaves a lot of freed memory behind. Ask for it to be
+    // given back once things have settled.
+    QTimer::singleShot(STARTUP_MEMORY_RELIEF_DELAY_MS, qApp, [] {
+        requestMemoryPressureRelief();
+    });
 
     this->initialized = true;
 }
