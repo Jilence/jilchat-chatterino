@@ -33,20 +33,47 @@ struct Provider {
 /// Where badges come from, in the order they are usually shown in.
 /// Twitch's own come first and are told apart by their name.
 constexpr std::array PROVIDERS{
-    Provider{MessageElementFlag::BadgeChatterino, u"c", u"Chatterino"},
-    Provider{MessageElementFlag::BadgeFfz, u"ff", u"FrankerFaceZ"},
-    Provider{MessageElementFlag::BadgeFfzAp, u"fa", u"FFZ:AP"},
-    Provider{MessageElementFlag::BadgeBttv, u"bt", u"BetterTTV"},
-    Provider{MessageElementFlag::BadgeMoltorino, u"m", u"Moltorino"},
-    Provider{MessageElementFlag::BadgeBluzyrino, u"bl", u"Bluzyrino"},
-    Provider{MessageElementFlag::BadgeSevenTV, u"7", u"7TV"},
-    Provider{MessageElementFlag::BadgeDankChat, u"dc", u"DankChat"},
-    Provider{MessageElementFlag::BadgeChatsen, u"cs", u"Chatsen"},
-    Provider{MessageElementFlag::BadgeHomiesCustom, u"hc", u"Homies"},
-    Provider{MessageElementFlag::BadgeHomiesSupporter, u"hs", u"Homies"},
-    Provider{MessageElementFlag::BadgeHomies, u"h", u"Homies"},
-    Provider{MessageElementFlag::BadgeFolhinha, u"fo", u"FolhinhaBot"},
-    Provider{MessageElementFlag::BadgeJilChat, u"jc", u"JilChat"},
+    Provider{.flag = MessageElementFlag::BadgeChatterino,
+             .key = u"c",
+             .name = u"Chatterino"},
+    Provider{.flag = MessageElementFlag::BadgeFfz,
+             .key = u"ff",
+             .name = u"FrankerFaceZ"},
+    Provider{.flag = MessageElementFlag::BadgeFfzAp,
+             .key = u"fa",
+             .name = u"FFZ:AP"},
+    Provider{.flag = MessageElementFlag::BadgeBttv,
+             .key = u"bt",
+             .name = u"BetterTTV"},
+    Provider{.flag = MessageElementFlag::BadgeMoltorino,
+             .key = u"m",
+             .name = u"Moltorino"},
+    Provider{.flag = MessageElementFlag::BadgeBluzyrino,
+             .key = u"bl",
+             .name = u"Bluzyrino"},
+    Provider{
+        .flag = MessageElementFlag::BadgeSevenTV, .key = u"7", .name = u"7TV"},
+    Provider{.flag = MessageElementFlag::BadgeDankChat,
+             .key = u"dc",
+             .name = u"DankChat"},
+    Provider{.flag = MessageElementFlag::BadgeChatsen,
+             .key = u"cs",
+             .name = u"Chatsen"},
+    Provider{.flag = MessageElementFlag::BadgeHomiesCustom,
+             .key = u"hc",
+             .name = u"Homies"},
+    Provider{.flag = MessageElementFlag::BadgeHomiesSupporter,
+             .key = u"hs",
+             .name = u"Homies"},
+    Provider{.flag = MessageElementFlag::BadgeHomies,
+             .key = u"h",
+             .name = u"Homies"},
+    Provider{.flag = MessageElementFlag::BadgeFolhinha,
+             .key = u"fo",
+             .name = u"FolhinhaBot"},
+    Provider{.flag = MessageElementFlag::BadgeJilChat,
+             .key = u"jc",
+             .name = u"JilChat"},
 };
 
 /// The key of a badge and what to call it. The key is empty for
@@ -99,8 +126,9 @@ int defaultRank(QStringView key)
     {
         return 0;
     }
-    const auto it = std::ranges::find(PROVIDERS, key, &Provider::key);
-    return 1 + static_cast<int>(it - PROVIDERS.begin());
+    const auto index = std::ranges::distance(
+        PROVIDERS.begin(), std::ranges::find(PROVIDERS, key, &Provider::key));
+    return 1 + static_cast<int>(index);
 }
 
 std::mutex SEEN_MUTEX;
@@ -115,7 +143,7 @@ std::vector<std::pair<QString, QString>> &seenBadges()
 
 void remember(const QString &key, const QString &label)
 {
-    std::lock_guard lock(SEEN_MUTEX);
+    std::scoped_lock lock(SEEN_MUTEX);
     auto &seen = seenBadges();
     const auto it =
         std::ranges::find(seen, key, &std::pair<QString, QString>::first);
@@ -186,9 +214,9 @@ void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
                    elements.end());
 
     QHash<QString, int> ranks;
-    for (int index = 0; index < static_cast<int>(order.size()); ++index)
+    for (size_t index = 0; index < order.size(); ++index)
     {
-        ranks.insert(order[static_cast<size_t>(index)].first, index);
+        ranks.insert(order[index].first, static_cast<int>(index));
     }
     const auto rankOf = [&](const MessageElement &element) {
         const auto key = describe(element).first;
@@ -217,12 +245,14 @@ std::vector<Entry> entries()
 
     std::vector<std::pair<QString, QString>> seen;
     {
-        std::lock_guard lock(SEEN_MUTEX);
+        std::scoped_lock lock(SEEN_MUTEX);
         seen = seenBadges();
     }
 
+    const auto saved = savedOrder();
     std::vector<Entry> result;
-    for (const auto &[key, savedLabel] : savedOrder())
+    result.reserve(saved.size() + seen.size());
+    for (const auto &[key, savedLabel] : saved)
     {
         // what the badge is called now, if it was seen since
         const auto it =
@@ -236,10 +266,9 @@ std::vector<Entry> entries()
     }
 
     // the ones without a place yet, where they would be shown
-    std::stable_sort(
-        seen.begin(), seen.end(), [](const auto &left, const auto &right) {
-            return defaultRank(left.first) < defaultRank(right.first);
-        });
+    std::ranges::stable_sort(seen, [](const auto &left, const auto &right) {
+        return defaultRank(left.first) < defaultRank(right.first);
+    });
     for (const auto &[key, label] : seen)
     {
         if (std::ranges::find(result, key, &Entry::key) == result.end())

@@ -1043,7 +1043,7 @@ constexpr int ORDER_KEY_ROLE = Qt::UserRole;
 constexpr int ORDER_VISIBLE_ROLE = Qt::UserRole + 1;
 
 /// Where the eye of a row of the badge order is
-QRect orderEyeRect(const QRect &row, qreal scale)
+QRect orderEyeRect(QRect row, qreal scale)
 {
     const int width = qRound(34 * scale);
     return {row.right() - width, row.top(), width, row.height()};
@@ -1063,7 +1063,7 @@ public:
     float uiScale = 1.F;
 
     QSize sizeHint(const QStyleOptionViewItem &option,
-                   const QModelIndex &) const override
+                   const QModelIndex & /*index*/) const override
     {
         return QSize{option.rect.width(),
                      std::max(qRound(32 * this->uiScale),
@@ -1074,8 +1074,8 @@ public:
                const QModelIndex &index) const override
     {
         painter->save();
-        const bool selected = option.state & QStyle::State_Selected;
-        const bool hovered = option.state & QStyle::State_MouseOver;
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
         auto background = getTheme()->splits.input.background;
         if (selected)
         {
