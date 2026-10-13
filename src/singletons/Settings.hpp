@@ -16,6 +16,7 @@
 #include "controllers/highlights/HighlightBadge.hpp"
 #include "controllers/highlights/HighlightBlacklistUser.hpp"
 #include "controllers/highlights/HighlightPhrase.hpp"
+#include "controllers/highlights/HighlightWordList.hpp"
 #include "controllers/ignores/IgnorePhrase.hpp"
 #include "controllers/logging/ChannelLog.hpp"
 #include "controllers/moderationactions/ModerationAction.hpp"
@@ -1493,6 +1494,8 @@ private:
         {"/highlighting/highlights"};
     ChatterinoSetting<std::vector<HighlightPhrase>> highlightedUsersSetting = {
         "/highlighting/users"};
+    ChatterinoSetting<std::vector<HighlightWordList>>
+        highlightWordListsSetting = {"/highlighting/wordLists"};
     ChatterinoSetting<std::vector<HighlightBadge>> highlightedBadgesSetting = {
         "/highlighting/badges"};
     ChatterinoSetting<std::vector<HighlightBlacklistUser>>
@@ -1526,6 +1529,7 @@ private:
 public:
     SignalVector<HighlightPhrase> highlightedMessages;
     SignalVector<HighlightPhrase> highlightedUsers;
+    SignalVector<HighlightWordList> highlightWordLists;
     SignalVector<HighlightBadge> highlightedBadges;
     SignalVector<HighlightBlacklistUser> blacklistedUsers;
     SignalVector<IgnorePhrase> ignoredMessages;

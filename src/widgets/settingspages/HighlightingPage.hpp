@@ -12,6 +12,8 @@
 class QPushButton;
 class QListWidget;
 
+class QTreeWidget;
+
 namespace chatterino {
 
 class EditableModelView;
@@ -25,6 +27,18 @@ private:
     enum HighlightTab { Messages = 0, Users = 1, Badges = 2, Blacklist = 3 };
 
     QTimer disabledUsersChangedTimer_;
+
+    /// The lists of the "Moderator Word Lists" tab
+    QTreeWidget *wordLists_{};
+    bool refreshingWordLists_{};
+
+    void refreshWordLists();
+    void createWordList();
+    void importWordList();
+    void editSelectedWordList();
+    void exportSelectedWordList();
+    void removeSelectedWordList();
+    int selectedWordListIndex() const;
 
     void tableCellClicked(const QModelIndex &clicked, EditableModelView *view,
                           HighlightTab tab);

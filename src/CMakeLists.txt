@@ -239,6 +239,8 @@ set(SOURCE_FILES
         controllers/highlights/HighlightPhrase.hpp
         controllers/highlights/HighlightResult.cpp
         controllers/highlights/HighlightResult.hpp
+        controllers/highlights/HighlightWordList.cpp
+        controllers/highlights/HighlightWordList.hpp
         controllers/highlights/UserHighlightModel.cpp
         controllers/highlights/UserHighlightModel.hpp
 

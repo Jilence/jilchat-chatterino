@@ -11,6 +11,7 @@
 #include "controllers/highlights/HighlightCheck.hpp"
 #include "controllers/highlights/HighlightPhrase.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/HighlightWordList.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "providers/colors/ColorProvider.hpp"
@@ -299,6 +300,45 @@ void rebuildMessageHighlights(Settings &settings,
         checks.emplace_back(highlightPhraseCheck(highlight));
     }
 
+    auto wordLists = settings.highlightWordLists.readOnly();
+    for (const auto &wordList : *wordLists)
+    {
+        const bool hasMarker =
+            wordList.matchStyle() != HighlightMatchStyle::None;
+        checks.emplace_back(HighlightCheck{
+            [wordList, hasMarker](
+                const auto &, const auto &, const auto &,
+                const auto &originalMessage, const auto &, const auto self,
+                const auto platform, const auto &channelName,
+                const auto collectMatches) -> std::optional<HighlightResult> {
+                if (self)
+                {
+                    return std::nullopt;
+                }
+                // looking for where it matches costs more than whether
+                auto match = wordList.matchForNormalizedChannel(
+                    originalMessage, channelName, platform,
+                    collectMatches && hasMarker
+                        ? HighlightWordListMatchMode::WithRanges
+                        : HighlightWordListMatchMode::MatchOnly);
+                if (!match.matched)
+                {
+                    return std::nullopt;
+                }
+
+                std::optional<QUrl> soundUrl;
+                if (wordList.hasCustomSound())
+                {
+                    soundUrl = wordList.soundUrl();
+                }
+                auto result = HighlightResult{
+                    wordList.hasAlert(), wordList.hasSound(), soundUrl,
+                    wordList.color(), wordList.showInMentions()};
+                result.matches = std::move(match.matches);
+                return result;
+            }});
+    }
+
     if (settings.enableAutomodHighlight)
     {
         const auto highlightSound =
@@ -514,6 +554,14 @@ HighlightController::HighlightController(Settings &settings,
         getSettings()->highlightedUsers.delayedItemsChanged, [this, &settings] {
             qCDebug(chatterinoHighlights)
                 << "Rebuild checks because highlight users changed";
+            this->rebuildChecks(settings);
+        });
+
+    this->signalHolder_.managedConnect(
+        getSettings()->highlightWordLists.delayedItemsChanged,
+        [this, &settings] {
+            qCDebug(chatterinoHighlights)
+                << "Rebuild checks because highlight word lists changed";
             this->rebuildChecks(settings);
         });
 
