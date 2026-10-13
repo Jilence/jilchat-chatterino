@@ -212,6 +212,8 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->updateWordTypeMaskListener.add(settings.showReplyButton);
 
     this->forceLayoutChannelViewsListener.add(
+        settings.highlightMatchedFragments);
+    this->forceLayoutChannelViewsListener.add(
         settings.moderationActions.delayedItemsChanged);
     this->forceLayoutChannelViewsListener.add(
         settings.highlightedMessages.delayedItemsChanged);

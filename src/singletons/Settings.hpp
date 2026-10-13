@@ -1449,6 +1449,15 @@ public:
     /// The marker of what AutoMod matched: (255, 177, 64, 128) by default
     QStringSetting automodMatchHighlightColor{
         "/highlighting/automod/matchedFragment/color", "#80ffb140"};
+    /// Mark the text a highlight phrase matched
+    BoolSetting highlightMatchedFragments{
+        "/highlighting/matchedFragments/enabled", false};
+    /// How the own name is marked where it is mentioned. Empty is the default
+    /// color; the style is the name of a HighlightMatchStyle.
+    QStringSetting selfHighlightMatchColor{
+        "/highlighting/selfHighlight/matchColor", ""};
+    QStringSetting selfHighlightMatchStyle{
+        "/highlighting/selfHighlight/matchStyle", "Outline"};
     /// A HighlightMatchStyle, Fill by default
     IntSetting automodMatchHighlightStyle{
         "/highlighting/automod/matchedFragment/style", 2};

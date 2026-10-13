@@ -32,6 +32,9 @@ private:
                          int soundColumn);
     void openColorDialog(const QModelIndex &clicked, EditableModelView *view,
                          HighlightTab tab);
+    /// Asks how the text a phrase matched is to be marked
+    void openMatchAppearanceDialog(const QModelIndex &clicked,
+                                   EditableModelView *view);
 };
 
 }  // namespace chatterino

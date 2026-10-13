@@ -53,11 +53,30 @@ auto highlightPhraseCheck(const HighlightPhrase &highlight) -> HighlightCheck
                 highlightSoundUrl = highlight.getSoundUrl();
             }
 
-            return HighlightResult{
+            auto result = HighlightResult{
                 highlight.hasAlert(),       highlight.hasSound(),
                 highlightSoundUrl,          highlight.getColor(),
                 highlight.showInMentions(),
             };
+            if (getSettings()->highlightMatchedFragments &&
+                highlight.getMatchStyle() != HighlightMatchStyle::None)
+            {
+                for (const auto &[start, length] :
+                     highlight.findMatches(originalMessage))
+                {
+                    result.matches.push_back({
+                        .start = start,
+                        .length = length,
+                        .color = *highlight.getMatchColor(),
+                        .ruleName = highlight.getPattern(),
+                        .pattern = highlight.getPattern(),
+                        .source = HighlightMatchSource::Phrase,
+                        .style = highlight.getMatchStyle(),
+                        .paintID = {},
+                    });
+                }
+            }
+            return result;
         }};
 }
 
@@ -226,6 +245,15 @@ void rebuildReplyThreadHighlight(Settings &settings,
 void rebuildMessageHighlights(Settings &settings,
                               std::vector<HighlightCheck> &checks)
 {
+    // how the own name is marked where it is mentioned
+    auto selfMatchColor = QColor(settings.selfHighlightMatchColor.getValue());
+    if (!selfMatchColor.isValid())
+    {
+        selfMatchColor = defaultNewHighlightMatchColor();
+    }
+    const auto selfMatchStyle = highlightMatchStyleFromName(
+        settings.selfHighlightMatchStyle.getValue());
+
     auto currentUser = getApp()->getAccounts()->twitch.getCurrent();
     QString currentUsername = currentUser->getUserName();
 
@@ -237,7 +265,8 @@ void rebuildMessageHighlights(Settings &settings,
             settings.enableSelfHighlightTaskbar,
             settings.enableSelfHighlightSound, false, false,
             settings.selfHighlightSoundUrl.getValue(),
-            ColorProvider::instance().color(ColorType::SelfHighlight));
+            ColorProvider::instance().color(ColorType::SelfHighlight),
+            std::make_shared<QColor>(selfMatchColor), selfMatchStyle);
 
         checks.emplace_back(highlightPhraseCheck(highlight));
     }
@@ -252,7 +281,8 @@ void rebuildMessageHighlights(Settings &settings,
             settings.enableSelfHighlightTaskbar,
             settings.enableSelfHighlightSound, false, false,
             settings.selfHighlightSoundUrl.getValue(),
-            ColorProvider::instance().color(ColorType::SelfHighlight));
+            ColorProvider::instance().color(ColorType::SelfHighlight),
+            std::make_shared<QColor>(selfMatchColor), selfMatchStyle);
 
         checks.emplace_back(highlightPhraseCheck(highlight));
     }
@@ -418,6 +448,8 @@ HighlightController::HighlightController(Settings &settings,
     this->rebuildListener_.addSetting(settings.enableSelfHighlightSound);
     this->rebuildListener_.addSetting(settings.enableSelfHighlightTaskbar);
     this->rebuildListener_.addSetting(settings.selfHighlightSoundUrl);
+    this->rebuildListener_.addSetting(settings.selfHighlightMatchColor);
+    this->rebuildListener_.addSetting(settings.selfHighlightMatchStyle);
     this->rebuildListener_.addSetting(settings.showSelfHighlightInMentions);
 
     this->rebuildListener_.addSetting(settings.enableWhisperHighlight);
@@ -529,6 +561,8 @@ std::pair<bool, HighlightResult> HighlightController::check(
     const QString &senderName, const QString &originalMessage,
     const MessageFlags &messageFlags, MessagePlatform platform) const
 {
+    constexpr size_t MAX_MATCHES_PER_MESSAGE = 256;
+
     bool highlighted = false;
     auto result = HighlightResult::emptyResult();
 
@@ -604,6 +638,18 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 }
             }
 
+            if (!checkResult->matches.empty() &&
+                result.matches.size() < MAX_MATCHES_PER_MESSAGE)
+            {
+                const auto count =
+                    std::min(MAX_MATCHES_PER_MESSAGE - result.matches.size(),
+                             checkResult->matches.size());
+                result.matches.insert(result.matches.end(),
+                                      checkResult->matches.begin(),
+                                      checkResult->matches.begin() +
+                                          static_cast<std::ptrdiff_t>(count));
+            }
+
             if (checkResult->showInMentions)
             {
                 if (!result.showInMentions)
@@ -612,8 +658,11 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 }
             }
 
+            // with markers, every phrase that matches is of interest
             if (result.full() &&
-                result.extraColors.size() >= HighlightResult::MAX_EXTRA_COLORS)
+                result.extraColors.size() >=
+                    HighlightResult::MAX_EXTRA_COLORS &&
+                !getSettings()->highlightMatchedFragments)
             {
                 break;
             }

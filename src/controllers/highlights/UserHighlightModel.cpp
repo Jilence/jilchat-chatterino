@@ -56,6 +56,7 @@ void UserHighlightModel::afterInit()
     auto selfColor =
         ColorProvider::instance().color(ColorType::SelfMessageHighlight);
     setColorItem(messagesRow[Column::Color], *selfColor, false);
+    messagesRow[Column::MatchAppearance]->setFlags({});
 
     this->insertCustomRow(
         messagesRow, HighlightModel::UserHighlightRowIndexes::SelfMessageRow);
@@ -120,6 +121,8 @@ void UserHighlightModel::getRowFromItem(const HighlightPhrase &item,
     setBoolItem(row[Column::CaseSensitive], item.isCaseSensitive());
     setFilePathItem(row[Column::SoundPath], item.getSoundUrl());
     setColorItem(row[Column::Color], *item.getColor());
+    // a user has no text to mark
+    row[Column::MatchAppearance]->setFlags({});
 }
 
 }  // namespace chatterino

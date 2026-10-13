@@ -19,12 +19,37 @@ HighlightModel::HighlightModel(QObject *parent)
 {
 }
 
+namespace {
+
+void setMatchAppearanceItem(QStandardItem *item, const QColor &color,
+                            HighlightMatchStyle style)
+{
+    item->setCheckable(false);
+    item->setData(QVariant{}, Qt::CheckStateRole);
+    item->setData(highlightMatchStyleName(style), Qt::DisplayRole);
+    item->setData(color, Qt::DecorationRole);
+    item->setData(static_cast<int>(style), HighlightModel::MatchStyleRole);
+    item->setToolTip("How the text that matched is marked. Click to change.");
+    item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+}
+
+bool isMatchStyle(int value)
+{
+    return value >= static_cast<int>(HighlightMatchStyle::None) &&
+           value <= static_cast<int>(HighlightMatchStyle::Underline);
+}
+
+}  // namespace
+
 HighlightPhrase HighlightModel::getItemFromRow(
     std::vector<QStandardItem *> &row, const HighlightPhrase &original)
 {
     auto highlightColor = original.getColor();
     *highlightColor =
         row[Column::Color]->data(Qt::DecorationRole).value<QColor>();
+    auto matchColor = original.getMatchColor();
+    *matchColor =
+        row[Column::MatchAppearance]->data(Qt::DecorationRole).value<QColor>();
 
     return HighlightPhrase{
         row[Column::Pattern]->data(Qt::DisplayRole).toString(),
@@ -34,7 +59,10 @@ HighlightPhrase HighlightModel::getItemFromRow(
         row[Column::UseRegex]->data(Qt::CheckStateRole).toBool(),
         row[Column::CaseSensitive]->data(Qt::CheckStateRole).toBool(),
         row[Column::SoundPath]->data(Qt::UserRole).toString(),
-        highlightColor};
+        highlightColor,
+        matchColor,
+        static_cast<HighlightMatchStyle>(
+            row[Column::MatchAppearance]->data(MatchStyleRole).toInt())};
 }
 
 void HighlightModel::getRowFromItem(const HighlightPhrase &item,
@@ -48,6 +76,8 @@ void HighlightModel::getRowFromItem(const HighlightPhrase &item,
     setBoolItem(row[Column::CaseSensitive], item.isCaseSensitive());
     setFilePathItem(row[Column::SoundPath], item.getSoundUrl());
     setColorItem(row[Column::Color], *item.getColor());
+    setMatchAppearanceItem(row[Column::MatchAppearance], *item.getMatchColor(),
+                           item.getMatchStyle());
 }
 
 void HighlightModel::afterInit()
@@ -75,6 +105,17 @@ void HighlightModel::afterInit()
     auto selfColor = ColorProvider::instance().color(ColorType::SelfHighlight);
     setColorItem(usernameRow[Column::Color], *selfColor, false);
 
+    auto selfMatchColor =
+        QColor(getSettings()->selfHighlightMatchColor.getValue());
+    if (!selfMatchColor.isValid())
+    {
+        selfMatchColor = defaultNewHighlightMatchColor();
+    }
+    setMatchAppearanceItem(
+        usernameRow[Column::MatchAppearance], selfMatchColor,
+        highlightMatchStyleFromName(
+            getSettings()->selfHighlightMatchStyle.getValue()));
+
     this->insertCustomRow(usernameRow, HighlightRowIndexes::SelfHighlightRow);
 
     std::vector<QStandardItem *> whisperRow = this->createRow();
@@ -98,6 +139,7 @@ void HighlightModel::afterInit()
     auto whisperColor = ColorProvider::instance().color(ColorType::Whisper);
     setColorItem(whisperRow[Column::Color], *whisperColor, false);
 
+    whisperRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(whisperRow, HighlightRowIndexes::WhisperRow);
 
     std::vector<QStandardItem *> subRow = this->createRow();
@@ -119,6 +161,7 @@ void HighlightModel::afterInit()
     auto subColor = ColorProvider::instance().color(ColorType::Subscription);
     setColorItem(subRow[Column::Color], *subColor, false);
 
+    subRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(subRow, HighlightRowIndexes::SubRow);
 
     std::vector<QStandardItem *> followRow = this->createRow();
@@ -141,6 +184,7 @@ void HighlightModel::afterInit()
     auto followColor = ColorProvider::instance().color(ColorType::Follow);
     setColorItem(followRow[Column::Color], *followColor, false);
 
+    followRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(followRow, HighlightRowIndexes::FollowRow);
 
     std::vector<QStandardItem *> redeemedRow = this->createRow();
@@ -160,6 +204,7 @@ void HighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::RedeemedHighlight);
     setColorItem(redeemedRow[Column::Color], *RedeemedColor, false);
 
+    redeemedRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(redeemedRow, HighlightRowIndexes::RedeemedRow);
 
     std::vector<QStandardItem *> firstMessageRow = this->createRow();
@@ -180,6 +225,7 @@ void HighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::FirstMessageHighlight);
     setColorItem(firstMessageRow[Column::Color], *FirstMessageColor, false);
 
+    firstMessageRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(firstMessageRow,
                           HighlightRowIndexes::FirstMessageRow);
 
@@ -210,6 +256,7 @@ void HighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::ThreadMessageHighlight);
     setColorItem(threadMessageRow[Column::Color], *threadMessageColor, false);
 
+    threadMessageRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(threadMessageRow,
                           HighlightRowIndexes::ThreadMessageRow);
 
@@ -236,6 +283,20 @@ void HighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::AutomodHighlight);
     setColorItem(automodRow[Column::Color], *automodColor, false);
 
+    // what AutoMod matched in a message it holds
+    auto automodMatchColor =
+        QColor(getSettings()->automodMatchHighlightColor.getValue());
+    if (!automodMatchColor.isValid())
+    {
+        automodMatchColor = defaultAutoModMatchColor();
+    }
+    const int automodMatchStyle = getSettings()->automodMatchHighlightStyle;
+    setMatchAppearanceItem(
+        automodRow[Column::MatchAppearance], automodMatchColor,
+        isMatchStyle(automodMatchStyle)
+            ? static_cast<HighlightMatchStyle>(automodMatchStyle)
+            : HighlightMatchStyle::Fill);
+
     this->insertCustomRow(automodRow, HighlightRowIndexes::AutomodRow);
 
     std::vector<QStandardItem *> watchStreakRow = this->createRow();
@@ -254,6 +315,7 @@ void HighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::WatchStreak);
     setColorItem(watchStreakRow[Column::Color], *watchStreakColor, false);
 
+    watchStreakRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(watchStreakRow, HighlightRowIndexes::WatchStreakRow);
 
     std::vector<QStandardItem *> announcementRow = this->createRow();
@@ -272,6 +334,7 @@ void HighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::AnnouncementHighlight);
     setColorItem(announcementRow[Column::Color], *announcementColor, false);
 
+    announcementRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(announcementRow,
                           HighlightRowIndexes::AnnouncementRow);
 
@@ -289,6 +352,7 @@ void HighlightModel::afterInit()
     coloredAnnouncementRow[Column::SoundPath]->setFlags(Qt::NoItemFlags);
     coloredAnnouncementRow[Column::Color]->setFlags(Qt::NoItemFlags);
 
+    coloredAnnouncementRow[Column::MatchAppearance]->setFlags({});
     this->insertCustomRow(coloredAnnouncementRow,
                           HighlightRowIndexes::ColoredAnnouncementRow);
 }
@@ -502,6 +566,42 @@ void HighlightModel::customRowSetData(const std::vector<QStandardItem *> &row,
                 {
                     getSettings()->automodHighlightSoundUrl.setValue(
                         value.toString());
+                }
+            }
+        }
+        break;
+        case Column::MatchAppearance: {
+            // only the own name and AutoMod have a marker among these rows
+            if (role == Qt::DecorationRole)
+            {
+                const auto color = value.value<QColor>();
+                if (!color.isValid())
+                {
+                    break;
+                }
+                if (rowIndex == HighlightRowIndexes::SelfHighlightRow)
+                {
+                    getSettings()->selfHighlightMatchColor.setValue(
+                        color.name(QColor::HexArgb));
+                }
+                else if (rowIndex == HighlightRowIndexes::AutomodRow)
+                {
+                    getSettings()->automodMatchHighlightColor.setValue(
+                        color.name(QColor::HexArgb));
+                }
+            }
+            else if (role == MatchStyleRole && isMatchStyle(value.toInt()))
+            {
+                if (rowIndex == HighlightRowIndexes::SelfHighlightRow)
+                {
+                    getSettings()->selfHighlightMatchStyle.setValue(
+                        highlightMatchStyleName(
+                            static_cast<HighlightMatchStyle>(value.toInt())));
+                }
+                else if (rowIndex == HighlightRowIndexes::AutomodRow)
+                {
+                    getSettings()->automodMatchHighlightStyle.setValue(
+                        value.toInt());
                 }
             }
         }

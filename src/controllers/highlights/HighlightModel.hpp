@@ -17,6 +17,8 @@ class HighlightModel : public SignalVectorModel<HighlightPhrase>
 public:
     explicit HighlightModel(QObject *parent);
 
+    static constexpr int MatchStyleRole = Qt::UserRole;
+
     enum Column {
         Pattern = 0,
         ShowInMentions = 1,
@@ -26,6 +28,9 @@ public:
         PlaySound = 5,
         SoundPath = 6,
         Color = 7,
+        /// How the text that matched is marked: the color is its decoration,
+        /// the style is in MatchStyleRole
+        MatchAppearance = 8,
         COUNT
     };
 

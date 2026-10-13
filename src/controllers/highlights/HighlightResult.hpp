@@ -34,6 +34,11 @@ enum class HighlightMatchStyle : std::uint8_t {
 QString highlightMatchStyleName(HighlightMatchStyle style);
 HighlightMatchStyle highlightMatchStyleFromName(const QString &name);
 QColor defaultAutoModMatchColor();
+/// The marker a new highlight phrase gets
+QColor defaultNewHighlightMatchColor();
+/// The marker of a phrase from before there were markers: the color the
+/// phrase highlights messages with
+QColor defaultHighlightMatchColor(QColor messageHighlightColor);
 
 /// A part of a message's text that something matched, counted in UTF-16 code
 /// units. Taken from Moltorino.
@@ -74,6 +79,9 @@ struct HighlightResult {
     /// Colors of further matching highlights, shown as bands when "multiple
     /// highlight bands" is enabled.
     std::vector<std::shared_ptr<QColor>> extraColors;
+
+    /// Where in the message its text matched, if that is to be marked
+    std::vector<HighlightMatch> matches;
 
     bool operator==(const HighlightResult &other) const;
     bool operator!=(const HighlightResult &other) const;

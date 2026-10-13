@@ -87,6 +87,12 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     builder->flags.set(MessageFlag::Highlighted);
+    if (!highlightResult.matches.empty())
+    {
+        builder->highlightMatches =
+            std::make_shared<const std::vector<HighlightMatch>>(
+                std::move(highlightResult.matches));
+    }
     if (!builder->highlightColor)
     {
         builder->highlightColor = highlightResult.color;

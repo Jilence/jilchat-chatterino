@@ -21,7 +21,6 @@
 #include "Application.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/chat/ChatAutomationController.hpp"
-#include "controllers/highlights/HighlightResult.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "messages/Emote.hpp"
@@ -1018,25 +1017,6 @@ MoltorinoPage::MoltorinoPage()
         ->conditionallyEnabledBy(s.autoModReviewHighlightMatches)
         ->addKeywords({"automod", "hover", "reason"})
         ->addTo(*view);
-
-    SettingWidget::colorButton("Marker color", s.automodMatchHighlightColor)
-        ->conditionallyEnabledBy(s.autoModReviewHighlightMatches)
-        ->addTo(*view);
-
-    view->addDropdown<int>(
-            "Marker style",
-            {"Fill", "Outline", "Outline and fill", "Underline"},
-            s.automodMatchHighlightStyle,
-            [](auto val) {
-                return highlightMatchStyleName(
-                    static_cast<HighlightMatchStyle>(val));
-            },
-            [](auto args) {
-                return static_cast<int>(
-                    highlightMatchStyleFromName(args.value));
-            },
-            false)
-        ->setToolTip("How the words AutoMod matched are marked.");
 
     view->addSubtitle("Review queue");
 

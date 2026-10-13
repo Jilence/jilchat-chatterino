@@ -12,6 +12,7 @@
 #include "controllers/highlights/HighlightModel.hpp"
 #include "controllers/highlights/HighlightPhrase.hpp"
 #include "controllers/highlights/UserHighlightModel.hpp"
+#include "messages/layouts/MessageLayoutElement.hpp"
 #include "providers/colors/ColorProvider.hpp"
 #include "singletons/Settings.hpp"
 #include "util/Helpers.hpp"
@@ -21,8 +22,13 @@
 #include "widgets/helper/color/ColorItemDelegate.hpp"
 #include "widgets/helper/EditableModelView.hpp"
 
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFormLayout>
 #include <QHeaderView>
+#include <QPainter>
 #include <QPushButton>
 #include <QStandardItemModel>
 #include <QTableView>
@@ -74,7 +80,7 @@ HighlightingPage::HighlightingPage()
                 view->setTitles({"Pattern", "Show in\nMentions",
                                  "Flash\ntaskbar", "Enable\nregex",
                                  "Case-\nsensitive", "Play\nsound",
-                                 "Custom\nsound", "Color"});
+                                 "Custom\nsound", "Color", "Marker"});
                 view->getTableView()->horizontalHeader()->setSectionResizeMode(
                     QHeaderView::Fixed);
                 view->getTableView()->horizontalHeader()->setSectionResizeMode(
@@ -124,7 +130,10 @@ HighlightingPage::HighlightingPage()
                 view->setTitles({"Username", "Show in\nMentions",
                                  "Flash\ntaskbar", "Enable\nregex",
                                  "Case-\nsensitive", "Play\nsound",
-                                 "Custom\nsound", "Color"});
+                                 "Custom\nsound", "Color", "Marker"});
+                // a user has no text to mark
+                view->getTableView()->hideColumn(
+                    HighlightModel::Column::MatchAppearance);
                 view->getTableView()->horizontalHeader()->setSectionResizeMode(
                     QHeaderView::Fixed);
                 view->getTableView()->horizontalHeader()->setSectionResizeMode(
@@ -295,6 +304,9 @@ HighlightingPage::HighlightingPage()
         }
 
         layout.append(createCheckBox(
+            "Mark the text that matched a phrase (the Marker column)",
+            getSettings()->highlightMatchedFragments));
+        layout.append(createCheckBox(
             "Play highlight sound even when Chatterino is focused",
             getSettings()->highlightAlwaysPlaySound));
         layout.append(createCheckBox(
@@ -334,6 +346,175 @@ void HighlightingPage::openColorDialog(const QModelIndex &clicked,
     dialog->show();
 }
 
+namespace {
+
+/// Shows what a marker looks like on a piece of text
+class MatchAppearancePreview final : public QWidget
+{
+public:
+    explicit MatchAppearancePreview(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        this->setMinimumHeight(42);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    void setAppearance(QColor color, HighlightMatchStyle style)
+    {
+        this->color_ = color;
+        this->style_ = style;
+        this->update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.fillRect(this->rect(), this->palette().base());
+
+        const QString prefix = "Example message with ";
+        const QString matched = "matched text";
+        const auto metrics = this->fontMetrics();
+        const auto baseline =
+            (this->height() + metrics.ascent() - metrics.descent()) / 2;
+        const auto left = 10;
+        painter.setFont(this->font());
+        painter.setPen(this->palette().text().color());
+        painter.drawText(left, baseline, prefix);
+
+        const QRectF markerRect(left + metrics.horizontalAdvance(prefix) - 2,
+                                (this->height() - metrics.height()) / 2.0,
+                                metrics.horizontalAdvance(matched) + 4,
+                                metrics.height());
+        const FragmentHighlight highlight{
+            .match = {.color = this->color_, .style = this->style_},
+        };
+        paintFragmentHighlightBackground(painter, markerRect, highlight);
+        painter.setPen(this->palette().text().color());
+        painter.drawText(QPointF(markerRect.left() + 2, baseline), matched);
+        paintFragmentHighlightForeground(painter, markerRect, highlight);
+    }
+
+private:
+    QColor color_{Qt::red};
+    HighlightMatchStyle style_{HighlightMatchStyle::Outline};
+};
+
+/// Asks for the style and color of a marker. Taken from Moltorino.
+class MatchAppearanceDialog final : public QDialog
+{
+public:
+    MatchAppearanceDialog(QWidget *parent, QColor color,
+                          HighlightMatchStyle style)
+        : QDialog(parent)
+        , color_(color)
+    {
+        this->setWindowTitle("Marker of the matched text");
+        this->setAttribute(Qt::WA_DeleteOnClose);
+
+        auto *layout = new QFormLayout(this);
+
+        this->style_ = new QComboBox(this);
+        for (const auto candidate :
+             {HighlightMatchStyle::None, HighlightMatchStyle::Outline,
+              HighlightMatchStyle::Fill, HighlightMatchStyle::OutlineAndFill,
+              HighlightMatchStyle::Underline})
+        {
+            this->style_->addItem(highlightMatchStyleName(candidate),
+                                  static_cast<int>(candidate));
+        }
+        const auto styleIndex = this->style_->findData(static_cast<int>(style));
+        this->style_->setCurrentIndex(styleIndex >= 0 ? styleIndex : 1);
+        layout->addRow("Marker style:", this->style_);
+
+        this->colorButton_ = new QPushButton(this);
+        layout->addRow("Marker color:", this->colorButton_);
+
+        this->preview_ = new MatchAppearancePreview(this);
+        layout->addRow("Preview:", this->preview_);
+
+        auto *buttons = new QDialogButtonBox(
+            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        layout->addRow(buttons);
+
+        QObject::connect(this->style_, &QComboBox::currentIndexChanged, this,
+                         [this] {
+                             this->updateState();
+                         });
+        QObject::connect(
+            this->colorButton_, &QPushButton::clicked, this, [this] {
+                auto *picker = new ColorPickerDialog(this->color_, this);
+                QObject::connect(picker, &ColorPickerDialog::colorConfirmed,
+                                 this, [this](const QColor &color) {
+                                     if (color.isValid())
+                                     {
+                                         this->color_ = color;
+                                         this->updateState();
+                                     }
+                                 });
+                picker->show();
+            });
+        QObject::connect(buttons, &QDialogButtonBox::accepted, this,
+                         &QDialog::accept);
+        QObject::connect(buttons, &QDialogButtonBox::rejected, this,
+                         &QDialog::reject);
+
+        this->updateState();
+    }
+
+    QColor color() const
+    {
+        return this->color_;
+    }
+
+    HighlightMatchStyle style() const
+    {
+        return static_cast<HighlightMatchStyle>(
+            this->style_->currentData().toInt());
+    }
+
+private:
+    void updateState()
+    {
+        this->colorButton_->setText(this->color_.name(QColor::HexArgb));
+        QPixmap swatch(16, 16);
+        swatch.fill(this->color_);
+        this->colorButton_->setIcon(QIcon(swatch));
+        // without a marker there is nothing to color
+        this->colorButton_->setEnabled(this->style() !=
+                                       HighlightMatchStyle::None);
+        this->preview_->setAppearance(this->color_, this->style());
+    }
+
+    QColor color_;
+    QComboBox *style_{};
+    QPushButton *colorButton_{};
+    MatchAppearancePreview *preview_{};
+};
+
+}  // namespace
+
+void HighlightingPage::openMatchAppearanceDialog(const QModelIndex &clicked,
+                                                 EditableModelView *view)
+{
+    auto *model = view->getModel();
+    const auto color = model->data(clicked, Qt::DecorationRole).value<QColor>();
+    const auto style = static_cast<HighlightMatchStyle>(
+        model->data(clicked, HighlightModel::MatchStyleRole).toInt());
+
+    auto *dialog = new MatchAppearanceDialog(this, color, style);
+    QObject::connect(
+        dialog, &QDialog::accepted, this, [model, clicked, dialog] {
+            model->setData(clicked, dialog->color(), Qt::DecorationRole);
+            model->setData(clicked, static_cast<int>(dialog->style()),
+                           HighlightModel::MatchStyleRole);
+            model->setData(clicked, highlightMatchStyleName(dialog->style()),
+                           Qt::DisplayRole);
+        });
+    dialog->show();
+}
+
 void HighlightingPage::tableCellClicked(const QModelIndex &clicked,
                                         EditableModelView *view,
                                         HighlightTab tab)
@@ -356,6 +537,10 @@ void HighlightingPage::tableCellClicked(const QModelIndex &clicked,
             else if (clicked.column() == Column::Color)
             {
                 this->openColorDialog(clicked, view, tab);
+            }
+            else if (clicked.column() == Column::MatchAppearance)
+            {
+                this->openMatchAppearanceDialog(clicked, view);
             }
         }
         break;
