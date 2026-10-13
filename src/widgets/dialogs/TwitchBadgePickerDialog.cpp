@@ -1215,7 +1215,7 @@ public:
     std::function<void(const QColor &)> colorChanged;
 
 protected:
-    void paintEvent(QPaintEvent *) override
+    void paintEvent(QPaintEvent * /*event*/) override
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
@@ -1224,7 +1224,8 @@ protected:
 
         QLinearGradient saturation(field.topLeft(), field.topRight());
         saturation.setColorAt(0.0, Qt::white);
-        saturation.setColorAt(1.0, QColor::fromHsvF(this->hue_, 1.0, 1.0));
+        saturation.setColorAt(
+            1.0, QColor::fromHsvF(static_cast<float>(this->hue_), 1.0F, 1.0F));
         painter.fillRect(field, saturation);
         QLinearGradient value(field.topLeft(), field.bottomLeft());
         value.setColorAt(0.0, QColor(0, 0, 0, 0));
@@ -1234,7 +1235,9 @@ protected:
         QLinearGradient hues(hueBar.topLeft(), hueBar.topRight());
         for (int i = 0; i <= 6; ++i)
         {
-            hues.setColorAt(i / 6.0, QColor::fromHsvF(i / 6.0, 1.0, 1.0));
+            hues.setColorAt(
+                i / 6.0,
+                QColor::fromHsvF(static_cast<float>(i) / 6.0F, 1.0F, 1.0F));
         }
         painter.fillRect(hueBar, hues);
 
@@ -1244,15 +1247,15 @@ protected:
         painter.drawRect(hueBar.adjusted(0, 0, -1, -1));
 
         const QPointF fieldPoint{
-            field.left() + this->saturation_ * (field.width() - 1),
-            field.top() + (1.0 - this->value_) * (field.height() - 1)};
+            field.left() + (this->saturation_ * (field.width() - 1)),
+            field.top() + ((1.0 - this->value_) * (field.height() - 1))};
         painter.setPen(QPen(Qt::black, 3));
         painter.setBrush(Qt::NoBrush);
         painter.drawEllipse(fieldPoint, 5, 5);
         painter.setPen(QPen(Qt::white, 1));
         painter.drawEllipse(fieldPoint, 5, 5);
 
-        const auto hueX = hueBar.left() + this->hue_ * (hueBar.width() - 1);
+        const auto hueX = hueBar.left() + (this->hue_ * (hueBar.width() - 1));
         painter.setPen(QPen(Qt::black, 3));
         painter.drawLine(QPointF{hueX, qreal(hueBar.top() - 1)},
                          QPointF{hueX, qreal(hueBar.bottom() + 1)});
@@ -1312,7 +1315,7 @@ private:
         return QRect{0, this->height() - 17, this->width(), 13};
     }
 
-    void updateFromPoint(const QPoint &point)
+    void updateFromPoint(QPoint point)
     {
         if (this->draggingHue_)
         {
@@ -1334,7 +1337,9 @@ private:
                                  0.0, 1.0);
         }
         const auto color =
-            QColor::fromHsvF(this->hue_, this->saturation_, this->value_);
+            QColor::fromHsvF(static_cast<float>(this->hue_),
+                             static_cast<float>(this->saturation_),
+                             static_cast<float>(this->value_));
         this->update();
         if (this->colorChanged)
         {
@@ -2730,8 +2735,8 @@ void TwitchBadgePickerDialog::rebuildOrder()
     // all rows without a scrollbar of its own: the page scrolls
     const int rowHeight =
         std::max(scaledMetric(scale, 32, 26), list->fontMetrics().height() + 8);
-    list->setFixedHeight(rowHeight * static_cast<int>(entries.size()) +
-                         2 * list->frameWidth() + 2);
+    list->setFixedHeight((rowHeight * static_cast<int>(entries.size())) +
+                         (2 * list->frameWidth()) + 2);
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     this->contentLayout_->addWidget(list);
 
