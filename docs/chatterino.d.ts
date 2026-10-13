@@ -537,6 +537,8 @@ declare namespace c2 {
         Collapsed = 0,
         Mention = 0,
         LowercaseLinks = 0,
+        IgnoreExactMatch = 0,
+        AutoModReviewExpanded = 0,
         RepliedMessage = 0,
         ReplyButton = 0,
         TwitchGif = 0,
