@@ -65,6 +65,8 @@ struct ContextMessage {
 struct MatchRange {
     qsizetype start = 0;
     qsizetype length = 0;
+    /// For a blocked term: the channel the term is from
+    QString termOwnerLogin;
 };
 
 /// What Twitch tells about a message AutoMod holds

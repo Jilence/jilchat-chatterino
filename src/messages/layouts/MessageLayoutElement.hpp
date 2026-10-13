@@ -98,6 +98,10 @@ public:
     int getWordId() const;
     void setWordId(int wordId);
 
+    /// What to say about the marker at `point`, if there is one there.
+    /// `point` is relative to the message, like the element's rect.
+    virtual QString getFragmentTooltip(QPointF point) const;
+
 protected:
     bool trailingSpace = true;
 
@@ -118,6 +122,7 @@ public:
     ImageLayoutElement(MessageElement &creator, ImagePtr image, QSizeF size);
 
     void setFragmentHighlight(FragmentHighlight highlight);
+    QString getFragmentTooltip(QPointF point) const override;
 
 protected:
     void addCopyTextToString(QString &str, uint32_t from = 0,
@@ -203,6 +208,7 @@ public:
                       float dpr = 1.0F);
 
     void setFragmentHighlights(std::vector<FragmentHighlight> highlights);
+    QString getFragmentTooltip(QPointF point) const override;
 
 protected:
     void addCopyTextToString(QString &str, uint32_t from = 0,
@@ -224,6 +230,8 @@ protected:
 
 private:
     void paintFragmentHighlights(QPainter &painter, bool foreground);
+    /// Where the characters from `from` up to `to` are
+    QRectF fragmentRect(qsizetype from, qsizetype to) const;
 
     std::vector<FragmentHighlight> fragmentHighlights_;
 };

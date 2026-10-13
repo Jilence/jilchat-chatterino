@@ -817,6 +817,11 @@ void paintFragmentHighlightForeground(QPainter &painter, const QRectF &rect,
     painter.restore();
 }
 
+QString MessageLayoutElement::getFragmentTooltip(QPointF /*point*/) const
+{
+    return {};
+}
+
 const QRectF &MessageLayoutElement::getRect() const
 {
     return this->rect_;
@@ -976,6 +981,16 @@ void ImageLayoutElement::paint(QPainter &painter,
         paintFragmentHighlightForeground(painter, this->getRect(),
                                          *this->fragmentHighlight_);
     }
+}
+
+QString ImageLayoutElement::getFragmentTooltip(QPointF /*point*/) const
+{
+    if (this->fragmentHighlight_ == nullptr ||
+        this->fragmentHighlight_->match.source != HighlightMatchSource::AutoMod)
+    {
+        return {};
+    }
+    return this->fragmentHighlight_->match.ruleName;
 }
 
 void ImageLayoutElement::setFragmentHighlight(FragmentHighlight highlight)
@@ -1686,6 +1701,48 @@ void TextLayoutElement::setFragmentHighlights(
     std::vector<FragmentHighlight> highlights)
 {
     this->fragmentHighlights_ = std::move(highlights);
+}
+
+QRectF TextLayoutElement::fragmentRect(qsizetype from, qsizetype to) const
+{
+    const auto metrics =
+        getApp()->getFonts()->getFontMetrics(this->style_, this->scale_);
+    const auto &text = this->getText();
+    qreal left = this->getRect().left();
+    for (qsizetype i = 0; i < from && i < text.size(); ++i)
+    {
+        left += metrics.horizontalAdvance(text[i]);
+    }
+    qreal right = left;
+    for (qsizetype i = from; i < to && i < text.size(); ++i)
+    {
+        right += metrics.horizontalAdvance(text[i]);
+    }
+    return {left, this->getRect().top(), right - left,
+            this->getRect().height()};
+}
+
+QString TextLayoutElement::getFragmentTooltip(QPointF point) const
+{
+    const auto textSize = static_cast<qsizetype>(this->getText().size());
+    for (const auto &highlight : this->fragmentHighlights_)
+    {
+        if (highlight.match.source != HighlightMatchSource::AutoMod ||
+            highlight.match.ruleName.isEmpty())
+        {
+            continue;
+        }
+
+        const auto from =
+            std::clamp<qsizetype>(highlight.match.start, 0, textSize);
+        const auto to = std::clamp<qsizetype>(
+            highlight.match.start + highlight.match.length, 0, textSize);
+        if (to > from && this->fragmentRect(from, to).contains(point))
+        {
+            return highlight.match.ruleName;
+        }
+    }
+    return {};
 }
 
 void TextLayoutElement::paintFragmentHighlights(QPainter &painter,

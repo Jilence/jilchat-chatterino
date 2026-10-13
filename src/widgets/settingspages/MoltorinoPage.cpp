@@ -1011,6 +1011,14 @@ MoltorinoPage::MoltorinoPage()
         ->addKeywords({"automod", "highlight", "blocked term", "fragment"})
         ->addTo(*view);
 
+    SettingWidget::checkbox("Show a tooltip on what AutoMod matched",
+                            s.autoModReviewShowMatchTooltip)
+        ->setTooltip("Hovering a marked word says why AutoMod matched it, "
+                     "and which channel a shared blocked term is from.")
+        ->conditionallyEnabledBy(s.autoModReviewHighlightMatches)
+        ->addKeywords({"automod", "hover", "reason"})
+        ->addTo(*view);
+
     SettingWidget::colorButton("Marker color", s.automodMatchHighlightColor)
         ->conditionallyEnabledBy(s.autoModReviewHighlightMatches)
         ->addTo(*view);

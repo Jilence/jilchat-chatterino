@@ -1443,6 +1443,9 @@ public:
     /// Mark the parts of a held message that AutoMod matched
     BoolSetting autoModReviewHighlightMatches{
         "/moltorino/moderation/autoModReview/highlightMatches", true};
+    /// Say why AutoMod matched when hovering what it marked
+    BoolSetting autoModReviewShowMatchTooltip{
+        "/moltorino/moderation/autoModReview/showMatchTooltip", false};
     /// The marker of what AutoMod matched: (255, 177, 64, 128) by default
     QStringSetting automodMatchHighlightColor{
         "/highlighting/automod/matchedFragment/color", "#80ffb140"};

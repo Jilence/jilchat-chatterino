@@ -3952,7 +3952,24 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
             }
         }
     }
-    if (!paintTooltip.isEmpty())
+    if (const auto markerTooltip =
+            getSettings()->autoModReviewShowMatchTooltip
+                ? hoverLayoutElement->getFragmentTooltip(relativePos)
+                : QString{};
+        !markerTooltip.isEmpty())
+    {
+        // what AutoMod matched there
+        this->tooltipWidget_->setOne(TooltipEntry{
+            .image = nullptr,
+            .text = markerTooltip,
+        });
+        this->tooltipWidget_->moveTo(
+            event->globalPosition().toPoint() + QPoint(16, 16),
+            widgets::BoundsChecking::CursorPosition);
+        this->tooltipWidget_->setWordWrap(false);
+        this->tooltipWidget_->show();
+    }
+    else if (!paintTooltip.isEmpty())
     {
         this->tooltipWidget_->setOne(TooltipEntry{
             .image = nullptr,

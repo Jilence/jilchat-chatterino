@@ -140,7 +140,14 @@ std::shared_ptr<const std::vector<HighlightMatch>> makeAutoModMatches(
             .start = range.start,
             .length = range.length,
             .color = defaultAutoModMatchColor(),
-            .ruleName = rule,
+            // a term another channel shares with this one
+            .ruleName =
+                range.termOwnerLogin.isEmpty() ||
+                        range.termOwnerLogin.compare(item.broadcasterLogin,
+                                                     Qt::CaseInsensitive) == 0
+                    ? rule
+                    : QString(rule % u"\nShared from #"_s %
+                              range.termOwnerLogin),
             .pattern = item.messageText.mid(range.start, range.length),
             .source = HighlightMatchSource::AutoMod,
             .style = HighlightMatchStyle::Fill,
@@ -178,7 +185,8 @@ qsizetype utf16OffsetForCodepoint(QStringView text, int codepointOffset)
 
 /// Remembers the part of the message Twitch points at with `boundary`
 void appendMatchedFragment(automod::HoldData &data,
-                           const lib::automod::Boundary &boundary)
+                           const lib::automod::Boundary &boundary,
+                           const QString &termOwnerLogin = {})
 {
     if (boundary.endPos < boundary.startPos ||
         boundary.endPos == std::numeric_limits<int>::max())
@@ -201,7 +209,11 @@ void appendMatchedFragment(automod::HoldData &data,
     {
         data.matchedFragments.push_back(fragment);
     }
-    data.matchRanges.push_back({.start = start, .length = end - start});
+    data.matchRanges.push_back({
+        .start = start,
+        .length = end - start,
+        .termOwnerLogin = termOwnerLogin,
+    });
 }
 
 /// Sorts the matched ranges and joins those that overlap or only have
@@ -223,8 +235,10 @@ void mergeMatchRanges(automod::HoldData &data)
             auto &previous = merged.back();
             const auto previousEnd = previous.start + previous.length;
             const auto gap = range.start - previousEnd;
-            if (gap <= 0 ||
-                data.messageText.mid(previousEnd, gap).trimmed().isEmpty())
+            // terms of different channels stay apart: they say so
+            if (previous.termOwnerLogin == range.termOwnerLogin &&
+                (gap <= 0 ||
+                 data.messageText.mid(previousEnd, gap).trimmed().isEmpty()))
             {
                 previous.length =
                     std::max(previousEnd, range.start + range.length) -
@@ -277,7 +291,9 @@ void fillAutoModReason(automod::HoldData &data,
     data.reasonCategory = u"Blocked term"_s;
     for (const auto &found : reason.termsFound)
     {
-        appendMatchedFragment(data, found.boundary);
+        appendMatchedFragment(
+            data, found.boundary,
+            QString::fromStdString(found.ownerBroadcasterUserLogin));
         if (data.termOwnerLogin.isEmpty())
         {
             data.termOwnerLogin =
