@@ -70,6 +70,7 @@ struct MessagePreferences {
     QColor clientDetectionWebColor;
     QColor clientDetectionAndroidColor;
     QColor clientDetectionIosColor;
+    QColor clientDetectionMobileNewColor;
 
     void connectSettings(Settings *settings,
                          pajlada::Signals::SignalHolder &holder);

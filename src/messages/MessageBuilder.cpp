@@ -115,6 +115,12 @@ bool isUpperHexLetter(QChar c)
     return value >= 'A' && value <= 'F';
 }
 
+bool isLowerLetter(QChar c)
+{
+    const auto value = c.unicode();
+    return value >= 'a' && value <= 'z';
+}
+
 Message::ClientDetectionStatus performClientDetection(const QString &nonce)
 {
     using Status = Message::ClientDetectionStatus;
@@ -122,6 +128,16 @@ Message::ClientDetectionStatus performClientDetection(const QString &nonce)
     if (nonce.isEmpty())
     {
         return Status::Abnormal;
+    }
+
+    if (nonce.size() >= 10 && nonce.size() <= 12)
+    {
+        // matches /[a-z0-9]{10,12}/
+        const bool mobile =
+            std::all_of(nonce.cbegin(), nonce.cend(), [](QChar c) {
+                return isDigit(c) || isLowerLetter(c);
+            });
+        return mobile ? Status::MobileNew : Status::Abnormal;
     }
 
     if (nonce.size() == 32)

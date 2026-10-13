@@ -259,6 +259,7 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->invalidateChannelViewBuffersListener.add(settings.webchatColor);
     this->invalidateChannelViewBuffersListener.add(settings.androidColor);
     this->invalidateChannelViewBuffersListener.add(settings.iosColor);
+    this->invalidateChannelViewBuffersListener.add(settings.mobileNewColor);
     this->invalidateChannelViewBuffersListener.add(
         settings.clientDetectionIcon);
 

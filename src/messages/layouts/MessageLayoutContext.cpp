@@ -121,6 +121,12 @@ void MessagePreferences::connectSettings(Settings *settings,
         },
         holder);
 
+    settings->mobileNewColor.connect(
+        [this](const auto &newValue) {
+            this->clientDetectionMobileNewColor = QColor(newValue);
+        },
+        holder);
+
     settings->alternateMessages.connect(
         [this](const auto &newValue) {
             this->alternateMessages = newValue;

@@ -49,6 +49,8 @@ std::optional<QColor> clientDetectionHighlightColor(
             return preferences.clientDetectionAndroidColor;
         case Message::ClientDetectionStatus::IOS:
             return preferences.clientDetectionIosColor;
+        case Message::ClientDetectionStatus::MobileNew:
+            return preferences.clientDetectionMobileNewColor;
         case Message::ClientDetectionStatus::Unknown:
         case Message::ClientDetectionStatus::Abnormal:
             return std::nullopt;
@@ -555,6 +557,10 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             }
             case IOS: {
                 clientDetectionIcon = resources.chat.ios;
+                break;
+            }
+            case MobileNew: {
+                clientDetectionIcon = resources.chat.mobile;
                 break;
             }
 

@@ -254,6 +254,8 @@ QString Message::clientDetectionStatusToString(ClientDetectionStatus status)
             return QStringLiteral("Android");
         case ClientDetectionStatus::IOS:
             return QStringLiteral("iOS");
+        case ClientDetectionStatus::MobileNew:
+            return QStringLiteral("Mobile");
         case ClientDetectionStatus::Abnormal:
             return QStringLiteral("Abnormal");
         case ClientDetectionStatus::Unknown:
