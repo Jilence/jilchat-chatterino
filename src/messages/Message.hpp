@@ -24,6 +24,12 @@ class MessageThread;
 class TwitchBadge;
 class ScrollbarHighlight;
 
+struct HighlightMatch;
+
+namespace automod {
+struct ReviewItem;
+}  // namespace automod
+
 enum class MessagePlatform : uint8_t {
     AnyOrTwitch,
     Kick,
@@ -67,6 +73,12 @@ struct Message {
     std::shared_ptr<QColor> highlightColor;
     /// Colors of further matching highlights, see HighlightResult.
     std::vector<std::shared_ptr<QColor>> extraHighlightColors;
+
+    /// Set on a message AutoMod holds: what is known about it
+    std::shared_ptr<const automod::ReviewItem> autoModReview;
+
+    /// The parts of `messageText` to be marked
+    std::shared_ptr<const std::vector<HighlightMatch>> highlightMatches;
 
     std::shared_ptr<MessageThread> replyThread;
     MessagePtr replyParent;

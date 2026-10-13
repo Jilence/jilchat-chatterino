@@ -5,6 +5,7 @@
 #pragma once
 
 #include "common/FlagsEnum.hpp"
+#include "controllers/highlights/HighlightResult.hpp"
 #include "messages/Link.hpp"
 #include "messages/MessageColor.hpp"
 
@@ -17,7 +18,9 @@
 
 #include <climits>
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <vector>
 
 class QPainter;
 
@@ -29,6 +32,23 @@ enum class FontStyle : uint8_t;
 enum class MessageElementFlag : int64_t;
 struct MessageColors;
 struct AnimatedMessageShadow;
+
+/// A match within one layout element
+struct FragmentHighlight {
+    /// For text, `start` and `length` are relative to the element's text
+    HighlightMatch match;
+
+    /// The match goes on in the element before or after this one
+    bool connectsBefore = false;
+    bool connectsAfter = false;
+};
+
+/// The part of a marker that goes behind the text
+void paintFragmentHighlightBackground(QPainter &painter, const QRectF &rect,
+                                      const FragmentHighlight &highlight);
+/// The part of a marker that goes over the text
+void paintFragmentHighlightForeground(QPainter &painter, const QRectF &rect,
+                                      const FragmentHighlight &highlight);
 
 class MessageLayoutElement
 {
@@ -97,6 +117,8 @@ class ImageLayoutElement : public MessageLayoutElement
 public:
     ImageLayoutElement(MessageElement &creator, ImagePtr image, QSizeF size);
 
+    void setFragmentHighlight(FragmentHighlight highlight);
+
 protected:
     void addCopyTextToString(QString &str, uint32_t from = 0,
                              uint32_t to = UINT32_MAX) const override;
@@ -108,6 +130,7 @@ protected:
     qreal getXFromIndex(size_t index) override;
 
     ImagePtr image_;
+    std::unique_ptr<FragmentHighlight> fragmentHighlight_;
 };
 
 class LayeredImageLayoutElement : public MessageLayoutElement
@@ -179,6 +202,8 @@ public:
                       MessageColor::Type messageColor, float scale_,
                       float dpr = 1.0F);
 
+    void setFragmentHighlights(std::vector<FragmentHighlight> highlights);
+
 protected:
     void addCopyTextToString(QString &str, uint32_t from = 0,
                              uint32_t to = UINT32_MAX) const override;
@@ -196,6 +221,11 @@ protected:
     MessageColor::Type messageColor_;
     float scale_;
     float dpr_ = 1.0F;  // for 7tv paints
+
+private:
+    void paintFragmentHighlights(QPainter &painter, bool foreground);
+
+    std::vector<FragmentHighlight> fragmentHighlights_;
 };
 
 class TextIconLayoutElement : public MessageLayoutElement

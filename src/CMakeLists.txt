@@ -79,6 +79,9 @@ set(SOURCE_FILES
         controllers/accounts/AccountModel.cpp
         controllers/accounts/AccountModel.hpp
 
+        controllers/automod/AutoModReviewController.cpp
+        controllers/automod/AutoModReviewController.hpp
+
         controllers/chat/ChatAutomationController.cpp
         controllers/chat/ChatAutomationController.hpp
         controllers/commands/builtin/chatterino/Debugging.cpp

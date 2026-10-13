@@ -5,6 +5,7 @@
 #include "common/Modes.hpp"
 #include "common/Version.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/automod/AutoModReviewController.hpp"
 #include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/Command.hpp"
 #include "controllers/commands/CommandController.hpp"
@@ -195,6 +196,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , emotes(new EmoteController)
     , accounts(new AccountController)
     , eventSub(makeEventSubController(_settings))
+    , autoModReview(new automod::AutoModReviewController)
     , hotkeys(new HotkeyController)
     , windows(new WindowManager(_args, paths, _settings, *this->themes,
                                 *this->fonts))
@@ -282,6 +284,7 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->emotes->initialize();
 
     this->accounts->load();
+    this->autoModReview->initialize();
 
     this->windows->initialize();
 
@@ -792,6 +795,13 @@ eventsub::IController *Application::getEventSub()
     return this->eventSub.get();
 }
 
+automod::AutoModReviewController *Application::getAutoModReview()
+{
+    assertInGuiThread();
+
+    return this->autoModReview.get();
+}
+
 SpellChecker *Application::getSpellChecker()
 {
     assertInGuiThread();
@@ -890,6 +900,7 @@ void Application::stop()
     this->toasts.reset();
     this->windows.reset();
     this->hotkeys.reset();
+    this->autoModReview.reset();
     this->eventSub.reset();
     this->accounts.reset();
     this->emotes.reset();

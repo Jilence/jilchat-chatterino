@@ -10,6 +10,8 @@
 #include <QPainter>
 #include <QPoint>
 
+#include <optional>
+
 namespace pajlada::Signals {
 class SignalHolder;
 }  // namespace pajlada::Signals
@@ -129,6 +131,11 @@ struct MessagePaintContext {
 };
 
 struct MessageLayoutContext {
+    struct MessageTextRange {
+        qsizetype start{};
+        qsizetype length{};
+    };
+
     const MessageColors &messageColors;
     MessageElementFlags flags;
 
@@ -141,6 +148,14 @@ struct MessageLayoutContext {
 
     Channel *selectedChannel = nullptr;
     const Message &message;
+
+    void resetMessageTextCursor() const;
+    /// Finds `renderedText` in the message's text, after what was claimed
+    /// before. This is how elements learn which part of the text they show.
+    std::optional<MessageTextRange> claimMessageTextRange(
+        QStringView renderedText) const;
+
+    mutable qsizetype messageTextCursor_{};
 };
 
 }  // namespace chatterino

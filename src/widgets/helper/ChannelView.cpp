@@ -8,6 +8,7 @@
 #include "common/Common.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/automod/AutoModReviewController.hpp"
 #include "controllers/commands/builtin/twitch/Pin.hpp"
 #include "controllers/commands/Command.hpp"
 #include "controllers/commands/CommandController.hpp"
@@ -88,6 +89,7 @@
 #include <QGraphicsBlurEffect>
 #include <QHash>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QMessageBox>
@@ -107,6 +109,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <variant>
 
 namespace {
@@ -1231,6 +1234,32 @@ float getTooltipScale(EmoteTooltipScale emoteTooltipScale)
         default:
             return 1.0F;
     }
+}
+
+struct AutoModTimeoutLink {
+    QString key;
+    int seconds = 0;
+};
+
+/// The value of a Link::AutoModReviewTimeout that names its duration: the key
+/// of the review, a line break and the seconds.
+std::optional<AutoModTimeoutLink> parseAutoModTimeoutLink(QStringView value)
+{
+    const auto separator = value.lastIndexOf(u'\n');
+    if (separator <= 0)
+    {
+        return std::nullopt;
+    }
+    bool ok = false;
+    const auto seconds = value.sliced(separator + 1).toInt(&ok);
+    if (!ok || seconds <= 0)
+    {
+        return std::nullopt;
+    }
+    return AutoModTimeoutLink{
+        .key = value.first(separator).toString(),
+        .seconds = seconds,
+    };
 }
 
 }  // namespace
@@ -5286,6 +5315,41 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
         }
         break;
 
+        case Link::AutoModReviewApprove: {
+            getApp()->getAutoModReview()->approve(link.value);
+        }
+        break;
+
+        case Link::AutoModReviewDeny: {
+            getApp()->getAutoModReview()->deny(link.value);
+        }
+        break;
+
+        case Link::AutoModReviewRetry: {
+            getApp()->getAutoModReview()->retry(link.value);
+        }
+        break;
+
+        case Link::AutoModReviewTimeout: {
+            if (const auto direct = parseAutoModTimeoutLink(link.value))
+            {
+                getApp()->getAutoModReview()->denyAndTimeout(
+                    direct->key, direct->seconds,
+                    QStringLiteral("AutoMod review"));
+            }
+            else
+            {
+                this->showAutoModTimeoutMenu(link.value,
+                                             event->globalPosition().toPoint());
+            }
+        }
+        break;
+
+        case Link::AutoModReviewBan: {
+            this->confirmAutoModBan(link.value);
+        }
+        break;
+
         case Link::AcknowledgeChatWarning: {
             auto channel = std::dynamic_pointer_cast<TwitchChannel>(
                 getApp()->getTwitch()->getChannelOrEmptyByID(link.value));
@@ -5408,6 +5472,68 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
         break;
 
         default:;
+    }
+}
+
+void ChannelView::showAutoModTimeoutMenu(const QString &key,
+                                         const QPoint &globalPos)
+{
+    auto *review = getApp()->getAutoModReview();
+    const auto *item = review->find(key);
+    if (item == nullptr || !item->actionsAllowed ||
+        item->state != automod::ReviewState::Open)
+    {
+        return;
+    }
+
+    QMenu menu(this);
+    const auto addTimeout = [&](const QString &label, int seconds) {
+        menu.addAction(label, [review, key, seconds] {
+            review->denyAndTimeout(key, seconds,
+                                   QStringLiteral("AutoMod review"));
+        });
+    };
+    addTimeout(QStringLiteral("30 seconds"), 30);
+    addTimeout(QStringLiteral("1 minute"), 60);
+    addTimeout(QStringLiteral("5 minutes"), 5 * 60);
+    addTimeout(QStringLiteral("10 minutes"), 10 * 60);
+    addTimeout(QStringLiteral("1 hour"), 60 * 60);
+    addTimeout(QStringLiteral("1 day"), 24 * 60 * 60);
+    menu.addSeparator();
+    menu.addAction(QStringLiteral("Custom duration..."), [this, review, key] {
+        bool ok = false;
+        const auto minutes =
+            QInputDialog::getInt(this, QStringLiteral("Deny and timeout"),
+                                 QStringLiteral("Timeout length in minutes:"),
+                                 10, 1, 14 * 24 * 60, 1, &ok);
+        if (ok)
+        {
+            review->denyAndTimeout(key, minutes * 60,
+                                   QStringLiteral("AutoMod review"));
+        }
+    });
+
+    menu.exec(globalPos);
+}
+
+void ChannelView::confirmAutoModBan(const QString &key)
+{
+    auto *review = getApp()->getAutoModReview();
+    const auto *item = review->find(key);
+    if (item == nullptr || !item->actionsAllowed ||
+        item->state != automod::ReviewState::Open)
+    {
+        return;
+    }
+
+    const auto answer = QMessageBox::question(
+        this, QStringLiteral("Deny and ban"),
+        QStringLiteral("Deny this message and permanently ban %1 from #%2?")
+            .arg(item->userLogin, item->broadcasterLogin),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    if (answer == QMessageBox::Yes)
+    {
+        review->denyAndBan(key, QStringLiteral("AutoMod review"));
     }
 }
 

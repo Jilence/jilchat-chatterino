@@ -219,6 +219,7 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
                                  this->emoteScale_, this->badgeScale_,
                                  this->centerBadges_, messageFlags);
 
+    ctx.resetMessageTextCursor();
     for (const auto &element : this->message_->elements)
     {
         if (hideModerated && this->message_->flags.has(MessageFlag::Disabled))

@@ -4,12 +4,42 @@
 
 #include "messages/layouts/MessageLayoutContext.hpp"
 
+#include "messages/Message.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 
 #include <algorithm>
 
 namespace chatterino {
+
+void MessageLayoutContext::resetMessageTextCursor() const
+{
+    this->messageTextCursor_ = 0;
+}
+
+std::optional<MessageLayoutContext::MessageTextRange>
+    MessageLayoutContext::claimMessageTextRange(QStringView renderedText) const
+{
+    if (renderedText.isEmpty() || this->message.messageText.isEmpty())
+    {
+        return std::nullopt;
+    }
+
+    auto start = this->message.messageText.indexOf(
+        renderedText, this->messageTextCursor_, Qt::CaseSensitive);
+    if (start < 0)
+    {
+        start = this->message.messageText.indexOf(
+            renderedText, this->messageTextCursor_, Qt::CaseInsensitive);
+    }
+    if (start < 0)
+    {
+        return std::nullopt;
+    }
+
+    this->messageTextCursor_ = start + renderedText.size();
+    return MessageTextRange{start, renderedText.size()};
+}
 
 void MessageColors::applyTheme(Theme *theme, bool isOverlay,
                                int backgroundOpacity)

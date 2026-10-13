@@ -74,6 +74,9 @@ class Pronouns;
 namespace eventsub {
 class IController;
 }
+namespace automod {
+class AutoModReviewController;
+}
 class SpellChecker;
 
 class KickChatServer;
@@ -152,6 +155,8 @@ public:
     virtual ITwitchUsers *getTwitchUsers() = 0;
     virtual pronouns::Pronouns *getPronouns() = 0;
     virtual eventsub::IController *getEventSub() = 0;
+    /// The messages AutoMod holds. nullptr while the application shuts down.
+    virtual automod::AutoModReviewController *getAutoModReview() = 0;
     virtual SpellChecker *getSpellChecker() = 0;
     virtual KickChatServer *getKickChatServer() = 0;
     virtual YouTubeChatServer *getYouTubeChatServer() = 0;
@@ -202,6 +207,7 @@ private:
     std::unique_ptr<EmoteController> emotes;
     std::unique_ptr<AccountController> accounts;
     std::unique_ptr<eventsub::IController> eventSub;
+    std::unique_ptr<automod::AutoModReviewController> autoModReview;
     std::unique_ptr<HotkeyController> hotkeys;
     std::unique_ptr<WindowManager> windows;
     std::unique_ptr<Toasts> toasts;
@@ -313,6 +319,7 @@ public:
     SeventvEventAPI *getSeventvEventAPI() override;
     pronouns::Pronouns *getPronouns() override;
     eventsub::IController *getEventSub() override;
+    automod::AutoModReviewController *getAutoModReview() override;
 
     ILinkResolver *getLinkResolver() override;
     IStreamerMode *getStreamerMode() override;

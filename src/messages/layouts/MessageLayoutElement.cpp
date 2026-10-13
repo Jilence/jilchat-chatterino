@@ -677,6 +677,146 @@ QPixmap filteredModifierPixmap(const QPixmap &source, uint32_t flags, int phase,
 
 namespace chatterino {
 
+namespace {
+
+QBrush fragmentHighlightBrush(const FragmentHighlight &highlight)
+{
+    if (highlight.match.source == HighlightMatchSource::AutoMod)
+    {
+        const auto configured =
+            QColor(getSettings()->automodMatchHighlightColor.getValue());
+        if (configured.isValid())
+        {
+            return {configured};
+        }
+    }
+    return {highlight.match.color};
+}
+
+HighlightMatchStyle fragmentHighlightStyle(const FragmentHighlight &highlight)
+{
+    if (highlight.match.source != HighlightMatchSource::AutoMod)
+    {
+        return highlight.match.style;
+    }
+
+    const auto configured =
+        getSettings()->automodMatchHighlightStyle.getValue();
+    if (configured < static_cast<int>(HighlightMatchStyle::None) ||
+        configured > static_cast<int>(HighlightMatchStyle::Underline))
+    {
+        return HighlightMatchStyle::Fill;
+    }
+    return static_cast<HighlightMatchStyle>(configured);
+}
+
+void paintFragmentHighlightOutline(QPainter &painter, const QRectF &rect,
+                                   const FragmentHighlight &highlight)
+{
+    const auto outline = rect.adjusted(0.75, 0.75, -0.75, -0.75);
+    if (!highlight.connectsBefore && !highlight.connectsAfter)
+    {
+        painter.drawRoundedRect(outline, 2.0, 2.0);
+        return;
+    }
+
+    // open on the sides the marker goes on
+    const auto radius =
+        std::min<qreal>(2.0, std::min(outline.width(), outline.height()) / 2.0);
+    QPainterPath path;
+    path.moveTo(outline.left() + (highlight.connectsBefore ? 0.0 : radius),
+                outline.top());
+    path.lineTo(outline.right() - (highlight.connectsAfter ? 0.0 : radius),
+                outline.top());
+    path.moveTo(outline.right() - (highlight.connectsAfter ? 0.0 : radius),
+                outline.bottom());
+    path.lineTo(outline.left() + (highlight.connectsBefore ? 0.0 : radius),
+                outline.bottom());
+
+    if (!highlight.connectsBefore)
+    {
+        path.moveTo(outline.left() + radius, outline.top());
+        path.quadTo(outline.topLeft(),
+                    QPointF(outline.left(), outline.top() + radius));
+        path.lineTo(outline.left(), outline.bottom() - radius);
+        path.quadTo(outline.bottomLeft(),
+                    QPointF(outline.left() + radius, outline.bottom()));
+    }
+    if (!highlight.connectsAfter)
+    {
+        path.moveTo(outline.right() - radius, outline.top());
+        path.quadTo(outline.topRight(),
+                    QPointF(outline.right(), outline.top() + radius));
+        path.lineTo(outline.right(), outline.bottom() - radius);
+        path.quadTo(outline.bottomRight(),
+                    QPointF(outline.right() - radius, outline.bottom()));
+    }
+    painter.drawPath(path);
+}
+
+}  // namespace
+
+void paintFragmentHighlightBackground(QPainter &painter, const QRectF &rect,
+                                      const FragmentHighlight &highlight)
+{
+    const auto style = fragmentHighlightStyle(highlight);
+    if (rect.isEmpty() || (style != HighlightMatchStyle::Fill &&
+                           style != HighlightMatchStyle::OutlineAndFill))
+    {
+        return;
+    }
+
+    painter.save();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(fragmentHighlightBrush(highlight));
+
+    QPainterPath path;
+    path.setFillRule(Qt::WindingFill);
+    path.addRoundedRect(rect, 2.0, 2.0);
+    // no round corners where the marker goes on
+    if (highlight.connectsBefore)
+    {
+        path.addRect(QRectF(rect.left(), rect.top(), 2.0, rect.height()));
+    }
+    if (highlight.connectsAfter)
+    {
+        path.addRect(
+            QRectF(rect.right() - 2.0, rect.top(), 2.0, rect.height()));
+    }
+    painter.drawPath(path);
+    painter.restore();
+}
+
+void paintFragmentHighlightForeground(QPainter &painter, const QRectF &rect,
+                                      const FragmentHighlight &highlight)
+{
+    const auto style = fragmentHighlightStyle(highlight);
+    if (rect.isEmpty() || style == HighlightMatchStyle::None ||
+        style == HighlightMatchStyle::Fill)
+    {
+        return;
+    }
+
+    painter.save();
+    QPen pen(fragmentHighlightBrush(highlight), 1.5);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    if (style == HighlightMatchStyle::Underline)
+    {
+        const auto y = rect.bottom() - 1.0;
+        painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y));
+    }
+    else
+    {
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        paintFragmentHighlightOutline(painter, rect, highlight);
+    }
+    painter.restore();
+}
+
 const QRectF &MessageLayoutElement::getRect() const
 {
     return this->rect_;
@@ -818,12 +958,30 @@ void ImageLayoutElement::paint(QPainter &painter,
         return;
     }
 
+    if (this->fragmentHighlight_)
+    {
+        paintFragmentHighlightBackground(painter, this->getRect(),
+                                         *this->fragmentHighlight_);
+    }
+
     auto pixmap = this->image_->pixmapOrLoad();
     if (pixmap && !this->image_->animated())
     {
         drawPixmapWithOptionalSmoothing(painter, QRectF(this->getRect()),
                                         *pixmap, this->getFlags());
     }
+
+    if (this->fragmentHighlight_)
+    {
+        paintFragmentHighlightForeground(painter, this->getRect(),
+                                         *this->fragmentHighlight_);
+    }
+}
+
+void ImageLayoutElement::setFragmentHighlight(FragmentHighlight highlight)
+{
+    this->fragmentHighlight_ =
+        std::make_unique<FragmentHighlight>(std::move(highlight));
 }
 
 QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset,
@@ -1474,6 +1632,8 @@ void TextLayoutElement::paint(QPainter &painter,
 
     auto font = app->getFonts()->getFont(this->style_, this->scale_);
 
+    this->paintFragmentHighlights(painter, false);
+
     bool isNametag = this->getLink().type == chatterino::Link::UserInfo ||
                      this->getLink().type == chatterino::Link::UserWhisper;
     bool drawPaint = isNametag && this->messageColor_ != MessageColor::System &&
@@ -1517,6 +1677,57 @@ void TextLayoutElement::paint(QPainter &painter,
         painter.drawText(
             QRectF(this->getRect().x(), this->getRect().y(), 10000, 10000),
             text, QTextOption(Qt::AlignLeft | Qt::AlignTop));
+    }
+
+    this->paintFragmentHighlights(painter, true);
+}
+
+void TextLayoutElement::setFragmentHighlights(
+    std::vector<FragmentHighlight> highlights)
+{
+    this->fragmentHighlights_ = std::move(highlights);
+}
+
+void TextLayoutElement::paintFragmentHighlights(QPainter &painter,
+                                                bool foreground)
+{
+    if (this->fragmentHighlights_.empty())
+    {
+        return;
+    }
+
+    const auto textSize = static_cast<qsizetype>(this->getText().size());
+    for (auto it = this->fragmentHighlights_.rbegin();
+         it != this->fragmentHighlights_.rend(); ++it)
+    {
+        const auto from = std::clamp<qsizetype>(it->match.start, 0, textSize);
+        const auto to = std::clamp<qsizetype>(
+            it->match.start + it->match.length, 0, textSize);
+        if (to <= from)
+        {
+            continue;
+        }
+
+        const auto left = this->getXFromIndex(static_cast<size_t>(from));
+        auto right = this->getXFromIndex(static_cast<size_t>(to));
+        if (it->connectsAfter && this->hasTrailingSpace())
+        {
+            // the marker goes on in the next word: cover the space as well
+            right += getApp()
+                         ->getFonts()
+                         ->getFontMetrics(this->style_, this->scale_)
+                         .horizontalAdvance(QChar(u' '));
+        }
+        const QRectF rect(left, this->getRect().top(), right - left,
+                          this->getRect().height());
+        if (foreground)
+        {
+            paintFragmentHighlightForeground(painter, rect, *it);
+        }
+        else
+        {
+            paintFragmentHighlightBackground(painter, rect, *it);
+        }
     }
 }
 

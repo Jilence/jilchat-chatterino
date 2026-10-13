@@ -369,6 +369,13 @@ public:
         return nullptr;
     }
 
+    automod::AutoModReviewController *getAutoModReview() override
+    {
+        assert(false && "EmptyApplication::getAutoModReview was called without "
+                        "being initialized");
+        return nullptr;
+    }
+
     KickChatServer *getKickChatServer() override
     {
         assert(false &&

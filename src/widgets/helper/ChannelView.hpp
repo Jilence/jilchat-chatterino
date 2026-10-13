@@ -337,6 +337,11 @@ protected:
                          const MessageLayoutElement *hoveredElement = nullptr,
                          QPointF relativePos = {});
 
+    /// Asks how long the user of the AutoMod review `key` is to be timed out
+    void showAutoModTimeoutMenu(const QString &key, const QPoint &globalPos);
+    /// Asks whether the user of the AutoMod review `key` is to be banned
+    void confirmAutoModBan(const QString &key);
+
     bool tryGetMessageAt(QPointF p, std::shared_ptr<MessageLayout> &message,
                          QPointF &relativePos, int &index);
 

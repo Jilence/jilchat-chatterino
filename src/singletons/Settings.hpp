@@ -1416,6 +1416,21 @@ public:
         "/leafyrino/showSupibotCommandAliases", true};
     BoolSetting hideUnavailableModCommands{
         "/moltorino/hideUnavailableModCommands", true};
+    /// Show messages held by AutoMod with all their actions in the chat,
+    /// instead of the compact two lines with Allow and Deny
+    BoolSetting advancedAutoModInChat{
+        "/moltorino/moderation/advancedAutoModInChat", true};
+    BoolSetting autoModReviewShowReason{
+        "/moltorino/moderation/autoModReview/showReason", true};
+    /// Mark the parts of a held message that AutoMod matched
+    BoolSetting autoModReviewHighlightMatches{
+        "/moltorino/moderation/autoModReview/highlightMatches", true};
+    /// The marker of what AutoMod matched: (255, 177, 64, 128) by default
+    QStringSetting automodMatchHighlightColor{
+        "/highlighting/automod/matchedFragment/color", "#80ffb140"};
+    /// A HighlightMatchStyle, Fill by default
+    IntSetting automodMatchHighlightStyle{
+        "/highlighting/automod/matchedFragment/style", 2};
     BoolSetting showFollowButtonInSplitHeader{
         "/moltorino/showFollowButtonInSplitHeader", true};
     BoolSetting showFollowEventsInChat{"/moltorino/showFollowEventsInChat",

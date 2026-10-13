@@ -21,6 +21,7 @@
 #include "Application.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/chat/ChatAutomationController.hpp"
+#include "controllers/highlights/HighlightResult.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "messages/Emote.hpp"
@@ -981,6 +982,53 @@ MoltorinoPage::MoltorinoPage()
             false)
         ->setToolTip("Used when /commercial has no duration. An explicit "
                      "duration, such as /commercial 60, overrides this.");
+
+    view->addTitle("AutoMod");
+    view->addDescription("Choose how messages held by AutoMod appear in chat "
+                         "and in the /automod tab.");
+
+    SettingWidget::checkbox("Use the advanced AutoMod layout in chat",
+                            s.advancedAutoModInChat)
+        ->setTooltip(
+            "Shows a held message with buttons to approve it, deny it, or "
+            "deny it and time out or ban its author. Turn this off for the "
+            "compact layout with Allow and Deny only. The /automod tab "
+            "always uses the advanced layout.")
+        ->addKeywords({"automod", "held", "review", "moderation"})
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show the AutoMod reason",
+                            s.autoModReviewShowReason)
+        ->setTooltip("Show the AutoMod category and level above each held "
+                     "message in the advanced layout.")
+        ->addKeywords({"automod", "category", "level"})
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Mark what AutoMod matched",
+                            s.autoModReviewHighlightMatches)
+        ->setTooltip("Mark the words of a held message that AutoMod or a "
+                     "blocked term matched.")
+        ->addKeywords({"automod", "highlight", "blocked term", "fragment"})
+        ->addTo(*view);
+
+    SettingWidget::colorButton("Marker color", s.automodMatchHighlightColor)
+        ->conditionallyEnabledBy(s.autoModReviewHighlightMatches)
+        ->addTo(*view);
+
+    view->addDropdown<int>(
+            "Marker style",
+            {"Fill", "Outline", "Outline and fill", "Underline"},
+            s.automodMatchHighlightStyle,
+            [](auto val) {
+                return highlightMatchStyleName(
+                    static_cast<HighlightMatchStyle>(val));
+            },
+            [](auto args) {
+                return static_cast<int>(
+                    highlightMatchStyleFromName(args.value));
+            },
+            false)
+        ->setToolTip("How the words AutoMod matched are marked.");
 
     view->addTitle("Client");
     view->addDescription(
