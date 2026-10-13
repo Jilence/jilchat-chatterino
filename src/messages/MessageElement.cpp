@@ -2307,15 +2307,68 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
 {
     if (this->matchesFlags(ctx.flags))
     {
-        const auto &image =
-            this->images_.getImageOrLoaded(container.getImageScale());
+        const bool isTwitchGif =
+            this->getFlags().has(MessageElementFlag::TwitchGif);
+        // Longest side of a Twitch GIF at 1x, before the user scale.
+        static constexpr qreal twitchGifLogicalSize = 250;
+        // The 1x Giphy asset is about 100px, so boost quality with the box.
+        static constexpr qreal twitchGifAssetSize = 100;
+
+        auto gifScale = static_cast<qreal>(1);
+        if (isTwitchGif)
+        {
+            gifScale =
+                static_cast<qreal>(getSettings()->twitchGifScale.getValue());
+            if (!std::isfinite(gifScale))
+            {
+                gifScale = 0.75;
+            }
+            gifScale = std::clamp<qreal>(gifScale, 0.5, 2.0);
+        }
+
+        const auto requestScale =
+            isTwitchGif ? container.getImageScale() *
+                              static_cast<float>(
+                                  (twitchGifLogicalSize / twitchGifAssetSize) *
+                                  gifScale)
+                        : container.getImageScale();
+        const auto &image = this->images_.getImageOrLoaded(requestScale);
         if (image->isEmpty())
         {
             return;
         }
 
-        container.addElement(new ImageLayoutElement(
-            *this, image, image->size() * container.getScale()));
+        QSizeF size;
+        if (isTwitchGif)
+        {
+            const auto maxLogicalSize = std::min<qreal>(
+                twitchGifLogicalSize * container.getScale() * gifScale,
+                std::max<qreal>(1.0, container.remainingWidth()));
+            const auto imgSize = image->size();
+            if (imgSize.width() > 0 && imgSize.height() > 0)
+            {
+                const auto aspect = static_cast<qreal>(imgSize.width()) /
+                                    static_cast<qreal>(imgSize.height());
+                if (aspect >= 1.0)
+                {
+                    size = QSizeF(maxLogicalSize, maxLogicalSize / aspect);
+                }
+                else
+                {
+                    size = QSizeF(maxLogicalSize * aspect, maxLogicalSize);
+                }
+            }
+            else
+            {
+                size = QSizeF(maxLogicalSize, maxLogicalSize);
+            }
+        }
+        else
+        {
+            size = image->size() * container.getScale();
+        }
+
+        container.addElement(new ImageLayoutElement(*this, image, size));
     }
 }
 
