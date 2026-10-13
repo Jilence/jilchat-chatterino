@@ -371,8 +371,7 @@ public:
 
     automod::AutoModReviewController *getAutoModReview() override
     {
-        assert(false && "EmptyApplication::getAutoModReview was called without "
-                        "being initialized");
+        // not an error: views ask for it and do without
         return nullptr;
     }
 

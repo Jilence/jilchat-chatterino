@@ -40,6 +40,7 @@
 #include "widgets/dialogs/ChannelManagementDialog.hpp"
 #include "widgets/dialogs/ChatAutomationDialog.hpp"
 #include "widgets/dialogs/SettingsDialog.hpp"
+#include "widgets/helper/AutoModReviewBar.hpp"
 #include "widgets/helper/CommonTexts.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/splits/Split.hpp"
@@ -1618,6 +1619,15 @@ void SplitHeader::scaleChangedEvent(float scale)
     this->youtubeRefreshButton_->setFixedWidth(w);
 
     this->addButton_->setFixedWidth(addSplitWidth);
+}
+
+void SplitHeader::setAutoModReviewBar(AutoModReviewBar *bar)
+{
+    auto *layout = qobject_cast<QHBoxLayout *>(this->layout());
+    assert(layout != nullptr && bar != nullptr);
+
+    layout->insertWidget(layout->indexOf(this->dropdownButton_), bar);
+    bar->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
 }
 
 void SplitHeader::setAddButtonVisible(bool value)

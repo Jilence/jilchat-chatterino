@@ -1030,6 +1030,113 @@ MoltorinoPage::MoltorinoPage()
             false)
         ->setToolTip("How the words AutoMod matched are marked.");
 
+    view->addSubtitle("Review queue");
+
+    view->addDropdown<int>(
+            "Message order", {"Oldest at top", "Newest at top"},
+            s.autoModReviewQueueOrder,
+            [](auto val) {
+                return val == 0 ? QString("Newest at top")
+                                : QString("Oldest at top");
+            },
+            [](auto args) {
+                return args.value == "Oldest at top" ? 1 : 0;
+            },
+            false)
+        ->setToolTip("By default, new held messages appear at the top. "
+                     "\"Oldest at top\" adds them at the bottom, like chat.");
+
+    view->addDropdown<int>(
+            "Automatic scrolling",
+            {"Follow new messages", "Stay at top", "Stay at bottom"},
+            s.autoModReviewScrollPosition,
+            [](auto val) {
+                if (val == 1)
+                {
+                    return QString("Stay at top");
+                }
+                if (val == 2)
+                {
+                    return QString("Stay at bottom");
+                }
+                return QString("Follow new messages");
+            },
+            [](auto args) {
+                if (args.value == "Stay at top")
+                {
+                    return 1;
+                }
+                return args.value == "Stay at bottom" ? 2 : 0;
+            },
+            false)
+        ->setToolTip(
+            "Follow new messages wherever they appear, or keep the view at "
+            "a chosen end of the queue. Scrolling away pauses automatic "
+            "scrolling until you return to that end.");
+
+    view->addDropdown<int>(
+            "After handling a message, select",
+            {"The message below", "The newest message", "The oldest message"},
+            s.autoModReviewNextSelection,
+            [](auto val) {
+                if (val == 1)
+                {
+                    return QString("The newest message");
+                }
+                if (val == 2)
+                {
+                    return QString("The oldest message");
+                }
+                return QString("The message below");
+            },
+            [](auto args) {
+                if (args.value == "The newest message")
+                {
+                    return 1;
+                }
+                return args.value == "The oldest message" ? 2 : 0;
+            },
+            false)
+        ->setToolTip(
+            "The order the queue is worked through in. \"The message "
+            "below\" continues where you are, or with the one above at the "
+            "end of the list. The other two always jump to that end of the "
+            "queue. This is also the message selected when the tab opens; "
+            "\"The message below\" starts with the newest.");
+
+    SettingWidget::checkbox("Show keyboard shortcuts",
+                            s.autoModReviewShowShortcutHints)
+        ->setTooltip(
+            "Show the keyboard guide beneath the selected message of the "
+            "/automod tab. The shortcuts work while its input is empty: "
+            "Up/Down select, A approves, D denies, T times out, B bans, "
+            "R retries a failed action, Enter opens the usercard.")
+        ->addKeywords({"automod", "hotkey", "queue"})
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show earlier messages from the same user",
+                            s.autoModReviewShowContext)
+        ->setTooltip(
+            "Show a few messages the user sent before the held one, if "
+            "they are still in the chat: beneath every held message in "
+            "chat, and beneath the selected one in the /automod tab.")
+        ->addKeywords({"automod", "history", "context"})
+        ->addTo(*view);
+
+    view->addDropdown<int>(
+            "Earlier messages order", {"Newest at top", "Oldest at top"},
+            s.autoModReviewContextOrder,
+            [](auto val) {
+                return val == 1 ? QString("Oldest at top")
+                                : QString("Newest at top");
+            },
+            [](auto args) {
+                return args.value == "Oldest at top" ? 1 : 0;
+            },
+            false)
+        ->setToolTip("The order of the user's earlier messages. This does "
+                     "not change the order of the queue.");
+
     view->addTitle("Client");
     view->addDescription(
         "Twitch chat behavior, compatibility, and client experience options.");

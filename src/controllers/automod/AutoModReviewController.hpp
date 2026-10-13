@@ -54,6 +54,13 @@ enum class ReviewGroup : std::uint8_t {
     Resolved,
 };
 
+/// An earlier message of the user whose message is held
+struct ContextMessage {
+    QString displayName;
+    QString text;
+    QDateTime receivedAt;
+};
+
 /// A part of the held message, counted in UTF-16 code units
 struct MatchRange {
     qsizetype start = 0;
@@ -136,6 +143,11 @@ struct ReviewItem {
     QString moderationReason;
     QString secondaryError;
 
+    /// The last messages of the user from before this one, see
+    /// AutoModReviewController::ensureContext
+    QVector<ContextMessage> context;
+    bool contextCaptured = false;
+
     /// Counts up with every action, so that late answers to an older
     /// action are ignored
     std::uint64_t actionGeneration = 0;
@@ -187,6 +199,8 @@ public:
     void denyAndBan(const QString &key, QString reason);
     /// Runs the action that failed once more
     void retry(const QString &key);
+    /// Looks up the earlier messages of the user, if that wasn't done yet
+    void ensureContext(const QString &key);
 
     const ReviewItem *find(const QString &key) const;
     QVector<const ReviewItem *> items() const;
@@ -225,6 +239,7 @@ private:
         const std::shared_ptr<TwitchChannel> &sourceChannel);
     void refreshPermissions();
     void updateActionsAllowed(Entry &entry);
+    void captureContext(Entry &entry);
     void prune();
     /// @returns false if this notification was handled before
     bool rememberNotification(const QString &notificationID);

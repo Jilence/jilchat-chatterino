@@ -36,6 +36,8 @@ namespace {
 
 constexpr qsizetype MAX_REVIEW_ITEMS = 300;
 constexpr qsizetype MAX_NOTIFICATION_IDS = 512;
+constexpr qsizetype CONTEXT_MESSAGE_LIMIT = 3;
+constexpr size_t CONTEXT_SCAN_LIMIT = 500;
 
 QString autoModMessageID(const ReviewItem &item)
 {
@@ -200,6 +202,12 @@ void AutoModReviewController::initialize()
                                                  this->signalHolder_);
     getSettings()->autoModReviewShowReason.connect(republish,
                                                    this->signalHolder_);
+    getSettings()->autoModReviewShowContext.connect(republish,
+                                                    this->signalHolder_);
+    getSettings()->autoModReviewContextOrder.connect(republish,
+                                                     this->signalHolder_);
+    getSettings()->autoModReviewShowShortcutHints.connect(republish,
+                                                          this->signalHolder_);
     getSettings()->autoModReviewHighlightMatches.connect(republish,
                                                          this->signalHolder_);
     // the markers are painted into the messages, so those have to be new
@@ -287,6 +295,12 @@ void AutoModReviewController::ingestHold(
     item.shownInMentions = getSettings()->showAutomodInMentions;
     entry.sourceChannel = sourceChannel;
     this->updateActionsAllowed(entry);
+    if (getSettings()->autoModReviewShowContext)
+    {
+        // the chat shows them right away
+        item.contextCaptured = true;
+        this->captureContext(entry);
+    }
 
     MessageFlags holdFlags{MessageFlag::PubSub, MessageFlag::EventSub,
                            MessageFlag::ModerationAction, MessageFlag::AutoMod,
@@ -947,6 +961,76 @@ void AutoModReviewController::updateActionsAllowed(Entry &entry)
     const auto channel = entry.sourceChannel.lock();
     entry.item.actionsAllowed =
         account && !account->isAnon() && channel && channel->hasModRights();
+}
+
+void AutoModReviewController::ensureContext(const QString &key)
+{
+    assertInGuiThread();
+    auto it = this->entries_.find(key);
+    if (it == this->entries_.end() || it->item.contextCaptured)
+    {
+        return;
+    }
+
+    auto &entry = it.value();
+    entry.item.contextCaptured = true;
+    this->captureContext(entry);
+    if (entry.item.context.isEmpty())
+    {
+        return;
+    }
+
+    this->publish(entry, false);
+    this->itemChanged.invoke(key);
+}
+
+void AutoModReviewController::captureContext(Entry &entry)
+{
+    const auto channel = entry.sourceChannel.lock();
+    if (!channel)
+    {
+        return;
+    }
+
+    // the last few messages of the user from before the held one
+    const auto snapshot = channel->getMessageSnapshot(CONTEXT_SCAN_LIMIT);
+    for (auto it = snapshot.crbegin();
+         it != snapshot.crend() &&
+         entry.item.context.size() < CONTEXT_MESSAGE_LIMIT;
+         ++it)
+    {
+        const auto &message = *it;
+        if (!message || message->flags.hasAny(MessageFlag::System,
+                                              MessageFlag::ModerationAction,
+                                              MessageFlag::AutoMod))
+        {
+            continue;
+        }
+        const bool sameUser =
+            (!entry.item.userID.isEmpty() &&
+             message->userID == entry.item.userID) ||
+            (!entry.item.userLogin.isEmpty() &&
+             message->loginName.compare(entry.item.userLogin,
+                                        Qt::CaseInsensitive) == 0);
+        if (!sameUser || message->messageText.isEmpty())
+        {
+            continue;
+        }
+        if (entry.item.receivedAt.isValid() &&
+            message->serverReceivedTime.isValid() &&
+            message->serverReceivedTime >= entry.item.receivedAt)
+        {
+            continue;
+        }
+        entry.item.context.push_back({
+            .displayName = message->displayName.isEmpty()
+                               ? message->loginName
+                               : message->displayName,
+            .text = message->messageText,
+            .receivedAt = message->serverReceivedTime,
+        });
+    }
+    std::reverse(entry.item.context.begin(), entry.item.context.end());
 }
 
 void AutoModReviewController::prune()

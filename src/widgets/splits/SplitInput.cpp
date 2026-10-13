@@ -2125,6 +2125,19 @@ bool SplitInput::eventFilter(QObject *obj, QEvent *event)
     const auto isTextEditObject =
         obj == this->ui_.textEdit || (this->ui_.textEdit != nullptr &&
                                       obj == this->ui_.textEdit->viewport());
+    if (isTextEditObject &&
+        (event->type() == QEvent::KeyPress ||
+         event->type() == QEvent::ShortcutOverride) &&
+        this->channelView_ != nullptr &&
+        this->ui_.textEdit->document()->isEmpty() &&
+        this->channelView_->handleAutoModReviewKey(
+            static_cast<QKeyEvent *>(event)))
+    {
+        // the shortcuts of the /automod tab work while nothing is typed
+        event->accept();
+        return true;
+    }
+
     if (isTextEditObject && event->type() == QEvent::KeyPress)
     {
         auto *keyEvent = static_cast<QKeyEvent *>(event);

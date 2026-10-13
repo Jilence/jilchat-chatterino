@@ -1422,6 +1422,24 @@ public:
         "/moltorino/moderation/advancedAutoModInChat", true};
     BoolSetting autoModReviewShowReason{
         "/moltorino/moderation/autoModReview/showReason", true};
+    /// Show earlier messages of the user beneath the selected review
+    BoolSetting autoModReviewShowContext{
+        "/moltorino/moderation/autoModReview/showContext", true};
+    /// 0 = newest at the top, 1 = oldest at the top
+    IntSetting autoModReviewContextOrder{
+        "/moltorino/moderation/autoModReview/contextOrder", 1};
+    BoolSetting autoModReviewShowShortcutHints{
+        "/moltorino/moderation/autoModReview/showShortcutHints", true};
+    /// 0 = newest at the top, 1 = oldest at the top
+    IntSetting autoModReviewQueueOrder{
+        "/moltorino/moderation/autoModReview/queueOrder", 0};
+    /// Which review is selected once the selected one is done with:
+    /// 0 = the one below it, 1 = the newest, 2 = the oldest
+    IntSetting autoModReviewNextSelection{
+        "/moltorino/moderation/autoModReview/nextSelection", 2};
+    /// 0 = follow new messages, 1 = stay at the top, 2 = stay at the bottom
+    IntSetting autoModReviewScrollPosition{
+        "/moltorino/moderation/autoModReview/scrollPosition", 0};
     /// Mark the parts of a held message that AutoMod matched
     BoolSetting autoModReviewHighlightMatches{
         "/moltorino/moderation/autoModReview/highlightMatches", true};

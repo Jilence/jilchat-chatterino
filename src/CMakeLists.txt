@@ -987,6 +987,8 @@ set(SOURCE_FILES
         widgets/helper/ChannelCategoryPicker.hpp
         widgets/helper/ChannelView.cpp
         widgets/helper/ChannelView.hpp
+        widgets/helper/AutoModReviewBar.cpp
+        widgets/helper/AutoModReviewBar.hpp
         widgets/helper/CmdDeleteKeyFilter.cpp
         widgets/helper/CmdDeleteKeyFilter.hpp
         widgets/helper/ComboBoxItemDelegate.cpp

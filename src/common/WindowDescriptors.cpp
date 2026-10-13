@@ -124,6 +124,8 @@ SplitDescriptor SplitDescriptor::loadFromJSON(const QJsonObject &root)
     descriptor.server_ = data.value("server").toInt(-1);
     descriptor.anonymous_ = data.value("anonymous").toBool(false);
     descriptor.moderationMode_ = root.value("moderationMode").toBool();
+    descriptor.autoModChannelFilter_ =
+        data.value("autoModChannel").toString().trimmed().toLower();
     if (data.contains("channel"))
     {
         descriptor.channelName_ = data.value("channel").toString();
@@ -209,6 +211,10 @@ QJsonObject SplitDescriptor::toJson() const
         data.insert("tintByPlatform", this->mcTintByPlatform);
         data.insert("showTwitchOverlays", this->mcShowTwitchOverlays);
         data.insert("combinedViewerCount", this->mcCombinedViewerCount);
+    }
+    if (!this->autoModChannelFilter_.isEmpty())
+    {
+        data.insert("autoModChannel", this->autoModChannelFilter_);
     }
     obj.insert("data", data);
 

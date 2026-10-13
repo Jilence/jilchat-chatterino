@@ -87,7 +87,7 @@ QString localizedDisplayName(const automod::ReviewItem &item)
     return displayName;
 }
 
-/// Adds the text of the held message word by word, so that emotes and links
+/// Adds the text of the held message word by word, so that links and mentions
 /// in it show up as such
 void appendHeldMessageText(EventSubMessageBuilder &builder,
                            TwitchChannel *channel, const QString &message)
@@ -1023,6 +1023,45 @@ MessagePtr makeAutoModReviewMessage(TwitchChannel *channel,
     appendHeldMessageText(builder, channel, item.messageText);
     heldEnd = builder->elements.size();
 
+    // Shown while the message is selected in the queue
+    const MessageElementFlags expandedFlags{
+        MessageElementFlag::Text, MessageElementFlag::AutoModReviewExpanded};
+    const MessageElementFlags contextFlags =
+        isReviewQueue ? expandedFlags
+                      : MessageElementFlags{MessageElementFlag::Text};
+    if (getSettings()->autoModReviewShowContext && !item.context.isEmpty())
+    {
+        builder.emplace<LinebreakElement>(contextFlags);
+        builder.emplace<TextElement>(u"Earlier messages"_s, contextFlags,
+                                     MessageColor::System,
+                                     FontStyle::ChatSmall);
+        const auto addContext = [&](const automod::ContextMessage &context) {
+            builder.emplace<LinebreakElement>(contextFlags);
+            builder.emplace<TextElement>(context.displayName + ':',
+                                         contextFlags, MessageColor::Link,
+                                         FontStyle::ChatSmall);
+            builder.emplace<TextElement>(context.text, contextFlags,
+                                         MessageColor::Text,
+                                         FontStyle::ChatSmall);
+        };
+        if (getSettings()->autoModReviewContextOrder == 1)
+        {
+            // oldest at the top
+            for (const auto &context : item.context)
+            {
+                addContext(context);
+            }
+        }
+        else
+        {
+            for (auto it = item.context.crbegin(); it != item.context.crend();
+                 ++it)
+            {
+                addContext(*it);
+            }
+        }
+    }
+
     builder.emplace<LinebreakElement>(MessageElementFlag::Text);
     if (showActionRow)
     {
@@ -1069,6 +1108,38 @@ MessagePtr makeAutoModReviewMessage(TwitchChannel *channel,
     else
     {
         addStatus(FontStyle::ChatSmall);
+    }
+
+    if (isReviewQueue && getSettings()->autoModReviewShowShortcutHints)
+    {
+        builder.emplace<LinebreakElement>(expandedFlags);
+        const auto addHint = [&](const QString &key, const QString &action,
+                                 bool separator) {
+            builder.emplace<TextElement>(key, expandedFlags, MessageColor::Link,
+                                         FontStyle::ChatSmall);
+            builder.emplace<TextElement>(action, expandedFlags,
+                                         MessageColor::System,
+                                         FontStyle::ChatSmall);
+            if (separator)
+            {
+                builder.emplace<TextElement>(u"·"_s, expandedFlags,
+                                             MessageColor::System,
+                                             FontStyle::ChatSmall);
+            }
+        };
+        addHint(u"↑/↓"_s, u"Select"_s, true);
+        if (showActionRow)
+        {
+            addHint(u"A"_s, u"Approve"_s, true);
+            addHint(u"D"_s, u"Deny"_s, true);
+            addHint(u"T"_s, u"Timeout"_s, true);
+            addHint(u"B"_s, u"Ban"_s, true);
+        }
+        else if (failed)
+        {
+            addHint(u"R"_s, u"Retry"_s, true);
+        }
+        addHint(u"Enter"_s, u"Usercard"_s, false);
     }
 
     builder->messageText = item.messageText;

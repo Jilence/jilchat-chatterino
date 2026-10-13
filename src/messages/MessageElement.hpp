@@ -135,7 +135,8 @@ enum class MessageElementFlag : int64_t {
     LowercaseLinks = (1LL << 29),
     /// Not part of the message's text, so matches aren't looked for in it
     IgnoreExactMatch = (1LL << 30),
-    // Unused: (1LL << 31)
+    /// Only shown while the message is selected in the AutoMod queue
+    AutoModReviewExpanded = (1LL << 31),
 
     // for elements of the message reply
     RepliedMessage = (1LL << 32),
