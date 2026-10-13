@@ -35,6 +35,7 @@
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
+#include "util/OwnBadgeLayout.hpp"
 #include "util/Twitch.hpp"
 #include "widgets/buttons/Button.hpp"
 #include "widgets/buttons/SvgButton.hpp"
@@ -60,8 +61,11 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QLocale>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPointer>
@@ -74,6 +78,7 @@
 #include <QScrollBar>
 #include <QSet>
 #include <QShowEvent>
+#include <QStyledItemDelegate>
 #include <QtGlobal>
 #include <QTimer>
 #include <QUrl>
@@ -82,6 +87,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 
@@ -1033,6 +1039,316 @@ private:
     pajlada::Signals::SignalHolder connections_;
 };
 
+constexpr int ORDER_KEY_ROLE = Qt::UserRole;
+constexpr int ORDER_VISIBLE_ROLE = Qt::UserRole + 1;
+
+/// Where the eye of a row of the badge order is
+QRect orderEyeRect(const QRect &row, qreal scale)
+{
+    const int width = qRound(34 * scale);
+    return {row.right() - width, row.top(), width, row.height()};
+}
+
+/// A row of the badge order: a grip, the name of the badge and an eye that
+/// shows and hides it. Taken from Moltorino.
+class BadgeOrderDelegate final : public QStyledItemDelegate
+{
+public:
+    explicit BadgeOrderDelegate(QObject *parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {
+    }
+
+    std::function<void(const QString &, bool)> visibilityChanged;
+    float uiScale = 1.F;
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &) const override
+    {
+        return QSize{option.rect.width(),
+                     std::max(qRound(32 * this->uiScale),
+                              option.fontMetrics.height() + 8)};
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        painter->save();
+        const bool selected = option.state & QStyle::State_Selected;
+        const bool hovered = option.state & QStyle::State_MouseOver;
+        auto background = getTheme()->splits.input.background;
+        if (selected)
+        {
+            background = getTheme()->tabs.selected.backgrounds.regular;
+        }
+        else if (hovered)
+        {
+            background = getTheme()->splits.header.background;
+        }
+        painter->fillRect(option.rect, background);
+
+        auto text =
+            selected ? getTheme()->tabs.selected.text : getTheme()->window.text;
+        auto muted = text;
+        muted.setAlpha(155);
+
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(muted);
+        const int gripX = option.rect.left() + qRound(10 * this->uiScale);
+        const int centerY = option.rect.center().y();
+        for (int xOffset : {0, 5})
+        {
+            for (int yOffset : {-5, 0, 5})
+            {
+                painter->drawEllipse(QPoint{gripX + xOffset, centerY + yOffset},
+                                     1, 1);
+            }
+        }
+
+        painter->setPen(text);
+        painter->setFont(option.font);
+        const QRect textRect = option.rect.adjusted(
+            qRound(30 * this->uiScale), 0, -qRound(42 * this->uiScale), 0);
+        painter->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+                          index.data(Qt::DisplayRole).toString());
+
+        const bool visible = index.data(ORDER_VISIBLE_ROLE).toBool();
+        const auto eyeRect =
+            orderEyeRect(option.rect, this->uiScale)
+                .adjusted(qRound(7 * this->uiScale), qRound(8 * this->uiScale),
+                          -qRound(7 * this->uiScale),
+                          -qRound(8 * this->uiScale));
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(QPen(visible ? text : muted, 1.5));
+        QPainterPath eye;
+        eye.moveTo(eyeRect.left(), eyeRect.center().y());
+        eye.cubicTo(eyeRect.left() + 5, eyeRect.top(), eyeRect.right() - 5,
+                    eyeRect.top(), eyeRect.right(), eyeRect.center().y());
+        eye.cubicTo(eyeRect.right() - 5, eyeRect.bottom(), eyeRect.left() + 5,
+                    eyeRect.bottom(), eyeRect.left(), eyeRect.center().y());
+        painter->drawPath(eye);
+        if (visible)
+        {
+            painter->setBrush(text);
+            painter->drawEllipse(eyeRect.center(), 2, 2);
+        }
+        else
+        {
+            painter->drawLine(eyeRect.topLeft(), eyeRect.bottomRight());
+        }
+        painter->restore();
+    }
+
+    bool editorEvent(QEvent *event, QAbstractItemModel *model,
+                     const QStyleOptionViewItem &option,
+                     const QModelIndex &index) override
+    {
+        if (event->type() != QEvent::MouseButtonRelease)
+        {
+            return false;
+        }
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() != Qt::LeftButton ||
+            !orderEyeRect(option.rect, this->uiScale).contains(mouse->pos()))
+        {
+            return false;
+        }
+        const bool visible = index.data(ORDER_VISIBLE_ROLE).toBool();
+        const auto key = index.data(ORDER_KEY_ROLE).toString();
+        const bool changed =
+            model->setData(index, !visible, ORDER_VISIBLE_ROLE);
+        if (changed)
+        {
+            model->setData(index,
+                           visible ? QStringLiteral("Hidden in chat")
+                                   : QStringLiteral("Visible in chat"),
+                           Qt::ToolTipRole);
+            if (this->visibilityChanged)
+            {
+                this->visibilityChanged(key, !visible);
+            }
+        }
+        return changed;
+    }
+};
+
+/// A field for saturation and value with a bar for the hue beneath.
+/// Taken from Moltorino.
+class InlineColorPicker final : public QWidget
+{
+public:
+    explicit InlineColorPicker(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        this->setObjectName(QStringLiteral("InlineColorPicker"));
+        this->setMinimumHeight(108);
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+        this->setMouseTracking(true);
+        this->setCursor(Qt::CrossCursor);
+        this->setColor(QColor(QStringLiteral("#FF7F50")));
+    }
+
+    void setColor(const QColor &color)
+    {
+        if (!color.isValid())
+        {
+            return;
+        }
+        const auto hue = color.hsvHueF();
+        if (hue >= 0.0F)
+        {
+            this->hue_ = hue;
+        }
+        this->saturation_ = color.hsvSaturationF();
+        this->value_ = color.valueF();
+        this->update();
+    }
+
+    /// Whether the color is being changed with the mouse right now
+    bool dragging() const
+    {
+        return this->dragging_;
+    }
+
+    /// Called while the color is changed with the mouse
+    std::function<void(const QColor &)> colorChanged;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const auto field = this->fieldRect();
+        const auto hueBar = this->hueRect();
+
+        QLinearGradient saturation(field.topLeft(), field.topRight());
+        saturation.setColorAt(0.0, Qt::white);
+        saturation.setColorAt(1.0, QColor::fromHsvF(this->hue_, 1.0, 1.0));
+        painter.fillRect(field, saturation);
+        QLinearGradient value(field.topLeft(), field.bottomLeft());
+        value.setColorAt(0.0, QColor(0, 0, 0, 0));
+        value.setColorAt(1.0, Qt::black);
+        painter.fillRect(field, value);
+
+        QLinearGradient hues(hueBar.topLeft(), hueBar.topRight());
+        for (int i = 0; i <= 6; ++i)
+        {
+            hues.setColorAt(i / 6.0, QColor::fromHsvF(i / 6.0, 1.0, 1.0));
+        }
+        painter.fillRect(hueBar, hues);
+
+        auto border = getTheme()->splits.header.border;
+        painter.setPen(border);
+        painter.drawRect(field.adjusted(0, 0, -1, -1));
+        painter.drawRect(hueBar.adjusted(0, 0, -1, -1));
+
+        const QPointF fieldPoint{
+            field.left() + this->saturation_ * (field.width() - 1),
+            field.top() + (1.0 - this->value_) * (field.height() - 1)};
+        painter.setPen(QPen(Qt::black, 3));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(fieldPoint, 5, 5);
+        painter.setPen(QPen(Qt::white, 1));
+        painter.drawEllipse(fieldPoint, 5, 5);
+
+        const auto hueX = hueBar.left() + this->hue_ * (hueBar.width() - 1);
+        painter.setPen(QPen(Qt::black, 3));
+        painter.drawLine(QPointF{hueX, qreal(hueBar.top() - 1)},
+                         QPointF{hueX, qreal(hueBar.bottom() + 1)});
+        painter.setPen(QPen(Qt::white, 1));
+        painter.drawLine(QPointF{hueX, qreal(hueBar.top() - 1)},
+                         QPointF{hueX, qreal(hueBar.bottom() + 1)});
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton)
+        {
+            return;
+        }
+        const auto point = event->position().toPoint();
+        const bool huePressed =
+            this->hueRect().adjusted(0, -4, 0, 4).contains(point);
+        if (!huePressed && !this->fieldRect().contains(point))
+        {
+            this->dragging_ = false;
+            event->accept();
+            return;
+        }
+        this->dragging_ = true;
+        this->draggingHue_ = huePressed;
+        this->updateFromPoint(point);
+        event->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (this->dragging_ && event->buttons().testFlag(Qt::LeftButton))
+        {
+            this->updateFromPoint(event->position().toPoint());
+            event->accept();
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            this->dragging_ = false;
+            this->draggingHue_ = false;
+            event->accept();
+        }
+    }
+
+private:
+    QRect fieldRect() const
+    {
+        return QRect{0, 0, this->width(), this->height() - 25};
+    }
+
+    QRect hueRect() const
+    {
+        return QRect{0, this->height() - 17, this->width(), 13};
+    }
+
+    void updateFromPoint(const QPoint &point)
+    {
+        if (this->draggingHue_)
+        {
+            const auto rect = this->hueRect();
+            this->hue_ = std::clamp((point.x() - rect.left()) /
+                                        double(std::max(1, rect.width() - 1)),
+                                    0.0, 1.0);
+        }
+        else
+        {
+            const auto rect = this->fieldRect();
+            this->saturation_ =
+                std::clamp((point.x() - rect.left()) /
+                               double(std::max(1, rect.width() - 1)),
+                           0.0, 1.0);
+            this->value_ =
+                1.0 - std::clamp((point.y() - rect.top()) /
+                                     double(std::max(1, rect.height() - 1)),
+                                 0.0, 1.0);
+        }
+        const auto color =
+            QColor::fromHsvF(this->hue_, this->saturation_, this->value_);
+        this->update();
+        if (this->colorChanged)
+        {
+            this->colorChanged(color);
+        }
+    }
+
+    double hue_ = 0.0;
+    double saturation_ = 1.0;
+    double value_ = 1.0;
+    bool dragging_ = false;
+    bool draggingHue_ = false;
+};
+
 class ColorTileButton final : public QPushButton
 {
 public:
@@ -1540,6 +1856,7 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
         makeTab(extraTabRow, "7TV Badge", View::SevenTvBadges);
     extraTabRow->addWidget(this->colorTabButton_, 1);
     extraTabRow->addWidget(this->eventTabButton_, 1);
+    this->orderTabButton_ = makeTab(extraTabRow, "Order", View::Order);
     tabRows->addLayout(extraTabRow);
     this->mainLayout_->addLayout(tabRows);
 
@@ -1783,7 +2100,7 @@ void TwitchBadgePickerDialog::rebuildContent()
         this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
         this->view_ != View::Moltorino && this->view_ != View::JilChat &&
         this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
-        this->view_ != View::SevenTvPaints)
+        this->view_ != View::SevenTvPaints && this->view_ != View::Order)
     {
         this->setStatus("Loading badges...");
         this->contentLayout_->addStretch(1);
@@ -1822,6 +2139,10 @@ void TwitchBadgePickerDialog::rebuildContent()
              this->view_ == View::SevenTvPaints)
     {
         this->rebuildSevenTv();
+    }
+    else if (this->view_ == View::Order)
+    {
+        this->rebuildOrder();
     }
     else
     {
@@ -2307,6 +2628,7 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->channelTabButton_->setChecked(view == View::ChannelBadges);
     this->eventTabButton_->setChecked(view == View::EventBadges);
     this->colorTabButton_->setChecked(view == View::Color);
+    this->orderTabButton_->setChecked(view == View::Order);
     this->bttvTabButton_->setChecked(view == View::Bttv);
     this->bttvEffectTabButton_->setChecked(view == View::BttvEffects);
     this->moltorinoTabButton_->setChecked(view == View::Moltorino);
@@ -2345,8 +2667,102 @@ void TwitchBadgePickerDialog::updateSearchVisibility()
     if (this->searchRowWidget_ != nullptr)
     {
         this->searchRowWidget_->setVisible(this->view_ != View::Color &&
-                                           this->view_ != View::Bttv);
+                                           this->view_ != View::Bttv &&
+                                           this->view_ != View::Order);
     }
+}
+
+void TwitchBadgePickerDialog::rebuildOrder()
+{
+    const auto scale = this->scale();
+
+    auto *header = new QWidget(this->contentWidget_);
+    auto *headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    auto *hint =
+        new QLabel("Drag badges into place. Use the eye to hide one.", header);
+    hint->setObjectName("TwitchBadgePickerSectionLabel");
+    auto *reset = new QPushButton("Reset", header);
+    reset->setObjectName("TwitchBadgePickerApplyButton");
+    reset->setCursor(Qt::PointingHandCursor);
+    reset->setToolTip("Restore the usual badge order and show every badge");
+    reset->setEnabled(ownbadges::isCustomized());
+    headerLayout->addWidget(hint, 1);
+    headerLayout->addWidget(reset);
+    this->contentLayout_->addWidget(header);
+
+    QObject::connect(reset, &QPushButton::clicked, this, [this] {
+        ownbadges::reset();
+        this->rebuildContent();
+    });
+
+    const auto entries = ownbadges::entries();
+    if (entries.empty())
+    {
+        auto *empty = new QLabel(
+            "Your badges show up here once one of your own messages was "
+            "shown in a chat.",
+            this->contentWidget_);
+        empty->setWordWrap(true);
+        this->contentLayout_->addWidget(empty);
+        return;
+    }
+
+    auto *list = new QListWidget(this->contentWidget_);
+    list->setObjectName("TwitchBadgePickerOrderList");
+    list->setDragDropMode(QAbstractItemView::InternalMove);
+    list->setDefaultDropAction(Qt::MoveAction);
+    list->setDragDropOverwriteMode(false);
+    list->setMouseTracking(true);
+    auto *delegate = new BadgeOrderDelegate(list);
+    delegate->uiScale = scale;
+    list->setItemDelegate(delegate);
+
+    for (const auto &entry : entries)
+    {
+        auto *item = new QListWidgetItem(entry.label, list);
+        item->setData(ORDER_KEY_ROLE, entry.key);
+        item->setData(ORDER_VISIBLE_ROLE, entry.visible);
+        item->setToolTip(entry.visible ? "Visible in chat" : "Hidden in chat");
+        item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled |
+                       Qt::ItemIsDragEnabled);
+    }
+    // all rows without a scrollbar of its own: the page scrolls
+    const int rowHeight =
+        std::max(scaledMetric(scale, 32, 26), list->fontMetrics().height() + 8);
+    list->setFixedHeight(rowHeight * static_cast<int>(entries.size()) +
+                         2 * list->frameWidth() + 2);
+    list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    this->contentLayout_->addWidget(list);
+
+    // The list is what is saved: its rows in their order
+    const auto saveRows = [list, reset] {
+        std::vector<ownbadges::Entry> rows;
+        rows.reserve(static_cast<size_t>(list->count()));
+        for (int row = 0; row < list->count(); ++row)
+        {
+            const auto *item = list->item(row);
+            rows.push_back({
+                .key = item->data(ORDER_KEY_ROLE).toString(),
+                .label = item->text(),
+                .visible = item->data(ORDER_VISIBLE_ROLE).toBool(),
+            });
+        }
+        ownbadges::save(rows);
+        reset->setEnabled(true);
+    };
+    delegate->visibilityChanged = [saveRows](const QString &, bool) {
+        saveRows();
+    };
+    QObject::connect(list->model(), &QAbstractItemModel::rowsMoved, list,
+                     saveRows);
+
+    auto *note =
+        new QLabel("This only changes how you see your own badges, and only in "
+                   "messages that arrive from now on.",
+                   this->contentWidget_);
+    note->setWordWrap(true);
+    this->contentLayout_->addWidget(note);
 }
 
 void TwitchBadgePickerDialog::rebuildColors()
@@ -2364,9 +2780,8 @@ void TwitchBadgePickerDialog::rebuildColors()
                                 : QString{};
     const auto selectedPreset = helixColorNameFromDisplayHex(currentHex);
 
-    auto *label = new QLabel("Twitch Colors", this->contentWidget_);
+    auto *label = new QLabel("Twitch color", this->contentWidget_);
     label->setObjectName("TwitchBadgePickerSectionLabel");
-    this->contentLayout_->addWidget(label);
 
     const int gridColumns = this->badgeGridColumns();
 
@@ -2404,12 +2819,6 @@ void TwitchBadgePickerDialog::rebuildColors()
             ++row;
         }
     }
-    this->contentLayout_->addWidget(gridWidget);
-
-    auto *customLabel =
-        new QLabel("Custom (Turbo / Prime)", this->contentWidget_);
-    customLabel->setObjectName("TwitchBadgePickerSectionLabel");
-    this->contentLayout_->addWidget(customLabel);
 
     auto *customRow = new QWidget(this->contentWidget_);
     customRow->setObjectName("TwitchBadgePickerCustomColorRow");
@@ -2423,6 +2832,9 @@ void TwitchBadgePickerDialog::rebuildColors()
     auto *hexInput = new QLineEdit(customRow);
     hexInput->setObjectName("TwitchBadgePickerHexInput");
     hexInput->setPlaceholderText("#RRGGBB");
+    hexInput->setToolTip("A color of your own needs Twitch Turbo or Prime. "
+                         "The colors beneath work for everyone.");
+    hexInput->setFixedWidth(scaledMetric(this->scale(), 96, 72));
     hexInput->setMaxLength(7);
     hexInput->setFixedHeight(controlHeight);
     hexInput->setFont(
@@ -2442,9 +2854,8 @@ void TwitchBadgePickerDialog::rebuildColors()
 
     auto *colorButton = new ColorButton(swatchColor, customRow);
     colorButton->setFixedSize(controlHeight, controlHeight);
-    colorButton->setCursor(Qt::PointingHandCursor);
-    colorButton->setToolTip("Open color picker");
-    colorButton->setEnabled(!this->actionInFlight_);
+    // only shows the color: it is chosen in the field beneath
+    colorButton->setEnabled(false);
 
     auto updatePreview = [colorButton, hexInput] {
         const auto text = normalizeCustomHexInput(hexInput->text());
@@ -2473,56 +2884,24 @@ void TwitchBadgePickerDialog::rebuildColors()
     };
     updateApplyState();
 
-    QPointer<QLineEdit> hexInputPtr(hexInput);
-    auto openColorPicker = [this, hexInputPtr, currentHex, updatePreview] {
-        QColor initial(QStringLiteral("#808080"));
-        if (hexInputPtr)
-        {
-            const auto text = normalizeCustomHexInput(hexInputPtr->text());
-            if (isValidCustomHexColor(text))
-            {
-                initial = QColor(text);
-            }
-            else if (!currentHex.isEmpty())
-            {
-                initial = QColor(currentHex);
-            }
-        }
-        else if (!currentHex.isEmpty())
-        {
-            initial = QColor(currentHex);
-        }
-
-        const bool wasAutoPinned = this->ensurePinned();
-
-        auto *dialog = new ColorPickerDialog(initial, this);
-        QObject::connect(
-            dialog, &ColorPickerDialog::colorConfirmed, this,
-            [hexInputPtr, updatePreview](const QColor &selected) {
-                if (!selected.isValid() || !hexInputPtr)
-                {
-                    return;
-                }
-                hexInputPtr->setText(selected.name(QColor::HexRgb).toUpper());
-                updatePreview();
-            });
-        QObject::connect(dialog, &QObject::destroyed, this,
-                         [this, wasAutoPinned] {
-                             if (wasAutoPinned)
-                             {
-                                 this->togglePinned();
-                             }
-                         });
-        dialog->show();
+    auto *picker = new InlineColorPicker(this->contentWidget_);
+    picker->setFixedHeight(scaledMetric(this->scale(), 190, 130));
+    picker->setEnabled(!this->actionInFlight_);
+    picker->setColor(swatchColor);
+    picker->colorChanged = [hexInput](const QColor &color) {
+        hexInput->setText(color.name(QColor::HexRgb).toUpper());
     };
-
-    QObject::connect(colorButton, &QAbstractButton::clicked, this,
-                     openColorPicker);
     QObject::connect(
         hexInput, &QLineEdit::textChanged, customRow,
-        [hexInput, updatePreview, updateApplyState] {
+        [hexInput, picker, updatePreview, updateApplyState] {
             const auto raw = hexInput->text();
             const auto normalized = normalizeCustomHexInput(raw);
+            // a color that was typed moves the picker; one that comes from
+            // the picker doesn't, or it would jump while being dragged
+            if (!picker->dragging() && isValidCustomHexColor(normalized))
+            {
+                picker->setColor(QColor(normalized));
+            }
             if (normalized != raw)
             {
                 const auto cursor = hexInput->cursorPosition();
@@ -2548,10 +2927,14 @@ void TwitchBadgePickerDialog::rebuildColors()
             this->selectColor(text);
         });
 
+    customLayout->addWidget(label, 1);
     customLayout->addWidget(colorButton, 0, Qt::AlignVCenter);
-    customLayout->addWidget(hexInput, 1);
+    customLayout->addWidget(hexInput, 0);
     customLayout->addWidget(applyButton, 0, Qt::AlignVCenter);
     this->contentLayout_->addWidget(customRow);
+    this->contentLayout_->addWidget(picker);
+    // the colors everyone can use
+    this->contentLayout_->addWidget(gridWidget);
 
     if (!selectedPreset && !currentHex.isEmpty() && !this->statusIsError_)
     {
