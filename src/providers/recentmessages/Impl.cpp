@@ -328,7 +328,8 @@ std::optional<MergeCandidate> inspectMessage(const QString &raw)
                          QJsonObject::fromVariantMap(tags));
 
         QJsonArray parameters;
-        for (const auto &parameter : message->parameters())
+        const auto ircParameters = message->parameters();
+        for (const auto &parameter : ircParameters)
         {
             parameters.append(parameter);
         }
@@ -411,10 +412,9 @@ QJsonArray mergeRecentMessageBatches(const std::vector<QJsonArray> &batches,
             else if (candidate->timestamp > 0)
             {
                 auto &occurrences = receiptOccurrences[candidate->key];
-                isDuplicate = std::any_of(
-                    occurrences.cbegin(), occurrences.cend(),
-                    [candidateTimestamp = candidate->timestamp,
-                     batchIndex](const auto &occurrence) {
+                isDuplicate = std::ranges::any_of(
+                    occurrences, [candidateTimestamp = candidate->timestamp,
+                                  batchIndex](const auto &occurrence) {
                         return occurrence.batch != batchIndex &&
                                closeReceiptTimes(occurrence.timestamp,
                                                  candidateTimestamp);
@@ -445,17 +445,15 @@ QJsonArray mergeRecentMessageBatches(const std::vector<QJsonArray> &batches,
         }
     }
 
-    std::stable_sort(
-        candidates.begin(), candidates.end(),
-        [](const auto &lhs, const auto &rhs) {
-            const auto lhsTimestamp = lhs.timestamp > 0
-                                          ? lhs.timestamp
-                                          : std::numeric_limits<qint64>::max();
-            const auto rhsTimestamp = rhs.timestamp > 0
-                                          ? rhs.timestamp
-                                          : std::numeric_limits<qint64>::max();
-            return lhsTimestamp < rhsTimestamp;
-        });
+    std::ranges::stable_sort(candidates, [](const auto &lhs, const auto &rhs) {
+        const auto lhsTimestamp = lhs.timestamp > 0
+                                      ? lhs.timestamp
+                                      : std::numeric_limits<qint64>::max();
+        const auto rhsTimestamp = rhs.timestamp > 0
+                                      ? rhs.timestamp
+                                      : std::numeric_limits<qint64>::max();
+        return lhsTimestamp < rhsTimestamp;
+    });
 
     if (limit > 0 && candidates.size() > size_t(limit))
     {
@@ -500,7 +498,9 @@ std::vector<QString> recentMessagesApiUrlTemplates()
         return {Env::get().recentMessagesApiUrl};
     }
 
-    std::vector<QString> templates{recentMessagesApiUrlTemplate()};
+    std::vector<QString> templates;
+    templates.reserve(4);
+    templates.push_back(recentMessagesApiUrlTemplate());
     for (const auto api : {RecentMessagesApi::Robotty, RecentMessagesApi::Zneix,
                            RecentMessagesApi::Lilb, RecentMessagesApi::Zonian})
     {

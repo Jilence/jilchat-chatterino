@@ -94,7 +94,7 @@ public:
     }
 
 private:
-    void handleAnswer(const QString &host, QJsonObject root)
+    void handleAnswer(const QString &host, const QJsonObject &root)
     {
         if (isAppAboutToQuit() || this->channelPtr.expired())
         {
@@ -139,7 +139,7 @@ private:
                      << "from" << host;
         if (this->partialHistories_.empty())
         {
-            this->finish(std::move(root), false);
+            this->finish(root, false);
             return;
         }
 
@@ -156,7 +156,7 @@ private:
         this->finish(QJsonObject{{"messages", merged}}, partial);
     }
 
-    void finish(QJsonObject root, bool partial)
+    void finish(const QJsonObject &root, bool partial) const
     {
         // The messages are built on the GUI thread, a few at a time.
         postToThread([channelPtr = this->channelPtr,
@@ -170,7 +170,7 @@ private:
             buildRecentMessagesBatched(
                 std::move(messages), channelPtr,
                 [channelPtr, onLoaded = std::move(onLoaded),
-                 partial](std::vector<MessagePtr> built) {
+                 partial](const std::vector<MessagePtr> &built) {
                     auto shared = channelPtr.lock();
                     if (!shared || isAppAboutToQuit())
                     {

@@ -46,7 +46,7 @@ void MemoryReliefCoordinator::request()
 {
     std::optional<Duration> delay;
     {
-        std::lock_guard lock(this->mutex_);
+        std::scoped_lock lock(this->mutex_);
         if (this->running_)
         {
             this->pending_ = true;
@@ -74,7 +74,7 @@ void MemoryReliefCoordinator::request()
 void MemoryReliefCoordinator::timerFired()
 {
     {
-        std::lock_guard lock(this->mutex_);
+        std::scoped_lock lock(this->mutex_);
         if (!this->scheduled_)
         {
             return;
@@ -98,7 +98,7 @@ void MemoryReliefCoordinator::workerFinished()
 {
     bool schedulePending = false;
     {
-        std::lock_guard lock(this->mutex_);
+        std::scoped_lock lock(this->mutex_);
         if (!this->running_)
         {
             return;
