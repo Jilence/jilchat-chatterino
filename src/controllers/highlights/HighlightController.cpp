@@ -28,16 +28,18 @@ using namespace chatterino;
 auto highlightPhraseCheck(const HighlightPhrase &highlight) -> HighlightCheck
 {
     return HighlightCheck{
-        [highlight](const auto &args, const auto &twitchBadges,
-                    const auto &senderName, const auto &originalMessage,
-                    const auto &flags,
-                    const auto self) -> std::optional<HighlightResult> {
+        [highlight](
+            const auto &args, const auto &twitchBadges, const auto &senderName,
+            const auto &originalMessage, const auto &flags, const auto self,
+            const auto platform, const auto &channelName,
+            const auto collectMatches) -> std::optional<HighlightResult> {
             (void)args;
             (void)twitchBadges;
             (void)senderName;
             (void)flags;
 
-            if (self)
+            if (self || !highlight.getChannelScope().appliesToNormalized(
+                            platform, channelName))
             {
                 return std::nullopt;
             }
@@ -58,7 +60,7 @@ auto highlightPhraseCheck(const HighlightPhrase &highlight) -> HighlightCheck
                 highlightSoundUrl,          highlight.getColor(),
                 highlight.showInMentions(),
             };
-            if (getSettings()->highlightMatchedFragments &&
+            if (collectMatches &&
                 highlight.getMatchStyle() != HighlightMatchStyle::None)
             {
                 for (const auto &[start, length] :
@@ -97,8 +99,9 @@ void rebuildSubscriptionHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [=](const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)twitchBadges;
                 (void)senderName;
                 (void)originalMessage;
@@ -139,8 +142,9 @@ void rebuildFollowHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [=](const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)twitchBadges;
                 (void)senderName;
@@ -181,8 +185,9 @@ void rebuildWhisperHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [=](const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)twitchBadges;
                 (void)senderName;
                 (void)originalMessage;
@@ -223,8 +228,9 @@ void rebuildReplyThreadHighlight(Settings &settings,
             settings.showThreadHighlightInMentions.getValue();
         checks.emplace_back(HighlightCheck{
             [=](const auto &, const auto &, const auto &, const auto &,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 if (flags.has(MessageFlag::SubscribedThread) && !self)
                 {
                     return HighlightResult{
@@ -304,10 +310,11 @@ void rebuildMessageHighlights(Settings &settings,
         auto highlightColor =
             ColorProvider::instance().color(ColorType::AutomodHighlight);
 
-        checks.emplace_back(
-            HighlightCheck{[=](const auto &, const auto &, const auto &,
-                               const auto &, const auto &flags,
-                               const auto) -> std::optional<HighlightResult> {
+        checks.emplace_back(HighlightCheck{
+            [=](const auto &, const auto &, const auto &, const auto &,
+                const auto &flags, const auto, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 if (!flags.has(MessageFlag::AutoModOffendingMessage))
                 {
                     return std::nullopt;
@@ -340,8 +347,9 @@ void rebuildUserHighlights(Settings &settings,
             [showInMentions](
                 const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)twitchBadges;
                 (void)senderName;
@@ -366,15 +374,18 @@ void rebuildUserHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [highlight](const auto &args, const auto &twitchBadges,
                         const auto &senderName, const auto &originalMessage,
-                        const auto &flags,
-                        const auto self) -> std::optional<HighlightResult> {
+                        const auto &flags, const auto self, const auto platform,
+                        const auto &channelName, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)twitchBadges;
                 (void)originalMessage;
                 (void)flags;
                 (void)self;
 
-                if (!highlight.isMatch(senderName))
+                if (!highlight.getChannelScope().appliesToNormalized(
+                        platform, channelName) ||
+                    !highlight.isMatch(senderName))
                 {
                     return std::nullopt;
                 }
@@ -404,8 +415,10 @@ void rebuildBadgeHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [highlight](const auto &args, const auto &twitchBadges,
                         const auto &senderName, const auto &originalMessage,
-                        const auto &flags,
-                        const auto self) -> std::optional<HighlightResult> {
+                        const auto &flags, const auto self,
+                        const auto /*platform*/, const auto & /*channelName*/,
+                        const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)senderName;
                 (void)originalMessage;
@@ -559,8 +572,14 @@ void HighlightController::rebuildChecks(Settings &settings)
 std::pair<bool, HighlightResult> HighlightController::check(
     const MessageParseArgs &args, const std::vector<TwitchBadge> &twitchBadges,
     const QString &senderName, const QString &originalMessage,
-    const MessageFlags &messageFlags, MessagePlatform platform) const
+    const MessageFlags &messageFlags, MessagePlatform platform,
+    const QString &channelName, bool forceMatchRanges) const
 {
+    const auto normalizedChannelName =
+        normalizeHighlightChannelName(channelName);
+    const bool collectMatches =
+        forceMatchRanges || getSettings()->highlightMatchedFragments;
+
     constexpr size_t MAX_MATCHES_PER_MESSAGE = 256;
 
     bool highlighted = false;
@@ -589,8 +608,9 @@ std::pair<bool, HighlightResult> HighlightController::check(
 
     for (const auto &check : *checks)
     {
-        if (auto checkResult = check.cb(args, twitchBadges, senderName,
-                                        originalMessage, messageFlags, self);
+        if (auto checkResult = check.cb(
+                args, twitchBadges, senderName, originalMessage, messageFlags,
+                self, platform, normalizedChannelName, collectMatches);
             checkResult)
         {
             highlighted = true;
@@ -662,7 +682,7 @@ std::pair<bool, HighlightResult> HighlightController::check(
             if (result.full() &&
                 result.extraColors.size() >=
                     HighlightResult::MAX_EXTRA_COLORS &&
-                !getSettings()->highlightMatchedFragments)
+                !collectMatches)
             {
                 break;
             }

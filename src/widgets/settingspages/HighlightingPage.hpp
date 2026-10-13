@@ -35,6 +35,11 @@ private:
     /// Asks how the text a phrase matched is to be marked
     void openMatchAppearanceDialog(const QModelIndex &clicked,
                                    EditableModelView *view);
+    /// Asks for the channels the highlight of a row applies in
+    void openChannelScopeDialog(const QModelIndex &clicked,
+                                EditableModelView *view);
+    /// Adds the button that asks the same for the selected row
+    void addChannelScopeButton(EditableModelView *view);
 };
 
 }  // namespace chatterino

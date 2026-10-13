@@ -41,6 +41,65 @@ bool isMatchStyle(int value)
 
 }  // namespace
 
+void HighlightModel::setChannelScopeItem(QStandardItem *item,
+                                         const HighlightChannelScope &scope,
+                                         bool enabled)
+{
+    item->setData(channelScopeData(scope), ChannelScopeRole);
+    if (!enabled)
+    {
+        item->setData(QVariant{}, Qt::DisplayRole);
+        item->setData(QVariant{}, Qt::ToolTipRole);
+        item->setFlags({});
+        return;
+    }
+
+    item->setData(
+        highlightChannelScopeSummary(scope.mode(), scope.targets().size()),
+        Qt::DisplayRole);
+    item->setData(
+        highlightChannelScopeDescription(scope.mode(), scope.targets()),
+        Qt::ToolTipRole);
+    item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+}
+
+QStringList HighlightModel::channelScopeData(const HighlightChannelScope &scope)
+{
+    QStringList encoded{highlightChannelScopeModeKey(scope.mode())};
+    for (const auto &target : scope.targets())
+    {
+        encoded.append(encodeHighlightChannelTarget(target));
+    }
+    return encoded;
+}
+
+HighlightChannelScope HighlightModel::channelScopeFromData(const QVariant &data)
+{
+    const auto encoded = data.toStringList();
+    if (encoded.isEmpty())
+    {
+        return {};
+    }
+
+    std::vector<HighlightChannelTarget> targets;
+    targets.reserve(static_cast<std::size_t>(encoded.size() - 1));
+    for (qsizetype index = 1; index < encoded.size(); ++index)
+    {
+        if (auto target = decodeHighlightChannelTarget(encoded.at(index)))
+        {
+            targets.emplace_back(std::move(*target));
+        }
+    }
+    return {highlightChannelScopeModeFromKey(encoded.front()),
+            std::move(targets)};
+}
+
+HighlightChannelScope HighlightModel::channelScopeFromItem(
+    const QStandardItem *item)
+{
+    return channelScopeFromData(item->data(ChannelScopeRole));
+}
+
 HighlightPhrase HighlightModel::getItemFromRow(
     std::vector<QStandardItem *> &row, const HighlightPhrase &original)
 {
@@ -62,7 +121,8 @@ HighlightPhrase HighlightModel::getItemFromRow(
         highlightColor,
         matchColor,
         static_cast<HighlightMatchStyle>(
-            row[Column::MatchAppearance]->data(MatchStyleRole).toInt())};
+            row[Column::MatchAppearance]->data(MatchStyleRole).toInt()),
+        channelScopeFromItem(row[Column::ChannelScope])};
 }
 
 void HighlightModel::getRowFromItem(const HighlightPhrase &item,
@@ -78,6 +138,7 @@ void HighlightModel::getRowFromItem(const HighlightPhrase &item,
     setColorItem(row[Column::Color], *item.getColor());
     setMatchAppearanceItem(row[Column::MatchAppearance], *item.getMatchColor(),
                            item.getMatchStyle());
+    setChannelScopeItem(row[Column::ChannelScope], item.getChannelScope());
 }
 
 void HighlightModel::afterInit()
@@ -116,6 +177,7 @@ void HighlightModel::afterInit()
         highlightMatchStyleFromName(
             getSettings()->selfHighlightMatchStyle.getValue()));
 
+    setChannelScopeItem(usernameRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(usernameRow, HighlightRowIndexes::SelfHighlightRow);
 
     std::vector<QStandardItem *> whisperRow = this->createRow();
@@ -140,6 +202,7 @@ void HighlightModel::afterInit()
     setColorItem(whisperRow[Column::Color], *whisperColor, false);
 
     whisperRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(whisperRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(whisperRow, HighlightRowIndexes::WhisperRow);
 
     std::vector<QStandardItem *> subRow = this->createRow();
@@ -162,6 +225,7 @@ void HighlightModel::afterInit()
     setColorItem(subRow[Column::Color], *subColor, false);
 
     subRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(subRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(subRow, HighlightRowIndexes::SubRow);
 
     std::vector<QStandardItem *> followRow = this->createRow();
@@ -185,6 +249,7 @@ void HighlightModel::afterInit()
     setColorItem(followRow[Column::Color], *followColor, false);
 
     followRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(followRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(followRow, HighlightRowIndexes::FollowRow);
 
     std::vector<QStandardItem *> redeemedRow = this->createRow();
@@ -205,6 +270,7 @@ void HighlightModel::afterInit()
     setColorItem(redeemedRow[Column::Color], *RedeemedColor, false);
 
     redeemedRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(redeemedRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(redeemedRow, HighlightRowIndexes::RedeemedRow);
 
     std::vector<QStandardItem *> firstMessageRow = this->createRow();
@@ -226,6 +292,7 @@ void HighlightModel::afterInit()
     setColorItem(firstMessageRow[Column::Color], *FirstMessageColor, false);
 
     firstMessageRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(firstMessageRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(firstMessageRow,
                           HighlightRowIndexes::FirstMessageRow);
 
@@ -257,6 +324,7 @@ void HighlightModel::afterInit()
     setColorItem(threadMessageRow[Column::Color], *threadMessageColor, false);
 
     threadMessageRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(threadMessageRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(threadMessageRow,
                           HighlightRowIndexes::ThreadMessageRow);
 
@@ -297,6 +365,7 @@ void HighlightModel::afterInit()
             ? static_cast<HighlightMatchStyle>(automodMatchStyle)
             : HighlightMatchStyle::Fill);
 
+    setChannelScopeItem(automodRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(automodRow, HighlightRowIndexes::AutomodRow);
 
     std::vector<QStandardItem *> watchStreakRow = this->createRow();
@@ -316,6 +385,7 @@ void HighlightModel::afterInit()
     setColorItem(watchStreakRow[Column::Color], *watchStreakColor, false);
 
     watchStreakRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(watchStreakRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(watchStreakRow, HighlightRowIndexes::WatchStreakRow);
 
     std::vector<QStandardItem *> announcementRow = this->createRow();
@@ -335,6 +405,7 @@ void HighlightModel::afterInit()
     setColorItem(announcementRow[Column::Color], *announcementColor, false);
 
     announcementRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(announcementRow[Column::ChannelScope], {}, false);
     this->insertCustomRow(announcementRow,
                           HighlightRowIndexes::AnnouncementRow);
 
@@ -353,6 +424,8 @@ void HighlightModel::afterInit()
     coloredAnnouncementRow[Column::Color]->setFlags(Qt::NoItemFlags);
 
     coloredAnnouncementRow[Column::MatchAppearance]->setFlags({});
+    setChannelScopeItem(coloredAnnouncementRow[Column::ChannelScope], {},
+                        false);
     this->insertCustomRow(coloredAnnouncementRow,
                           HighlightRowIndexes::ColoredAnnouncementRow);
 }

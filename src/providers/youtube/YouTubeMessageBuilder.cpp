@@ -79,7 +79,7 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     const std::vector<TwitchBadge> noBadges;
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
         args, noBadges, builder->displayName, builder->messageText,
-        builder->flags, builder->platform);
+        builder->flags, builder->platform, builder->channelName);
 
     if (!highlighted)
     {

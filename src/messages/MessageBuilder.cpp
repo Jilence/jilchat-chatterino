@@ -3217,7 +3217,8 @@ HighlightAlert MessageBuilder::parseHighlights(Communi::TagsRef tags,
     auto badges = parseBadgeTag(tags);
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
         args, badges, this->message().loginName, originalMessage,
-        this->message().flags, this->message().platform);
+        this->message().flags, this->message().platform,
+        this->message().channelName);
 
     if (!highlighted)
     {

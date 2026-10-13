@@ -454,7 +454,7 @@ HighlightAlert processHighlights(KickMessageBuilder &builder,
 
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
         args, {}, builder->loginName, builder->messageText, builder->flags,
-        builder->platform);
+        builder->platform, builder->channelName);
 
     if (!highlighted)
     {

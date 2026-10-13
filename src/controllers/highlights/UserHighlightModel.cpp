@@ -33,7 +33,10 @@ HighlightPhrase UserHighlightModel::getItemFromRow(
         row[Column::UseRegex]->data(Qt::CheckStateRole).toBool(),
         row[Column::CaseSensitive]->data(Qt::CheckStateRole).toBool(),
         row[Column::SoundPath]->data(Qt::UserRole).toString(),
-        highlightColor};
+        highlightColor,
+        original.getMatchColor(),
+        original.getMatchStyle(),
+        HighlightModel::channelScopeFromItem(row[Column::ChannelScope])};
 }
 
 void UserHighlightModel::afterInit()
@@ -57,6 +60,8 @@ void UserHighlightModel::afterInit()
         ColorProvider::instance().color(ColorType::SelfMessageHighlight);
     setColorItem(messagesRow[Column::Color], *selfColor, false);
     messagesRow[Column::MatchAppearance]->setFlags({});
+    HighlightModel::setChannelScopeItem(messagesRow[Column::ChannelScope], {},
+                                        false);
 
     this->insertCustomRow(
         messagesRow, HighlightModel::UserHighlightRowIndexes::SelfMessageRow);
@@ -123,6 +128,8 @@ void UserHighlightModel::getRowFromItem(const HighlightPhrase &item,
     setColorItem(row[Column::Color], *item.getColor());
     // a user has no text to mark
     row[Column::MatchAppearance]->setFlags({});
+    HighlightModel::setChannelScopeItem(row[Column::ChannelScope],
+                                        item.getChannelScope());
 }
 
 }  // namespace chatterino

@@ -47,18 +47,19 @@ bool HighlightPhrase::operator==(const HighlightPhrase &other) const
     return std::tie(this->pattern_, this->showInMentions_, this->hasSound_,
                     this->hasAlert_, this->isRegex_, this->isCaseSensitive_,
                     this->soundUrl_, this->color_, this->matchColor_,
-                    this->matchStyle_) ==
+                    this->matchStyle_, this->channelScope_) ==
            std::tie(other.pattern_, other.showInMentions_, other.hasSound_,
                     other.hasAlert_, other.isRegex_, other.isCaseSensitive_,
                     other.soundUrl_, other.color_, other.matchColor_,
-                    other.matchStyle_);
+                    other.matchStyle_, other.channelScope_);
 }
 
 HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
                                  bool hasAlert, bool hasSound, bool isRegex,
                                  bool isCaseSensitive, const QString &soundUrl,
                                  QColor color, QColor matchColor,
-                                 HighlightMatchStyle matchStyle)
+                                 HighlightMatchStyle matchStyle,
+                                 HighlightChannelScope channelScope)
     : pattern_(pattern)
     , showInMentions_(showInMentions)
     , hasAlert_(hasAlert)
@@ -78,6 +79,7 @@ HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
     this->matchColor_ = std::make_shared<QColor>(
         matchColor.isValid() ? matchColor : defaultNewHighlightMatchColor());
     this->matchStyle_ = matchStyle;
+    this->channelScope_ = std::move(channelScope);
 }
 
 HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
@@ -85,7 +87,8 @@ HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
                                  bool isCaseSensitive, const QString &soundUrl,
                                  std::shared_ptr<QColor> color,
                                  std::shared_ptr<QColor> matchColor,
-                                 HighlightMatchStyle matchStyle)
+                                 HighlightMatchStyle matchStyle,
+                                 HighlightChannelScope channelScope)
     : pattern_(pattern)
     , showInMentions_(showInMentions)
     , hasAlert_(hasAlert)
@@ -96,6 +99,7 @@ HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
     , color_(std::move(color))
     , matchColor_(std::move(matchColor))
     , matchStyle_(matchStyle)
+    , channelScope_(std::move(channelScope))
     , regex_(isRegex_
                  ? pattern
                  : REGEX_START_BOUNDARY % QRegularExpression::escape(pattern) %
@@ -208,6 +212,11 @@ const std::shared_ptr<QColor> HighlightPhrase::getMatchColor() const
 HighlightMatchStyle HighlightPhrase::getMatchStyle() const
 {
     return this->matchStyle_;
+}
+
+const HighlightChannelScope &HighlightPhrase::getChannelScope() const
+{
+    return this->channelScope_;
 }
 
 }  // namespace chatterino

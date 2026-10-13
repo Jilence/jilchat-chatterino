@@ -307,7 +307,8 @@ void AutoModReviewController::ingestHold(
                            MessageFlag::AutoModOffendingMessage};
     holdFlags.set(MessageFlag::AutoModBlockedTerm, item.blockedTerm);
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
-        {}, {}, item.userLogin, item.messageText, holdFlags);
+        {}, {}, item.userLogin, item.messageText, holdFlags,
+        MessagePlatform::AnyOrTwitch, item.broadcasterLogin);
 
     this->order_.push_back(key);
     auto inserted = this->entries_.insert(key, std::move(entry));
