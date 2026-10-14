@@ -63,6 +63,9 @@ struct SplitDescriptor {
     // Whether "Moderation Mode" (the sword icon) is enabled in this split or not
     bool moderationMode_{false};
 
+    // The channel the /automod tab is filtered by, empty for all
+    QString autoModChannelFilter_;
+
     std::optional<bool> spellCheckOverride;
 
     bool perSplitHidePinnedMessage_{false};

@@ -35,6 +35,7 @@
 #include "widgets/dialogs/SelectChannelDialog.hpp"
 #include "widgets/dialogs/SelectChannelFiltersDialog.hpp"
 #include "widgets/dialogs/UserInfoPopup.hpp"
+#include "widgets/helper/AutoModReviewBar.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/DebugPopup.hpp"
 #include "widgets/helper/MessageView.hpp"
@@ -2014,7 +2015,24 @@ void Split::setChannel(IndirectChannel newChannel)
 
     this->channel_ = newChannel;
 
+    const bool isAutoMod =
+        newChannel.get()->getType() == Channel::Type::TwitchAutomod;
+    if (!isAutoMod && this->autoModReviewBar_ != nullptr)
+    {
+        this->autoModReviewBar_->setActive(false);
+    }
     this->view_->setChannel(newChannel.get());
+    if (isAutoMod)
+    {
+        if (this->autoModReviewBar_ == nullptr)
+        {
+            this->autoModReviewBar_ = new AutoModReviewBar(this, this->view_);
+            this->header_->setAutoModReviewBar(this->autoModReviewBar_);
+            this->autoModReviewBar_->setSelectedChannel(
+                this->autoModChannelFilter_);
+        }
+        this->autoModReviewBar_->setActive(true);
+    }
     this->channelSignalHolder_.clear();
     this->twitchBannerSignalHolder_.clear();
     this->bannerToggleOverride_ = -1;
@@ -2153,6 +2171,23 @@ void Split::updateChannelConnections()
                 this->getInput().setSendWaitStatus(text);
             });
     }
+}
+
+void Split::setAutoModChannelFilter(QString channel)
+{
+    this->autoModChannelFilter_ = std::move(channel);
+    if (this->autoModReviewBar_ != nullptr)
+    {
+        this->autoModReviewBar_->setSelectedChannel(
+            this->autoModChannelFilter_);
+    }
+}
+
+QString Split::getAutoModChannelFilter() const
+{
+    return this->autoModReviewBar_ != nullptr
+               ? this->autoModReviewBar_->selectedChannel()
+               : this->autoModChannelFilter_;
 }
 
 void Split::setModerationMode(bool value)
@@ -2367,7 +2402,11 @@ void Split::mouseMoveEvent(QMouseEvent *event)
 
 void Split::keyPressEvent(QKeyEvent *event)
 {
-    (void)event;
+    if (this->view_->handleAutoModReviewKey(event))
+    {
+        event->accept();
+        return;
+    }
 
     this->view_->unsetCursor();
     this->handleModifiers(QGuiApplication::queryKeyboardModifiers());
@@ -2843,6 +2882,7 @@ SplitDescriptor Split::buildDescriptor() const
 {
     SplitDescriptor descriptor;
     descriptor.moderationMode_ = this->getModerationMode();
+    descriptor.autoModChannelFilter_ = this->getAutoModChannelFilter();
     descriptor.filters_ = this->getFilters();
     descriptor.spellCheckOverride = this->checkSpellingOverride();
 

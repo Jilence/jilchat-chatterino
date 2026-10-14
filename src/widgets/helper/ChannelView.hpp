@@ -262,6 +262,21 @@ public:
     void showUserInfoPopup(const QString &userName, MessagePlatform platform,
                            const QString &alternativePopoutChannel = {});
 
+    /// The key of the AutoMod review that is selected in the /automod tab
+    const QString &autoModReviewSelectedKey() const;
+    void setAutoModReviewSelectedKey(QString key);
+    /// Selects the next (1) or previous (-1) review.
+    ///
+    /// @param actionableOnly Skip those nothing can be done with
+    /// @returns whether there was one to select
+    bool selectAutoModReview(int direction, bool actionableOnly = false);
+    /// The shortcuts of the /automod tab.
+    ///
+    /// @returns whether the key was one of them
+    bool handleAutoModReviewKey(QKeyEvent *event);
+    /// Only messages this returns true for are shown, on top of the filters
+    void setMessagePredicate(std::function<bool(const MessagePtr &)> predicate);
+
     /**
      * @brief This method is meant to be used when filtering out channels.
      *        It <b>must</b> return true if a message belongs in this channel.
@@ -331,11 +346,45 @@ protected:
 
     void hideEvent(QHideEvent * /*event*/) override;
     void showEvent(QShowEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
     void handleLinkClick(QMouseEvent *event, const Link &link,
                          MessageLayout *layout,
                          const MessageLayoutElement *hoveredElement = nullptr,
                          QPointF relativePos = {});
+
+    /// Asks how long the user of the AutoMod review `key` is to be timed out
+    void showAutoModTimeoutMenu(const QString &key, const QPoint &globalPos);
+    /// Asks whether the user of the AutoMod review `key` is to be banned
+    void confirmAutoModBan(const QString &key);
+
+    /// Whether this shows the /automod tab
+    bool isAutoModQueue() const;
+    void connectAutoModReview();
+    /// Goes through the messages again to see which are to be shown
+    void refilterMessages();
+    void queueAutoModRefilter();
+    /// Tells the layouts which of them is the selected review
+    void markAutoModReviewSelection();
+    bool isAtAutoModTop() const;
+    /// The review next to `key` that something can be done with: the one
+    /// below it, or the one above if it is the last. Empty if there is none,
+    /// or if the setting asks for the newest or oldest one instead.
+    QString autoModNeighbourKey(const QString &key);
+    /// Scrolls just enough for the message at `index` to be in view
+    void revealMessageIndex(size_t index);
+
+    QString autoModReviewSelectedKey_;
+    /// What to select once the selected review left the queue
+    QString autoModNextKey_;
+    /// The /automod tab adds new messages at the top
+    bool newestFirstAutoModOrder_ = false;
+    /// The /automod tab stays at its top instead of its bottom
+    bool followTop_ = false;
+    /// The queue changed while this wasn't visible
+    bool autoModReviewDirty_ = false;
+    bool autoModRefilterQueued_ = false;
+    std::function<bool(const MessagePtr &)> messagePredicate_;
 
     bool tryGetMessageAt(QPointF p, std::shared_ptr<MessageLayout> &message,
                          QPointF &relativePos, int &index);

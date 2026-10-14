@@ -6,6 +6,51 @@
 
 namespace chatterino {
 
+QString highlightMatchStyleName(HighlightMatchStyle style)
+{
+    switch (style)
+    {
+        case HighlightMatchStyle::None:
+            return QStringLiteral("None");
+        case HighlightMatchStyle::Outline:
+            return QStringLiteral("Outline");
+        case HighlightMatchStyle::Fill:
+            return QStringLiteral("Fill");
+        case HighlightMatchStyle::OutlineAndFill:
+            return QStringLiteral("Outline and fill");
+        case HighlightMatchStyle::Underline:
+            return QStringLiteral("Underline");
+    }
+    return QStringLiteral("Outline");
+}
+
+HighlightMatchStyle highlightMatchStyleFromName(const QString &name)
+{
+    if (name.compare(QStringLiteral("None"), Qt::CaseInsensitive) == 0)
+    {
+        return HighlightMatchStyle::None;
+    }
+    if (name.compare(QStringLiteral("Fill"), Qt::CaseInsensitive) == 0)
+    {
+        return HighlightMatchStyle::Fill;
+    }
+    if (name.compare(QStringLiteral("Outline and fill"), Qt::CaseInsensitive) ==
+        0)
+    {
+        return HighlightMatchStyle::OutlineAndFill;
+    }
+    if (name.compare(QStringLiteral("Underline"), Qt::CaseInsensitive) == 0)
+    {
+        return HighlightMatchStyle::Underline;
+    }
+    return HighlightMatchStyle::Outline;
+}
+
+QColor defaultAutoModMatchColor()
+{
+    return {255, 177, 64, 128};
+}
+
 HighlightResult::HighlightResult(bool _alert, bool _playSound,
                                  std::optional<QUrl> _customSoundUrl,
                                  std::shared_ptr<QColor> _color,

@@ -133,8 +133,10 @@ enum class MessageElementFlag : int64_t {
 
     // used to check if links should be lowercased
     LowercaseLinks = (1LL << 29),
-    // Unused = (1LL << 30)
-    // Unused: (1LL << 31)
+    /// Not part of the message's text, so matches aren't looked for in it
+    IgnoreExactMatch = (1LL << 30),
+    /// Only shown while the message is selected in the AutoMod queue
+    AutoModReviewExpanded = (1LL << 31),
 
     // for elements of the message reply
     RepliedMessage = (1LL << 32),
@@ -807,6 +809,34 @@ private:
     bool canModerateUser_ = true;
     bool targetIsModOrBroadcaster_ = false;
     bool targetIsCurrentUser_ = false;
+};
+
+enum class AutoModActionKind : std::uint8_t {
+    Timeout,
+    Ban,
+};
+
+/// A button on a message AutoMod holds. It looks like the moderation buttons
+/// but does what its link says.
+class AutoModActionElement : public MessageElement
+{
+public:
+    static constexpr std::string_view TYPE = "automod-action";
+
+    AutoModActionElement(AutoModActionKind kind, int timeoutSeconds = 0,
+                         MessageElementFlags flags = MessageElementFlag::Text);
+
+    void addToContainer(MessageLayoutContainer &container,
+                        const MessageLayoutContext &ctx) override;
+
+    std::unique_ptr<MessageElement> clone() const override;
+
+    QJsonObject toJson() const override;
+    std::string_view type() const override;
+
+private:
+    AutoModActionKind kind_;
+    int timeoutSeconds_ = 0;
 };
 
 // Forces a linebreak

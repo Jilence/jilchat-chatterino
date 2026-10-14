@@ -29,6 +29,13 @@ public:
         JumpToMessage,
         AcknowledgeChatWarning,
         JilVoiceMessage,
+        /// The value of these is the key of the AutoMod review
+        AutoModReviewApprove,
+        AutoModReviewDeny,
+        /// The key alone asks for the duration, "<key>\n<seconds>" names it
+        AutoModReviewTimeout,
+        AutoModReviewBan,
+        AutoModReviewRetry,
     };
 
     Link();

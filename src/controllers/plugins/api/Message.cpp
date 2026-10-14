@@ -166,6 +166,11 @@ void setLinkOn(MessageElement *el, const Link &link)
         case Link::Reconnect:
         case Link::ViewThread:
         case Link::JilVoiceMessage:
+        case Link::AutoModReviewApprove:
+        case Link::AutoModReviewDeny:
+        case Link::AutoModReviewTimeout:
+        case Link::AutoModReviewBan:
+        case Link::AutoModReviewRetry:
             throw std::runtime_error("Invalid link type. How'd this happen?");
     }
     el->setTooltip(tooltip);

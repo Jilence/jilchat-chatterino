@@ -5,14 +5,50 @@
 #pragma once
 
 #include <QColor>
+#include <QString>
 #include <QUrl>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <ostream>
 #include <vector>
 
 namespace chatterino {
+
+enum class HighlightMatchSource : std::uint8_t {
+    Phrase,
+    WordList,
+    AutoMod,
+};
+
+/// How a matched part of a message is marked
+enum class HighlightMatchStyle : std::uint8_t {
+    None,
+    Outline,
+    Fill,
+    OutlineAndFill,
+    Underline,
+};
+
+QString highlightMatchStyleName(HighlightMatchStyle style);
+HighlightMatchStyle highlightMatchStyleFromName(const QString &name);
+QColor defaultAutoModMatchColor();
+
+/// A part of a message's text that something matched, counted in UTF-16 code
+/// units. Taken from Moltorino.
+struct HighlightMatch {
+    qsizetype start{};
+    qsizetype length{};
+    QColor color;
+    QString ruleName;
+    QString pattern;
+    HighlightMatchSource source{HighlightMatchSource::Phrase};
+    HighlightMatchStyle style{HighlightMatchStyle::Outline};
+    QString paintID;
+
+    bool operator==(const HighlightMatch &other) const = default;
+};
 
 struct HighlightResult {
     HighlightResult(bool _alert, bool _playSound,
