@@ -1677,8 +1677,10 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::dropdown("Message history provider", s.recentMessagesApi)
         ->setTooltip(
-            "Service used to load chat history when joining a channel.\n"
-            "CHATTERINO2_RECENT_MESSAGES_URL overrides this when set.")
+            "Service asked first for the chat history when joining a "
+            "channel. If it is unavailable, the others are tried once.\n"
+            "CHATTERINO2_RECENT_MESSAGES_URL overrides this when set, and is "
+            "then the only service asked.")
         ->addTo(layout);
 
     // TODO: Change phrasing to use better english once we can tag settings, right now it's kept as history instead of historical so that the setting shows up when the user searches for history

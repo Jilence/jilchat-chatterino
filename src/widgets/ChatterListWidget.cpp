@@ -20,6 +20,7 @@
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "util/Helpers.hpp"
+#include "util/MemoryReclaimer.hpp"
 #include "util/MultiChannel.hpp"
 
 #include <pajlada/signals/signal.hpp>
@@ -2137,7 +2138,16 @@ ChatterListWidget::ChatterListWidget(std::shared_ptr<Channel> channel,
     this->themeChangedEvent();
 }
 
-ChatterListWidget::~ChatterListWidget() = default;
+ChatterListWidget::~ChatterListWidget()
+{
+    const auto releasedRows = this->d_->model->rowCount();
+    this->d_.reset();
+    if (releasedRows >= 1000)
+    {
+        // a long list leaves a lot of freed memory behind
+        requestMemoryPressureRelief();
+    }
+}
 
 bool ChatterListWidget::supportsChannel(const Channel *channel)
 {
