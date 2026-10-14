@@ -21,6 +21,7 @@
 #include "Application.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/chat/ChatAutomationController.hpp"
+#include "controllers/highlights/HighlightResult.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "messages/Emote.hpp"
@@ -704,6 +705,22 @@ MoltorinoPage::MoltorinoPage()
             "Show Twitch's Gigantify reward and enlarge its selected emote in "
             "chat. The /gigantify command still works when this is off.")
         ->addTo(*view);
+
+    view->addDropdown<float>(
+            "Twitch GIF size", {"0.5x", "Default", "1x", "1.25x", "1.5x", "2x"},
+            s.twitchGifScale,
+            [](auto val) {
+                if (val == 0.75F)
+                {
+                    return QString("Default");
+                }
+                return QString::number(val) + "x";
+            },
+            [](auto args) {
+                return std::clamp(fuzzyToFloat(args.value, 0.75F), 0.5F, 2.0F);
+            },
+            true, "Scale Twitch GIFs from 0.5x to 2x.")
+        ->setToolTip("Scale Twitch GIFs from 0.5x to 2x.");
 
     view->addTitle("Input Box");
     view->addDescription(

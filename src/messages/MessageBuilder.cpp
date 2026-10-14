@@ -62,6 +62,7 @@
 #include "util/FormatTime.hpp"
 #include "util/Helpers.hpp"
 #include "util/IrcHelpers.hpp"
+#include "util/OwnBadgeLayout.hpp"
 #include "util/QStringHash.hpp"
 #include "util/Variant.hpp"
 #include "widgets/Window.hpp"
@@ -2294,6 +2295,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
                 canModerateUser, senderIsModOrBroadcaster, senderIsCurrentUser);
         }
 
+        const auto firstBadge = builder->elements.size();
         builder.appendTwitchBadges(tags, twitchChannel);
 
         builder.appendChatterinoBadges(userID);
@@ -2308,6 +2310,11 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendHomiesBadges(userID);
         builder.appendFolhinhaBadges(userID);
         builder.appendJilChatBadges(userID);
+        if (senderIsCurrentUser)
+        {
+            // the order the user wants their own badges in
+            ownbadges::apply(builder->elements, firstBadge);
+        }
 
         builder.appendUsername(tags, args);
 
