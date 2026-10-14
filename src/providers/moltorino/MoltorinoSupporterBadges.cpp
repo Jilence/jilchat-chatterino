@@ -22,8 +22,10 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <mutex>
+#include <utility>
 
 namespace chatterino {
 
@@ -408,16 +410,20 @@ void MoltorinoSupporterBadges::initialize()
     this->refreshTimer_.start();
 }
 
-void MoltorinoSupporterBadges::refreshNow()
+void MoltorinoSupporterBadges::refreshNow(std::function<void(bool)> onDone)
 {
     if (!isGuiThread())
     {
-        postToThread([this] {
-            this->refreshNow();
+        postToThread([this, onDone = std::move(onDone)]() mutable {
+            this->refreshNow(std::move(onDone));
         });
         return;
     }
 
+    if (onDone)
+    {
+        this->waiting_.push_back(std::move(onDone));
+    }
     this->refreshInternal(true, std::nullopt);
 }
 
@@ -504,12 +510,14 @@ void MoltorinoSupporterBadges::refreshInternal(
                 return;
             }
 
+            this->lastRequestSucceeded_ = true;
             if (this->applyPayload(result.getData(), false, minimumVersion))
             {
                 this->saveCache(result.getData());
             }
         })
-        .onError([](const NetworkResult &result) {
+        .onError([this](const NetworkResult &result) {
+            this->lastRequestSucceeded_ = false;
             qCWarning(chatterinoApp)
                 << "[Moltorino] Failed to load supporter badges:"
                 << result.formatError();
@@ -527,6 +535,13 @@ void MoltorinoSupporterBadges::finishRequest()
     this->requestInFlight_ = false;
     if (!this->pendingRefresh_)
     {
+        // nothing follows: this was the answer the callers wait for
+        auto waiting = std::move(this->waiting_);
+        this->waiting_.clear();
+        for (const auto &onDone : waiting)
+        {
+            onDone(this->lastRequestSucceeded_);
+        }
         return;
     }
 
