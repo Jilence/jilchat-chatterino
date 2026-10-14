@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "controllers/highlights/HighlightChannelScope.hpp"
+#include "controllers/highlights/HighlightResult.hpp"
 #include "util/RapidjsonHelpers.hpp"
 #include "util/RapidJsonSerializeQString.hpp"
 
@@ -14,6 +16,8 @@
 #include <QUrl>
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 namespace chatterino {
 
@@ -22,13 +26,20 @@ class HighlightPhrase
 public:
     bool operator==(const HighlightPhrase &other) const;
 
-    HighlightPhrase(const QString &pattern, bool showInMentions, bool hasAlert,
-                    bool hasSound, bool isRegex, bool isCaseSensitive,
-                    const QString &soundUrl, QColor color);
+    HighlightPhrase(
+        const QString &pattern, bool showInMentions, bool hasAlert,
+        bool hasSound, bool isRegex, bool isCaseSensitive,
+        const QString &soundUrl, QColor color, QColor matchColor = {},
+        HighlightMatchStyle matchStyle = HighlightMatchStyle::Outline,
+        HighlightChannelScope channelScope = {});
 
-    HighlightPhrase(const QString &pattern, bool showInMentions, bool hasAlert,
-                    bool hasSound, bool isRegex, bool isCaseSensitive,
-                    const QString &soundUrl, std::shared_ptr<QColor> color);
+    HighlightPhrase(
+        const QString &pattern, bool showInMentions, bool hasAlert,
+        bool hasSound, bool isRegex, bool isCaseSensitive,
+        const QString &soundUrl, std::shared_ptr<QColor> color,
+        std::shared_ptr<QColor> matchColor = nullptr,
+        HighlightMatchStyle matchStyle = HighlightMatchStyle::Outline,
+        HighlightChannelScope channelScope = {});
 
     const QString &getPattern() const;
     bool showInMentions() const;
@@ -41,9 +52,18 @@ public:
     bool isRegex() const;
     bool isValid() const;
     bool isMatch(const QString &subject) const;
+    /// Where the phrase is found in `subject`: start and length of each
+    /// place, without the whitespace around it
+    std::vector<std::pair<qsizetype, qsizetype>> findMatches(
+        const QString &subject) const;
     bool isCaseSensitive() const;
     const QUrl &getSoundUrl() const;
     const std::shared_ptr<QColor> getColor() const;
+    /// How the text the phrase matched is marked
+    const std::shared_ptr<QColor> getMatchColor() const;
+    HighlightMatchStyle getMatchStyle() const;
+    /// The channels the phrase applies in
+    const HighlightChannelScope &getChannelScope() const;
 
     static QColor FALLBACK_HIGHLIGHT_COLOR;
 
@@ -71,6 +91,9 @@ private:
     bool isCaseSensitive_;
     QUrl soundUrl_;
     std::shared_ptr<QColor> color_;
+    std::shared_ptr<QColor> matchColor_;
+    HighlightMatchStyle matchStyle_{HighlightMatchStyle::Outline};
+    HighlightChannelScope channelScope_;
     QRegularExpression regex_;
 };
 
@@ -102,6 +125,23 @@ struct Serialize<chatterino::HighlightPhrase> {
         chatterino::rj::set(ret, "soundUrl", value.getSoundUrl().toString(), a);
         chatterino::rj::set(ret, "color",
                             value.getColor()->name(QColor::HexArgb), a);
+        chatterino::rj::set(ret, "matchColor",
+                            value.getMatchColor()->name(QColor::HexArgb), a);
+        chatterino::rj::set(
+            ret, "matchStyle",
+            chatterino::highlightMatchStyleName(value.getMatchStyle()), a);
+        chatterino::rj::set(ret, "channelScope",
+                            chatterino::highlightChannelScopeModeKey(
+                                value.getChannelScope().mode()),
+                            a);
+        std::vector<QString> channelTargets;
+        channelTargets.reserve(value.getChannelScope().targets().size());
+        for (const auto &target : value.getChannelScope().targets())
+        {
+            channelTargets.emplace_back(
+                chatterino::encodeHighlightChannelTarget(target));
+        }
+        chatterino::rj::set(ret, "channelTargets", channelTargets, a);
 
         return ret;
     }
@@ -136,6 +176,23 @@ struct Deserialize<chatterino::HighlightPhrase> {
         chatterino::rj::getSafe(value, "case", _isCaseSensitive);
         chatterino::rj::getSafe(value, "soundUrl", _soundUrl);
         chatterino::rj::getSafe(value, "color", encodedColor);
+        QString encodedMatchColor;
+        QString matchStyle;
+        chatterino::rj::getSafe(value, "matchColor", encodedMatchColor);
+        chatterino::rj::getSafe(value, "matchStyle", matchStyle);
+
+        QString channelScope;
+        std::vector<QString> encodedChannelTargets;
+        chatterino::rj::getSafe(value, "channelScope", channelScope);
+        chatterino::rj::getSafe(value, "channelTargets", encodedChannelTargets);
+        std::vector<chatterino::HighlightChannelTarget> channelTargets;
+        for (const auto &encoded : encodedChannelTargets)
+        {
+            if (auto target = chatterino::decodeHighlightChannelTarget(encoded))
+            {
+                channelTargets.emplace_back(std::move(*target));
+            }
+        }
 
         auto _color = QColor(encodedColor);
         if (!_color.isValid())
@@ -143,9 +200,20 @@ struct Deserialize<chatterino::HighlightPhrase> {
             _color = chatterino::HighlightPhrase::FALLBACK_HIGHLIGHT_COLOR;
         }
 
-        return chatterino::HighlightPhrase(_pattern, _showInMentions, _hasAlert,
-                                           _hasSound, _isRegex,
-                                           _isCaseSensitive, _soundUrl, _color);
+        auto _matchColor = QColor(encodedMatchColor);
+        if (!_matchColor.isValid())
+        {
+            // a phrase from before there were markers
+            _matchColor = chatterino::defaultHighlightMatchColor(_color);
+        }
+
+        return chatterino::HighlightPhrase(
+            _pattern, _showInMentions, _hasAlert, _hasSound, _isRegex,
+            _isCaseSensitive, _soundUrl, _color, _matchColor,
+            chatterino::highlightMatchStyleFromName(matchStyle),
+            chatterino::HighlightChannelScope{
+                chatterino::highlightChannelScopeModeFromKey(channelScope),
+                std::move(channelTargets)});
     }
 };
 

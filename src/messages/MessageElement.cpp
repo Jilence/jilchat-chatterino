@@ -384,10 +384,19 @@ namespace {
 bool marksMatchedText(const MessageLayoutContext &ctx,
                       MessageElementFlags flags)
 {
-    return ctx.message.highlightMatches != nullptr &&
-           getSettings()->autoModReviewHighlightMatches &&
-           !flags.has(MessageElementFlag::IgnoreExactMatch) &&
-           !flags.has(MessageElementFlag::RepliedMessage);
+    if (ctx.message.highlightMatches == nullptr ||
+        ctx.message.highlightMatches->empty() ||
+        flags.has(MessageElementFlag::IgnoreExactMatch) ||
+        flags.has(MessageElementFlag::RepliedMessage))
+    {
+        return false;
+    }
+
+    // a message has either the matches of AutoMod or those of highlights
+    return ctx.message.highlightMatches->front().source ==
+                   HighlightMatchSource::AutoMod
+               ? getSettings()->autoModReviewHighlightMatches
+               : getSettings()->highlightMatchedFragments;
 }
 
 /// Marks the image of an emote whose name was matched

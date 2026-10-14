@@ -11,6 +11,7 @@
 #include "controllers/highlights/HighlightCheck.hpp"
 #include "controllers/highlights/HighlightPhrase.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/HighlightWordList.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "providers/colors/ColorProvider.hpp"
@@ -28,16 +29,18 @@ using namespace chatterino;
 auto highlightPhraseCheck(const HighlightPhrase &highlight) -> HighlightCheck
 {
     return HighlightCheck{
-        [highlight](const auto &args, const auto &twitchBadges,
-                    const auto &senderName, const auto &originalMessage,
-                    const auto &flags,
-                    const auto self) -> std::optional<HighlightResult> {
+        [highlight](
+            const auto &args, const auto &twitchBadges, const auto &senderName,
+            const auto &originalMessage, const auto &flags, const auto self,
+            const auto platform, const auto &channelName,
+            const auto collectMatches) -> std::optional<HighlightResult> {
             (void)args;
             (void)twitchBadges;
             (void)senderName;
             (void)flags;
 
-            if (self)
+            if (self || !highlight.getChannelScope().appliesToNormalized(
+                            platform, channelName))
             {
                 return std::nullopt;
             }
@@ -53,11 +56,30 @@ auto highlightPhraseCheck(const HighlightPhrase &highlight) -> HighlightCheck
                 highlightSoundUrl = highlight.getSoundUrl();
             }
 
-            return HighlightResult{
+            auto result = HighlightResult{
                 highlight.hasAlert(),       highlight.hasSound(),
                 highlightSoundUrl,          highlight.getColor(),
                 highlight.showInMentions(),
             };
+            if (collectMatches &&
+                highlight.getMatchStyle() != HighlightMatchStyle::None)
+            {
+                for (const auto &[start, length] :
+                     highlight.findMatches(originalMessage))
+                {
+                    result.matches.push_back({
+                        .start = start,
+                        .length = length,
+                        .color = *highlight.getMatchColor(),
+                        .ruleName = highlight.getPattern(),
+                        .pattern = highlight.getPattern(),
+                        .source = HighlightMatchSource::Phrase,
+                        .style = highlight.getMatchStyle(),
+                        .paintID = {},
+                    });
+                }
+            }
+            return result;
         }};
 }
 
@@ -78,8 +100,9 @@ void rebuildSubscriptionHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [=](const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)twitchBadges;
                 (void)senderName;
                 (void)originalMessage;
@@ -120,8 +143,9 @@ void rebuildFollowHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [=](const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)twitchBadges;
                 (void)senderName;
@@ -162,8 +186,9 @@ void rebuildWhisperHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [=](const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)twitchBadges;
                 (void)senderName;
                 (void)originalMessage;
@@ -204,8 +229,9 @@ void rebuildReplyThreadHighlight(Settings &settings,
             settings.showThreadHighlightInMentions.getValue();
         checks.emplace_back(HighlightCheck{
             [=](const auto &, const auto &, const auto &, const auto &,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 if (flags.has(MessageFlag::SubscribedThread) && !self)
                 {
                     return HighlightResult{
@@ -226,6 +252,15 @@ void rebuildReplyThreadHighlight(Settings &settings,
 void rebuildMessageHighlights(Settings &settings,
                               std::vector<HighlightCheck> &checks)
 {
+    // how the own name is marked where it is mentioned
+    auto selfMatchColor = QColor(settings.selfHighlightMatchColor.getValue());
+    if (!selfMatchColor.isValid())
+    {
+        selfMatchColor = defaultNewHighlightMatchColor();
+    }
+    const auto selfMatchStyle = highlightMatchStyleFromName(
+        settings.selfHighlightMatchStyle.getValue());
+
     auto currentUser = getApp()->getAccounts()->twitch.getCurrent();
     QString currentUsername = currentUser->getUserName();
 
@@ -237,7 +272,8 @@ void rebuildMessageHighlights(Settings &settings,
             settings.enableSelfHighlightTaskbar,
             settings.enableSelfHighlightSound, false, false,
             settings.selfHighlightSoundUrl.getValue(),
-            ColorProvider::instance().color(ColorType::SelfHighlight));
+            ColorProvider::instance().color(ColorType::SelfHighlight),
+            std::make_shared<QColor>(selfMatchColor), selfMatchStyle);
 
         checks.emplace_back(highlightPhraseCheck(highlight));
     }
@@ -252,7 +288,8 @@ void rebuildMessageHighlights(Settings &settings,
             settings.enableSelfHighlightTaskbar,
             settings.enableSelfHighlightSound, false, false,
             settings.selfHighlightSoundUrl.getValue(),
-            ColorProvider::instance().color(ColorType::SelfHighlight));
+            ColorProvider::instance().color(ColorType::SelfHighlight),
+            std::make_shared<QColor>(selfMatchColor), selfMatchStyle);
 
         checks.emplace_back(highlightPhraseCheck(highlight));
     }
@@ -261,6 +298,45 @@ void rebuildMessageHighlights(Settings &settings,
     for (const auto &highlight : *messageHighlights)
     {
         checks.emplace_back(highlightPhraseCheck(highlight));
+    }
+
+    auto wordLists = settings.highlightWordLists.readOnly();
+    for (const auto &wordList : *wordLists)
+    {
+        const bool hasMarker =
+            wordList.matchStyle() != HighlightMatchStyle::None;
+        checks.emplace_back(HighlightCheck{
+            [wordList, hasMarker](
+                const auto &, const auto &, const auto &,
+                const auto &originalMessage, const auto &, const auto self,
+                const auto platform, const auto &channelName,
+                const auto collectMatches) -> std::optional<HighlightResult> {
+                if (self)
+                {
+                    return std::nullopt;
+                }
+                // looking for where it matches costs more than whether
+                auto match = wordList.matchForNormalizedChannel(
+                    originalMessage, channelName, platform,
+                    collectMatches && hasMarker
+                        ? HighlightWordListMatchMode::WithRanges
+                        : HighlightWordListMatchMode::MatchOnly);
+                if (!match.matched)
+                {
+                    return std::nullopt;
+                }
+
+                std::optional<QUrl> soundUrl;
+                if (wordList.hasCustomSound())
+                {
+                    soundUrl = wordList.soundUrl();
+                }
+                auto result = HighlightResult{
+                    wordList.hasAlert(), wordList.hasSound(), soundUrl,
+                    wordList.color(), wordList.showInMentions()};
+                result.matches = std::move(match.matches);
+                return result;
+            }});
     }
 
     if (settings.enableAutomodHighlight)
@@ -274,10 +350,11 @@ void rebuildMessageHighlights(Settings &settings,
         auto highlightColor =
             ColorProvider::instance().color(ColorType::AutomodHighlight);
 
-        checks.emplace_back(
-            HighlightCheck{[=](const auto &, const auto &, const auto &,
-                               const auto &, const auto &flags,
-                               const auto) -> std::optional<HighlightResult> {
+        checks.emplace_back(HighlightCheck{
+            [=](const auto &, const auto &, const auto &, const auto &,
+                const auto &flags, const auto, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 if (!flags.has(MessageFlag::AutoModOffendingMessage))
                 {
                     return std::nullopt;
@@ -310,8 +387,9 @@ void rebuildUserHighlights(Settings &settings,
             [showInMentions](
                 const auto &args, const auto &twitchBadges,
                 const auto &senderName, const auto &originalMessage,
-                const auto &flags,
-                const auto self) -> std::optional<HighlightResult> {
+                const auto &flags, const auto self, const auto /*platform*/,
+                const auto & /*channelName*/, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)twitchBadges;
                 (void)senderName;
@@ -336,15 +414,18 @@ void rebuildUserHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [highlight](const auto &args, const auto &twitchBadges,
                         const auto &senderName, const auto &originalMessage,
-                        const auto &flags,
-                        const auto self) -> std::optional<HighlightResult> {
+                        const auto &flags, const auto self, const auto platform,
+                        const auto &channelName, const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)twitchBadges;
                 (void)originalMessage;
                 (void)flags;
                 (void)self;
 
-                if (!highlight.isMatch(senderName))
+                if (!highlight.getChannelScope().appliesToNormalized(
+                        platform, channelName) ||
+                    !highlight.isMatch(senderName))
                 {
                     return std::nullopt;
                 }
@@ -374,8 +455,10 @@ void rebuildBadgeHighlights(Settings &settings,
         checks.emplace_back(HighlightCheck{
             [highlight](const auto &args, const auto &twitchBadges,
                         const auto &senderName, const auto &originalMessage,
-                        const auto &flags,
-                        const auto self) -> std::optional<HighlightResult> {
+                        const auto &flags, const auto self,
+                        const auto /*platform*/, const auto & /*channelName*/,
+                        const auto /*collectMatches*/)
+                -> std::optional<HighlightResult> {
                 (void)args;
                 (void)senderName;
                 (void)originalMessage;
@@ -418,6 +501,8 @@ HighlightController::HighlightController(Settings &settings,
     this->rebuildListener_.addSetting(settings.enableSelfHighlightSound);
     this->rebuildListener_.addSetting(settings.enableSelfHighlightTaskbar);
     this->rebuildListener_.addSetting(settings.selfHighlightSoundUrl);
+    this->rebuildListener_.addSetting(settings.selfHighlightMatchColor);
+    this->rebuildListener_.addSetting(settings.selfHighlightMatchStyle);
     this->rebuildListener_.addSetting(settings.showSelfHighlightInMentions);
 
     this->rebuildListener_.addSetting(settings.enableWhisperHighlight);
@@ -469,6 +554,14 @@ HighlightController::HighlightController(Settings &settings,
         getSettings()->highlightedUsers.delayedItemsChanged, [this, &settings] {
             qCDebug(chatterinoHighlights)
                 << "Rebuild checks because highlight users changed";
+            this->rebuildChecks(settings);
+        });
+
+    this->signalHolder_.managedConnect(
+        getSettings()->highlightWordLists.delayedItemsChanged,
+        [this, &settings] {
+            qCDebug(chatterinoHighlights)
+                << "Rebuild checks because highlight word lists changed";
             this->rebuildChecks(settings);
         });
 
@@ -527,8 +620,16 @@ void HighlightController::rebuildChecks(Settings &settings)
 std::pair<bool, HighlightResult> HighlightController::check(
     const MessageParseArgs &args, const std::vector<TwitchBadge> &twitchBadges,
     const QString &senderName, const QString &originalMessage,
-    const MessageFlags &messageFlags, MessagePlatform platform) const
+    const MessageFlags &messageFlags, MessagePlatform platform,
+    const QString &channelName, bool forceMatchRanges) const
 {
+    const auto normalizedChannelName =
+        normalizeHighlightChannelName(channelName);
+    const bool collectMatches =
+        forceMatchRanges || getSettings()->highlightMatchedFragments;
+
+    constexpr size_t MAX_MATCHES_PER_MESSAGE = 256;
+
     bool highlighted = false;
     auto result = HighlightResult::emptyResult();
 
@@ -555,8 +656,9 @@ std::pair<bool, HighlightResult> HighlightController::check(
 
     for (const auto &check : *checks)
     {
-        if (auto checkResult = check.cb(args, twitchBadges, senderName,
-                                        originalMessage, messageFlags, self);
+        if (auto checkResult = check.cb(
+                args, twitchBadges, senderName, originalMessage, messageFlags,
+                self, platform, normalizedChannelName, collectMatches);
             checkResult)
         {
             highlighted = true;
@@ -604,6 +706,18 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 }
             }
 
+            if (!checkResult->matches.empty() &&
+                result.matches.size() < MAX_MATCHES_PER_MESSAGE)
+            {
+                const auto count =
+                    std::min(MAX_MATCHES_PER_MESSAGE - result.matches.size(),
+                             checkResult->matches.size());
+                result.matches.insert(result.matches.end(),
+                                      checkResult->matches.begin(),
+                                      checkResult->matches.begin() +
+                                          static_cast<std::ptrdiff_t>(count));
+            }
+
             if (checkResult->showInMentions)
             {
                 if (!result.showInMentions)
@@ -612,8 +726,11 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 }
             }
 
+            // with markers, every phrase that matches is of interest
             if (result.full() &&
-                result.extraColors.size() >= HighlightResult::MAX_EXTRA_COLORS)
+                result.extraColors.size() >=
+                    HighlightResult::MAX_EXTRA_COLORS &&
+                !collectMatches)
             {
                 break;
             }

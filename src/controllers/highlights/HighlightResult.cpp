@@ -51,6 +51,21 @@ QColor defaultAutoModMatchColor()
     return {255, 177, 64, 128};
 }
 
+QColor defaultNewHighlightMatchColor()
+{
+    return {255, 255, 255, 235};
+}
+
+QColor defaultHighlightMatchColor(QColor messageHighlightColor)
+{
+    if (!messageHighlightColor.isValid())
+    {
+        messageHighlightColor = QColor(127, 63, 73);
+    }
+    messageHighlightColor.setAlpha(150);
+    return messageHighlightColor;
+}
+
 HighlightResult::HighlightResult(bool _alert, bool _playSound,
                                  std::optional<QUrl> _customSoundUrl,
                                  std::shared_ptr<QColor> _color,

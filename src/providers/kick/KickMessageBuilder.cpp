@@ -454,7 +454,7 @@ HighlightAlert processHighlights(KickMessageBuilder &builder,
 
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
         args, {}, builder->loginName, builder->messageText, builder->flags,
-        builder->platform);
+        builder->platform, builder->channelName);
 
     if (!highlighted)
     {
@@ -464,6 +464,12 @@ HighlightAlert processHighlights(KickMessageBuilder &builder,
     builder->flags.set(MessageFlag::Highlighted);
     builder->highlightColor = highlightResult.color;
     builder->extraHighlightColors = highlightResult.extraColors;
+    if (!highlightResult.matches.empty())
+    {
+        builder->highlightMatches =
+            std::make_shared<const std::vector<HighlightMatch>>(
+                std::move(highlightResult.matches));
+    }
 
     if (highlightResult.showInMentions)
     {

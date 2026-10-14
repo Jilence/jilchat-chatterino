@@ -3224,7 +3224,8 @@ HighlightAlert MessageBuilder::parseHighlights(Communi::TagsRef tags,
     auto badges = parseBadgeTag(tags);
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
         args, badges, this->message().loginName, originalMessage,
-        this->message().flags, this->message().platform);
+        this->message().flags, this->message().platform,
+        this->message().channelName);
 
     if (!highlighted)
     {
@@ -3237,6 +3238,12 @@ HighlightAlert MessageBuilder::parseHighlights(Communi::TagsRef tags,
 
     this->message().highlightColor = highlightResult.color;
     this->message().extraHighlightColors = highlightResult.extraColors;
+    if (!highlightResult.matches.empty())
+    {
+        this->message().highlightMatches =
+            std::make_shared<const std::vector<HighlightMatch>>(
+                std::move(highlightResult.matches));
+    }
 
     if (highlightResult.showInMentions)
     {

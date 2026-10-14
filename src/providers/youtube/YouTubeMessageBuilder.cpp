@@ -79,7 +79,7 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     const std::vector<TwitchBadge> noBadges;
     auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
         args, noBadges, builder->displayName, builder->messageText,
-        builder->flags, builder->platform);
+        builder->flags, builder->platform, builder->channelName);
 
     if (!highlighted)
     {
@@ -87,6 +87,12 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     builder->flags.set(MessageFlag::Highlighted);
+    if (!highlightResult.matches.empty())
+    {
+        builder->highlightMatches =
+            std::make_shared<const std::vector<HighlightMatch>>(
+                std::move(highlightResult.matches));
+    }
     if (!builder->highlightColor)
     {
         builder->highlightColor = highlightResult.color;

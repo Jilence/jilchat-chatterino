@@ -5,6 +5,7 @@
 #pragma once
 
 #include "common/SignalVectorModel.hpp"
+#include "controllers/highlights/HighlightChannelScope.hpp"
 
 #include <QObject>
 
@@ -17,6 +18,18 @@ class HighlightModel : public SignalVectorModel<HighlightPhrase>
 public:
     explicit HighlightModel(QObject *parent);
 
+    static constexpr int MatchStyleRole = Qt::UserRole;
+    static constexpr int ChannelScopeRole = Qt::UserRole + 2;
+
+    /// Shows `scope` in a cell, or nothing if the row can't have one
+    static void setChannelScopeItem(QStandardItem *item,
+                                    const HighlightChannelScope &scope,
+                                    bool enabled = true);
+    static QStringList channelScopeData(const HighlightChannelScope &scope);
+    static HighlightChannelScope channelScopeFromData(const QVariant &data);
+    static HighlightChannelScope channelScopeFromItem(
+        const QStandardItem *item);
+
     enum Column {
         Pattern = 0,
         ShowInMentions = 1,
@@ -26,6 +39,11 @@ public:
         PlaySound = 5,
         SoundPath = 6,
         Color = 7,
+        /// How the text that matched is marked: the color is its decoration,
+        /// the style is in MatchStyleRole
+        MatchAppearance = 8,
+        /// The channels the highlight applies in, see ChannelScopeRole
+        ChannelScope = 9,
         COUNT
     };
 

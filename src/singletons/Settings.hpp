@@ -16,6 +16,7 @@
 #include "controllers/highlights/HighlightBadge.hpp"
 #include "controllers/highlights/HighlightBlacklistUser.hpp"
 #include "controllers/highlights/HighlightPhrase.hpp"
+#include "controllers/highlights/HighlightWordList.hpp"
 #include "controllers/ignores/IgnorePhrase.hpp"
 #include "controllers/logging/ChannelLog.hpp"
 #include "controllers/moderationactions/ModerationAction.hpp"
@@ -1419,13 +1420,6 @@ public:
         "/leafyrino/showSupibotCommandAliases", true};
     BoolSetting hideUnavailableModCommands{
         "/moltorino/hideUnavailableModCommands", true};
-    /// The order the user wants their own badges in, see OwnBadgeLayout:
-    /// the key of each badge, a tab, and what it was called
-    ChatterinoSetting<std::vector<QString>> ownBadgeOrder = {
-        "/appearance/badges/ownOrder"};
-    /// The keys of the own badges the user hides
-    ChatterinoSetting<std::vector<QString>> ownBadgeHidden = {
-        "/appearance/badges/ownHidden"};
     /// Show messages held by AutoMod with all their actions in the chat,
     /// instead of the compact two lines with Allow and Deny
     BoolSetting advancedAutoModInChat{
@@ -1459,6 +1453,15 @@ public:
     /// The marker of what AutoMod matched: (255, 177, 64, 128) by default
     QStringSetting automodMatchHighlightColor{
         "/highlighting/automod/matchedFragment/color", "#80ffb140"};
+    /// Mark the text a highlight phrase matched
+    BoolSetting highlightMatchedFragments{
+        "/highlighting/matchedFragments/enabled", false};
+    /// How the own name is marked where it is mentioned. Empty is the default
+    /// color; the style is the name of a HighlightMatchStyle.
+    QStringSetting selfHighlightMatchColor{
+        "/highlighting/selfHighlight/matchColor", ""};
+    QStringSetting selfHighlightMatchStyle{
+        "/highlighting/selfHighlight/matchStyle", "Outline"};
     /// A HighlightMatchStyle, Fill by default
     IntSetting automodMatchHighlightStyle{
         "/highlighting/automod/matchedFragment/style", 2};
@@ -1501,6 +1504,8 @@ private:
         {"/highlighting/highlights"};
     ChatterinoSetting<std::vector<HighlightPhrase>> highlightedUsersSetting = {
         "/highlighting/users"};
+    ChatterinoSetting<std::vector<HighlightWordList>>
+        highlightWordListsSetting = {"/highlighting/wordLists"};
     ChatterinoSetting<std::vector<HighlightBadge>> highlightedBadgesSetting = {
         "/highlighting/badges"};
     ChatterinoSetting<std::vector<HighlightBlacklistUser>>
@@ -1534,6 +1539,7 @@ private:
 public:
     SignalVector<HighlightPhrase> highlightedMessages;
     SignalVector<HighlightPhrase> highlightedUsers;
+    SignalVector<HighlightWordList> highlightWordLists;
     SignalVector<HighlightBadge> highlightedBadges;
     SignalVector<HighlightBlacklistUser> blacklistedUsers;
     SignalVector<IgnorePhrase> ignoredMessages;

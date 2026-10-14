@@ -46,16 +46,20 @@ bool HighlightPhrase::operator==(const HighlightPhrase &other) const
 {
     return std::tie(this->pattern_, this->showInMentions_, this->hasSound_,
                     this->hasAlert_, this->isRegex_, this->isCaseSensitive_,
-                    this->soundUrl_, this->color_) ==
+                    this->soundUrl_, this->color_, this->matchColor_,
+                    this->matchStyle_, this->channelScope_) ==
            std::tie(other.pattern_, other.showInMentions_, other.hasSound_,
                     other.hasAlert_, other.isRegex_, other.isCaseSensitive_,
-                    other.soundUrl_, other.color_);
+                    other.soundUrl_, other.color_, other.matchColor_,
+                    other.matchStyle_, other.channelScope_);
 }
 
 HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
                                  bool hasAlert, bool hasSound, bool isRegex,
                                  bool isCaseSensitive, const QString &soundUrl,
-                                 QColor color)
+                                 QColor color, QColor matchColor,
+                                 HighlightMatchStyle matchStyle,
+                                 HighlightChannelScope channelScope)
     : pattern_(pattern)
     , showInMentions_(showInMentions)
     , hasAlert_(hasAlert)
@@ -72,12 +76,19 @@ HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
                                    : QRegularExpression::CaseInsensitiveOption))
 {
     this->color_ = std::make_shared<QColor>(color);
+    this->matchColor_ = std::make_shared<QColor>(
+        matchColor.isValid() ? matchColor : defaultNewHighlightMatchColor());
+    this->matchStyle_ = matchStyle;
+    this->channelScope_ = std::move(channelScope);
 }
 
 HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
                                  bool hasAlert, bool hasSound, bool isRegex,
                                  bool isCaseSensitive, const QString &soundUrl,
-                                 std::shared_ptr<QColor> color)
+                                 std::shared_ptr<QColor> color,
+                                 std::shared_ptr<QColor> matchColor,
+                                 HighlightMatchStyle matchStyle,
+                                 HighlightChannelScope channelScope)
     : pattern_(pattern)
     , showInMentions_(showInMentions)
     , hasAlert_(hasAlert)
@@ -86,6 +97,9 @@ HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
     , isCaseSensitive_(isCaseSensitive)
     , soundUrl_(soundUrl)
     , color_(std::move(color))
+    , matchColor_(std::move(matchColor))
+    , matchStyle_(matchStyle)
+    , channelScope_(std::move(channelScope))
     , regex_(isRegex_
                  ? pattern
                  : REGEX_START_BOUNDARY % QRegularExpression::escape(pattern) %
@@ -94,6 +108,11 @@ HighlightPhrase::HighlightPhrase(const QString &pattern, bool showInMentions,
                  (isCaseSensitive_ ? QRegularExpression::NoPatternOption
                                    : QRegularExpression::CaseInsensitiveOption))
 {
+    if (!this->matchColor_)
+    {
+        this->matchColor_ =
+            std::make_shared<QColor>(defaultNewHighlightMatchColor());
+    }
 }
 
 const QString &HighlightPhrase::getPattern() const
@@ -149,6 +168,55 @@ const QUrl &HighlightPhrase::getSoundUrl() const
 const std::shared_ptr<QColor> HighlightPhrase::getColor() const
 {
     return this->color_;
+}
+
+std::vector<std::pair<qsizetype, qsizetype>> HighlightPhrase::findMatches(
+    const QString &subject) const
+{
+    constexpr size_t MAX_MATCHES = 128;
+
+    std::vector<std::pair<qsizetype, qsizetype>> matches;
+    if (!this->isValid())
+    {
+        return matches;
+    }
+
+    auto it = this->regex_.globalMatch(subject);
+    while (it.hasNext() && matches.size() < MAX_MATCHES)
+    {
+        const auto match = it.next();
+        auto start = match.capturedStart();
+        auto end = match.capturedEnd();
+        // a phrase is matched together with the whitespace around it
+        while (start < end && subject.at(start).isSpace())
+        {
+            ++start;
+        }
+        while (end > start && subject.at(end - 1).isSpace())
+        {
+            --end;
+        }
+        if (end > start)
+        {
+            matches.emplace_back(start, end - start);
+        }
+    }
+    return matches;
+}
+
+const std::shared_ptr<QColor> HighlightPhrase::getMatchColor() const
+{
+    return this->matchColor_;
+}
+
+HighlightMatchStyle HighlightPhrase::getMatchStyle() const
+{
+    return this->matchStyle_;
+}
+
+const HighlightChannelScope &HighlightPhrase::getChannelScope() const
+{
+    return this->channelScope_;
 }
 
 }  // namespace chatterino

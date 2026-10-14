@@ -608,6 +608,8 @@ Settings::Settings(const Modes &modes, const Args &args,
                            this->highlightedMessages);
     initializeSignalVector(this->signalHolder, this->highlightedUsersSetting,
                            this->highlightedUsers);
+    initializeSignalVector(this->signalHolder, this->highlightWordListsSetting,
+                           this->highlightWordLists);
     initializeSignalVector(this->signalHolder, this->highlightedBadgesSetting,
                            this->highlightedBadges);
     initializeSignalVector(this->signalHolder, this->blacklistedUsersSetting,

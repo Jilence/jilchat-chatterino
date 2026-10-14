@@ -1055,25 +1055,6 @@ MoltorinoPage::MoltorinoPage()
         ->addKeywords({"automod", "hover", "reason"})
         ->addTo(*view);
 
-    SettingWidget::colorButton("Marker color", s.automodMatchHighlightColor)
-        ->conditionallyEnabledBy(s.autoModReviewHighlightMatches)
-        ->addTo(*view);
-
-    view->addDropdown<int>(
-            "Marker style",
-            {"Fill", "Outline", "Outline and fill", "Underline"},
-            s.automodMatchHighlightStyle,
-            [](auto val) {
-                return highlightMatchStyleName(
-                    static_cast<HighlightMatchStyle>(val));
-            },
-            [](auto args) {
-                return static_cast<int>(
-                    highlightMatchStyleFromName(args.value));
-            },
-            false)
-        ->setToolTip("How the words AutoMod matched are marked.");
-
     view->addSubtitle("Review queue");
 
     view->addDropdown<int>(

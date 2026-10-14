@@ -38,7 +38,8 @@ public:
         const MessageParseArgs &args,
         const std::vector<TwitchBadge> &twitchBadges, const QString &senderName,
         const QString &originalMessage, const MessageFlags &messageFlags,
-        MessagePlatform platform = MessagePlatform::AnyOrTwitch) const;
+        MessagePlatform platform = MessagePlatform::AnyOrTwitch,
+        const QString &channelName = {}, bool forceMatchRanges = false) const;
 
 private:
     void rebuildChecks(Settings &settings);
