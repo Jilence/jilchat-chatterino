@@ -1462,6 +1462,13 @@ public:
     /// A HighlightMatchStyle, Fill by default
     IntSetting automodMatchHighlightStyle{
         "/highlighting/automod/matchedFragment/style", 2};
+    /// Show the emotes Tab cycles through as a row of images above the input
+    BoolSetting showEmoteTabCarousel{"/moltorino/showEmoteTabCarousel", false};
+    /// "compact", "standard", "large" or "extra-large"
+    QStringSetting emoteTabCarouselSize{"/moltorino/emoteTabCarouselSize",
+                                        "standard"};
+    BoolSetting showEmoteTabCarouselNames{
+        "/moltorino/showEmoteTabCarouselNames", true};
     BoolSetting showFollowButtonInSplitHeader{
         "/moltorino/showFollowButtonInSplitHeader", true};
     BoolSetting showFollowEventsInChat{"/moltorino/showFollowEventsInChat",

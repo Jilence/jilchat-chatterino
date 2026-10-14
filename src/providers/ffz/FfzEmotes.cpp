@@ -367,6 +367,12 @@ void FfzEmotes::loadChannel(
                 {
                     shared->addSystemMessage(CHANNEL_HAS_NO_EMOTES);
                 }
+                // the channel's badges came with the same answer
+                if (getSettings()->showBadgesFfz)
+                {
+                    shared->addSystemMessage(
+                        "FrankerFaceZ channel badges reloaded.");
+                }
             }
         },
         [channelID, channel, manualRefresh, cacheHit](const auto &result) {
