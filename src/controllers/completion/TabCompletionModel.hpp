@@ -11,10 +11,15 @@
 #include <QStringListModel>
 
 #include <optional>
+#include <vector>
 
 namespace chatterino {
 
 class Channel;
+
+namespace completion {
+struct EmoteItem;
+}  // namespace completion
 
 class TabCompletionModel : public QStringListModel
 {
@@ -23,6 +28,10 @@ public:
 
     void updateResults(const QString &query, const QString &fullTextContent,
                        int cursorPosition, bool isFirstWord = false);
+
+    /// The emote the completion at `row` stands for, or nullptr if it isn't
+    /// an emote
+    const completion::EmoteItem *emoteAt(int row) const;
 
 private:
     enum class SourceKind {
@@ -53,6 +62,9 @@ private:
 
     Channel &channel_;
     std::unique_ptr<completion::Source> source_{};
+    /// For every row its index in the source, or -1 if it didn't come from
+    /// there (completions of plugins)
+    std::vector<qsizetype> sourceRows_;
 };
 
 }  // namespace chatterino

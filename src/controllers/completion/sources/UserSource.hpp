@@ -36,6 +36,9 @@ public:
 
     const std::vector<UserItem> &output() const;
 
+    qsizetype tabCompletionCount() const override;
+    const EmoteItem *emoteAtTabCompletionIndex(qsizetype index) const override;
+
 private:
     void initializeFromChannel(const Channel *channel);
 

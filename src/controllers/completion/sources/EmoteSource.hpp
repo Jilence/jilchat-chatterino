@@ -29,6 +29,10 @@ struct EmoteItem {
     QString providerName{};
 
     bool isEmoji{};
+
+    /// Whether there is an image to show for this item
+    bool hasRenderableEmote() const;
+    EmotePtr getEmote() const;
 };
 
 class EmoteSource : public Source
@@ -47,6 +51,9 @@ public:
                          bool isFirstWord = false) const override;
 
     const std::vector<EmoteItem> &output() const;
+
+    qsizetype tabCompletionCount() const override;
+    const EmoteItem *emoteAtTabCompletionIndex(qsizetype index) const override;
 
 private:
     void initializeFromChannel(const Channel *channel);

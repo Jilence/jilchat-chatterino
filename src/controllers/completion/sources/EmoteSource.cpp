@@ -70,6 +70,16 @@ void addEmojis(std::vector<EmoteItem> &out, const std::vector<EmojiPtr> &map)
 
 }  // namespace
 
+bool EmoteItem::hasRenderableEmote() const
+{
+    return this->emote != nullptr;
+}
+
+EmotePtr EmoteItem::getEmote() const
+{
+    return this->emote;
+}
+
 EmoteSource::EmoteSource(const Channel *channel,
                          std::unique_ptr<EmoteStrategy> strategy,
                          ActionCallback callback)
@@ -104,6 +114,21 @@ void EmoteSource::addToStringList(QStringList &list, size_t maxCount,
     addVecToStringList(this->output_, list, maxCount, [](const EmoteItem &e) {
         return e.tabCompletionName + " ";
     });
+}
+
+qsizetype EmoteSource::tabCompletionCount() const
+{
+    return static_cast<qsizetype>(this->output_.size());
+}
+
+const EmoteItem *EmoteSource::emoteAtTabCompletionIndex(qsizetype index) const
+{
+    if (index < 0 || index >= this->tabCompletionCount())
+    {
+        return nullptr;
+    }
+
+    return &this->output_[static_cast<size_t>(index)];
 }
 
 void EmoteSource::initializeFromChannel(const Channel *channel)
