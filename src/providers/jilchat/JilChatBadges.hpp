@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QTimer>
 
+#include <functional>
 #include <memory>
 #include <shared_mutex>
 #include <unordered_map>
@@ -24,7 +25,9 @@ class JilChatBadges
 public:
     JilChatBadges();
 
-    void loadJilChatBadges();
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    void loadJilChatBadges(const std::function<void(bool)> &onDone = {});
 
     std::vector<EmotePtr> getBadges(const UserId &id) const;
 

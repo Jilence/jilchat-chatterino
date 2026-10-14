@@ -684,4 +684,15 @@ const std::vector<CommandItem> &CommandSource::output() const
     return this->output_;
 }
 
+qsizetype CommandSource::tabCompletionCount() const
+{
+    return static_cast<qsizetype>(this->output_.size());
+}
+
+const EmoteItem *CommandSource::emoteAtTabCompletionIndex(
+    qsizetype /*index*/) const
+{
+    return nullptr;
+}
+
 }  // namespace chatterino::completion

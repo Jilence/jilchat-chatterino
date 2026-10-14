@@ -8,6 +8,7 @@
 #include <QString>
 #include <QTimer>
 
+#include <functional>
 #include <optional>
 #include <shared_mutex>
 #include <unordered_map>
@@ -26,7 +27,9 @@ public:
     explicit MoltorinoSupporterBadges(QObject *parent = nullptr);
 
     void initialize();
-    void refreshNow();
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    void refreshNow(std::function<void(bool)> onDone = {});
     void refreshPassive();
     void refreshIfNewer(int version);
 
@@ -52,6 +55,10 @@ private:
     std::optional<int> pendingMinimumVersion_;
     QDateTime lastFetchAttempt_;
     QTimer refreshTimer_;
+
+    /// Wait for the next request that isn't followed by another one right away
+    std::vector<std::function<void(bool)>> waiting_;
+    bool lastRequestSucceeded_ = false;
 };
 
 }  // namespace chatterino

@@ -54,6 +54,7 @@
 #include "util/FormatTime.hpp"
 #include "util/Helpers.hpp"
 #include "util/PostToThread.hpp"
+#include "util/ReloadBadges.hpp"
 #include "util/VectorMessageSink.hpp"
 #include "widgets/Window.hpp"
 
@@ -1176,19 +1177,9 @@ void TwitchChannel::refreshFFZChannelEmotes(bool manualRefresh)
 
 void TwitchChannel::refreshBadgesProviders()
 {
-    getApp()->getHomiesBadges()->loadHomiesBadges();
-    this->addSystemMessage("Homies badges reloaded.");
-    getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
-    this->addSystemMessage("FolhinhaBot badges reloaded.");
-    if (auto *badges = getApp()->getMoltorinoSupporterBadges())
-    {
-        badges->refreshNow();
-        this->addSystemMessage("Moltorino badges reloaded.");
-    }
-    getApp()->getJilChatBadges()->loadJilChatBadges();
-    this->addSystemMessage("JilChat badges reloaded.");
-    getApp()->getBluzyrinoBadges()->loadBluzyrinoBadges();
-    this->addSystemMessage("Bluzyrino badges reloaded.");
+    // the channel's own badges, without a message
+    this->refreshBadges();
+    reloadBadgeProviders(this->shared_from_this());
 }
 
 void TwitchChannel::refreshSevenTVChannelEmotes(bool manualRefresh)
@@ -4080,6 +4071,9 @@ void TwitchChannel::refreshBadges()
                 return;
             }
 
+            // loading again replaces the badges: a version the channel
+            // removed doesn't stay around
+            shared->badgeSets_.access()->clear();
             shared->addTwitchBadgeSets(channelBadges);
         },
         // failureCallback

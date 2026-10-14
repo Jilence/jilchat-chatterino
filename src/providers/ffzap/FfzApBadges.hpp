@@ -8,6 +8,7 @@
 #include <QHashFunctions>
 #include <QString>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -30,9 +31,13 @@ public:
 
     std::optional<Badge> getBadge(const QString &userID) const;
 
-private:
-    void load();
+    /// Loads the badges, replacing the ones loaded before.
+    ///
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    void load(const std::function<void(bool)> &onDone = {});
 
+private:
     mutable std::shared_mutex mutex_;
     std::unordered_map<QString, Badge> badgeMap_;
 };

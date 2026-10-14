@@ -36,6 +36,7 @@ namespace chatterino {
 class Split;
 class EmotePopup;
 class InputCompletionPopup;
+class EmoteTabCompletionCarousel;
 class InputHighlighter;
 class MessageView;
 class LabelButton;
@@ -246,6 +247,8 @@ protected:
         QWidget *channelPointRewardPromptWidget;
         QLabel *channelPointRewardPromptTitle;
 #endif
+
+        EmoteTabCompletionCarousel *emoteTabCompletionCarousel;
 
         // input widgets
         QWidget *inputWrapper;

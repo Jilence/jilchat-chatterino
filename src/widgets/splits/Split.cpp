@@ -13,10 +13,6 @@
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
-#include "providers/bluzyrino/BluzyrinoBadges.hpp"
-#include "providers/folhinha/FolhinhaBadges.hpp"
-#include "providers/homies/HomiesBadges.hpp"
-#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/twitch/ChannelManagement.hpp"
@@ -32,6 +28,7 @@
 #include "util/CustomPlayer.hpp"
 #include "util/IncognitoBrowser.hpp"
 #include "util/MultiChannel.hpp"
+#include "util/ReloadBadges.hpp"
 #include "util/StreamLink.hpp"
 #include "widgets/ChatterListWidget.hpp"
 #include "widgets/dialogs/RewardQueueDialog.hpp"
@@ -618,10 +615,14 @@ void Split::addShortcuts()
              {
                  getApp()->getTwitchBadges()->loadTwitchBadges(
                      this->getChannel());
-                 getApp()->getHomiesBadges()->loadHomiesBadges();
-                 getApp()->getFolhinhaBadges()->loadFolhinhaBadges();
-                 getApp()->getJilChatBadges()->loadJilChatBadges();
-                 getApp()->getBluzyrinoBadges()->loadBluzyrinoBadges();
+
+                 // For a Twitch channel, reloading the channel emotes above
+                 // already loaded these (TwitchChannel::refreshBadgesProviders).
+                 if (dynamic_cast<TwitchChannel *>(
+                         this->getSelectedChannel().get()) == nullptr)
+                 {
+                     reloadBadgeProviders(this->getChannel());
+                 }
              }
 
              return "";

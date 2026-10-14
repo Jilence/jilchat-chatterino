@@ -95,25 +95,38 @@ void BluzyrinoBadges::startLoading()
     this->refreshTimer_.start();
 }
 
-void BluzyrinoBadges::loadBluzyrinoBadges()
+void BluzyrinoBadges::loadBluzyrinoBadges(
+    const std::function<void(bool)> &onDone)
 {
     NetworkRequest(QUrl(BLUZYRINO_BADGE_URL))
         .header("Accept", "application/json")
         .timeout(5000)
         .concurrent()
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, onDone](const NetworkResult &result) {
             const auto root = result.parseJson();
             if (root.isEmpty())
             {
                 qCWarning(chatterinoApp)
                     << "[Bluzyrino] Empty/invalid badge payload";
+                if (onDone)
+                {
+                    onDone(false);
+                }
                 return;
             }
             this->applyJson(root);
+            if (onDone)
+            {
+                onDone(true);
+            }
         })
-        .onError([](const NetworkResult &result) {
+        .onError([onDone](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[Bluzyrino] Failed to load badges:" << result.formatError();
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }

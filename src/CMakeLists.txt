@@ -775,6 +775,8 @@ set(SOURCE_FILES
         util/RapidJsonSerializeQStringView.hpp
         util/RatelimitBucket.cpp
         util/RatelimitBucket.hpp
+        util/ReloadBadges.cpp
+        util/ReloadBadges.hpp
         util/RenameThread.cpp
         util/RenameThread.hpp
         util/SampleData.cpp

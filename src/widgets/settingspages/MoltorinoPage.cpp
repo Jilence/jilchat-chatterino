@@ -717,6 +717,26 @@ MoltorinoPage::MoltorinoPage()
             "not available in the current channel.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Show emotes while cycling with Tab",
+                            s.showEmoteTabCarousel)
+        ->setTooltip("See the emotes you'll cycle through when you press Tab.")
+        ->addKeywords({"completion", "carousel", "preview", "image"})
+        ->addTo(*view);
+
+    SettingWidget::dropdown("Emote preview size", s.emoteTabCarouselSize,
+                            {{"Compact", "compact"},
+                             {"Standard", "standard"},
+                             {"Large", "large"},
+                             {"Extra large", "extra-large"}})
+        ->setTooltip("Choose how much room the preview takes above the input.")
+        ->conditionallyEnabledBy(s.showEmoteTabCarousel)
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show emote names", s.showEmoteTabCarouselNames)
+        ->setTooltip("Show each emote's name beneath it.")
+        ->conditionallyEnabledBy(s.showEmoteTabCarousel)
+        ->addTo(*view);
+
     SettingWidget::checkbox("Show prediction button", s.showPredictionButton)
         ->setTooltip("Show the prediction button next to the message input.")
         ->addTo(*view);
