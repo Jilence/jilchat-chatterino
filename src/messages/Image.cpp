@@ -16,6 +16,7 @@
 #include "singletons/WindowManager.hpp"
 #include "util/DebugCount.hpp"
 #include "util/Helpers.hpp"
+#include "util/MemoryReclaimer.hpp"
 #include "util/PostToThread.hpp"
 
 #include <boost/functional/hash.hpp>
@@ -852,6 +853,7 @@ void ImageExpirationPool::freeOld()
 
     size_t numExpired = 0;
     size_t eligible = 0;
+    int64_t releasedBytes = 0;
 
     auto now = std::chrono::steady_clock::now();
     for (auto it = this->allImages_.begin(); it != this->allImages_.end();)
@@ -883,6 +885,7 @@ void ImageExpirationPool::freeOld()
         if (diff > lifetime)
         {
             ++numExpired;
+            releasedBytes += img->frames_->memoryUsage();
             img->expireFrames();
 
             it = this->allImages_.erase(it);
@@ -899,6 +902,12 @@ void ImageExpirationPool::freeOld()
     DebugCount::set(DebugObject::LastImageGcExpired, numExpired);
     DebugCount::set(DebugObject::LastImageGcEligible, eligible);
     DebugCount::set(DebugObject::LastImageGcLeft, this->allImages_.size());
+
+    if (releasedBytes >= 8LL * 1024 * 1024)
+    {
+        // that much is worth giving back to the system
+        requestMemoryPressureRelief();
+    }
 }
 
 std::vector<ImageExpirationPool::ProviderUsage>

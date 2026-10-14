@@ -7,6 +7,7 @@
 #include "Application.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/automod/AutoModReviewController.hpp"
 #include "controllers/highlights/HighlightController.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
 #include "messages/Link.hpp"
@@ -381,11 +382,9 @@ void Connection::onAutomodMessageHold(
     const lib::messages::Metadata &metadata,
     const lib::payload::automod_message_hold::v2::Payload &payload)
 {
-    auto *channel = dynamic_cast<TwitchChannel *>(
-        getApp()
-            ->getTwitch()
-            ->getChannelOrEmpty(payload.event.broadcasterUserLogin.qt())
-            .get());
+    auto channel = std::dynamic_pointer_cast<TwitchChannel>(
+        getApp()->getTwitch()->getChannelOrEmpty(
+            payload.event.broadcasterUserLogin.qt()));
     if (!channel || channel->isEmpty())
     {
         qCDebug(LOG)
@@ -394,48 +393,44 @@ void Connection::onAutomodMessageHold(
         return;
     }
 
-    auto time = chronoToQDateTime(metadata.messageTimestamp);
-    auto [message, messageAlert] =
-        makeAutomodHoldMessage(channel, time, payload.event);
-
-    runInGuiThread([channel, message, messageAlert] {
-        MessageBuilder::triggerHighlights(channel, messageAlert);
-
-        channel->addMessage(message, MessageContext::Original);
-
-        getApp()->getTwitch()->getAutomodChannel()->addMessage(
-            message, MessageContext::Original);
-
-        if (getSettings()->showAutomodInMentions)
-        {
-            getApp()->getTwitch()->getMentionsChannel()->addMessage(
-                message, MessageContext::Original);
-        }
-    });
+    auto data = makeAutoModReviewHoldData(
+        QString::fromStdString(metadata.messageID),
+        chronoToQDateTime(metadata.messageTimestamp), payload.event);
+    runInGuiThread(
+        [channel = std::move(channel), data = std::move(data)]() mutable {
+            if (auto *review = getApp()->getAutoModReview())
+            {
+                review->ingestHold(std::move(data), channel);
+            }
+        });
 }
+
 void Connection::onAutomodMessageUpdate(
-    const lib::messages::Metadata & /*metadata*/,
+    const lib::messages::Metadata &metadata,
     const lib::payload::automod_message_update::v2::Payload &payload)
 {
-    auto *channel = dynamic_cast<TwitchChannel *>(
-        getApp()
-            ->getTwitch()
-            ->getChannelOrEmpty(payload.event.broadcasterUserLogin.qt())
-            .get());
+    auto channel = std::dynamic_pointer_cast<TwitchChannel>(
+        getApp()->getTwitch()->getChannelOrEmpty(
+            payload.event.broadcasterUserLogin.qt()));
     if (!channel || channel->isEmpty())
     {
         qCDebug(LOG)
-            << "Automod message hold for broadcaster we're not interested in"
+            << "Automod message update for broadcaster we're not interested in"
             << payload.event.broadcasterUserLogin.qt();
         return;
     }
 
-    // Gray out approve/deny button upon "ALLOWED" and "DENIED" statuses
-    // They are versions of automod_message_(denied|approved) but for mods.
-    auto id = "automod_" + payload.event.messageID.qt();
-    runInGuiThread([channel, id] {
-        channel->disableMessage(id);
-    });
+    // "Approved", "Denied" and "Expired" end the review of the message
+    auto data = makeAutoModReviewUpdateData(
+        QString::fromStdString(metadata.messageID),
+        chronoToQDateTime(metadata.messageTimestamp), payload.event);
+    runInGuiThread(
+        [channel = std::move(channel), data = std::move(data)]() mutable {
+            if (auto *review = getApp()->getAutoModReview())
+            {
+                review->ingestUpdate(std::move(data), channel);
+            }
+        });
 }
 
 void Connection::onChannelSuspiciousUserMessage(

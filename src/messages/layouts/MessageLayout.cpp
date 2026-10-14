@@ -134,6 +134,18 @@ size_t MessageLayout::getLineCount() const
     return this->container_.getLineCount();
 }
 
+void MessageLayout::setAutoModReviewSelected(bool selected)
+{
+    if (this->flags.has(MessageLayoutFlag::AutoModReviewSelected) == selected)
+    {
+        return;
+    }
+
+    this->flags.set(MessageLayoutFlag::AutoModReviewSelected, selected);
+    this->flags.set(MessageLayoutFlag::RequiresLayout);
+    this->flags.set(MessageLayoutFlag::RequiresBufferUpdate);
+}
+
 bool MessageLayout::layout(const MessageLayoutContext &ctx,
                            bool shouldInvalidateBuffer)
 {
@@ -219,8 +231,15 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
                                  this->emoteScale_, this->badgeScale_,
                                  this->centerBadges_, messageFlags);
 
+    ctx.resetMessageTextCursor();
     for (const auto &element : this->message_->elements)
     {
+        if (element->getFlags().has(
+                MessageElementFlag::AutoModReviewExpanded) &&
+            !this->flags.has(MessageLayoutFlag::AutoModReviewSelected))
+        {
+            continue;
+        }
         if (hideModerated && this->message_->flags.has(MessageFlag::Disabled))
         {
             continue;
@@ -611,6 +630,20 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     }
 
     painter.fillRect(buffer->rect(), backgroundColor);
+
+    if (this->flags.has(MessageLayoutFlag::AutoModReviewSelected))
+    {
+        // the selected message of the AutoMod queue
+        auto tint = ctx.messageColors.selection;
+        tint.setAlpha(26);
+        painter.fillRect(buffer->rect(), tint);
+
+        auto accent = ctx.messageColors.linkText;
+        accent.setAlpha(205);
+        painter.fillRect(
+            QRectF(0, 0, std::max(1.0, 2.0 * this->scale_), buffer->height()),
+            accent);
+    }
 
     if (prefs.multipleHighlightBands && highlights.size() > 1)
     {

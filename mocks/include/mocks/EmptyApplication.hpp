@@ -369,6 +369,12 @@ public:
         return nullptr;
     }
 
+    automod::AutoModReviewController *getAutoModReview() override
+    {
+        // not an error: views ask for it and do without
+        return nullptr;
+    }
+
     KickChatServer *getKickChatServer() override
     {
         assert(false &&

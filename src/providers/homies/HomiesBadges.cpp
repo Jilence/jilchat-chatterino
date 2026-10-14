@@ -19,7 +19,11 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <functional>
+#include <memory>
+#include <utility>
 
 namespace chatterino {
 
@@ -204,14 +208,34 @@ void HomiesBadges::queueRefresh()
     });
 }
 
-void HomiesBadges::loadHomiesBadges()
+void HomiesBadges::loadHomiesBadges(std::function<void(bool)> onDone)
 {
+    // The badges come from three places. onDone hears about it once, after
+    // all of them answered: it worked if at least one of them did.
+    struct Pending {
+        std::atomic<int> remaining{3};
+        std::atomic<bool> anySucceeded{false};
+        std::function<void(bool)> onDone;
+    };
+    auto pending = std::make_shared<Pending>();
+    pending->onDone = std::move(onDone);
+    auto finished = [pending](bool success) {
+        if (success)
+        {
+            pending->anySucceeded.store(true);
+        }
+        if (pending->remaining.fetch_sub(1) == 1 && pending->onDone)
+        {
+            pending->onDone(pending->anySucceeded.load());
+        }
+    };
+
     NetworkRequest("https://chatterinohomies.com/api/badges/list")
         .header("Accept", "application/json")
         .header("User-Agent", HOMIES_USER_AGENT)
         .timeout(5000)
         .concurrent()
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, finished](const NetworkResult &result) {
             const auto badges = extractBadgesArray(
                 result, u"chatterinohomies.com/api/badges/list"_s);
 
@@ -234,11 +258,13 @@ void HomiesBadges::loadHomiesBadges()
 
             qCDebug(chatterinoApp) << "[Homies] Loaded" << loadedCount
                                    << "badges from chatterinohomies.com";
+            finished(true);
         })
-        .onError([](const NetworkResult &result) {
+        .onError([finished](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[Homies] Failed to load chatterinohomies.com badges:"
                 << result.formatError();
+            finished(false);
         })
         .execute();
 
@@ -247,7 +273,7 @@ void HomiesBadges::loadHomiesBadges()
         .header("User-Agent", HOMIES_USER_AGENT)
         .timeout(5000)
         .concurrent()
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, finished](const NetworkResult &result) {
             const auto badges =
                 extractBadgesArray(result, u"itzalex.github.io/badges"_s);
 
@@ -270,11 +296,13 @@ void HomiesBadges::loadHomiesBadges()
 
             qCDebug(chatterinoApp) << "[Homies] Loaded" << loadedCount
                                    << "badges from itzalex.github.io/badges";
+            finished(true);
         })
-        .onError([](const NetworkResult &result) {
+        .onError([finished](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[Homies] Failed to load itzalex.github.io/badges:"
                 << result.formatError();
+            finished(false);
         })
         .execute();
 
@@ -283,7 +311,7 @@ void HomiesBadges::loadHomiesBadges()
         .header("User-Agent", HOMIES_USER_AGENT)
         .timeout(5000)
         .concurrent()
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, finished](const NetworkResult &result) {
             const auto badges =
                 extractBadgesArray(result, u"itzalex.github.io/badges2"_s);
 
@@ -306,11 +334,13 @@ void HomiesBadges::loadHomiesBadges()
 
             qCDebug(chatterinoApp) << "[Homies] Loaded" << loadedCount
                                    << "badges from itzalex.github.io/badges2";
+            finished(true);
         })
-        .onError([](const NetworkResult &result) {
+        .onError([finished](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[Homies] Failed to load itzalex.github.io/badges2:"
                 << result.formatError();
+            finished(false);
         })
         .execute();
 }

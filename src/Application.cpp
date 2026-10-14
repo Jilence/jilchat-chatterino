@@ -5,6 +5,7 @@
 #include "common/Modes.hpp"
 #include "common/Version.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/automod/AutoModReviewController.hpp"
 #include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/Command.hpp"
 #include "controllers/commands/CommandController.hpp"
@@ -28,6 +29,7 @@
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "singletons/ImageUploader.hpp"
 #include "singletons/NativeMessaging.hpp"
+#include "util/MemoryReclaimer.hpp"
 #ifdef CHATTERINO_HAVE_PLUGINS
 #    include "controllers/plugins/PluginController.hpp"
 #endif
@@ -101,6 +103,8 @@ const QString BTTV_LIVE_UPDATES_URL = "wss://sockets.betterttv.net/ws";
 const QString SEVENTV_EVENTAPI_URL = "wss://events.7tv.io/v3";
 
 std::atomic<bool> STOPPED{false};
+
+constexpr int STARTUP_MEMORY_RELIEF_DELAY_MS = 30'000;
 std::atomic<bool> ABOUT_TO_QUIT{false};
 
 ISoundController *makeSoundController(Settings &settings)
@@ -195,6 +199,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , emotes(new EmoteController)
     , accounts(new AccountController)
     , eventSub(makeEventSubController(_settings))
+    , autoModReview(new automod::AutoModReviewController)
     , hotkeys(new HotkeyController)
     , windows(new WindowManager(_args, paths, _settings, *this->themes,
                                 *this->fonts))
@@ -282,6 +287,7 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->emotes->initialize();
 
     this->accounts->load();
+    this->autoModReview->initialize();
 
     this->windows->initialize();
 
@@ -406,6 +412,12 @@ void Application::initialize(Settings &settings, const Paths &paths)
 
     this->monoFontId =
         QFontDatabase::addApplicationFont(":/fonts/consolas.otf");
+
+    // Starting up leaves a lot of freed memory behind. Ask for it to be
+    // given back once things have settled.
+    QTimer::singleShot(STARTUP_MEMORY_RELIEF_DELAY_MS, qApp, [] {
+        requestMemoryPressureRelief();
+    });
 
     this->initialized = true;
 }
@@ -792,6 +804,13 @@ eventsub::IController *Application::getEventSub()
     return this->eventSub.get();
 }
 
+automod::AutoModReviewController *Application::getAutoModReview()
+{
+    assertInGuiThread();
+
+    return this->autoModReview.get();
+}
+
 SpellChecker *Application::getSpellChecker()
 {
     assertInGuiThread();
@@ -890,6 +909,7 @@ void Application::stop()
     this->toasts.reset();
     this->windows.reset();
     this->hotkeys.reset();
+    this->autoModReview.reset();
     this->eventSub.reset();
     this->accounts.reset();
     this->emotes.reset();

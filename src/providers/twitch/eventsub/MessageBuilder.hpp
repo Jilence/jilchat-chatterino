@@ -4,9 +4,11 @@
 
 #pragma once
 
+#include "controllers/automod/AutoModReviewController.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "twitch-eventsub-ws/payloads/automod-message-hold-v2.hpp"
+#include "twitch-eventsub-ws/payloads/automod-message-update-v2.hpp"
 #include "twitch-eventsub-ws/payloads/channel-chat-user-message-hold-v1.hpp"
 #include "twitch-eventsub-ws/payloads/channel-chat-user-message-update-v1.hpp"
 #include "twitch-eventsub-ws/payloads/channel-follow-v2.hpp"
@@ -17,6 +19,7 @@
 #include <QDateTime>
 
 #include <concepts>
+#include <cstdint>
 #include <utility>
 
 namespace chatterino::eventsub::detail {
@@ -167,9 +170,32 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::UnbanRequest &action);
 
-std::pair<MessagePtr, HighlightAlert> makeAutomodHoldMessage(
-    TwitchChannel *channel, const QDateTime &time,
+/// What the AutoMod review needs to know about a message being held
+automod::HoldData makeAutoModReviewHoldData(
+    QString notificationID, const QDateTime &time,
     const lib::payload::automod_message_hold::v2::Event &event);
+
+/// What the AutoMod review needs to know about a held message being resolved
+automod::UpdateData makeAutoModReviewUpdateData(
+    QString notificationID, const QDateTime &time,
+    const lib::payload::automod_message_update::v2::Event &event);
+
+enum class AutoModReviewPresentation : std::uint8_t {
+    /// In the chat: the held message with all its actions
+    ChatAdvanced,
+    /// In the chat: the compact two lines with Allow and Deny
+    ChatLegacy,
+    /// In the /automod tab
+    ReviewQueue,
+};
+
+/// The message for a message AutoMod holds, in the state it is in.
+///
+/// @param channel The channel the message was held in, may be nullptr
+MessagePtr makeAutoModReviewMessage(
+    TwitchChannel *channel, const automod::ReviewItem &item,
+    AutoModReviewPresentation presentation =
+        AutoModReviewPresentation::ChatAdvanced);
 
 MessagePtr makeSuspiciousUserMessageHeader(
     TwitchChannel *channel, const QDateTime &time,

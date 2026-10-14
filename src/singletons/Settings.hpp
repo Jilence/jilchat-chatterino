@@ -1423,6 +1423,49 @@ public:
     /// The keys of the own badges the user hides
     ChatterinoSetting<std::vector<QString>> ownBadgeHidden = {
         "/appearance/badges/ownHidden"};
+    /// Show messages held by AutoMod with all their actions in the chat,
+    /// instead of the compact two lines with Allow and Deny
+    BoolSetting advancedAutoModInChat{
+        "/moltorino/moderation/advancedAutoModInChat", true};
+    BoolSetting autoModReviewShowReason{
+        "/moltorino/moderation/autoModReview/showReason", true};
+    /// Show earlier messages of the user beneath the selected review
+    BoolSetting autoModReviewShowContext{
+        "/moltorino/moderation/autoModReview/showContext", true};
+    /// 0 = newest at the top, 1 = oldest at the top
+    IntSetting autoModReviewContextOrder{
+        "/moltorino/moderation/autoModReview/contextOrder", 1};
+    BoolSetting autoModReviewShowShortcutHints{
+        "/moltorino/moderation/autoModReview/showShortcutHints", true};
+    /// 0 = newest at the top, 1 = oldest at the top
+    IntSetting autoModReviewQueueOrder{
+        "/moltorino/moderation/autoModReview/queueOrder", 0};
+    /// Which review is selected once the selected one is done with:
+    /// 0 = the one below it, 1 = the newest, 2 = the oldest
+    IntSetting autoModReviewNextSelection{
+        "/moltorino/moderation/autoModReview/nextSelection", 2};
+    /// 0 = follow new messages, 1 = stay at the top, 2 = stay at the bottom
+    IntSetting autoModReviewScrollPosition{
+        "/moltorino/moderation/autoModReview/scrollPosition", 0};
+    /// Mark the parts of a held message that AutoMod matched
+    BoolSetting autoModReviewHighlightMatches{
+        "/moltorino/moderation/autoModReview/highlightMatches", true};
+    /// Say why AutoMod matched when hovering what it marked
+    BoolSetting autoModReviewShowMatchTooltip{
+        "/moltorino/moderation/autoModReview/showMatchTooltip", false};
+    /// The marker of what AutoMod matched: (255, 177, 64, 128) by default
+    QStringSetting automodMatchHighlightColor{
+        "/highlighting/automod/matchedFragment/color", "#80ffb140"};
+    /// A HighlightMatchStyle, Fill by default
+    IntSetting automodMatchHighlightStyle{
+        "/highlighting/automod/matchedFragment/style", 2};
+    /// Show the emotes Tab cycles through as a row of images above the input
+    BoolSetting showEmoteTabCarousel{"/moltorino/showEmoteTabCarousel", false};
+    /// "compact", "standard", "large" or "extra-large"
+    QStringSetting emoteTabCarouselSize{"/moltorino/emoteTabCarouselSize",
+                                        "standard"};
+    BoolSetting showEmoteTabCarouselNames{
+        "/moltorino/showEmoteTabCarouselNames", true};
     BoolSetting showFollowButtonInSplitHeader{
         "/moltorino/showFollowButtonInSplitHeader", true};
     BoolSetting showFollowEventsInChat{"/moltorino/showFollowEventsInChat",

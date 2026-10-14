@@ -41,6 +41,9 @@ public:
 
     const std::vector<CommandItem> &output() const;
 
+    qsizetype tabCompletionCount() const override;
+    const EmoteItem *emoteAtTabCompletionIndex(qsizetype index) const override;
+
 private:
     void initializeItems();
 

@@ -21,6 +21,7 @@ class DrawnButton;
 class LabelButton;
 class Label;
 class Split;
+class AutoModReviewBar;
 
 class SplitHeader final : public BaseWidget
 {
@@ -38,6 +39,9 @@ public:
     // Invoked when SplitHeader should update anything refering to a TwitchChannel's mode
     // has changed (e.g. sub mode toggled)
     void updateRoomModes();
+
+    /// Puts the bar of the /automod tab next to the menu button
+    void setAutoModReviewBar(AutoModReviewBar *bar);
 
 protected:
     void scaleChangedEvent(float scale) override;

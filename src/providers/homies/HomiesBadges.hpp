@@ -12,6 +12,7 @@
 
 #include <array>
 #include <atomic>
+#include <functional>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
@@ -27,7 +28,9 @@ public:
     HomiesBadges();
 
     void startLoading();
-    void loadHomiesBadges();
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    void loadHomiesBadges(std::function<void(bool)> onDone = {});
 
     std::array<EmotePtr, 3> getBadges(const QString &userId) const;
 

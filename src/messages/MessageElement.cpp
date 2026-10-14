@@ -378,6 +378,56 @@ bool EmoteElement::isGigantified() const
     return this->gigantified_;
 }
 
+namespace {
+
+/// Whether the parts of the message text that were matched get marked
+bool marksMatchedText(const MessageLayoutContext &ctx,
+                      MessageElementFlags flags)
+{
+    return ctx.message.highlightMatches != nullptr &&
+           getSettings()->autoModReviewHighlightMatches &&
+           !flags.has(MessageElementFlag::IgnoreExactMatch) &&
+           !flags.has(MessageElementFlag::RepliedMessage);
+}
+
+/// Marks the image of an emote whose name was matched
+void markMatchedImage(const MessageLayoutContext &ctx, const QString &text,
+                      MessageElementFlags flags, MessageLayoutElement *element)
+{
+    if (!marksMatchedText(ctx, flags))
+    {
+        return;
+    }
+    auto *image = dynamic_cast<ImageLayoutElement *>(element);
+    if (image == nullptr)
+    {
+        return;
+    }
+    const auto range = ctx.claimMessageTextRange(text);
+    if (!range)
+    {
+        return;
+    }
+
+    const auto rangeEnd = range->start + range->length;
+    for (const auto &match : *ctx.message.highlightMatches)
+    {
+        const auto matchEnd = match.start + match.length;
+        if (match.start < rangeEnd && matchEnd > range->start)
+        {
+            image->setFragmentHighlight({
+                .match = match,
+                .connectsBefore =
+                    match.start<range->start, .connectsAfter = matchEnd>
+                        rangeEnd,
+            });
+            return;
+        }
+    }
+}
+
+}  // namespace
+
 void EmoteElement::addToContainer(MessageLayoutContainer &container,
                                   const MessageLayoutContext &ctx)
 {
@@ -447,7 +497,10 @@ void EmoteElement::addToContainer(MessageLayoutContainer &container,
             auto emoteScale = getSettings()->emoteScale.getValue();
             auto size = image->size() * scale * emoteScale;
 
-            container.addElement(this->makeImageLayoutElement(image, size));
+            auto *layoutElement = this->makeImageLayoutElement(image, size);
+            markMatchedImage(ctx, this->emote_->getCopyString(),
+                             this->getFlags(), layoutElement);
+            container.addElement(layoutElement);
             return;
         }
     }
@@ -1253,12 +1306,21 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
         const QFont *layoutFont =
             measureUsernameWithLayout ? &usernameFont : nullptr;
 
+        const bool tracksMessageText =
+            this->getFlags().has(MessageElementFlag::Text) &&
+            marksMatchedText(ctx, this->getFlags());
+
         for (qsizetype i = 0; i < this->words_.size(); i++)
         {
             const auto &word = this->words_.at(i);
             auto wordId = container.nextWordId();
             const bool hasTrailingSpace =
                 (i + 1 < this->words_.size()) ? true : this->hasTrailingSpace();
+            const auto messageTextRange =
+                tracksMessageText
+                    ? ctx.claimMessageTextRange(word)
+                    : std::optional<MessageLayoutContext::MessageTextRange>{};
+            qsizetype wordSearchFrom = 0;
 
             auto getTextLayoutElement = [&](QString text, QSizeF size,
                                             bool hasTrailingSpace) {
@@ -1272,6 +1334,49 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
                 e->setTrailingSpace(hasTrailingSpace);
                 e->setText(text);
                 e->setWordId(wordId);
+
+                if (messageTextRange)
+                {
+                    // Where this piece of the word is in the message, and
+                    // which matches reach into it.
+                    auto wordOffset =
+                        word.indexOf(text, wordSearchFrom, Qt::CaseSensitive);
+                    if (wordOffset < 0)
+                    {
+                        return e;
+                    }
+                    wordSearchFrom = wordOffset + text.size();
+                    const auto pieceStart =
+                        messageTextRange->start + wordOffset;
+                    const auto pieceEnd = pieceStart + text.size();
+                    const bool canConnectAcrossWords =
+                        !ctx.message.messageText.isRightToLeft();
+
+                    std::vector<FragmentHighlight> localHighlights;
+                    for (const auto &match : *ctx.message.highlightMatches)
+                    {
+                        const auto matchEnd = match.start + match.length;
+                        const auto overlapStart =
+                            std::max(pieceStart, match.start);
+                        const auto overlapEnd = std::min(pieceEnd, matchEnd);
+                        if (overlapEnd <= overlapStart)
+                        {
+                            continue;
+                        }
+
+                        auto local = match;
+                        local.start = overlapStart - pieceStart;
+                        local.length = overlapEnd - overlapStart;
+                        localHighlights.push_back({
+                            .match = std::move(local),
+                            .connectsBefore = canConnectAcrossWords &&
+                                              match.start < pieceStart,
+                            .connectsAfter =
+                                canConnectAcrossWords && matchEnd > pieceEnd,
+                        });
+                    }
+                    e->setFragmentHighlights(std::move(localHighlights));
+                }
 
                 return e;
             };
@@ -2325,6 +2430,75 @@ bool TwitchModerationElement::shouldShowAction(const ModerationAction &action,
     }
 
     return false;
+}
+
+AutoModActionElement::AutoModActionElement(AutoModActionKind kind,
+                                           int timeoutSeconds,
+                                           MessageElementFlags flags)
+    : MessageElement(flags)
+    , kind_(kind)
+    , timeoutSeconds_(timeoutSeconds)
+{
+}
+
+void AutoModActionElement::addToContainer(MessageLayoutContainer &container,
+                                          const MessageLayoutContext &ctx)
+{
+    if (!ctx.flags.hasAny(this->getFlags()))
+    {
+        return;
+    }
+
+    // looks like the moderation buttons, but does what its link says
+    const QSizeF size{container.getScale() * 16, container.getScale() * 16};
+    MessageLayoutElement *element = nullptr;
+    if (this->kind_ == AutoModActionKind::Ban)
+    {
+        const ModerationAction action(u"/ban {user.name}"_s);
+        if (const auto &image = action.getImage())
+        {
+            element = new ImageLayoutElement(*this, *image, size);
+        }
+    }
+    else
+    {
+        const ModerationAction action(
+            u"/timeout {user.name} %1"_s.arg(this->timeoutSeconds_));
+        element = new TextIconLayoutElement(*this, action.getLine1(),
+                                            action.getLine2(),
+                                            container.getScale(), size);
+    }
+    if (element == nullptr)
+    {
+        return;
+    }
+
+    element->setLink(this->getLink());
+    element->setTrailingSpace(this->hasTrailingSpace());
+    container.addElement(element);
+}
+
+std::unique_ptr<MessageElement> AutoModActionElement::clone() const
+{
+    auto element = std::make_unique<AutoModActionElement>(
+        this->kind_, this->timeoutSeconds_, this->getFlags());
+    element->cloneFrom(*this);
+    return element;
+}
+
+QJsonObject AutoModActionElement::toJson() const
+{
+    auto base = MessageElement::toJson();
+    base["type"_L1] = u"AutoModActionElement"_s;
+    base["kind"_L1] = static_cast<int>(this->kind_);
+    base["timeoutSeconds"_L1] = this->timeoutSeconds_;
+
+    return base;
+}
+
+std::string_view AutoModActionElement::type() const
+{
+    return std::remove_pointer_t<decltype(this)>::TYPE;
 }
 
 LinebreakElement::LinebreakElement(MessageElementFlags flags)

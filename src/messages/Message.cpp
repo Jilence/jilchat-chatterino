@@ -147,6 +147,8 @@ std::shared_ptr<Message> Message::clone() const
     cloned->externalBadges = this->externalBadges;
     cloned->highlightColor = this->highlightColor;
     cloned->extraHighlightColors = this->extraHighlightColors;
+    cloned->autoModReview = this->autoModReview;
+    cloned->highlightMatches = this->highlightMatches;
     cloned->replyThread = this->replyThread;
     cloned->replyParent = this->replyParent;
     cloned->translatedFrom = this->translatedFrom;

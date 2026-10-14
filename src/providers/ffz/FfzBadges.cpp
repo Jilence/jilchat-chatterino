@@ -18,6 +18,8 @@
 #include <QThread>
 #include <QUrl>
 
+#include <functional>
+
 namespace chatterino {
 
 std::vector<FfzBadges::Badge> FfzBadges::getUserBadges(const UserId &id)
@@ -53,19 +55,36 @@ std::optional<FfzBadges::Badge> FfzBadges::getBadge(const int badgeID) const
     return std::nullopt;
 }
 
-void FfzBadges::load()
+void FfzBadges::load(const std::function<void(bool)> &onDone)
 {
     static QUrl url("https://api.frankerfacez.com/v1/badges/ids");
 
     NetworkRequest(url)
-        .onSuccess([this](auto result) {
+        .onSuccess([this, onDone](const auto &result) {
             std::unique_lock lock(this->mutex_);
 
             auto jsonRoot = result.parseJson();
             this->tgBadges.guard();
-            for (const auto &jsonBadge_ : jsonRoot.value("badges").toArray())
+
+            const auto jsonBadges = jsonRoot.value("badges").toArray();
+            if (jsonBadges.isEmpty())
             {
-                auto jsonBadge = jsonBadge_.toObject();
+                // an answer without badges: keep what was loaded before
+                lock.unlock();
+                if (onDone)
+                {
+                    onDone(false);
+                }
+                return;
+            }
+
+            // loading again replaces the badges and who has them
+            this->badges.clear();
+            this->userBadges.clear();
+
+            for (const auto &jsonBadgeValue : jsonBadges)
+            {
+                auto jsonBadge = jsonBadgeValue.toObject();
                 auto jsonUrls = jsonBadge.value("urls").toObject();
                 QSize baseSize(jsonBadge["width"].toInt(18),
                                jsonBadge["height"].toInt(18));
@@ -121,6 +140,19 @@ void FfzBadges::load()
             }
 
             WindowManager::notifyBadgesUpdated();
+
+            // not while holding the lock: the callback may write to a channel
+            lock.unlock();
+            if (onDone)
+            {
+                onDone(true);
+            }
+        })
+        .onError([onDone](const auto & /*result*/) {
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }

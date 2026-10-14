@@ -79,6 +79,9 @@ set(SOURCE_FILES
         controllers/accounts/AccountModel.cpp
         controllers/accounts/AccountModel.hpp
 
+        controllers/automod/AutoModReviewController.cpp
+        controllers/automod/AutoModReviewController.hpp
+
         controllers/chat/ChatAutomationController.cpp
         controllers/chat/ChatAutomationController.hpp
         controllers/commands/builtin/chatterino/Debugging.cpp
@@ -749,6 +752,8 @@ set(SOURCE_FILES
         util/Helpers.hpp
         util/OwnBadgeLayout.cpp
         util/OwnBadgeLayout.hpp
+        util/MemoryReclaimer.cpp
+        util/MemoryReclaimer.hpp
         util/HttpServer.cpp
         util/HttpServer.hpp
         util/ImageUploader.cpp
@@ -774,6 +779,8 @@ set(SOURCE_FILES
         util/RapidJsonSerializeQStringView.hpp
         util/RatelimitBucket.cpp
         util/RatelimitBucket.hpp
+        util/ReloadBadges.cpp
+        util/ReloadBadges.hpp
         util/RenameThread.cpp
         util/RenameThread.hpp
         util/SampleData.cpp
@@ -986,6 +993,8 @@ set(SOURCE_FILES
         widgets/helper/ChannelCategoryPicker.hpp
         widgets/helper/ChannelView.cpp
         widgets/helper/ChannelView.hpp
+        widgets/helper/AutoModReviewBar.cpp
+        widgets/helper/AutoModReviewBar.hpp
         widgets/helper/CmdDeleteKeyFilter.cpp
         widgets/helper/CmdDeleteKeyFilter.hpp
         widgets/helper/ComboBoxItemDelegate.cpp

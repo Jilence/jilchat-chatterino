@@ -29,6 +29,8 @@ enum class MessageElementFlag : int64_t;
 using MessageElementFlags = FlagsEnum<MessageElementFlag>;
 
 enum class MessageLayoutFlag : uint8_t {
+    /// The message is the selected one of the AutoMod queue
+    AutoModReviewSelected = 1 << 0,
     RequiresBufferUpdate = 1 << 1,
     RequiresLayout = 1 << 2,
     AlternateBackground = 1 << 3,
@@ -66,6 +68,10 @@ public:
     MessageLayoutFlags flags;
 
     bool layout(const MessageLayoutContext &ctx, bool shouldInvalidateBuffer);
+
+    /// Marks the message as the selected one of the AutoMod queue, which
+    /// shows more of it
+    void setAutoModReviewSelected(bool selected);
 
     MessagePaintResult paint(const MessagePaintContext &ctx);
     void invalidateBuffer();

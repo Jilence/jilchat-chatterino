@@ -18,6 +18,7 @@
 #include <QStringBuilder>
 #include <QTimer>
 
+#include <functional>
 #include <unordered_map>
 
 namespace chatterino {
@@ -79,13 +80,13 @@ std::optional<EmotePtr> ChatsenBadges::getBadge(const QString &userID) const
     return std::nullopt;
 }
 
-void ChatsenBadges::load()
+void ChatsenBadges::load(const std::function<void(bool)> &onDone)
 {
     NetworkRequest(
         u"https://raw.githubusercontent.com/chatsen/resources/master/assets/data.json"_s)
         .concurrent()
         .timeout(10000)
-        .onSuccess([this](const NetworkResult &result) {
+        .onSuccess([this, onDone](const NetworkResult &result) {
             const auto root = result.parseJson();
 
             // Passo 1: montar catálogo nome → EmotePtr
@@ -173,10 +174,18 @@ void ChatsenBadges::load()
 
             qCDebug(chatterinoApp)
                 << "[Chatsen] Loaded badges for" << count << "users";
+            if (onDone)
+            {
+                onDone(true);
+            }
         })
-        .onError([](const NetworkResult &result) {
+        .onError([onDone](const NetworkResult &result) {
             qCWarning(chatterinoApp)
                 << "[Chatsen] Failed to load badges:" << result.formatError();
+            if (onDone)
+            {
+                onDone(false);
+            }
         })
         .execute();
 }

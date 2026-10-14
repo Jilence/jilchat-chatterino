@@ -13,6 +13,7 @@
 #include <QString>
 #include <QVarLengthArray>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -39,7 +40,11 @@ public:
     void registerBadge(int badgeID, Badge badge);
     void assignBadgeToUser(const UserId &userID, int badgeID);
 
-    void load();
+    /// Loads the badges, replacing the ones loaded before.
+    ///
+    /// @param onDone called once the answer is there, with whether loading
+    ///               worked; from any thread
+    void load(const std::function<void(bool)> &onDone = {});
 
 private:
     std::shared_mutex mutex_;

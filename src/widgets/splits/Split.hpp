@@ -24,6 +24,7 @@
 
 namespace chatterino {
 
+class AutoModReviewBar;
 class ChannelView;
 class MessageView;
 class SplitHeader;
@@ -86,6 +87,10 @@ public:
 
     void setModerationMode(bool value);
     bool getModerationMode() const;
+
+    /// The channel the /automod tab is filtered by, empty for all
+    void setAutoModChannelFilter(QString channel);
+    QString getAutoModChannelFilter() const;
 
     std::optional<bool> checkSpellingOverride() const;
     void setCheckSpellingOverride(std::optional<bool> override);
@@ -228,6 +233,10 @@ private:
 
     QVBoxLayout *const vbox_;
     SplitHeader *const header_;
+    /// Created once the split shows the /automod tab
+    AutoModReviewBar *autoModReviewBar_{};
+    /// What the bar is set to once it exists
+    QString autoModChannelFilter_;
     PinnedMessageBanner *const pinnedBanner_;
     PredictionBanner *const predictionBanner_;
     PollBanner *const pollBanner_;
