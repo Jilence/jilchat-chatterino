@@ -355,6 +355,9 @@ public:
         "/appearance/messages/showTwitchGifs",
         true,
     };
+    /// Multiplier for large Twitch GIFs. 0.75 is the default size.
+    FloatSetting twitchGifScale = {"/appearance/messages/twitchGifScale",
+                                   0.75F};
     /// Giphy IDs saved in the GIF picker, newest first, as a JSON array.
     QStringSetting favoriteTwitchGifs{"/twitch/gifs/favorites", "[]"};
     BoolSetting separateMessages = {"/appearance/messages/separateMessages",
