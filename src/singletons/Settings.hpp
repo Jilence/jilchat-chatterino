@@ -1416,6 +1416,13 @@ public:
         "/leafyrino/showSupibotCommandAliases", true};
     BoolSetting hideUnavailableModCommands{
         "/moltorino/hideUnavailableModCommands", true};
+    /// The order the user wants their own badges in, see OwnBadgeLayout:
+    /// the key of each badge, a tab, and what it was called
+    ChatterinoSetting<std::vector<QString>> ownBadgeOrder = {
+        "/appearance/badges/ownOrder"};
+    /// The keys of the own badges the user hides
+    ChatterinoSetting<std::vector<QString>> ownBadgeHidden = {
+        "/appearance/badges/ownHidden"};
     /// Show messages held by AutoMod with all their actions in the chat,
     /// instead of the compact two lines with Allow and Deny
     BoolSetting advancedAutoModInChat{

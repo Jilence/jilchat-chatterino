@@ -750,6 +750,8 @@ set(SOURCE_FILES
         util/FuzzyConvert.hpp
         util/Helpers.cpp
         util/Helpers.hpp
+        util/OwnBadgeLayout.cpp
+        util/OwnBadgeLayout.hpp
         util/MemoryReclaimer.cpp
         util/MemoryReclaimer.hpp
         util/HttpServer.cpp

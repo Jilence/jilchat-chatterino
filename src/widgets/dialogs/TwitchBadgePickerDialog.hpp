@@ -63,6 +63,8 @@ private:
         ChannelBadges,
         EventBadges,
         Color,
+        /// The order of the user's own badges
+        Order,
         Bttv,
         BttvEffects,
         Moltorino,
@@ -91,6 +93,7 @@ private:
     void rebuildChannelBadges();
     void rebuildEventBadges();
     void rebuildColors();
+    void rebuildOrder();
     void loadMoltorinoBadges(bool force = false);
     void rebuildMoltorinoBadges();
     void selectMoltorino(const QString &badgeId);
@@ -157,6 +160,7 @@ private:
     QPushButton *channelTabButton_{};
     QPushButton *eventTabButton_{};
     QPushButton *colorTabButton_{};
+    QPushButton *orderTabButton_{};
     QPushButton *bttvTabButton_{};
     QPushButton *bttvEffectTabButton_{};
     QPushButton *moltorinoTabButton_{};
