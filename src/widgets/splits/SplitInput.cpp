@@ -1674,8 +1674,9 @@ bool SplitInput::maybeSendTranslatedMessage(
         translatedText.replace('\n', ' ');
         if (translatedText.isEmpty())
         {
-            channel->addSystemMessage(
-                QStringLiteral("Translation failed, so nothing was sent."));
+            channel->addSystemMessage(QStringLiteral(
+                "Translation failed, so nothing was sent. Try switching "
+                "providers in Settings."));
             return;
         }
         if (translatedText.size() > TWITCH_MESSAGE_LIMIT)
@@ -1730,8 +1731,9 @@ bool SplitInput::maybeSendTranslatedMessage(
             sendTranslated(result.translatedText);
         },
         [channel](const QString &) {
-            channel->addSystemMessage(
-                QStringLiteral("Translation failed, so nothing was sent."));
+            channel->addSystemMessage(QStringLiteral(
+                "Translation failed, so nothing was sent. Try switching "
+                "providers in Settings."));
         },
         [this] {
             this->outgoingTranslationSendInFlight_ = false;

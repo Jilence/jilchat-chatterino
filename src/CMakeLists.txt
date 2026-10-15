@@ -547,6 +547,9 @@ set(SOURCE_FILES
         providers/recentmessages/Impl.cpp
         providers/recentmessages/Impl.hpp
 
+        providers/translation/TranslationCredentials.cpp
+        providers/translation/TranslationRequest.cpp
+        providers/translation/TranslationRequest.hpp
         providers/translation/Translator.cpp
         providers/translation/Translator.hpp
 
@@ -924,6 +927,8 @@ set(SOURCE_FILES
         widgets/dialogs/SelectChannelFiltersDialog.hpp
         widgets/dialogs/SettingsDialog.cpp
         widgets/dialogs/SettingsDialog.hpp
+        widgets/dialogs/TranslationProviderDialog.cpp
+        widgets/dialogs/TranslationProviderDialog.hpp
         widgets/dialogs/UpdateDialog.cpp
         widgets/dialogs/UpdateDialog.hpp
         widgets/dialogs/UserInfoPopup.cpp

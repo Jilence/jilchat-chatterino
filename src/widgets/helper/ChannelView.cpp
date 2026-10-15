@@ -113,7 +113,7 @@ void addTranslationFailedMessage(const ChannelPtr &channel)
     if (channel != nullptr)
     {
         channel->addSystemMessage(
-            "There was an issue translating this message. Try again later.");
+            "Translation failed. Try switching providers in Settings.");
     }
 }
 

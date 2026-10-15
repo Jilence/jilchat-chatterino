@@ -1327,6 +1327,15 @@ public:
         "/moltorino/client/showTranslateMessageContextAction", true};
     QStringSetting messageTranslationTargetLanguage{
         "/moltorino/client/messageTranslationTargetLanguage", "en"};
+    QStringSetting translationProvider{"/moltorino/client/translationProvider",
+                                       "google"};
+    QStringSetting translationLibreEndpoint{
+        "/moltorino/client/translationLibreEndpoint",
+        "https://libretranslate.com"};
+    QStringSetting translationAzureRegion{
+        "/moltorino/client/translationAzureRegion", ""};
+    QStringSetting translationAzureEndpoint{
+        "/moltorino/client/translationAzureEndpoint", ""};
     BoolSetting showTranslatedMessageIndicator{
         "/moltorino/client/showTranslatedMessageIndicator", true};
     BoolSetting showOutgoingTranslationButton{

@@ -10,6 +10,7 @@
 #include "util/FuzzyConvert.hpp"
 #include "widgets/buttons/SignalLabel.hpp"
 #include "widgets/dialogs/MoltorinoAuthDialog.hpp"
+#include "widgets/dialogs/TranslationProviderDialog.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
 #ifndef Q_OS_MACOS
@@ -113,6 +114,16 @@ std::vector<std::pair<QString, QVariant>> outgoingTranslationModeItems()
         {QStringLiteral("Preview only"), QStringLiteral("preview")},
         {QStringLiteral("Translate on send"), QStringLiteral("send")},
     };
+}
+
+std::vector<std::pair<QString, QVariant>> translationProviderItems()
+{
+    std::vector<std::pair<QString, QVariant>> items;
+    for (const auto &provider : chatterino::translationProviders())
+    {
+        items.emplace_back(provider.name, provider.id);
+    }
+    return items;
 }
 
 QString formatTimestampStatus(const QString &isoTimestamp)
@@ -733,6 +744,30 @@ MoltorinoPage::MoltorinoPage()
         ->setTooltip("Show the poll button next to the message input.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Hide emoji button", s.hideEmojiButton)
+        ->setTooltip("Hide the emoji/emote picker button next to the message "
+                     "input.")
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show raid countdown above chat input",
+                            s.showRaidStatusAboveInput)
+        ->setTooltip("Show the raid target, viewer count, and countdown above "
+                     "the message input.")
+        ->addTo(*view);
+
+    view->addTitle("Translation");
+
+    SettingWidget::dropdown("Translation service", s.translationProvider,
+                            translationProviderItems())
+        ->setTooltip("Service used for incoming and outgoing translations.")
+        ->addTo(*view);
+
+    view->addButton("Set up translation", [this] {
+        auto *dialog = new TranslationProviderDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
+
     SettingWidget::checkbox("Show translation button",
                             s.showOutgoingTranslationButton)
         ->setTooltip("Show the chat input translation button.")
@@ -776,15 +811,20 @@ MoltorinoPage::MoltorinoPage()
                      "setting.")
         ->addTo(*view);
 
-    SettingWidget::checkbox("Hide emoji button", s.hideEmojiButton)
-        ->setTooltip("Hide the emoji/emote picker button next to the message "
-                     "input.")
+    SettingWidget::checkbox("Show Translate message in right-click menu",
+                            s.showTranslateMessageContextAction)
+        ->setTooltip("Add a right-click action for translating chat messages.")
         ->addTo(*view);
 
-    SettingWidget::checkbox("Show raid countdown above chat input",
-                            s.showRaidStatusAboveInput)
-        ->setTooltip("Show the raid target, viewer count, and countdown above "
-                     "the message input.")
+    SettingWidget::dropdown("Translate messages to",
+                            s.messageTranslationTargetLanguage,
+                            translationLanguageItems())
+        ->setTooltip("Target language for translated chat messages.")
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show translated indicator",
+                            s.showTranslatedMessageIndicator)
+        ->setTooltip("Show muted (translated) text after translated messages.")
         ->addTo(*view);
 
     view->addTitle("Moderation");
@@ -994,22 +1034,6 @@ MoltorinoPage::MoltorinoPage()
     view->addTitle("Client");
     view->addDescription(
         "Twitch chat behavior, compatibility, and client experience options.");
-
-    SettingWidget::checkbox("Show Translate message in right-click menu",
-                            s.showTranslateMessageContextAction)
-        ->setTooltip("Add a right-click action for translating chat messages.")
-        ->addTo(*view);
-
-    SettingWidget::dropdown("Translate messages to",
-                            s.messageTranslationTargetLanguage,
-                            translationLanguageItems())
-        ->setTooltip("Target language for translated chat messages.")
-        ->addTo(*view);
-
-    SettingWidget::checkbox("Show translated indicator",
-                            s.showTranslatedMessageIndicator)
-        ->setTooltip("Show muted (translated) text after translated messages.")
-        ->addTo(*view);
 
     view->addTitle("Usercards");
 

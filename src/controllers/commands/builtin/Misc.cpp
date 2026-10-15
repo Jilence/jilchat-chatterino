@@ -924,8 +924,8 @@ QString runTranslatePreviewCommand(const CommandContext &ctx,
             addTranslationSystemMessage(channel, result, targetLanguage);
         },
         [channel = ctx.channel](const QString &) {
-            channel->addSystemMessage(
-                QStringLiteral("Translation failed. Try again later."));
+            channel->addSystemMessage(QStringLiteral(
+                "Translation failed. Try switching providers in Settings."));
         });
 
     return "";
@@ -953,8 +953,9 @@ QString runTranslateSendCommand(const CommandContext &ctx,
             translatedText.replace('\n', ' ');
             if (translatedText.isEmpty())
             {
-                channel->addSystemMessage(
-                    QStringLiteral("Translation failed, so nothing was sent."));
+                channel->addSystemMessage(QStringLiteral(
+                    "Translation failed, so nothing was sent. Try switching "
+                    "providers in Settings."));
                 return;
             }
             if (translatedText.size() > TWITCH_MESSAGE_LIMIT)
@@ -967,8 +968,9 @@ QString runTranslateSendCommand(const CommandContext &ctx,
             channel->sendMessage(translatedText);
         },
         [channel = ctx.channel](const QString &) {
-            channel->addSystemMessage(
-                QStringLiteral("Translation failed, so nothing was sent."));
+            channel->addSystemMessage(QStringLiteral(
+                "Translation failed, so nothing was sent. Try switching "
+                "providers in Settings."));
         });
 
     return "";
