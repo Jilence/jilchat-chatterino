@@ -149,6 +149,7 @@ struct IvrUserProfile {
     bool isPreAffiliate = false;
     bool isPartner = false;
     bool isStaff = false;
+    bool isVerifiedBot = false;
     QString lastBroadcastStartedAt;
     QString lastBroadcastTitle;
 
@@ -168,6 +169,7 @@ struct IvrUserProfile {
         this->isPreAffiliate = roles.value("isPreAffiliate").toBool();
         this->isPartner = roles.value("isPartner").toBool();
         this->isStaff = roles.value("isStaff").toBool();
+        this->isVerifiedBot = root.value("verifiedBot").toBool();
 
         const auto lastBroadcast = root.value("lastBroadcast").toObject();
         this->lastBroadcastStartedAt =
