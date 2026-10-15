@@ -715,6 +715,16 @@ void createUserType(sol::table &c2)
                 // flags are always mutable
                 msg->flags = f;
             }),
+        "parse_time",
+        sol::property(
+            [](Message *msg) {
+                return QDateTime(QDate::currentDate(), msg->parseTime)
+                    .toMSecsSinceEpoch();
+            },
+            [](Message *msg, qint64 ms) {
+                checkWritable(msg);
+                msg->parseTime = datetimeFromOffset(ms).time();
+            }),
         "id", memberAccessor<&Message::id>(),                         //
         "search_text", memberAccessor<&Message::searchText>(),        //
         "message_text", memberAccessor<&Message::messageText>(),      //
@@ -804,6 +814,12 @@ std::shared_ptr<Message> messageFromTable(const sol::table &tbl)
 {
     auto msg = std::make_shared<Message>();
     msg->flags = tbl.get_or("flags", MessageFlag::None);
+
+    auto parseTime = tbl.get<std::optional<qint64>>("parse_time");
+    if (parseTime)
+    {
+        msg->parseTime = datetimeFromOffset(*parseTime).time();
+    }
 
     msg->id = tbl.get_or("id", QString{});
     msg->searchText = tbl.get_or("search_text", QString{});
