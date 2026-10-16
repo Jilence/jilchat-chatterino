@@ -21,6 +21,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QHash>
 #include <QImage>
 #include <QPainter>
 #include <QtGlobal>
@@ -196,7 +197,7 @@ bool MessageLayout::layout(const MessageLayoutContext &ctx,
     this->actuallyLayout(ctx);
     if (widthChanged || this->container_.getHeight() != oldHeight)
     {
-        this->deleteBuffer();
+        this->resetBuffer();
     }
     this->invalidateBuffer();
 
@@ -291,7 +292,7 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
 
     if (this->height_ != this->container_.getHeight())
     {
-        this->deleteBuffer();
+        this->resetBuffer();
     }
 
     this->container_.endLayout();
@@ -675,6 +676,8 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                            clientDetectionIcon.value());
     }
 
+    // The content drawn on its own, when the shadow needed it anyway
+    QImage contentLayer;
     if (ctx.paintMessageShadow && ctx.messageShadowOpacity > 0)
     {
         // Everything that will be drawn, in one color, blurred and moved a
@@ -686,34 +689,70 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         const qreal reach =
             ((blurRadius * 3) + std::abs(ctx.messageShadowOffset.x()) + 4) *
             static_cast<qreal>(this->scale_);
-        const auto shadowWidth = std::min(
-            buffer->width(), static_cast<int>(std::ceil(
-                                 (this->container_.getContentRight() + reach) *
-                                 buffer->devicePixelRatio())));
-        QImage shadow(QSize(std::max(1, shadowWidth), buffer->height()),
-                      QImage::Format_ARGB32_Premultiplied);
-        shadow.setDevicePixelRatio(buffer->devicePixelRatio());
-        shadow.fill(Qt::transparent);
-        {
-            QPainter shadowPainter(&shadow);
-            shadowPainter.setRenderHint(QPainter::SmoothPixmapTransform);
+        const auto dpr = buffer->devicePixelRatio();
+        const auto shadowWidth = std::max(
+            1,
+            std::min(buffer->width(),
+                     static_cast<int>(std::ceil(
+                         (this->container_.getContentRight() + reach) * dpr))));
+        const auto pixelRadius =
+            qRound(blurRadius * static_cast<qreal>(this->scale_) * dpr);
 
-            this->container_.paintElements(shadowPainter, ctx,
-                                           ctx.messageShadowEmotes);
-            shadowPainter.setCompositionMode(
-                QPainter::CompositionMode_SourceIn);
-            shadowPainter.fillRect(
-                QRectF(QPointF(), shadow.deviceIndependentSize()),
-                ctx.messageShadowColor);
-        }
-        if (blurRadius > 0)
+        // What the shadow is made of. With emotes in the shadow that's the
+        // content itself: it's drawn once, onto its own layer, and the layer
+        // goes on the buffer afterwards.
+        QImage source(
+            QSize(ctx.messageShadowEmotes ? buffer->width() : shadowWidth,
+                  buffer->height()),
+            QImage::Format_ARGB32_Premultiplied);
+        source.setDevicePixelRatio(dpr);
+        source.fill(Qt::transparent);
         {
-            const auto pixelRadius =
-                qRound(blurRadius * static_cast<qreal>(this->scale_) *
-                       shadow.devicePixelRatio());
-            shadow = blurThemeShadow(std::move(shadow), pixelRadius);
+            QPainter sourcePainter(&source);
+            sourcePainter.setRenderHint(QPainter::SmoothPixmapTransform);
+            this->container_.paintElements(sourcePainter, ctx,
+                                           ctx.messageShadowEmotes);
         }
-        const auto shadowPixmap = QPixmap::fromImage(std::move(shadow));
+        if (ctx.messageShadowEmotes)
+        {
+            contentLayer = source;
+        }
+
+        // The same content gives the same shadow, so it's only made again
+        // when something that's drawn changed.
+        size_t key = qHashBits(source.constBits(),
+                               static_cast<size_t>(source.sizeInBytes()));
+        for (const auto value :
+             {static_cast<size_t>(ctx.messageShadowColor.rgba()),
+              static_cast<size_t>(pixelRadius),
+              static_cast<size_t>(shadowWidth),
+              static_cast<size_t>(source.height()),
+              static_cast<size_t>(dpr * 1000)})
+        {
+            key = qHashMulti(key, value);
+        }
+        if (this->shadowCache_.isNull() || this->shadowCacheKey_ != key)
+        {
+            QImage shadow =
+                source.width() == shadowWidth
+                    ? source
+                    : source.copy(0, 0, shadowWidth, source.height());
+            shadow.setDevicePixelRatio(dpr);
+            {
+                QPainter shadowPainter(&shadow);
+                shadowPainter.setCompositionMode(
+                    QPainter::CompositionMode_SourceIn);
+                shadowPainter.fillRect(
+                    QRectF(QPointF(), shadow.deviceIndependentSize()),
+                    ctx.messageShadowColor);
+            }
+            if (pixelRadius > 0)
+            {
+                shadow = blurThemeShadow(std::move(shadow), pixelRadius);
+            }
+            this->shadowCache_ = QPixmap::fromImage(std::move(shadow));
+            this->shadowCacheKey_ = key;
+        }
 
         painter.save();
         const QPointF offset{
@@ -721,11 +760,22 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             ctx.messageShadowOffset.y() * static_cast<qreal>(this->scale_),
         };
         painter.setOpacity(ctx.messageShadowOpacity / 100.0);
-        painter.drawPixmap(offset, shadowPixmap);
+        painter.drawPixmap(offset, this->shadowCache_);
         painter.restore();
     }
+    else
+    {
+        this->shadowCache_ = {};
+    }
 
-    this->container_.paintElements(painter, ctx);
+    if (contentLayer.isNull())
+    {
+        this->container_.paintElements(painter, ctx);
+    }
+    else
+    {
+        painter.drawImage(QPointF(), contentLayer);
+    }
 
 #ifdef FOURTF
 
@@ -749,6 +799,12 @@ void MessageLayout::invalidateBuffer()
 }
 
 void MessageLayout::deleteBuffer()
+{
+    this->shadowCache_ = {};
+    this->resetBuffer();
+}
+
+void MessageLayout::resetBuffer()
 {
     if (this->buffer_ != nullptr)
     {
