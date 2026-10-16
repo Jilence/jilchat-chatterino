@@ -66,6 +66,16 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"bluzyrino", "bluzy"})
         ->setTooltip("Bluzyrino badges")
         ->addTo(layout);
+    SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
+        ->addKeywords({"jilchat", "jil"})
+        ->setTooltip("Badges from JilChat. Nothing is requested from JilChat "
+                     "while this is off.")
+        ->addTo(layout);
+    SettingWidget::checkbox("BadgeHQ", s.showBadgesBadgeHQ)
+        ->addKeywords({"badgehq", "badge hq", "supporter", "founder"})
+        ->setTooltip("Supporter and Founder badges from BadgeHQ. Nothing is "
+                     "requested from BadgeHQ while this is off.")
+        ->addTo(layout);
 
     layout.addTitle("Client");
     SettingWidget::checkbox("Show select badge button", s.showSelectBadgeButton)

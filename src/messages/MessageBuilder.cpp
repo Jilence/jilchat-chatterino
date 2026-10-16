@@ -23,6 +23,7 @@
 #include "messages/MessageColor.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageThread.hpp"
+#include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
@@ -36,6 +37,7 @@
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
+#include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
@@ -2187,6 +2189,8 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendDankChatBadges(userID);
         builder.appendChatsenBadges(userID);
         builder.appendBluzyrinoBadges(userID);
+        builder.appendJilChatBadges(userID);
+        builder.appendBadgeHQBadges(userID);
         builder.appendHomiesBadges(userID);
         builder.appendFolhinhaBadges(userID);
 
@@ -3837,6 +3841,34 @@ void MessageBuilder::appendBluzyrinoBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendJilChatBadges(const QString &userID)
+{
+    auto *provider = getApp()->getJilChatBadges();
+    if (provider == nullptr)
+    {
+        return;
+    }
+    for (const auto &badge : provider->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeJilChat);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
+void MessageBuilder::appendBadgeHQBadges(const QString &userID)
+{
+    auto *provider = getApp()->getBadgeHQBadges();
+    if (provider == nullptr)
+    {
+        return;
+    }
+    for (const auto &badge : provider->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeBadgeHQ);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
 void MessageBuilder::appendMoltorinoBadges(const QString &userID)
 {
     if (!getSettings()->showBadgesMoltorino)
@@ -4128,6 +4160,8 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendDankChatBadges(userId);
     builder.appendChatsenBadges(userId);
     builder.appendBluzyrinoBadges(userId);
+    builder.appendJilChatBadges(userId);
+    builder.appendBadgeHQBadges(userId);
     builder.appendHomiesBadges(userId);
     builder.appendFolhinhaBadges(userId);
 

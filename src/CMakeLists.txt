@@ -449,6 +449,12 @@ set(SOURCE_FILES
         providers/bluzyrino/BluzyrinoBadges.cpp
         providers/bluzyrino/BluzyrinoBadges.hpp
 
+        providers/jilchat/JilChatBadges.cpp
+        providers/jilchat/JilChatBadges.hpp
+
+        providers/badgehq/BadgeHQBadges.cpp
+        providers/badgehq/BadgeHQBadges.hpp
+
         providers/colors/ColorProvider.cpp
         providers/colors/ColorProvider.hpp
 
