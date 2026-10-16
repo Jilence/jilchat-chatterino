@@ -61,16 +61,6 @@ std::optional<QColor> clientDetectionHighlightColor(
     return std::nullopt;
 }
 
-QColor blendColors(const QColor &base, const QColor &apply)
-{
-    const qreal &alpha = apply.alphaF();
-    QColor result;
-    result.setRgbF(base.redF() * (1 - alpha) + apply.redF() * alpha,
-                   base.greenF() * (1 - alpha) + apply.greenF() * alpha,
-                   base.blueF() * (1 - alpha) + apply.blueF() * alpha);
-    return result;
-}
-
 QColor platformTint(MessagePlatform platform)
 {
     constexpr int a = 22;
@@ -487,7 +477,7 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     };
     const auto &flags = this->message_->flags;
     const auto &prefs = ctx.preferences;
-    // Replaces the background when no highlight applies.
+    // Goes over the background when no highlight applies.
     std::optional<QColor> replacement;
 
     if (flags.has(MessageFlag::FirstMessage) &&
@@ -555,7 +545,8 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         }
         else
         {
-            replacement = QColor(0x404040);
+            // see-through like Moltorino's, so a wallpaper still shows
+            replacement = QColor(64, 64, 64, 140);
         }
     }
     else if (flags.has(MessageFlag::Debug))
@@ -578,27 +569,21 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
 
     if (!highlights.empty())
     {
-        auto highlight = highlights.front();
-        if (ctx.highlightOpacityAdjustment != 0)
-        {
-            // Themes can make highlights stronger or fainter.
-            highlight.setAlphaF(std::clamp(
-                highlight.alphaF() +
-                    std::clamp(ctx.highlightOpacityAdjustment, -100, 100) /
-                        100.0,
-                0.0, 1.0));
-        }
-        backgroundColor = blendColors(backgroundColor, highlight);
+        // Themes can make highlights stronger or fainter. Keeps a see-through
+        // background see-through, so a wallpaper still shows behind it.
+        backgroundColor =
+            blendThemeHighlight(backgroundColor, highlights.front(),
+                                ctx.highlightOpacityAdjustment);
     }
     else if (replacement)
     {
-        backgroundColor = *replacement;
+        backgroundColor = blendThemeHighlight(backgroundColor, *replacement, 0);
     }
 
     if (ctx.tintByPlatform)
     {
-        backgroundColor = blendColors(backgroundColor,
-                                      platformTint(this->message_->platform));
+        backgroundColor = blendThemeHighlight(
+            backgroundColor, platformTint(this->message_->platform), 0);
     }
 
     std::optional<QPixmap> clientDetectionIcon = {};
