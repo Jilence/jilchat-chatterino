@@ -697,6 +697,16 @@ qreal MessageLayoutContainer::getWidth() const
     return this->width_;
 }
 
+qreal MessageLayoutContainer::getContentRight() const
+{
+    qreal right = 0;
+    for (const auto &element : this->elements_)
+    {
+        right = std::max(right, element->getRect().right());
+    }
+    return right;
+}
+
 qreal MessageLayoutContainer::getLayoutContentWidth() const
 {
     if (this->elements_.empty())
