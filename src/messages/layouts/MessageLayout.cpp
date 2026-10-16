@@ -27,6 +27,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <vector>
 
@@ -679,7 +680,18 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         // Everything that will be drawn, in one color, blurred and moved a
         // bit: the shadow behind the text. Animated emotes are drawn on top
         // of the buffer later and get theirs there.
-        QImage shadow(buffer->size(), QImage::Format_ARGB32_Premultiplied);
+        // Only as wide as the content and the room the blur and the offset
+        // take, not the whole width of the split: much less to blur.
+        const int blurRadius = std::clamp(ctx.messageShadowBlur, 0, 8);
+        const qreal reach =
+            ((blurRadius * 3) + std::abs(ctx.messageShadowOffset.x()) + 4) *
+            static_cast<qreal>(this->scale_);
+        const auto shadowWidth = std::min(
+            buffer->width(), static_cast<int>(std::ceil(
+                                 (this->container_.getContentRight() + reach) *
+                                 buffer->devicePixelRatio())));
+        QImage shadow(QSize(std::max(1, shadowWidth), buffer->height()),
+                      QImage::Format_ARGB32_Premultiplied);
         shadow.setDevicePixelRatio(buffer->devicePixelRatio());
         shadow.fill(Qt::transparent);
         {
@@ -694,11 +706,10 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
                 QRectF(QPointF(), shadow.deviceIndependentSize()),
                 ctx.messageShadowColor);
         }
-        const int blur = std::clamp(ctx.messageShadowBlur, 0, 8);
-        if (blur > 0)
+        if (blurRadius > 0)
         {
             const auto pixelRadius =
-                qRound(blur * static_cast<qreal>(this->scale_) *
+                qRound(blurRadius * static_cast<qreal>(this->scale_) *
                        shadow.devicePixelRatio());
             shadow = blurThemeShadow(std::move(shadow), pixelRadius);
         }
