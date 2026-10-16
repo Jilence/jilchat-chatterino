@@ -14,6 +14,7 @@
 
 #    include <QUrl>
 
+#    include <cmath>
 #    include <variant>
 
 namespace {
@@ -47,6 +48,13 @@ ImagePtr imageCtor(const QString &urlString, sol::variadic_args args)
     if (args.size() >= 2)
     {
         expectedSize = args.get<QSize>(1);
+    }
+    if (!std::isfinite(scale) || scale <= 0 || scale > 16 ||
+        (args.size() >= 2 &&
+         (expectedSize.width() < 0 || expectedSize.height() < 0 ||
+          expectedSize.width() > 32768 || expectedSize.height() > 32768)))
+    {
+        throw std::runtime_error("Invalid image size or scale");
     }
     validateUrl(urlString);
     return Image::fromUrl(Url{urlString}, scale, expectedSize);
@@ -92,6 +100,10 @@ ImageSet imageSetCtor(sol::variadic_args args)
     {
         set.setImage3(getAt(2));
     }
+    if (args.size() >= 4)
+    {
+        set.setImage4(getAt(3));
+    }
     return set;
 }
 
@@ -124,7 +136,8 @@ void createUserTypes(sol::table &c2)
         "ImageSet", sol::factories(&imageSetCtor),                            //
         "image1", sol::property(&ImageSet::getImage1, &ImageSet::setImage1),  //
         "image2", sol::property(&ImageSet::getImage2, &ImageSet::setImage2),  //
-        "image3", sol::property(&ImageSet::getImage3, &ImageSet::setImage3)   //
+        "image3", sol::property(&ImageSet::getImage3, &ImageSet::setImage3),  //
+        "image4", sol::property(&ImageSet::getImage4, &ImageSet::setImage4)   //
     );
 }
 

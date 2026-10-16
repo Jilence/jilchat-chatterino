@@ -158,6 +158,12 @@ QString chatVaultTwitchChannelUrl(const QString &login)
         .arg(QString::fromLatin1(QUrl::toPercentEncoding(login.toLower())));
 }
 
+QString lurkologyTwitchProfileUrl(const QString &login)
+{
+    return QStringLiteral("https://lurkology.com/%1")
+        .arg(QString::fromLatin1(QUrl::toPercentEncoding(login.toLower())));
+}
+
 QString sevenTVUserCacheKey(const QString &userID, bool isKick)
 {
     return (isKick ? QStringLiteral("kick:") : QStringLiteral("twitch:")) +
@@ -616,6 +622,10 @@ QString formatUsercardStatus(const IvrUserProfile &profile)
     if (profile.isStaff)
     {
         return "Staff";
+    }
+    if (profile.isVerifiedBot)
+    {
+        return "Verified Bot";
     }
     if (profile.isPartner)
     {
@@ -5823,6 +5833,11 @@ void UserInfoPopup::appendCommonProfileActions(QMenu *menu)
     {
         menu->addAction("Open profile in &ChatVault", this,
                         [url = chatVaultTwitchChannelUrl(this->userName_)] {
+                            QDesktopServices::openUrl(QUrl(url));
+                        });
+
+        menu->addAction("Open profile in Lur&kology", this,
+                        [url = lurkologyTwitchProfileUrl(this->userName_)] {
                             QDesktopServices::openUrl(QUrl(url));
                         });
 

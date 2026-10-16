@@ -180,7 +180,7 @@ void addTranslationFailedMessage(const ChannelPtr &channel)
     if (channel != nullptr)
     {
         channel->addSystemMessage(
-            "There was an issue translating this message. Try again later.");
+            "Translation failed. Try switching providers in Settings.");
     }
 }
 
@@ -664,21 +664,36 @@ bool hostMatches(const QString &host, QStringView domain)
            lowerHost.endsWith(QStringLiteral(".") + domainString);
 }
 
-std::optional<QString> chatVaultEmoteUrl(QStringView provider,
-                                         const QString &id)
+struct ExternalEmoteRef {
+    QString provider;
+    QString id;
+};
+
+std::optional<QString> externalEmotePageUrl(QStringView pattern,
+                                            const ExternalEmoteRef &ref)
 {
-    const auto trimmedID = id.trimmed();
+    const auto trimmedID = ref.id.trimmed();
     if (trimmedID.isEmpty())
     {
         return std::nullopt;
     }
 
-    return QStringLiteral("https://chatvau.lt/emote/%1/%2")
-        .arg(provider.toString(),
-             QString::fromLatin1(QUrl::toPercentEncoding(trimmedID)));
+    return pattern.toString().arg(
+        ref.provider, QString::fromLatin1(QUrl::toPercentEncoding(trimmedID)));
 }
 
-std::optional<QString> chatVaultEmoteUrlFromKnownUrl(const QString &urlString)
+std::optional<QString> chatVaultEmoteUrl(const ExternalEmoteRef &ref)
+{
+    return externalEmotePageUrl(u"https://chatvau.lt/emote/%1/%2", ref);
+}
+
+std::optional<QString> lurkologyEmoteUrl(const ExternalEmoteRef &ref)
+{
+    return externalEmotePageUrl(u"https://lurkology.com/emotes/%1/%2", ref);
+}
+
+std::optional<ExternalEmoteRef> externalEmoteRefFromKnownUrl(
+    const QString &urlString)
 {
     const QUrl url(urlString);
     if (!url.isValid())
@@ -693,30 +708,39 @@ std::optional<QString> chatVaultEmoteUrlFromKnownUrl(const QString &urlString)
         return std::nullopt;
     }
 
+    const auto ref = [](QStringView provider,
+                        const QString &id) -> std::optional<ExternalEmoteRef> {
+        if (id.trimmed().isEmpty())
+        {
+            return std::nullopt;
+        }
+        return ExternalEmoteRef{provider.toString(), id};
+    };
+
     if (hostMatches(host, u"7tv.app") && path.size() >= 2 &&
         (path[0] == QStringLiteral("emotes") ||
          path[0] == QStringLiteral("emote")))
     {
-        return chatVaultEmoteUrl(u"7tv", path[1]);
+        return ref(u"7tv", path[1]);
     }
 
     if (hostMatches(host, u"betterttv.com") && path.size() >= 2 &&
         path[0] == QStringLiteral("emotes"))
     {
-        return chatVaultEmoteUrl(u"bttv", path[1]);
+        return ref(u"bttv", path[1]);
     }
 
     if (hostMatches(host, u"betterttv.net") && path.size() >= 2 &&
         path[0] == QStringLiteral("emote"))
     {
-        return chatVaultEmoteUrl(u"bttv", path[1]);
+        return ref(u"bttv", path[1]);
     }
 
     if (hostMatches(host, u"frankerfacez.com") && path.size() >= 2 &&
         (path[0] == QStringLiteral("emoticon") ||
          path[0] == QStringLiteral("emote")))
     {
-        return chatVaultEmoteUrl(u"ffz", path[1].section('-', 0, 0));
+        return ref(u"ffz", path[1].section('-', 0, 0));
     }
 
     if (host.compare(QStringLiteral("static-cdn.jtvnw.net"),
@@ -724,38 +748,39 @@ std::optional<QString> chatVaultEmoteUrlFromKnownUrl(const QString &urlString)
         path.size() >= 3 && path[0] == QStringLiteral("emoticons") &&
         (path[1] == QStringLiteral("v2") || path[1] == QStringLiteral("v1")))
     {
-        return chatVaultEmoteUrl(u"twitch", path[2]);
+        return ref(u"twitch", path[2]);
     }
 
     return std::nullopt;
 }
 
-std::optional<QString> chatVaultEmoteUrl(const Emote &emote)
+std::optional<ExternalEmoteRef> externalEmoteRef(const Emote &emote)
 {
-    if (auto url = chatVaultEmoteUrlFromKnownUrl(emote.homePage.string))
+    if (auto ref = externalEmoteRefFromKnownUrl(emote.homePage.string))
     {
-        return url;
+        return ref;
     }
 
-    const auto tryImage = [](const ImagePtr &image) -> std::optional<QString> {
+    const auto tryImage =
+        [](const ImagePtr &image) -> std::optional<ExternalEmoteRef> {
         if (image == nullptr || image->isEmpty())
         {
             return std::nullopt;
         }
-        return chatVaultEmoteUrlFromKnownUrl(image->url().string);
+        return externalEmoteRefFromKnownUrl(image->url().string);
     };
 
-    if (auto url = tryImage(emote.images.getImage1()))
+    if (auto ref = tryImage(emote.images.getImage1()))
     {
-        return url;
+        return ref;
     }
-    if (auto url = tryImage(emote.images.getImage2()))
+    if (auto ref = tryImage(emote.images.getImage2()))
     {
-        return url;
+        return ref;
     }
-    if (auto url = tryImage(emote.images.getImage3()))
+    if (auto ref = tryImage(emote.images.getImage3()))
     {
-        return url;
+        return ref;
     }
 
     return std::nullopt;
@@ -858,12 +883,21 @@ QMenu *addEmoteContextMenuItems(QMenu *menu, const Emote &emote,
                             });
     }
 
-    if (auto url = chatVaultEmoteUrl(emote))
+    if (auto ref = externalEmoteRef(emote))
     {
         ensureOpenPageSection();
-        openMenu->addAction("Open in &ChatVault", [url = *url] {
-            QDesktopServices::openUrl(QUrl(url));
-        });
+        if (auto url = chatVaultEmoteUrl(*ref))
+        {
+            openMenu->addAction("Open in &ChatVault", [url = *url] {
+                QDesktopServices::openUrl(QUrl(url));
+            });
+        }
+        if (auto url = lurkologyEmoteUrl(*ref))
+        {
+            openMenu->addAction("Open in Lur&kology", [url = *url] {
+                QDesktopServices::openUrl(QUrl(url));
+            });
+        }
     }
 
     return openMenu;

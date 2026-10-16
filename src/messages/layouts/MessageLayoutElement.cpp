@@ -75,8 +75,9 @@ void drawPixmapWithOptionalSmoothing(
     chatterino::FlagsEnum<chatterino::MessageElementFlag> flags)
 {
     const bool smooth =
-        flags.has(chatterino::MessageElementFlag::BadgeMoltorino) ||
-        flags.has(chatterino::MessageElementFlag::BadgeBluzyrino);
+        flags.hasAny(chatterino::MessageElementFlag::BadgeMoltorino,
+                     chatterino::MessageElementFlag::BadgeBluzyrino,
+                     chatterino::MessageElementFlag::BadgeJilChat);
     const bool wasSmooth =
         painter.testRenderHint(QPainter::SmoothPixmapTransform);
 

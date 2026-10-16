@@ -6,6 +6,7 @@
 
 #include "Application.hpp"
 #include "common/Channel.hpp"
+#include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
@@ -89,6 +90,13 @@ void reloadBadgeProviders(const ChannelPtr &channel)
     {
         app->getBluzyrinoBadges()->loadBluzyrinoBadges(
             reloadMessage(channel, "Bluzyrino badges"));
+    }
+    if (settings->showBadgesBadgeHQ)
+    {
+        if (auto *badgeHQ = app->getBadgeHQBadges())
+        {
+            badgeHQ->reload(reloadMessage(channel, "BadgeHQ badges"));
+        }
     }
     if (settings->showBadgesDankChat)
     {

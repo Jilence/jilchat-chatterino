@@ -383,6 +383,7 @@ private:
     void appendFfzApBadges(const QString &userID);
     void appendDankChatBadges(const QString &userID);
     void appendChatsenBadges(const QString &userID);
+    void appendBadgeHQBadges(const QString &userID);
     void appendMoltorinoBadges(const QString &userID);
     void appendJilChatBadges(const QString &userID);
     void appendBluzyrinoBadges(const QString &userID);

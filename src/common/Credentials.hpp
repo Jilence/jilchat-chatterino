@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "util/Expected.hpp"
+
 #include <QObject>
 #include <QString>
 
@@ -18,9 +20,16 @@ public:
 
     void get(const QString &provider, const QString &name, QObject *receiver,
              std::function<void(const QString &)> &&onLoaded);
+    void get(const QString &provider, const QString &name, QObject *receiver,
+             std::function<void(ExpectedStr<QString>)> &&onLoaded);
     void set(const QString &provider, const QString &name,
              const QString &credential);
+    void set(const QString &provider, const QString &name,
+             const QString &credential,
+             std::function<void(ExpectedStr<void>)> &&onFinished);
     void erase(const QString &provider, const QString &name);
+    void erase(const QString &provider, const QString &name,
+               std::function<void(ExpectedStr<void>)> &&onFinished);
 
 private:
     Credentials() = default;
