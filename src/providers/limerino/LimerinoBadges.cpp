@@ -4,14 +4,18 @@
 
 #include "providers/limerino/LimerinoBadges.hpp"
 
+#include "Application.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
 #include "messages/ImageSet.hpp"
+#include "singletons/Paths.hpp"
 #include "singletons/Settings.hpp"
+#include "util/CombinePath.hpp"
 
+#include <QFile>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,6 +24,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRandomGenerator>
+#include <QSaveFile>
 #include <QSize>
 #include <QUrl>
 
@@ -32,6 +37,15 @@ namespace {
 
 constexpr auto BADGES_URL = "https://api.limerino.com/v1/badges/all";
 constexpr auto EVENTS_URL = "https://api.limerino.com/v1/badges/events";
+/// The full list from the last run, and its ETag, in the misc folder
+constexpr auto STORED_LIST_FILE = "limerino-badges.json";
+constexpr auto STORED_ETAG_FILE = "limerino-badges.etag";
+
+QString storedPath(const char *name)
+{
+    return combinePath(getApp()->getPaths().miscDirectory,
+                       QString::fromLatin1(name));
+}
 constexpr qsizetype MAX_PAYLOAD_SIZE = 8 * 1024 * 1024;
 constexpr qint64 REFRESH_INTERVAL = 30 * 60 * 1000;
 constexpr qint64 RETRY_INTERVAL = 60 * 1000;
@@ -321,6 +335,7 @@ void LimerinoBadges::initialize()
                 this->stop();
                 return;
             }
+            this->loadStoredCopy();
             this->nextAt_ = std::chrono::steady_clock::now() +
                             std::chrono::milliseconds{3500};
             QTimer::singleShot(3500, this, [this] {
@@ -426,6 +441,49 @@ void LimerinoBadges::applyHolders(const QJsonObject &event)
     this->etag_.clear();
 }
 
+void LimerinoBadges::loadStoredCopy()
+{
+    if (this->storedCopyLoaded_)
+    {
+        return;
+    }
+    this->storedCopyLoaded_ = true;
+
+    QFile list(storedPath(STORED_LIST_FILE));
+    if (!list.open(QIODevice::ReadOnly) || list.size() > MAX_PAYLOAD_SIZE)
+    {
+        return;
+    }
+    if (!this->applyPayload(list.readAll()))
+    {
+        return;
+    }
+    QFile etag(storedPath(STORED_ETAG_FILE));
+    if (etag.open(QIODevice::ReadOnly))
+    {
+        this->etag_ = etag.readAll().trimmed();
+    }
+    this->badgesUpdated.invoke();
+}
+
+void LimerinoBadges::storeCopy(const QByteArray &payload,
+                               const QByteArray &etag) const
+{
+    QSaveFile list(storedPath(STORED_LIST_FILE));
+    if (!list.open(QIODevice::WriteOnly) || list.write(payload) < 0 ||
+        !list.commit())
+    {
+        qCWarning(chatterinoApp) << "[Limerino] Could not keep the badge list.";
+        return;
+    }
+    QSaveFile tag(storedPath(STORED_ETAG_FILE));
+    if (tag.open(QIODevice::WriteOnly))
+    {
+        tag.write(etag);
+        tag.commit();
+    }
+}
+
 void LimerinoBadges::start()
 {
     if (!getSettings()->showBadgesLimerino)
@@ -496,6 +554,7 @@ void LimerinoBadges::refresh()
                 return;
             }
             this->etag_ = result.etag();
+            this->storeCopy(result.getData(), this->etag_);
             this->noteSuccess();
             this->badgesUpdated.invoke();
         })

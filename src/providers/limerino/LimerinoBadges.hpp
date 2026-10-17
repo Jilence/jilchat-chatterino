@@ -56,6 +56,10 @@ private:
     void noteSuccess();
     void noteFailure(bool retry);
     void finishCallbacks(bool success);
+    /// Draws from the copy kept from the last run until the first refresh,
+    /// which then only has to ask whether it is still current
+    void loadStoredCopy();
+    void storeCopy(const QByteArray &payload, const QByteArray &etag) const;
     void catchUp();
 
     void listen();
@@ -76,6 +80,7 @@ private:
     std::chrono::milliseconds pendingDelay_{};
     int failures_ = 0;
     bool requestInFlight_ = false;
+    bool storedCopyLoaded_ = false;
     /// Waiting for the request in flight
     std::vector<std::function<void(bool)>> pendingCallbacks_;
     bool again_ = false;
