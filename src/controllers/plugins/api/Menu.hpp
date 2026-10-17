@@ -36,6 +36,7 @@ function c2.Menu:add_menu(title) end
 ---index.
 ---@param before string|integer A name or index of an action.
 ---@param title string
+---@return c2.Menu
 function c2.Menu:insert_menu(before, title) end
 
 ---Appends a new separator.

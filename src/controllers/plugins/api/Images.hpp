@@ -42,6 +42,7 @@ function c2.Image.empty() end
 ---@field image1 c2.Image The base image (1x).
 ---@field image2 c2.Image The first scaled image (often 2x, `scale=0.5`)
 ---@field image3 c2.Image The second scaled image (often 3x or 4x, `scale=0.25`)
+---@field image4 c2.Image The optional third scaled image (`scale=0.125`)
 c2.ImageSet = {}
 
 ---Create a new image set.
@@ -51,8 +52,9 @@ c2.ImageSet = {}
 ---@param image1? c2.Image|string
 ---@param image2? c2.Image|string
 ---@param image3? c2.Image|string
+---@param image4? c2.Image|string
 ---@return c2.ImageSet
-function c2.ImageSet.new(image1, image2, image3) end
+function c2.ImageSet.new(image1, image2, image3, image4) end
 */
 
 /// Creates the c2.Image and c2.ImageSet user types

@@ -63,6 +63,8 @@ class FfzApBadges;
 class DankChatBadges;
 class ChatsenBadges;
 class ChatAutomationController;
+class LimerinoBadges;
+class BadgeHQBadges;
 class MoltorinoSupporterBadges;
 class RepeatedMessageDetector;
 class IStreamerMode;
@@ -128,6 +130,8 @@ public:
     virtual ChatsenBadges *getChatsenBadges() = 0;
     /// The self bot rules. nullptr in tests and while shutting down.
     virtual ChatAutomationController *getChatAutomations() = 0;
+    virtual BadgeHQBadges *getBadgeHQBadges() = 0;
+    virtual LimerinoBadges *getLimerinoBadges() = 0;
     virtual MoltorinoSupporterBadges *getMoltorinoSupporterBadges() = 0;
     virtual RepeatedMessageDetector *getRepeatedMessageDetector() = 0;
     virtual JilChatBadges *getJilChatBadges() = 0;
@@ -227,6 +231,8 @@ private:
     std::unique_ptr<FfzApBadges> ffzApBadges;
     std::unique_ptr<DankChatBadges> dankChatBadges;
     std::unique_ptr<ChatsenBadges> chatsenBadges;
+    std::unique_ptr<LimerinoBadges> limerinoBadges;
+    std::unique_ptr<BadgeHQBadges> badgeHQBadges;
     std::unique_ptr<MoltorinoSupporterBadges> moltorinoSupporterBadges;
     std::unique_ptr<RepeatedMessageDetector> repeatedMessageDetector;
     std::unique_ptr<JilChatBadges> jilChatBadges;
@@ -293,6 +299,8 @@ public:
     DankChatBadges *getDankChatBadges() override;
     ChatsenBadges *getChatsenBadges() override;
     ChatAutomationController *getChatAutomations() override;
+    BadgeHQBadges *getBadgeHQBadges() override;
+    LimerinoBadges *getLimerinoBadges() override;
     MoltorinoSupporterBadges *getMoltorinoSupporterBadges() override;
     RepeatedMessageDetector *getRepeatedMessageDetector() override;
     JilChatBadges *getJilChatBadges() override;

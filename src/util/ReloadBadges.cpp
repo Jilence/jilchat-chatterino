@@ -6,6 +6,7 @@
 
 #include "Application.hpp"
 #include "common/Channel.hpp"
+#include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
@@ -15,6 +16,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
@@ -89,6 +91,20 @@ void reloadBadgeProviders(const ChannelPtr &channel)
     {
         app->getBluzyrinoBadges()->loadBluzyrinoBadges(
             reloadMessage(channel, "Bluzyrino badges"));
+    }
+    if (settings->showBadgesBadgeHQ)
+    {
+        if (auto *badgeHQ = app->getBadgeHQBadges())
+        {
+            badgeHQ->reload(reloadMessage(channel, "BadgeHQ badges"));
+        }
+    }
+    if (settings->showBadgesLimerino)
+    {
+        if (auto *limerino = app->getLimerinoBadges())
+        {
+            limerino->reload(reloadMessage(channel, "Limerino badges"));
+        }
     }
     if (settings->showBadgesDankChat)
     {

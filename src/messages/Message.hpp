@@ -106,6 +106,8 @@ struct Message {
         Android,
         // UUID4 (standard) uppercase
         IOS,
+        // [a-z0-9]{8,12}
+        MobileNew,
         // Does not match any of the known clients
         Abnormal,
     };

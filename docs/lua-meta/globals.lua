@@ -527,6 +527,7 @@ function c2.Image.empty() end
 ---@field image1 c2.Image The base image (1x).
 ---@field image2 c2.Image The first scaled image (often 2x, `scale=0.5`)
 ---@field image3 c2.Image The second scaled image (often 3x or 4x, `scale=0.25`)
+---@field image4 c2.Image The optional third scaled image (`scale=0.125`)
 c2.ImageSet = {}
 
 ---Create a new image set.
@@ -536,8 +537,9 @@ c2.ImageSet = {}
 ---@param image1? c2.Image|string
 ---@param image2? c2.Image|string
 ---@param image3? c2.Image|string
+---@param image4? c2.Image|string
 ---@return c2.ImageSet
-function c2.ImageSet.new(image1, image2, image3) end
+function c2.ImageSet.new(image1, image2, image3, image4) end
 -- End src/controllers/plugins/api/Images.hpp
 
 -- Begin src/controllers/plugins/api/Menu.hpp
@@ -570,6 +572,7 @@ function c2.Menu:add_menu(title) end
 ---index.
 ---@param before string|integer A name or index of an action.
 ---@param title string
+---@return c2.Menu
 function c2.Menu:insert_menu(before, title) end
 
 ---Appends a new separator.
@@ -748,6 +751,7 @@ function c2.MessageElementBase:add_flags(flags) end
 ---A chat message
 ---@class c2.Message
 ---@field flags c2.MessageFlag The message's flags
+---@field parse_time number Time the message was parsed (in milliseconds since epoch)
 ---@field id string The message ID
 ---@field search_text string Text to check when searching for messages
 ---@field message_text string Text content of this message (used for filters for example)
@@ -780,6 +784,7 @@ function c2.Message:clone() end
 ---A table to initialize a new message
 ---@class MessageInit
 ---@field flags? c2.MessageFlag Message flags (see `c2.MessageFlags`)
+---@field parse_time? number Time the message was parsed (in milliseconds since epoch)
 ---@field id? string The (ideally unique) message ID
 ---@field search_text? string Text to that is compared when searching for messages
 ---@field message_text? string The message text (used for filters for example)
@@ -875,6 +880,8 @@ c2.MessageElementFlag = {
     BadgeChatsen = 0,
     BadgeJilChat = 0,
     BadgeBluzyrino = 0,
+    BadgeBadgeHQ = 0,
+    BadgeLimerino = 0,
     Badges = 0,
     ChannelName = 0,
     BitsAmount = 0,

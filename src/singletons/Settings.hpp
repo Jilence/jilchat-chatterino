@@ -516,6 +516,8 @@ public:
     BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
     BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
     BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
+    BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
+    BoolSetting showBadgesLimerino = {"/appearance/badges/limerino", true};
     BoolSetting showSelectBadgeButton = {"/client/showSelectBadgeButton", true};
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
@@ -1013,6 +1015,7 @@ public:
     QStringSetting webchatColor = {"/misc/webchatColor", "#3FFFA30B"};
     QStringSetting androidColor = {"/misc/androidColor", "#3F25D300"};
     QStringSetting iosColor = {"/misc/iosColor", "#3FFF69B4"};
+    QStringSetting mobileNewColor = {"/misc/mobileNewColor", "#3F25D300"};
     BoolSetting clientDetectionIcon = {"/misc/clientDetectionIcon", false};
     BoolSetting fakeWebChat = {"/misc/fakeWebChat", false};
 #ifdef Q_OS_LINUX
@@ -1381,6 +1384,15 @@ public:
         "/moltorino/client/showTranslateMessageContextAction", true};
     QStringSetting messageTranslationTargetLanguage{
         "/moltorino/client/messageTranslationTargetLanguage", "en"};
+    QStringSetting translationProvider{"/moltorino/client/translationProvider",
+                                       "google"};
+    QStringSetting translationLibreEndpoint{
+        "/moltorino/client/translationLibreEndpoint",
+        "https://libretranslate.com"};
+    QStringSetting translationAzureRegion{
+        "/moltorino/client/translationAzureRegion", ""};
+    QStringSetting translationAzureEndpoint{
+        "/moltorino/client/translationAzureEndpoint", ""};
     BoolSetting showTranslatedMessageIndicator{
         "/moltorino/client/showTranslatedMessageIndicator", true};
     BoolSetting showOutgoingTranslationButton{

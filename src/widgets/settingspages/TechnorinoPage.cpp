@@ -150,6 +150,9 @@ void TechnorinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::colorButton("iOS color", getSettings()->iosColor)
         ->addTo(layout);
+    SettingWidget::colorButton("Mobile (new) color",
+                               getSettings()->mobileNewColor)
+        ->addTo(layout);
     SettingWidget::checkbox("Client detection icons. ", s.clientDetectionIcon)
         ->setTooltip("Displays client icons beside messages")
         ->addTo(layout);

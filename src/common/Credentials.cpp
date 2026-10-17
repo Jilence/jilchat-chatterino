@@ -10,6 +10,7 @@
 #include "singletons/Paths.hpp"
 #include "singletons/Settings.hpp"
 #include "util/CombinePath.hpp"
+#include "util/PostToThread.hpp"
 #include "util/Variant.hpp"
 
 #include <QApplication>
@@ -77,15 +78,28 @@ QJsonDocument loadInsecure()
     return QJsonDocument::fromJson(file.readAll());
 }
 
-void storeInsecure(const QJsonDocument &doc)
+bool storeInsecure(const QJsonDocument &doc)
 {
     QSaveFile file(insecurePath());
     if (!file.open(QIODevice::WriteOnly))
     {
-        return;
+        return false;
     }
-    file.write(doc.toJson());
-    file.commit();
+    if (file.write(doc.toJson()) == -1)
+    {
+        return false;
+    }
+    return file.commit();
+}
+
+QString insecureSaveError()
+{
+    return QStringLiteral("Could not save credentials.");
+}
+
+QString credentialNotFoundError()
+{
+    return QStringLiteral("Credential was not found.");
 }
 
 QJsonDocument &insecureInstance()
@@ -111,13 +125,72 @@ void queueInsecureSave()
 struct SetJob {
     QString name;
     QString credential;
+    std::function<void(ExpectedStr<void>)> onFinished;
 };
 
 struct EraseJob {
     QString name;
+    std::function<void(ExpectedStr<void>)> onFinished;
 };
 
 using Job = std::variant<SetJob, EraseJob>;
+
+#ifndef NO_QTKEYCHAIN
+QString keychainErrorText(const QKeychain::Job *job)
+{
+    const auto detail = job->errorString().trimmed();
+    if (detail.isEmpty())
+    {
+        return QStringLiteral("The system credential store failed.");
+    }
+    return detail;
+}
+
+ExpectedStr<void> keychainWriteResult(const QKeychain::Job *job)
+{
+    if (job->error() == QKeychain::NoError)
+    {
+        return {};
+    }
+    return makeUnexpected(keychainErrorText(job));
+}
+
+ExpectedStr<void> keychainEraseResult(const QKeychain::Job *job)
+{
+    if (job->error() == QKeychain::NoError ||
+        job->error() == QKeychain::EntryNotFound)
+    {
+        return {};
+    }
+    return makeUnexpected(keychainErrorText(job));
+}
+
+ExpectedStr<QString> keychainReadResult(const QKeychain::ReadPasswordJob *job)
+{
+    if (job->error() == QKeychain::EntryNotFound)
+    {
+        return makeUnexpected(credentialNotFoundError());
+    }
+    if (job->error() != QKeychain::NoError)
+    {
+        return makeUnexpected(keychainErrorText(job));
+    }
+    return job->textData();
+}
+#endif
+
+void finishCredentialWrite(std::function<void(ExpectedStr<void>)> onFinished,
+                           ExpectedStr<void> result)
+{
+    if (!onFinished)
+    {
+        return;
+    }
+    runInGuiThread([onFinished = std::move(onFinished),
+                    result = std::move(result)]() mutable {
+        onFinished(std::move(result));
+    });
+}
 
 std::queue<Job> &jobQueue()
 {
@@ -136,25 +209,33 @@ void runNextJob()
 
         std::visit(
             variant::Overloaded{
-                [](const SetJob &set) {
+                [](SetJob &set) {
                     auto *job = new QKeychain::WritePasswordJob("chatterino");
                     job->setAutoDelete(true);
                     job->setKey(set.name);
                     job->setTextData(set.credential);
-                    QObject::connect(job, &QKeychain::Job::finished,
-                                     QApplication::instance(), [](auto) {
-                                         runNextJob();
-                                     });
+                    QObject::connect(
+                        job, &QKeychain::Job::finished,
+                        QApplication::instance(),
+                        [job, onFinished = std::move(set.onFinished)](auto) {
+                            finishCredentialWrite(std::move(onFinished),
+                                                  keychainWriteResult(job));
+                            runNextJob();
+                        });
                     job->start();
                 },
-                [](const EraseJob &erase) {
+                [](EraseJob &erase) {
                     auto *job = new QKeychain::DeletePasswordJob("chatterino");
                     job->setAutoDelete(true);
                     job->setKey(erase.name);
-                    QObject::connect(job, &QKeychain::Job::finished,
-                                     QApplication::instance(), [](auto) {
-                                         runNextJob();
-                                     });
+                    QObject::connect(
+                        job, &QKeychain::Job::finished,
+                        QApplication::instance(),
+                        [job, onFinished = std::move(erase.onFinished)](auto) {
+                            finishCredentialWrite(std::move(onFinished),
+                                                  keychainEraseResult(job));
+                            runNextJob();
+                        });
                     job->start();
                 },
             },
@@ -218,6 +299,46 @@ void Credentials::get(const QString &provider, const QString &name_,
     }
 }
 
+void Credentials::get(const QString &provider, const QString &name_,
+                      QObject *receiver,
+                      std::function<void(ExpectedStr<QString>)> &&onLoaded)
+{
+    assertInGuiThread();
+
+    auto name = formatName(provider, name_);
+
+    if (useKeyring())
+    {
+#ifndef NO_QTKEYCHAIN
+        auto *job = new QKeychain::ReadPasswordJob("chatterino");
+        job->setAutoDelete(true);
+        job->setKey(name);
+        QObject::connect(
+            job, &QKeychain::Job::finished, receiver,
+            [job, onLoaded = std::move(onLoaded)](auto) mutable {
+                if (onLoaded)
+                {
+                    onLoaded(keychainReadResult(job));
+                }
+            },
+            Qt::DirectConnection);
+        job->start();
+#endif
+    }
+    else if (onLoaded)
+    {
+        const auto object = insecureInstance().object();
+        if (!object.contains(name))
+        {
+            onLoaded(makeUnexpected(credentialNotFoundError()));
+        }
+        else
+        {
+            onLoaded(object.value(name).toString());
+        }
+    }
+}
+
 void Credentials::set(const QString &provider, const QString &name_,
                       const QString &credential)
 {
@@ -227,7 +348,7 @@ void Credentials::set(const QString &provider, const QString &name_,
 
     if (useKeyring())
     {
-        queueJob(SetJob{name, credential});
+        queueJob(SetJob{name, credential, {}});
     }
     else
     {
@@ -241,6 +362,37 @@ void Credentials::set(const QString &provider, const QString &name_,
     }
 }
 
+void Credentials::set(const QString &provider, const QString &name_,
+                      const QString &credential,
+                      std::function<void(ExpectedStr<void>)> &&onFinished)
+{
+    assertInGuiThread();
+
+    auto name = formatName(provider, name_);
+
+    if (useKeyring())
+    {
+        queueJob(SetJob{name, credential, std::move(onFinished)});
+        return;
+    }
+
+    auto &instance = insecureInstance();
+    const auto previous = instance;
+    auto obj = instance.object();
+    obj[name] = credential;
+    instance.setObject(obj);
+
+    if (!storeInsecure(instance))
+    {
+        instance = previous;
+        finishCredentialWrite(std::move(onFinished),
+                              makeUnexpected(insecureSaveError()));
+        return;
+    }
+
+    finishCredentialWrite(std::move(onFinished), {});
+}
+
 void Credentials::erase(const QString &provider, const QString &name_)
 {
     assertInGuiThread();
@@ -249,7 +401,7 @@ void Credentials::erase(const QString &provider, const QString &name_)
 
     if (useKeyring())
     {
-        queueJob(EraseJob{name});
+        queueJob(EraseJob{name, {}});
     }
     else
     {
@@ -263,6 +415,41 @@ void Credentials::erase(const QString &provider, const QString &name_)
 
         queueInsecureSave();
     }
+}
+
+void Credentials::erase(const QString &provider, const QString &name_,
+                        std::function<void(ExpectedStr<void>)> &&onFinished)
+{
+    assertInGuiThread();
+
+    auto name = formatName(provider, name_);
+
+    if (useKeyring())
+    {
+        queueJob(EraseJob{name, std::move(onFinished)});
+        return;
+    }
+
+    auto &instance = insecureInstance();
+    auto obj = instance.object();
+    if (!obj.contains(name))
+    {
+        finishCredentialWrite(std::move(onFinished), {});
+        return;
+    }
+
+    const auto previous = instance;
+    obj.remove(name);
+    instance.setObject(obj);
+    if (!storeInsecure(instance))
+    {
+        instance = previous;
+        finishCredentialWrite(std::move(onFinished),
+                              makeUnexpected(insecureSaveError()));
+        return;
+    }
+
+    finishCredentialWrite(std::move(onFinished), {});
 }
 
 }  // namespace chatterino
