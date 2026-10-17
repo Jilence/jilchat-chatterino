@@ -222,6 +222,11 @@ public:
         return nullptr;
     }
 
+    LimerinoBadges *getLimerinoBadges() override
+    {
+        return nullptr;
+    }
+
     BadgeHQBadges *getBadgeHQBadges() override
     {
         return nullptr;

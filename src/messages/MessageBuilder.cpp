@@ -38,6 +38,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
@@ -2191,6 +2192,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendBluzyrinoBadges(userID);
         builder.appendJilChatBadges(userID);
         builder.appendBadgeHQBadges(userID);
+        builder.appendLimerinoBadges(userID);
         builder.appendHomiesBadges(userID);
         builder.appendFolhinhaBadges(userID);
 
@@ -3869,6 +3871,20 @@ void MessageBuilder::appendBadgeHQBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendLimerinoBadges(const QString &userID)
+{
+    auto *provider = getApp()->getLimerinoBadges();
+    if (provider == nullptr)
+    {
+        return;
+    }
+    for (const auto &badge : provider->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeLimerino);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
 void MessageBuilder::appendMoltorinoBadges(const QString &userID)
 {
     if (!getSettings()->showBadgesMoltorino)
@@ -4162,6 +4178,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendBluzyrinoBadges(userId);
     builder.appendJilChatBadges(userId);
     builder.appendBadgeHQBadges(userId);
+    builder.appendLimerinoBadges(userId);
     builder.appendHomiesBadges(userId);
     builder.appendFolhinhaBadges(userId);
 

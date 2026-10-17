@@ -498,6 +498,7 @@ public:
     BoolSetting showBadgesBluzyrino = {"/appearance/badges/bluzyrino", true};
     BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
     BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
+    BoolSetting showBadgesLimerino = {"/appearance/badges/limerino", true};
     BoolSetting showSelectBadgeButton = {"/client/showSelectBadgeButton", true};
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};

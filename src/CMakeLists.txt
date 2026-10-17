@@ -452,6 +452,9 @@ set(SOURCE_FILES
         providers/jilchat/JilChatBadges.cpp
         providers/jilchat/JilChatBadges.hpp
 
+        providers/limerino/LimerinoBadges.cpp
+        providers/limerino/LimerinoBadges.hpp
+
         providers/badgehq/BadgeHQBadges.cpp
         providers/badgehq/BadgeHQBadges.hpp
 

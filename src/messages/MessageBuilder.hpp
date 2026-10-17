@@ -379,6 +379,7 @@ private:
     void appendBluzyrinoBadges(const QString &userID);
     void appendJilChatBadges(const QString &userID);
     void appendBadgeHQBadges(const QString &userID);
+    void appendLimerinoBadges(const QString &userID);
     void appendMoltorinoBadges(const QString &userID);
 
     [[nodiscard]] static bool isIgnored(const QString &originalMessage,
