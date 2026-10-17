@@ -10,6 +10,7 @@
 #include "controllers/commands/builtin/chatterino/Debugging.hpp"
 #include "controllers/commands/builtin/kick/KickRawEvent.hpp"
 #include "controllers/commands/builtin/Misc.hpp"
+#include "controllers/commands/builtin/seventv/Presence.hpp"
 #include "controllers/commands/builtin/twitch/AddModerator.hpp"
 #include "controllers/commands/builtin/twitch/AddVIP.hpp"
 #include "controllers/commands/builtin/twitch/Announce.hpp"
@@ -383,6 +384,8 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/unblockterm", &commands::unblockTerm);
 
     this->registerCommand("/user", &commands::user);
+
+    this->registerCommand("/seventv-presence", &commands::seventvPresence);
 
     this->registerCommand("/usercard", &commands::openUsercard);
 

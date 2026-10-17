@@ -87,6 +87,8 @@ set(SOURCE_FILES
         controllers/commands/builtin/kick/KickRawEvent.hpp
         controllers/commands/builtin/kick/ModerationActions.cpp
         controllers/commands/builtin/kick/ModerationActions.hpp
+        controllers/commands/builtin/seventv/Presence.cpp
+        controllers/commands/builtin/seventv/Presence.hpp
         controllers/commands/builtin/twitch/AddModerator.cpp
         controllers/commands/builtin/twitch/AddModerator.hpp
         controllers/commands/builtin/twitch/AddVIP.cpp
