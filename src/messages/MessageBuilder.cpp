@@ -1511,9 +1511,9 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendChatsenBadges(message.userID);
     builder.appendHomiesBadges(message.userID);
     builder.appendFolhinhaBadges(message.userID);
-    builder.appendJilChatBadges(message.userID);
     builder.appendBadgeHQBadges(message.userID);
     builder.appendLimerinoBadges(message.userID);
+    builder.appendJilChatBadges(message.userID);
 
     auto &elements = message.elements;
     const auto isThirdParty = [&](const std::unique_ptr<MessageElement> &el) {
@@ -2331,9 +2331,9 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendChatsenBadges(userID);
         builder.appendHomiesBadges(userID);
         builder.appendFolhinhaBadges(userID);
-        builder.appendJilChatBadges(userID);
         builder.appendBadgeHQBadges(userID);
         builder.appendLimerinoBadges(userID);
+        builder.appendJilChatBadges(userID);
         if (senderIsCurrentUser)
         {
             // the order the user wants their own badges in
@@ -4339,9 +4339,9 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendChatsenBadges(userId);
     builder.appendHomiesBadges(userId);
     builder.appendFolhinhaBadges(userId);
-    builder.appendJilChatBadges(userId);
     builder.appendBadgeHQBadges(userId);
     builder.appendLimerinoBadges(userId);
+    builder.appendJilChatBadges(userId);
 
     MessageParseArgs args;
     args.isAction = true;
