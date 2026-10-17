@@ -745,8 +745,10 @@ void IrcMessageHandler::handleUserStateMessage(Communi::IrcMessage *message)
 
             // which of Twitch's badges the user has here, for the own
             // badge order
+            const auto twitchBadges = parseBadgeTag(message->tags());
             std::vector<ownbadges::TwitchBadgeHeld> held;
-            for (const auto &badge : parseBadgeTag(message->tags()))
+            held.reserve(twitchBadges.size());
+            for (const auto &badge : twitchBadges)
             {
                 auto emote = tc->twitchBadge(badge.key_, badge.value_);
                 if (!emote)
