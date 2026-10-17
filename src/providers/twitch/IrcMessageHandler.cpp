@@ -10,6 +10,7 @@
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/ignores/IgnoreController.hpp"
+#include "messages/Emote.hpp"
 #include "messages/Link.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
@@ -20,9 +21,11 @@
 #include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchAccountManager.hpp"
+#include "providers/twitch/TwitchBadges.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchCommon.hpp"
 #include "providers/twitch/TwitchHelpers.hpp"
+#include "providers/twitch/TwitchIrc.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/twitch/UserColor.hpp"
 #include "singletons/Settings.hpp"
@@ -31,6 +34,7 @@
 #include "util/FormatTime.hpp"
 #include "util/Helpers.hpp"
 #include "util/IrcHelpers.hpp"
+#include "util/OwnBadgeLayout.hpp"
 
 #include <IrcConnection>
 #include <IrcMessage>
@@ -738,6 +742,31 @@ void IrcMessageHandler::handleUserStateMessage(Communi::IrcMessage *message)
 
             hasModBadge = parsedBadges.contains("moderator") ||
                           parsedBadges.contains("lead_moderator");
+
+            // which of Twitch's badges the user has here, for the own
+            // badge order
+            std::vector<ownbadges::TwitchBadgeHeld> held;
+            for (const auto &badge : parseBadgeTag(message->tags()))
+            {
+                auto emote = tc->twitchBadge(badge.key_, badge.value_);
+                if (!emote)
+                {
+                    emote = getApp()->getTwitchBadges()->badge(badge.key_,
+                                                               badge.value_);
+                }
+                auto title = emote ? (*emote)->tooltip.string : QString{};
+                if (title.isEmpty())
+                {
+                    title = badge.key_;
+                    title.replace('_', ' ');
+                    if (!title.isEmpty())
+                    {
+                        title[0] = title[0].toUpper();
+                    }
+                }
+                held.push_back({.flag = badge.flag_, .title = title});
+            }
+            ownbadges::noteChannelBadges(channelName, held);
         }
 
         if (hasModBadge)

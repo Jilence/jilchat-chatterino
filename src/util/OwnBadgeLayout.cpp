@@ -30,8 +30,31 @@ struct Provider {
     QStringView name;
 };
 
-/// Where badges come from, in the order they are usually shown in.
-/// Twitch's own aren't part of the order; they always come first.
+/// Twitch's own badges have a place in the order as a group each: the role
+/// (broadcaster, moderator, VIP, staff), the subscription, the badge picked
+/// globally or for the channel, and the prediction. They come first.
+constexpr std::array<QStringView, 4> TWITCH_SLOTS{u"ta", u"ts", u"tv", u"tp"};
+
+QStringView twitchSlot(MessageElementFlags flags)
+{
+    if (flags.hasAny(MessageElementFlag::BadgeGlobalAuthority,
+                     MessageElementFlag::BadgeChannelAuthority))
+    {
+        return u"ta";
+    }
+    if (flags.has(MessageElementFlag::BadgeSubscription))
+    {
+        return u"ts";
+    }
+    if (flags.has(MessageElementFlag::BadgePredictions))
+    {
+        return u"tp";
+    }
+    return u"tv";
+}
+
+/// Where badges come from, in the order they are usually shown in, after
+/// Twitch's own
 constexpr std::array PROVIDERS{
     Provider{.flag = MessageElementFlag::BadgeChatterino,
              .key = u"c",
@@ -77,8 +100,7 @@ constexpr std::array PROVIDERS{
 };
 
 /// The key of a badge and what to call it. The key is empty for
-/// elements that have no place of their own in the order: Twitch's own
-/// badges always come first, as Twitch sends them, and can't be hidden.
+/// elements that have no place of their own in the order.
 std::pair<QString, QString> describe(const MessageElement &element)
 {
     const auto flags = element.getFlags();
@@ -96,9 +118,12 @@ std::pair<QString, QString> describe(const MessageElement &element)
     const auto emote = badge->getEmote();
     const auto title = emote ? emote->tooltip.string : QString{};
 
-    if (badge->twitchBadgeSlug())
+    if (const auto slug = badge->twitchBadgeSlug())
     {
-        return {};
+        return {
+            twitchSlot(element.getFlags()).toString(),
+            QStringLiteral("Twitch: ") + (title.isEmpty() ? *slug : title),
+        };
     }
 
     for (const auto &provider : PROVIDERS)
@@ -116,12 +141,19 @@ std::pair<QString, QString> describe(const MessageElement &element)
     return {};
 }
 
-/// Where a badge goes if the user gave it no place: like in PROVIDERS
+/// Where a badge goes if the user gave it no place: Twitch's groups
+/// first, then the others like in PROVIDERS
 int defaultRank(QStringView key)
 {
+    const auto twitch = std::ranges::distance(
+        TWITCH_SLOTS.begin(), std::ranges::find(TWITCH_SLOTS, key));
+    if (twitch < std::ssize(TWITCH_SLOTS))
+    {
+        return static_cast<int>(twitch);
+    }
     const auto index = std::ranges::distance(
         PROVIDERS.begin(), std::ranges::find(PROVIDERS, key, &Provider::key));
-    return 1 + static_cast<int>(index);
+    return static_cast<int>(std::ssize(TWITCH_SLOTS) + index);
 }
 
 std::mutex SEEN_MUTEX;
@@ -132,6 +164,19 @@ std::vector<std::pair<QString, QString>> &seenBadges()
 {
     static std::vector<std::pair<QString, QString>> seen;
     return seen;
+}
+
+/// Per channel: the groups of Twitch's badges the user's latest message
+/// there had, and what the badge of each was called. Guarded by SEEN_MUTEX.
+QHash<QString, QHash<QString, QString>> &twitchSlotsByChannel()
+{
+    static QHash<QString, QHash<QString, QString>> slots;
+    return slots;
+}
+
+bool isTwitchSlot(QStringView key)
+{
+    return std::ranges::find(TWITCH_SLOTS, key) != TWITCH_SLOTS.end();
 }
 
 void remember(const QString &key, const QString &label)
@@ -159,7 +204,8 @@ std::vector<std::pair<QString, QString>> savedOrder()
     {
         const auto separator = saved.indexOf(SEPARATOR);
         auto key = separator < 0 ? saved : saved.left(separator);
-        // Twitch's own badges had a place here once; they don't anymore
+        // Twitch's own badges once had a place each; now they have one
+        // per group
         if (key.isEmpty() || key.startsWith(u"t:"))
         {
             continue;
@@ -174,7 +220,7 @@ std::vector<std::pair<QString, QString>> savedOrder()
 }  // namespace
 
 void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
-           size_t firstBadge)
+           size_t firstBadge, const QString &channelName)
 {
     if (firstBadge >= elements.size())
     {
@@ -182,13 +228,24 @@ void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
     }
     const auto begin = elements.begin() + static_cast<ptrdiff_t>(firstBadge);
 
+    QHash<QString, QString> channelSlots;
     for (auto it = begin; it != elements.end(); ++it)
     {
         const auto [key, label] = describe(**it);
         if (!key.isEmpty())
         {
             remember(key, label);
+            if (isTwitchSlot(key) && !channelSlots.contains(key))
+            {
+                channelSlots.insert(key, label);
+            }
         }
+    }
+    if (!channelName.isEmpty())
+    {
+        // what the user is in that channel now, e.g. no longer a VIP
+        std::scoped_lock lock(SEEN_MUTEX);
+        twitchSlotsByChannel().insert(channelName.toLower(), channelSlots);
     }
 
     const auto hidden = getSettings()->ownBadgeHidden.getValue();
@@ -230,7 +287,29 @@ void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
                      });
 }
 
-std::vector<Entry> entries()
+void noteChannelBadges(const QString &channelName,
+                       const std::vector<TwitchBadgeHeld> &badges)
+{
+    if (channelName.isEmpty())
+    {
+        return;
+    }
+    QHash<QString, QString> channelSlots;
+    for (const auto &badge : badges)
+    {
+        const auto key = twitchSlot(MessageElementFlags{badge.flag}).toString();
+        if (!channelSlots.contains(key))
+        {
+            const auto label = QStringLiteral("Twitch: ") + badge.title;
+            channelSlots.insert(key, label);
+            remember(key, label);
+        }
+    }
+    std::scoped_lock lock(SEEN_MUTEX);
+    twitchSlotsByChannel().insert(channelName.toLower(), channelSlots);
+}
+
+std::vector<Entry> entries(const QString &channelName)
 {
     const auto hidden = getSettings()->ownBadgeHidden.getValue();
     const auto isVisible = [&](const QString &key) {
@@ -238,10 +317,28 @@ std::vector<Entry> entries()
     };
 
     std::vector<std::pair<QString, QString>> seen;
+    QHash<QString, QString> channelSlots;
     {
         std::scoped_lock lock(SEEN_MUTEX);
         seen = seenBadges();
+        if (!channelName.isEmpty())
+        {
+            channelSlots = twitchSlotsByChannel().value(channelName.toLower());
+        }
     }
+    // Twitch's badges as they are in that channel, the others everywhere
+    const auto fitChannel = [&](Entry &entry) {
+        if (channelName.isEmpty() || !isTwitchSlot(entry.key))
+        {
+            return;
+        }
+        const auto found = channelSlots.constFind(entry.key);
+        entry.available = found != channelSlots.cend();
+        if (entry.available && !found->isEmpty())
+        {
+            entry.label = *found;
+        }
+    };
 
     const auto saved = savedOrder();
     std::vector<Entry> result;
@@ -257,6 +354,7 @@ std::vector<Entry> entries()
             .label = label.isEmpty() ? key : label,
             .visible = isVisible(key),
         });
+        fitChannel(result.back());
     }
 
     // the ones without a place yet, where they would be shown
@@ -272,6 +370,7 @@ std::vector<Entry> entries()
                 .label = label.isEmpty() ? key : label,
                 .visible = isVisible(key),
             });
+            fitChannel(result.back());
         }
     }
     return result;
