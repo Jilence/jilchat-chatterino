@@ -31,7 +31,7 @@ struct Provider {
 };
 
 /// Where badges come from, in the order they are usually shown in.
-/// Twitch's own come first and are told apart by their name.
+/// Twitch's own aren't part of the order; they always come first.
 constexpr std::array PROVIDERS{
     Provider{.flag = MessageElementFlag::BadgeChatterino,
              .key = u"c",
@@ -77,7 +77,8 @@ constexpr std::array PROVIDERS{
 };
 
 /// The key of a badge and what to call it. The key is empty for
-/// elements that have no place of their own in the order.
+/// elements that have no place of their own in the order: Twitch's own
+/// badges always come first, as Twitch sends them, and can't be hidden.
 std::pair<QString, QString> describe(const MessageElement &element)
 {
     const auto flags = element.getFlags();
@@ -95,12 +96,9 @@ std::pair<QString, QString> describe(const MessageElement &element)
     const auto emote = badge->getEmote();
     const auto title = emote ? emote->tooltip.string : QString{};
 
-    if (const auto slug = badge->twitchBadgeSlug())
+    if (badge->twitchBadgeSlug())
     {
-        return {
-            QStringLiteral("t:") + slug->trimmed().toLower(),
-            QStringLiteral("Twitch: ") + (title.isEmpty() ? *slug : title),
-        };
+        return {};
     }
 
     for (const auto &provider : PROVIDERS)
@@ -118,14 +116,9 @@ std::pair<QString, QString> describe(const MessageElement &element)
     return {};
 }
 
-/// Where a badge goes if the user gave it no place: Twitch's first,
-/// then the others like in PROVIDERS
+/// Where a badge goes if the user gave it no place: like in PROVIDERS
 int defaultRank(QStringView key)
 {
-    if (key.startsWith(u"t:"))
-    {
-        return 0;
-    }
     const auto index = std::ranges::distance(
         PROVIDERS.begin(), std::ranges::find(PROVIDERS, key, &Provider::key));
     return 1 + static_cast<int>(index);
@@ -166,7 +159,8 @@ std::vector<std::pair<QString, QString>> savedOrder()
     {
         const auto separator = saved.indexOf(SEPARATOR);
         auto key = separator < 0 ? saved : saved.left(separator);
-        if (key.isEmpty())
+        // Twitch's own badges had a place here once; they don't anymore
+        if (key.isEmpty() || key.startsWith(u"t:"))
         {
             continue;
         }

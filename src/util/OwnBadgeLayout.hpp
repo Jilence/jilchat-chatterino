@@ -19,9 +19,9 @@ class MessageElement;
 namespace ownbadges {
 
 struct Entry {
-    /// What kind of badge this is, e.g. "t:subscriber" or "7"
+    /// What kind of badge this is, e.g. "7" for 7TV
     QString key;
-    /// What to call it, e.g. "Twitch: 1.5-Year Subscriber"
+    /// What to call it, e.g. "7TV: Subscriber"
     QString label;
     bool visible = true;
 };
