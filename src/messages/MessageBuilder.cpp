@@ -39,6 +39,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
@@ -136,9 +137,9 @@ Message::ClientDetectionStatus performClientDetection(const QString &nonce)
         return Status::Abnormal;
     }
 
-    if (nonce.size() >= 10 && nonce.size() <= 12)
+    if (nonce.size() >= 8 && nonce.size() <= 12)
     {
-        // matches /[a-z0-9]{10,12}/
+        // matches /[a-z0-9]{8,12}/
         const bool mobile =
             std::all_of(nonce.cbegin(), nonce.cend(), [](QChar c) {
                 return isDigit(c) || isLowerLetter(c);
@@ -1494,6 +1495,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         MessageElementFlag::BadgeFolhinha,
         MessageElementFlag::BadgeJilChat,
         MessageElementFlag::BadgeBadgeHQ,
+        MessageElementFlag::BadgeLimerino,
     };
 
     // Same order as makeIrcMessage.
@@ -1511,6 +1513,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendFolhinhaBadges(message.userID);
     builder.appendJilChatBadges(message.userID);
     builder.appendBadgeHQBadges(message.userID);
+    builder.appendLimerinoBadges(message.userID);
 
     auto &elements = message.elements;
     const auto isThirdParty = [&](const std::unique_ptr<MessageElement> &el) {
@@ -2330,6 +2333,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendFolhinhaBadges(userID);
         builder.appendJilChatBadges(userID);
         builder.appendBadgeHQBadges(userID);
+        builder.appendLimerinoBadges(userID);
         if (senderIsCurrentUser)
         {
             // the order the user wants their own badges in
@@ -3991,6 +3995,20 @@ void MessageBuilder::appendBadgeHQBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendLimerinoBadges(const QString &userID)
+{
+    auto *provider = getApp()->getLimerinoBadges();
+    if (provider == nullptr)
+    {
+        return;
+    }
+    for (const auto &badge : provider->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeLimerino);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
 void MessageBuilder::appendMoltorinoBadges(const QString &userID)
 {
     if (!getSettings()->showBadgesMoltorino)
@@ -4323,6 +4341,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendFolhinhaBadges(userId);
     builder.appendJilChatBadges(userId);
     builder.appendBadgeHQBadges(userId);
+    builder.appendLimerinoBadges(userId);
 
     MessageParseArgs args;
     args.isAction = true;

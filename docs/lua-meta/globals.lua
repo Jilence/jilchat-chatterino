@@ -881,6 +881,7 @@ c2.MessageElementFlag = {
     BadgeJilChat = 0,
     BadgeBluzyrino = 0,
     BadgeBadgeHQ = 0,
+    BadgeLimerino = 0,
     Badges = 0,
     ChannelName = 0,
     BitsAmount = 0,

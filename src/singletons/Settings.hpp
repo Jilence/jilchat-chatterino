@@ -517,6 +517,7 @@ public:
     BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
     BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
     BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
+    BoolSetting showBadgesLimerino = {"/appearance/badges/limerino", true};
     BoolSetting showSelectBadgeButton = {"/client/showSelectBadgeButton", true};
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};

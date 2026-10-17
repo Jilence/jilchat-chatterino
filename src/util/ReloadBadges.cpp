@@ -16,6 +16,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
@@ -96,6 +97,13 @@ void reloadBadgeProviders(const ChannelPtr &channel)
         if (auto *badgeHQ = app->getBadgeHQBadges())
         {
             badgeHQ->reload(reloadMessage(channel, "BadgeHQ badges"));
+        }
+    }
+    if (settings->showBadgesLimerino)
+    {
+        if (auto *limerino = app->getLimerinoBadges())
+        {
+            limerino->reload(reloadMessage(channel, "Limerino badges"));
         }
     }
     if (settings->showBadgesDankChat)
