@@ -92,6 +92,8 @@ set(SOURCE_FILES
         controllers/commands/builtin/kick/KickRawEvent.hpp
         controllers/commands/builtin/kick/ModerationActions.cpp
         controllers/commands/builtin/kick/ModerationActions.hpp
+        controllers/commands/builtin/seventv/Presence.cpp
+        controllers/commands/builtin/seventv/Presence.hpp
         controllers/commands/builtin/twitch/AddModerator.cpp
         controllers/commands/builtin/twitch/AddModerator.hpp
         controllers/commands/builtin/twitch/AddVIP.cpp
@@ -468,6 +470,9 @@ set(SOURCE_FILES
         providers/jilchat/JilChatBadges.hpp
         providers/jilchat/JilChatVoice.cpp
         providers/jilchat/JilChatVoice.hpp
+
+        providers/limerino/LimerinoBadges.cpp
+        providers/limerino/LimerinoBadges.hpp
 
         providers/badgehq/BadgeHQBadges.cpp
         providers/badgehq/BadgeHQBadges.hpp

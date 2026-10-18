@@ -48,19 +48,19 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     layout.addTitle("Badges");
     SettingWidget::checkbox("Folhinha", s.showBadgesFolhinha)
         ->addKeywords({"folhinha", "folhinhabot"})
-        ->setTooltip("FolhinhaBot Plus, Founder, and Supporter badges")
+        ->setTooltip("Developer, admin, and Plus badges.")
         ->addTo(layout);
     SettingWidget::checkbox("FFZ:AP", s.showBadgesFfzAp)
         ->addKeywords({"ffz", "ffzap", "frankerfacez"})
-        ->setTooltip("FFZ:AP supporter and helper badges")
+        ->setTooltip("Developer, helper, and supporter badges.")
         ->addTo(layout);
     SettingWidget::checkbox("DankChat", s.showBadgesDankChat)
         ->addKeywords({"dankchat", "dank"})
-        ->setTooltip("DankChat supporter badges")
+        ->setTooltip("Dev/contributor, QA, and supporter badges.")
         ->addTo(layout);
     SettingWidget::checkbox("Chatsen", s.showBadgesChatsen)
         ->addKeywords({"chatsen"})
-        ->setTooltip("Chatsen supporter and developer badges")
+        ->setTooltip("Developer, supporter, artist, and Patreon badges.")
         ->addTo(layout);
     SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
         ->addKeywords({"jilchat", "jil", "badges"})
@@ -68,7 +68,11 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::checkbox("BadgeHQ", s.showBadgesBadgeHQ)
         ->addKeywords({"badgehq", "badge hq", "supporter", "founder"})
-        ->setTooltip("Supporter and Founder badges from BadgeHQ.")
+        ->setTooltip("Founder and supporter badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Limerino", s.showBadgesLimerino)
+        ->addKeywords({"limerino"})
+        ->setTooltip("Founder and event badges.")
         ->addTo(layout);
 
     layout.addTitle("Client");
