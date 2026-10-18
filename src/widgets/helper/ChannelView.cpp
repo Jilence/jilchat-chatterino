@@ -1648,6 +1648,7 @@ void ChannelView::themeChangedEvent()
                                     getSettings()->overlayBackgroundOpacity);
     this->wallpaperCacheKey_.clear();
     this->wallpaperPixmap_.reset();
+    this->wallpaperScaled_ = {};
     this->releaseVideoWallpaper();
     this->invalidateBuffers();
     this->updateRoundedChildMasks();
@@ -1924,8 +1925,26 @@ void ChannelView::paintWallpaper(QPainter &painter)
             this->wallpaperPixmap_->size(), target, profile.wallpaperMode,
             profile.wallpaperFocalX, profile.wallpaperFocalY,
             profile.wallpaperZoom);
-        painter.drawPixmap(layout.destination, *this->wallpaperPixmap_,
-                           layout.source);
+        // Scaling the image smoothly on every repaint is slow, so it's
+        // scaled once for this size and then only copied.
+        const auto dpr = this->devicePixelRatioF();
+        const auto source = layout.source.toAlignedRect();
+        const auto size = (layout.destination.size() * dpr).toSize();
+        if (this->wallpaperScaled_.isNull() ||
+            this->wallpaperScaledFrom_ != this->wallpaperPixmap_->cacheKey() ||
+            this->wallpaperScaledSource_ != source ||
+            this->wallpaperScaledSize_ != size)
+        {
+            this->wallpaperScaled_ =
+                this->wallpaperPixmap_->copy(source).scaled(
+                    size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            this->wallpaperScaled_.setDevicePixelRatio(dpr);
+            this->wallpaperScaledFrom_ = this->wallpaperPixmap_->cacheKey();
+            this->wallpaperScaledSource_ = source;
+            this->wallpaperScaledSize_ = size;
+        }
+        painter.drawPixmap(layout.destination.topLeft(),
+                           this->wallpaperScaled_);
     }
     painter.restore();
 

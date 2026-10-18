@@ -544,6 +544,12 @@ private:
     QString wallpaperCacheKey_;
     /// Shared between all views showing the same background.
     std::shared_ptr<QPixmap> wallpaperPixmap_;
+    /// `wallpaperPixmap_`, already scaled to how it's drawn, so a repaint
+    /// only copies it. Made again when the size or the image changes.
+    QPixmap wallpaperScaled_;
+    qint64 wallpaperScaledFrom_ = 0;
+    QRect wallpaperScaledSource_;
+    QSize wallpaperScaledSize_;
     /// Set instead of `wallpaperPixmap_` when the background is a video.
     /// Always empty in builds without video backgrounds.
     std::shared_ptr<ThemeVideo> wallpaperVideo_;

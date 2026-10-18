@@ -76,6 +76,8 @@ public:
     MessagePaintResult paint(const MessagePaintContext &ctx);
     void invalidateBuffer();
     void deleteBuffer();
+    /// Only the buffer, for a new size: the shadow may still fit
+    void resetBuffer();
     void deleteCache();
 
     const MessageLayoutElement *getElementAt(QPointF point) const;
@@ -104,6 +106,10 @@ private:
     MessageLayoutContainer container_;
     std::unique_ptr<QPixmap> buffer_;
     bool bufferValid_ = false;
+    /// The blurred shadow of the content, kept while what it was made from
+    /// stays the same: redrawing the buffer often doesn't change it.
+    QPixmap shadowCache_;
+    size_t shadowCacheKey_ = 0;
 
     qreal height_ = 0;
     int currentLayoutWidth_ = -1;
