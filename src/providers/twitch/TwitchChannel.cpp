@@ -3265,6 +3265,7 @@ void TwitchChannel::loadRecentMessages()
 {
     if (!getSettings()->loadTwitchMessageHistoryOnConnect)
     {
+        this->recentMessagesLoaded_ = true;
         return;
     }
 
@@ -3285,6 +3286,7 @@ void TwitchChannel::loadRecentMessages()
             }
 
             tc->addMessagesAtStart(messages);
+            tc->recentMessagesLoaded_ = true;
             tc->loadingRecentMessages_.clear();
 
             std::vector<MessagePtr> msgs;
@@ -3310,6 +3312,7 @@ void TwitchChannel::loadRecentMessages()
                 return;
             }
 
+            shared->recentMessagesLoaded_ = true;
             shared->loadingRecentMessages_.clear();
         },
         getSettings()->twitchMessageHistoryLimit.getValue(), std::nullopt,
@@ -3320,8 +3323,11 @@ bool TwitchChannel::loadOlderMessagesFromLogs()
 {
     auto &state = this->olderLogs_;
     // Wait for the recent messages so both don't add at the start at once.
+    // Before they were even asked for (the channel has no room ID yet), the
+    // logs would start from now and the recent messages would go in front
+    // of the newest ones.
     if (!getSettings()->loadOlderMessagesFromPublicLogs || state.loading ||
-        this->isLoadingRecentMessages())
+        this->isLoadingRecentMessages() || !this->hasLoadedRecentMessages())
     {
         return false;
     }
@@ -4634,6 +4640,11 @@ void TwitchChannel::setSendWait(int seconds)
 bool TwitchChannel::isLoadingRecentMessages() const
 {
     return this->loadingRecentMessages_.test();
+}
+
+bool TwitchChannel::hasLoadedRecentMessages() const
+{
+    return this->recentMessagesLoaded_;
 }
 
 void TwitchChannel::tryEmitPinnedChatPinSystemMessage(

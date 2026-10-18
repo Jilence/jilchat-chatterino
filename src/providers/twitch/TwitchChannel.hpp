@@ -565,6 +565,9 @@ public:
     void setSendWait(int seconds);
 
     bool isLoadingRecentMessages() const;
+    /// Whether the recent messages were asked for once since joining,
+    /// successfully or not (or aren't asked for at all)
+    bool hasLoadedRecentMessages() const;
 
     /// Loads a page of messages (see Settings::publicLogsPageSize) older than
     /// the oldest shown one from the public logs and adds them at the start,
@@ -744,6 +747,7 @@ private:
     std::optional<std::chrono::time_point<std::chrono::system_clock>>
         lastConnectedAt_{};
     std::atomic_flag loadingRecentMessages_ = ATOMIC_FLAG_INIT;
+    std::atomic<bool> recentMessagesLoaded_{false};
 
     /// State of loadOlderMessagesFromLogs
     struct OlderLogs {
