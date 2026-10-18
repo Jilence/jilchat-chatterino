@@ -705,7 +705,10 @@ void Image::actuallyLoad()
             return;
         }
 
-        if (shared->useExpectedSizeForRead_)
+        // Autoscaled images only use expectedSize_ as a layout placeholder.
+        // Decoding at that size throws away the source pixels (JilChat badges
+        // are 128px and would become an 18px bitmap).
+        if (shared->useExpectedSizeForRead_ && !shared->autoScale_)
         {
             reader.setScaledSize(shared->expectedSize_);
         }
