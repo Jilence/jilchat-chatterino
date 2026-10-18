@@ -2976,6 +2976,10 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
 
     /// Add the messages at the start
     const bool followingTop = this->followTop_ && this->isAtAutoModTop();
+    // Whether the newest messages are shown, before the new maximum below
+    // moves the bottom away. When all messages fit, they are.
+    const bool showingNewest =
+        this->scrollBar_->isAtBottom() || this->showingLatestMessages_;
     auto addedMessages = this->messages_.pushFront(messageRefs);
     if (!addedMessages.empty())
     {
@@ -2987,7 +2991,7 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
         {
             this->scrollBar_->scrollToTop();
         }
-        else if (this->scrollBar_->isAtBottom() && !this->followTop_)
+        else if (showingNewest && !this->followTop_)
         {
             this->scrollBar_->scrollToBottom();
         }
