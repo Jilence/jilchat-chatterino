@@ -2701,8 +2701,13 @@ void TwitchBadgePickerDialog::rebuildOrder()
         this->rebuildContent();
     });
 
-    const auto entries = ownbadges::entries();
-    if (entries.empty())
+    // Twitch's badges as the user has them in this channel
+    const auto entries = ownbadges::entries(
+        this->channel_ != nullptr ? this->channel_->getName() : QString{});
+    const auto shown = std::ranges::count_if(entries, [](const auto &entry) {
+        return entry.available;
+    });
+    if (shown == 0)
     {
         auto *empty = new QLabel(
             "Your badges show up here once one of your own messages was "
@@ -2731,11 +2736,13 @@ void TwitchBadgePickerDialog::rebuildOrder()
         item->setToolTip(entry.visible ? "Visible in chat" : "Hidden in chat");
         item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled |
                        Qt::ItemIsDragEnabled);
+        // kept in the list so its place is saved with the others
+        item->setHidden(!entry.available);
     }
     // all rows without a scrollbar of its own: the page scrolls
     const int rowHeight =
         std::max(scaledMetric(scale, 32, 26), list->fontMetrics().height() + 8);
-    list->setFixedHeight((rowHeight * static_cast<int>(entries.size())) +
+    list->setFixedHeight((rowHeight * static_cast<int>(shown)) +
                          (2 * list->frameWidth()) + 2);
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     this->contentLayout_->addWidget(list);
