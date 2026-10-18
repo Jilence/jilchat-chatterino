@@ -3066,9 +3066,11 @@ void ChannelView::loadOlderLogsIfChatFits()
         return;
     }
 
-    // The recent messages are still loading. Try again soon: if they turn out
-    // empty, nothing triggers a new layout that would retry.
-    if (twitchChannel->isLoadingRecentMessages() &&
+    // The recent messages are still loading, or weren't asked for yet. Try
+    // again soon: if they turn out empty, nothing triggers a new layout that
+    // would retry.
+    if ((twitchChannel->isLoadingRecentMessages() ||
+         !twitchChannel->hasLoadedRecentMessages()) &&
         !this->olderLogsRetryPending_)
     {
         this->olderLogsRetryPending_ = true;
