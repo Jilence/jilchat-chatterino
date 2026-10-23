@@ -6,6 +6,7 @@
 
 #include "Application.hpp"
 #include "common/Literals.hpp"
+#include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "singletons/Paths.hpp"
@@ -20,6 +21,7 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -27,6 +29,8 @@
 #include <QSaveFile>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include <tuple>
 
 namespace {
 
@@ -40,7 +44,35 @@ const QStringList SETTINGS_EXPORT_FILES = {
     u"settings.json"_s,
     u"commands.json"_s,
     WindowManager::WINDOW_LAYOUT_FILENAME,
+    u"chat-automations.json"_s,
+    u"user-data.json"_s,
 };
+/// A background bigger than this stays out of the export
+constexpr qint64 MAX_EXPORTED_WALLPAPER_SIZE = 100LL * 1024 * 1024;
+
+/// The background a theme file uses, if it is one of the managed ones in
+/// the Wallpapers folder next to the themes
+QString managedWallpaperOf(const QJsonObject &theme,
+                           const QString &wallpapersDirectory)
+{
+    const auto source = theme[u"metadata"_s]
+                            .toObject()[u"moltorino"_s]
+                            .toObject()[u"wallpaper"_s]
+                            .toObject()[u"source"_s]
+                            .toString();
+    if (source.isEmpty())
+    {
+        return {};
+    }
+    const QFileInfo info(source);
+    if (QDir::cleanPath(info.absolutePath()) !=
+            QDir::cleanPath(wallpapersDirectory) ||
+        !info.isFile())
+    {
+        return {};
+    }
+    return info.fileName();
+}
 
 QJsonDocument readJsonFile(const QString &path, QString *error)
 {
@@ -112,6 +144,10 @@ QJsonObject sanitizeSettingsObject(QJsonObject settings)
 
 void exportSettingsProfile(QWidget *parent)
 {
+    if (auto *automations = getApp()->getChatAutomations())
+    {
+        std::ignore = automations->save();
+    }
     getApp()->getCommands()->save();
     getApp()->getHotkeys()->save();
     getApp()->getWindows()->save();
@@ -122,6 +158,16 @@ void exportSettingsProfile(QWidget *parent)
         QDir::homePath() + "/leafyrino-settings.json",
         "Leafyrino settings (*.json);;JSON files (*.json)");
     if (fileName.isEmpty())
+    {
+        return;
+    }
+
+    const auto includeWallpapers = QMessageBox::question(
+        parent, "Export settings",
+        "Include the background images and videos of your own themes?\n\n"
+        "They can make the export file large.",
+        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    if (includeWallpapers == QMessageBox::Cancel)
     {
         return;
     }
@@ -154,10 +200,52 @@ void exportSettingsProfile(QWidget *parent)
         files.insert(relativeFile, object);
     }
 
+    // own themes, and the backgrounds they use
+    const QDir themesDirectory(getApp()->getPaths().themesDirectory);
+    const auto wallpapersDirectory = themesDirectory.filePath(u"Wallpapers"_s);
+    QJsonObject themes;
+    QJsonObject wallpapers;
+    QStringList skippedWallpapers;
+    for (const auto &entry :
+         themesDirectory.entryInfoList({u"*.json"_s}, QDir::Files))
+    {
+        auto theme = readJsonFile(entry.absoluteFilePath(), nullptr);
+        if (theme.isNull())
+        {
+            continue;
+        }
+        themes.insert(entry.fileName(), theme.object());
+
+        if (includeWallpapers != QMessageBox::Yes)
+        {
+            continue;
+        }
+        const auto wallpaper =
+            managedWallpaperOf(theme.object(), wallpapersDirectory);
+        if (wallpaper.isEmpty() || wallpapers.contains(wallpaper))
+        {
+            continue;
+        }
+        QFile file(QDir(wallpapersDirectory).filePath(wallpaper));
+        if (file.size() > MAX_EXPORTED_WALLPAPER_SIZE ||
+            !file.open(QIODevice::ReadOnly))
+        {
+            skippedWallpapers.append(wallpaper);
+            continue;
+        }
+        wallpapers.insert(wallpaper,
+                          QString::fromLatin1(file.readAll().toBase64()));
+    }
+
     QJsonObject exportObject;
     exportObject.insert(u"format"_s, SETTINGS_EXPORT_FORMAT);
-    exportObject.insert(u"version"_s, 1);
+    exportObject.insert(u"version"_s, 2);
     exportObject.insert(u"files"_s, files);
+    exportObject.insert(u"themes"_s, themes);
+    if (!wallpapers.isEmpty())
+    {
+        exportObject.insert(u"wallpapers"_s, wallpapers);
+    }
 
     QString error;
     if (!writeJsonFile(fileName, QJsonDocument(exportObject), &error))
@@ -167,9 +255,15 @@ void exportSettingsProfile(QWidget *parent)
         return;
     }
 
-    QMessageBox::information(
-        parent, "Export complete",
-        "Settings were exported without Twitch/Kick accounts.");
+    auto message =
+        QStringLiteral("Settings were exported without Twitch/Kick accounts.");
+    if (!skippedWallpapers.isEmpty())
+    {
+        message += u"\n\nThese backgrounds were too large and were left "
+                   u"out: "_s +
+                   skippedWallpapers.join(u", "_s);
+    }
+    QMessageBox::information(parent, "Export complete", message);
 }
 
 void importSettingsProfile(QWidget *parent)
@@ -203,8 +297,9 @@ void importSettingsProfile(QWidget *parent)
     auto reply = QMessageBox::question(
         parent, "Import settings",
         "Importing will replace local settings, hotkeys, highlights, "
-        "moderation buttons, commands, and tab layout. Twitch/Kick accounts "
-        "on this device will be kept.\n\nContinue?",
+        "moderation buttons, commands, tab layout, chat automations and user "
+        "notes, and add the exported themes. Twitch/Kick accounts on this "
+        "device will be kept.\n\nContinue?",
         QMessageBox::Yes | QMessageBox::No);
     if (reply != QMessageBox::Yes)
     {
@@ -261,7 +356,8 @@ void SettingsProfilePage::initLayout(GeneralPageView &layout)
     layout.addTitle("Settings Import/Export");
     layout.addDescription(
         "Export or import all local settings, hotkeys, highlights, moderation "
-        "buttons, commands, and tabs. Accounts are not exported.");
+        "buttons, commands, tabs, chat automations, user notes and colors, and "
+        "your own themes with their backgrounds. Accounts are not exported.");
     {
         auto *box = new QHBoxLayout;
         box->addWidget(layout.makeButton("Export settings", [this]() {
