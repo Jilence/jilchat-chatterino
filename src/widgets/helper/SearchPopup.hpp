@@ -101,6 +101,10 @@ private:
     /// End of the selected time range (UTC), invalid for "until now".
     QDateTime rangeEnd() const;
     void updateCustomRangeVisibility();
+    /// The user field, the time range and the channel choice belong to the
+    /// public logs search: only shown while it is on, so the search is a
+    /// single field otherwise
+    void updateLogControlsVisibility();
     void rebuildChannelsMenu();
     void updateChannelsButtonText();
 
@@ -112,6 +116,9 @@ private:
     /// Limits the search to one user (adds `from:<user>` to the query).
     QLineEdit *userInput_{};
     QCheckBox *searchLogsCheckbox_{};
+    /// The row with the time range and the channel choice
+    QWidget *optionsRow_{};
+    QLabel *timeLabel_{};
     QComboBox *timeRangeCombo_{};
     QDateTimeEdit *rangeFromEdit_{};
     QDateTimeEdit *rangeToEdit_{};
