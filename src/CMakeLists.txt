@@ -1102,6 +1102,8 @@ set(SOURCE_FILES
         widgets/settingspages/HighlightingPage.hpp
         widgets/settingspages/IgnoresPage.cpp
         widgets/settingspages/IgnoresPage.hpp
+        widgets/settingspages/JilChatPage.cpp
+        widgets/settingspages/JilChatPage.hpp
         widgets/settingspages/KeyboardSettingsPage.cpp
         widgets/settingspages/KeyboardSettingsPage.hpp
         widgets/settingspages/LeafyrinoPage.cpp
