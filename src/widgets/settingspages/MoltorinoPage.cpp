@@ -1286,16 +1286,32 @@ MoltorinoPage::MoltorinoPage()
         ->setTooltip(
             "Show a compact usercard button for previous Twitch names.")
         ->addTo(*view);
+    SettingWidget::checkbox("Load older messages in the usercard",
+                            s.loadOlderUsercardMessages)
+        ->setTooltip(
+            "Load older messages of a user on the usercard, beyond what is in "
+            "the chat. In channels your Moltorino login (Moltorino -> "
+            "Authentication) can moderate they come from Twitch's moderator "
+            "history, elsewhere from the public logs (needs \"Use "
+            "public logs\" on the JilChat Chatterino page). When disabled, the "
+            "usercard only shows messages from the chat.")
+        ->addKeywords({"usercard", "messages", "history", "logs"})
+        ->addTo(*view);
     SettingWidget::checkbox("Show load more messages button",
                             s.showUsercardLoadMoreMessagesButton)
+        ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
         ->setTooltip("Show a usercard button for loading older messages: from "
-                     "the Twitch mod history in channels your saved Leafyrino "
-                     "login can moderate, otherwise from the public logs.")
+                     "the Twitch mod history in channels your Moltorino login "
+                     "(Moltorino -> Authentication) can moderate, otherwise "
+                     "from the public logs.")
+        ->addKeywords({"usercard", "messages", "load", "button"})
         ->addTo(*view);
     SettingWidget::checkbox("Always load more messages when possible",
                             s.alwaysLoadMoreUsercardMessages)
+        ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
         ->setTooltip("Start lazy-loading older usercard messages without "
                      "clicking the load button.")
+        ->addKeywords({"usercard", "messages", "load", "lazy"})
         ->addTo(*view);
     SettingWidget::checkbox("Continuous background across splits",
                             s.continuousSplitBackground)

@@ -1858,6 +1858,19 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 return;
             }
 
+            if (!getSettings()->loadOlderMessagesFromPublicLogs)
+            {
+                // Nothing is loaded from the public logs then: open their
+                // page in the browser instead.
+                QUrl url("https://lurkology.com/logs");
+                QUrlQuery query;
+                query.addQueryItem("c", this->underlyingChannel_->getName());
+                query.addQueryItem("u", this->userName_);
+                url.setQuery(query);
+                QDesktopServices::openUrl(url);
+                return;
+            }
+
             this->setUsercardLogsShown(!this->usercardLogsShown_);
         };
         QObject::connect(userlogs.getElement(), &Button::leftClicked, openLogs);

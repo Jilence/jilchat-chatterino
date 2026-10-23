@@ -96,12 +96,17 @@ void JilChatPage::initLayout(GeneralPageView &layout)
                           "behind lurkology.com.");
     SettingWidget::checkbox("Use public logs",
                             s.loadOlderMessagesFromPublicLogs)
-        ->setTooltip("Load older messages from logs.zonian.dev. This sends "
-                     "channel names and usernames to that service.")
+        ->setTooltip(
+            "Load older messages from logs.zonian.dev, in the chat when you "
+            "scroll to the top and on the usercard in channels your Moltorino "
+            "login can't moderate. This sends channel names and usernames to "
+            "that "
+            "service. When disabled, nothing is loaded from the public logs.")
         ->addKeywords({"logs", "zonian", "lurkology", "supa", "history",
                        "older", "public"})
         ->addTo(layout);
-    SettingWidget::intInput("Messages per load in chat", s.publicLogsPageSize,
+    SettingWidget::intInput("Public logs messages per load in chat",
+                            s.publicLogsPageSize,
                             {
                                 .min = 10,
                                 .max = 100,
@@ -113,24 +118,18 @@ void JilChatPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"logs", "zonian", "scroll", "page", "count", "messages",
                        "chat", "history", "older", "public"})
         ->addTo(layout);
-    SettingWidget::checkbox("Load older messages in the usercard",
-                            s.loadOlderUsercardMessages)
-        ->setTooltip("Load older messages of a user on the usercard, beyond "
-                     "what is in the chat. When disabled, the usercard only "
-                     "shows messages from the chat.")
-        ->addKeywords({"usercard", "messages", "history", "logs"})
-        ->addTo(layout);
-    SettingWidget::intInput("Messages per load in the usercard",
+    SettingWidget::intInput("Public logs messages per load in the usercard",
                             s.usercardOlderMessagesPageSize,
                             {
                                 .min = 10,
                                 .max = 100,
                                 .singleStep = 10,
                             })
-        ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
-        ->setTooltip("How many older messages the usercard loads from the "
-                     "public logs at a time. The Twitch moderator history "
-                     "loads in pages set by Twitch.")
+        ->conditionallyEnabledBy(s.loadOlderMessagesFromPublicLogs)
+        ->setTooltip("How many older messages of a user the usercard loads "
+                     "from the public logs at a time, in channels your "
+                     "Moltorino login can't moderate. Twitch's moderator "
+                     "history loads in pages set by Twitch.")
         ->addKeywords({"usercard", "messages", "logs", "page", "count"})
         ->addTo(layout);
 
