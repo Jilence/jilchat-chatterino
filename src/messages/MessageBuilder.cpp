@@ -386,7 +386,7 @@ void appendLinkedLiveUpdateEmoteName(MessageBuilder &builder,
         messageText.append(' ');
         builder
             .emplace<EmoteLinkElement>(emote, MessageElementFlag::Text,
-                                       MessageColor::System)
+                                       MessageColor::System, name)
             ->setTrailingSpace(false);
         return;
     }
