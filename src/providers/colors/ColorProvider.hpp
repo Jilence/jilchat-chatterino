@@ -4,61 +4,38 @@
 
 #pragma once
 
-#include "providers/twitch/api/HelixEnums.hpp"
-
 #include <QColor>
 
-#include <memory>
-#include <unordered_map>
 #include <vector>
 
 namespace chatterino {
-
-enum class ColorType {
-    SelfHighlight,
-    Subscription,
-    Follow,
-    Whisper,
-    RedeemedHighlight,
-    WatchStreak,
-    FirstMessageHighlight,
-    ThreadMessageHighlight,
-
-    // Used in automatic highlights of your own messages
-    SelfMessageHighlight,
-    AutomodHighlight,
-    AnnouncementHighlight,
-    AnnouncementBlue,
-    AnnouncementGreen,
-    AnnouncementOrange,
-    AnnouncementPurple,
-};
-
-ColorType colorTypeFromHelixAnnouncementColor(
-    HelixAnnouncementColor announcementColor, bool enableColoredAnnouncements);
 
 class ColorProvider
 {
 public:
     static const ColorProvider &instance();
 
-    std::shared_ptr<QColor> color(ColorType type) const;
-
+    /**
+     * @brief Return a set of recently used colors used anywhere in Chatterino.
+     */
     QSet<QColor> recentColors() const;
 
+    /**
+     * @brief Return a vector of colors that are good defaults for use
+     *        throughout the program.
+     */
     const std::vector<QColor> &defaultColors() const;
 
 private:
     ColorProvider();
 
-    void initTypeColorMap();
     void initDefaultColors();
 
-    std::unordered_map<ColorType, std::shared_ptr<QColor>> typeColorMap_;
     std::vector<QColor> defaultColors_;
 };
 }  // namespace chatterino
 
+// Adapted from Qt example: https://doc.qt.io/qt-5/qhash.html#qhash
 inline uint qHash(const QColor &key)
 {
     return qHash(key.name(QColor::HexArgb));

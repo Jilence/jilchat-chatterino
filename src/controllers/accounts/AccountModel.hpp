@@ -22,7 +22,8 @@ public:
 protected:
     std::shared_ptr<Account> getItemFromRow(
         std::vector<QStandardItem *> &row,
-        const std::shared_ptr<Account> &original) override;
+        const std::shared_ptr<Account> &original,
+        std::optional<QModelIndex> index, std::optional<int> role) override;
 
     void getRowFromItem(const std::shared_ptr<Account> &item,
                         std::vector<QStandardItem *> &row) override;

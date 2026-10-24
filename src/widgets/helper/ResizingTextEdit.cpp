@@ -198,39 +198,22 @@ QString ResizingTextEdit::textUnderCursor(bool *hadSpace) const
     QTextCursor tc = this->textCursor();
 
     auto textUpToCursor = currentText.left(tc.selectionStart());
-
-    auto words = QStringView{textUpToCursor}.split(' ');
-    if (words.size() == 0)
+    auto end = textUpToCursor.size();
+    if (end > 0 && textUpToCursor.at(end - 1) == ' ')
     {
-        return QString();
-    }
-
-    bool first = true;
-    QString lastWord;
-    for (auto it = words.crbegin(); it != words.crend(); ++it)
-    {
-        auto word = *it;
-
-        if (first && word.isEmpty())
+        --end;
+        if (hadSpace != nullptr)
         {
-            first = false;
-            if (hadSpace != nullptr)
-            {
-                *hadSpace = true;
-            }
-            continue;
+            *hadSpace = true;
         }
-
-        lastWord = word.toString();
-        break;
     }
 
-    if (lastWord.isEmpty())
+    auto start = end;
+    while (start > 0 && !textUpToCursor.at(start - 1).isSpace())
     {
-        return QString();
+        --start;
     }
-
-    return lastWord;
+    return textUpToCursor.mid(start, end - start);
 }
 
 bool ResizingTextEdit::eventFilter(QObject *obj, QEvent *event)
@@ -273,7 +256,7 @@ void ResizingTextEdit::keyPressEvent(QKeyEvent *event)
         QString currentCompletion = this->textUnderCursor();
 
         // check if there is something to complete
-        if (currentCompletion.size() <= 1)
+        if (!this->completionInProgress_ && currentCompletion.size() <= 1)
         {
             return;
         }
@@ -336,7 +319,7 @@ void ResizingTextEdit::keyPressEvent(QKeyEvent *event)
         return;
     }
 
-    if (!event->text().isEmpty())
+    if (!event->isAccepted() && !event->text().isEmpty())
     {
         this->finishCompletion();
     }
@@ -369,8 +352,13 @@ void ResizingTextEdit::focusOutEvent(QFocusEvent *event)
 
 void ResizingTextEdit::setCompleter(QCompleter *c)
 {
+    // also hides the emote preview row
     this->finishCompletion();
-    delete this->completer_;
+    if (this->completer_)
+    {
+        QObject::disconnect(this->completer_, nullptr, this, nullptr);
+        this->completer_->deleteLater();
+    }
 
     this->completer_ = c;
 
@@ -444,6 +432,29 @@ void ResizingTextEdit::setGhostText(QString text)
 const QString &ResizingTextEdit::ghostText() const
 {
     return this->ghostText_;
+}
+
+bool ResizingTextEdit::isCompletionInProgress() const
+{
+    return this->completionInProgress_;
+}
+
+void ResizingTextEdit::continueCompletion(const QStringList &completions,
+                                          int currentRow)
+{
+    if (!this->completer_ || completions.isEmpty())
+    {
+        return;
+    }
+
+    // NOLINTNEXTLINE(clazy-unneeded-cast)
+    auto *model = dynamic_cast<TabCompletionModel *>(this->completer_->model());
+    assert(model != nullptr);
+    model->setStringList(completions);
+    this->completer_->setModel(model);
+    this->completer_->setCompletionPrefix({});
+    this->completer_->setCurrentRow(currentRow);
+    this->completionInProgress_ = true;
 }
 
 void ResizingTextEdit::insertCompletion(const QString &completion)

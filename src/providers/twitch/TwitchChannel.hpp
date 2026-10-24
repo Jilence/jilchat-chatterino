@@ -36,6 +36,7 @@
 
 class TestIrcMessageHandlerP;
 class TestEventSubMessagesP;
+class IrcMessageHandler_DuplicateChannelPointRewardIrcMessageIgnored_Test;
 
 namespace chatterino {
 
@@ -897,6 +898,7 @@ private:
     friend class TwitchChannel_LiveUpdateGrouping_Test;
     friend class NotificationController_StatusMessagesRespectUsernameStyle_Test;
     friend class ::TestIrcMessageHandlerP;
+    friend class ::IrcMessageHandler_DuplicateChannelPointRewardIrcMessageIgnored_Test;
     friend class ::TestEventSubMessagesP;
 
     QTimer sendWaitTimer_;

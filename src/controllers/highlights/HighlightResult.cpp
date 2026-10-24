@@ -6,82 +6,13 @@
 
 namespace chatterino {
 
-QString highlightMatchStyleName(HighlightMatchStyle style)
-{
-    switch (style)
-    {
-        case HighlightMatchStyle::None:
-            return QStringLiteral("None");
-        case HighlightMatchStyle::Outline:
-            return QStringLiteral("Outline");
-        case HighlightMatchStyle::Fill:
-            return QStringLiteral("Fill");
-        case HighlightMatchStyle::OutlineAndFill:
-            return QStringLiteral("Outline and fill");
-        case HighlightMatchStyle::Underline:
-            return QStringLiteral("Underline");
-    }
-    return QStringLiteral("Outline");
-}
-
-HighlightMatchStyle highlightMatchStyleFromName(const QString &name)
-{
-    if (name.compare(QStringLiteral("None"), Qt::CaseInsensitive) == 0)
-    {
-        return HighlightMatchStyle::None;
-    }
-    if (name.compare(QStringLiteral("Fill"), Qt::CaseInsensitive) == 0)
-    {
-        return HighlightMatchStyle::Fill;
-    }
-    if (name.compare(QStringLiteral("Outline and fill"), Qt::CaseInsensitive) ==
-        0)
-    {
-        return HighlightMatchStyle::OutlineAndFill;
-    }
-    if (name.compare(QStringLiteral("Underline"), Qt::CaseInsensitive) == 0)
-    {
-        return HighlightMatchStyle::Underline;
-    }
-    return HighlightMatchStyle::Outline;
-}
-
-QColor defaultAutoModMatchColor()
-{
-    return {255, 177, 64, 128};
-}
-
-QColor defaultNewHighlightMatchColor()
-{
-    return {255, 255, 255, 235};
-}
-
-QColor defaultHighlightMatchColor(QColor messageHighlightColor)
-{
-    if (!messageHighlightColor.isValid())
-    {
-        messageHighlightColor = QColor(127, 63, 73);
-    }
-    messageHighlightColor.setAlpha(150);
-    return messageHighlightColor;
-}
-
-HighlightResult::HighlightResult(bool _alert, bool _playSound,
-                                 std::optional<QUrl> _customSoundUrl,
-                                 std::shared_ptr<QColor> _color,
-                                 bool _showInMentions)
-    : alert(_alert)
-    , playSound(_playSound)
-    , customSoundUrl(std::move(_customSoundUrl))
-    , color(std::move(_color))
-    , showInMentions(_showInMentions)
-{
-}
-
 HighlightResult HighlightResult::emptyResult()
 {
     return {
-        false, false, std::nullopt, nullptr, false,
+        .alert = false,
+        .sound = {},
+        .color = nullptr,
+        .showInMentions = false,
     };
 }
 
@@ -91,11 +22,7 @@ bool HighlightResult::operator==(const HighlightResult &other) const
     {
         return false;
     }
-    if (this->playSound != other.playSound)
-    {
-        return false;
-    }
-    if (this->customSoundUrl != other.customSoundUrl)
+    if (this->sound != other.sound)
     {
         return false;
     }
@@ -123,27 +50,24 @@ bool HighlightResult::operator!=(const HighlightResult &other) const
 
 bool HighlightResult::empty() const
 {
-    return !this->alert && !this->playSound &&
-           !this->customSoundUrl.has_value() && !this->color &&
+    return !this->alert && this->sound.isEmpty() && !this->color &&
            !this->showInMentions;
 }
 
 bool HighlightResult::full() const
 {
-    return this->alert && this->playSound && this->customSoundUrl.has_value() &&
-           this->color && this->showInMentions;
+    return this->alert && !this->sound.isEmpty() && this->color &&
+           this->showInMentions;
 }
 
 std::ostream &operator<<(std::ostream &os, const HighlightResult &result)
 {
     os << "Alert: " << (result.alert ? "Yes" : "No") << ", "
-       << "Play sound: " << (result.playSound ? "Yes" : "No") << " ("
-       << (result.customSoundUrl
-               ? result.customSoundUrl->toString().toStdString()
+       << "Play sound: " << result.sound.toString().toStdString() << ", "
+       << "Color: "
+       << (result.color
+               ? result.color->name(QColor::NameFormat::HexArgb).toStdString()
                : "")
-       << ")"
-       << ", "
-       << "Color: " << (result.color ? result.color->name().toStdString() : "")
        << ", "
        << "Show in mentions: " << (result.showInMentions ? "Yes" : "No");
     return os;

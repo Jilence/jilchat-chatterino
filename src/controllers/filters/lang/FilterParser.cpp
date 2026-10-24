@@ -6,6 +6,7 @@
 
 #include "controllers/filters/lang/expressions/BinaryOperation.hpp"
 #include "controllers/filters/lang/expressions/Expression.hpp"
+#include "controllers/filters/lang/expressions/IdentifierExpression.hpp"
 #include "controllers/filters/lang/expressions/ListExpression.hpp"
 #include "controllers/filters/lang/expressions/RegexExpression.hpp"
 #include "controllers/filters/lang/expressions/UnaryOperation.hpp"
@@ -38,8 +39,9 @@ FilterParser::FilterParser(const QString &text)
         return;
     }
 
-    auto returnType =
-        this->builtExpression_->synthesizeType(MESSAGE_TYPING_CONTEXT);
+    // safety: returnType must not live longer than the parsed expression. See
+    // comment on IllTyped::expr.
+    auto returnType = this->builtExpression_->synthesizeType();
     if (isIllTyped(returnType))
     {
         this->errorLog(explainIllType(std::get<IllTyped>(returnType)));
@@ -118,6 +120,7 @@ ExpressionPtr FilterParser::parseUnary()
 
 ExpressionPtr FilterParser::parseParentheses()
 {
+    // Don't call .next() before calling this method
     assert(this->tokenizer_.nextTokenType() == TokenType::LP);
 
     this->tokenizer_.next();
@@ -144,17 +147,20 @@ ExpressionPtr FilterParser::parseParentheses()
 ExpressionPtr FilterParser::parseCondition()
 {
     ExpressionPtr value;
-
+    // parse expression wrapped in parentheses
     if (this->tokenizer_.hasNext() &&
         this->tokenizer_.nextTokenType() == TokenType::LP)
     {
+        // get value inside parentheses
         value = this->parseParentheses();
     }
     else
     {
+        // get current value
         value = this->parseValue();
     }
 
+    // expecting an operator or nothing
     while (this->tokenizer_.hasNext())
     {
         if (this->tokenizer_.nextTokenIsBinaryOp())
@@ -175,6 +181,7 @@ ExpressionPtr FilterParser::parseCondition()
         }
         else if (this->tokenizer_.nextTokenType() == TokenType::RP)
         {
+            // RP, so move on
             break;
         }
         else if (!this->tokenizer_.nextTokenIsOp())
@@ -196,6 +203,7 @@ ExpressionPtr FilterParser::parseCondition()
 
 ExpressionPtr FilterParser::parseValue()
 {
+    // parse a literal or an expression wrapped in parenthsis
     if (this->tokenizer_.hasNext())
     {
         auto type = this->tokenizer_.nextTokenType();
@@ -207,7 +215,7 @@ ExpressionPtr FilterParser::parseValue()
         else if (type == TokenType::STRING)
         {
             auto before = this->tokenizer_.next();
-
+            // remove quote marks
             auto val = before.mid(1);
             val.chop(1);
             val = val.replace("\\\"", "\"");
@@ -215,13 +223,12 @@ ExpressionPtr FilterParser::parseValue()
         }
         else if (type == TokenType::IDENTIFIER)
         {
-            return std::make_unique<ValueExpression>(this->tokenizer_.next(),
-                                                     type);
+            return createIdentifierExpression(this->tokenizer_.next());
         }
         else if (type == TokenType::REGULAR_EXPRESSION)
         {
             auto before = this->tokenizer_.next();
-
+            // remove quote marks and r/ri
             bool caseInsensitive = before.startsWith("ri");
             auto val = before.mid(caseInsensitive ? 3 : 2);
             val.chop(1);
@@ -254,6 +261,7 @@ ExpressionPtr FilterParser::parseValue()
 
 ExpressionPtr FilterParser::parseList()
 {
+    // Don't call .next() before calling this method
     assert(this->tokenizer_.nextTokenType() == TokenType::LIST_START);
     this->tokenizer_.next();
 
@@ -307,9 +315,9 @@ const QStringList &FilterParser::errors() const
     return this->parseLog_;
 }
 
-const QString FilterParser::debugString() const
+QString FilterParser::debugString() const
 {
-    return this->builtExpression_->debug(MESSAGE_TYPING_CONTEXT);
+    return this->builtExpression_->debug();
 }
 
 }  // namespace chatterino::filters

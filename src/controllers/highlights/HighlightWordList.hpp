@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/HighlightMatch.hpp"
 #include "util/RapidjsonHelpers.hpp"
 #include "util/RapidJsonSerializeQString.hpp"
 

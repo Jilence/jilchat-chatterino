@@ -5,7 +5,7 @@
 #pragma once
 
 #include "common/FlagsEnum.hpp"
-#include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/HighlightMatch.hpp"
 #include "messages/Link.hpp"
 #include "messages/MessageColor.hpp"
 

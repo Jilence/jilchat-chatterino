@@ -22,7 +22,8 @@ public:
 protected:
     std::shared_ptr<Hotkey> getItemFromRow(
         std::vector<QStandardItem *> &row,
-        const std::shared_ptr<Hotkey> &original) override;
+        const std::shared_ptr<Hotkey> &original,
+        std::optional<QModelIndex> index, std::optional<int> role) override;
 
     void getRowFromItem(const std::shared_ptr<Hotkey> &item,
                         std::vector<QStandardItem *> &row) override;

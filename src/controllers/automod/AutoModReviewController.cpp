@@ -7,11 +7,14 @@
 #include "Application.hpp"
 #include "common/Channel.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/highlights/HighlightCheck.hpp"
 #include "controllers/highlights/HighlightController.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/types/AnyHighlight.hpp"
 #include "debug/AssertInGuiThread.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
+#include "messages/MessageParseArgs.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/HelixEnums.hpp"
 #include "providers/twitch/eventsub/MessageBuilder.hpp"
@@ -33,6 +36,23 @@ using namespace Qt::StringLiterals;
 namespace chatterino::automod {
 
 namespace {
+
+/// Whether held messages go to /mentions: the "AutoMod caught" highlight
+/// says so
+bool autoModShownInMentions()
+{
+    using H = highlights::AutomodCaughtHighlight;
+    for (const auto &highlight : *getSettings()->sharedHighlights.readOnly())
+    {
+        if (const auto *caught = std::get_if<H>(&highlight))
+        {
+            return caught->enabled.value_or(H::ENABLED_BY_DEFAULT) &&
+                   caught->outcome.showInMentions.value_or(
+                       H::SHOW_IN_MENTIONS_DEFAULT);
+        }
+    }
+    return false;
+}
 
 constexpr qsizetype MAX_REVIEW_ITEMS = 300;
 constexpr qsizetype MAX_NOTIFICATION_IDS = 512;
@@ -292,7 +312,7 @@ void AutoModReviewController::ingestHold(
     item.matchedFragments = std::move(data.matchedFragments);
     item.matchRanges = std::move(data.matchRanges);
     item.termOwnerLogin = std::move(data.termOwnerLogin);
-    item.shownInMentions = getSettings()->showAutomodInMentions;
+    item.shownInMentions = autoModShownInMentions();
     entry.sourceChannel = sourceChannel;
     this->updateActionsAllowed(entry);
     if (getSettings()->autoModReviewShowContext)
@@ -306,26 +326,42 @@ void AutoModReviewController::ingestHold(
                            MessageFlag::ModerationAction, MessageFlag::AutoMod,
                            MessageFlag::AutoModOffendingMessage};
     holdFlags.set(MessageFlag::AutoModBlockedTerm, item.blockedTerm);
-    auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
-        {}, {}, item.userLogin, item.messageText, holdFlags,
-        MessagePlatform::AnyOrTwitch, item.broadcasterLogin);
-
     this->order_.push_back(key);
     auto inserted = this->entries_.insert(key, std::move(entry));
     this->publish(inserted.value(), true);
-    if (highlighted)
+
+    // The sound and the alert of the "AutoMod caught" highlight, once per
+    // held message
+    if (const auto source = inserted->sourceChannel.lock())
     {
-        if (const auto source = inserted->sourceChannel.lock())
+        if (const auto message =
+                source->findMessageByID(autoModMessageID(inserted->item)))
         {
-            if (const auto message =
-                    source->findMessageByID(autoModMessageID(inserted->item)))
+            const MessageParseArgs args;
+            const std::vector<TwitchBadge> noBadges;
+            const auto &held = inserted->item;
+            auto [highlighted, highlightResult] =
+                getApp()->getHighlights()->check({
+                    .args = args,
+                    .twitchBadges = noBadges,
+                    .senderName = held.userLogin,
+                    .originalMessage = held.messageText,
+                    .messageFlags = holdFlags,
+                    .self = false,
+                    .runContext =
+                        filters::RunContext{
+                            .message = *message,
+                            .channel = source.get(),
+                        },
+                    .platform = MessagePlatform::AnyOrTwitch,
+                    .channelName = held.broadcasterLogin,
+                });
+            if (highlighted)
             {
                 MessageBuilder::triggerHighlights(
                     source.get(), message,
                     {
-                        .customSound =
-                            highlightResult.customSoundUrl.value_or<QUrl>({}),
-                        .playSound = highlightResult.playSound,
+                        .sound = highlightResult.sound,
                         .windowAlert = highlightResult.alert,
                     });
             }
@@ -360,7 +396,7 @@ void AutoModReviewController::ingestUpdate(
         entry.item.broadcasterID = data.broadcasterID;
         entry.item.messageID = data.messageID;
         entry.item.receivedAt = data.receivedAt;
-        entry.item.shownInMentions = getSettings()->showAutomodInMentions;
+        entry.item.shownInMentions = autoModShownInMentions();
         entry.sourceChannel = sourceChannel;
         this->order_.push_back(key);
         it = this->entries_.insert(key, std::move(entry));

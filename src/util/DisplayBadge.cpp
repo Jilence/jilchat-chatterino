@@ -1,9 +1,10 @@
 #include "util/DisplayBadge.hpp"
 
 namespace chatterino {
+
 DisplayBadge::DisplayBadge(QString displayName, QString badgeName)
-    : displayName_(displayName)
-    , badgeName_(badgeName)
+    : displayName_(std::move(displayName))
+    , badgeName_(std::move(badgeName))
 {
 }
 

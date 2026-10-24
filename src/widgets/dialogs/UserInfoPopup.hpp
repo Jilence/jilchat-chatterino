@@ -298,6 +298,7 @@ private:
         followingStatusChangedConnection_;
 
     std::unique_ptr<pajlada::Signals::ScopedConnection> refreshConnection_;
+    std::unique_ptr<pajlada::Signals::ScopedConnection> replaceConnection_;
     std::unique_ptr<pajlada::Signals::ScopedConnection>
         twitchUserStateConnection_;
     std::unique_ptr<pajlada::Signals::ScopedConnection>

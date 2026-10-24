@@ -5,13 +5,13 @@
 #include "messages/layouts/MessageLayout.hpp"
 
 #include "Application.hpp"
+#include "controllers/highlights/types/AutomodCaughtHighlight.hpp"
 #include "messages/layouts/MessageLayoutContainer.hpp"
 #include "messages/layouts/MessageLayoutContext.hpp"
 #include "messages/layouts/MessageLayoutElement.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/Selection.hpp"
-#include "providers/colors/ColorProvider.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
@@ -361,22 +361,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
             ctx.messageColors.disabled);
     }
 
-    if (!ctx.isMentions &&
-        ((this->message_->flags.has(MessageFlag::RedeemedChannelPointReward) &&
-          !this->message_->usesTwitchGigantifyPresentation()) ||
-         this->message_->flags.has(MessageFlag::RedeemedHighlight)) &&
-        ctx.preferences.enableRedeemedHighlight)
-    {
-        ctx.painter.fillRect(
-            QRect{
-                0,
-                ctx.y,
-                static_cast<int>(this->scale_ * 4),
-                messageHeight,
-            },
-            *ColorProvider::instance().color(ColorType::RedeemedHighlight));
-    }
-
+    // draw selection
     if (!ctx.selection.isEmpty())
     {
         this->container_.paintSelection(ctx.painter, ctx.messageIndex,
@@ -474,31 +459,21 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     // colors the background, the next ones can be shown as bands.
     std::vector<QColor> highlights;
     const auto addHighlight = [&](const QColor &color) {
-        if (std::ranges::find(highlights, color) == highlights.end())
+        if (color.isValid() &&
+            std::ranges::find(highlights, color) == highlights.end())
         {
             highlights.push_back(color);
         }
     };
-    const auto &flags = this->message_->flags;
     const auto &prefs = ctx.preferences;
     // Goes over the background when no highlight applies.
     std::optional<QColor> replacement;
 
-    if (flags.has(MessageFlag::FirstMessage) &&
-        prefs.enableFirstMessageHighlight)
-    {
-        addHighlight(
-            *ctx.colorProvider.color(ColorType::FirstMessageHighlight));
-    }
-    if (flags.has(MessageFlag::WatchStreak) && prefs.enableWatchStreakHighlight)
-    {
-        addHighlight(*ctx.colorProvider.color(ColorType::WatchStreak));
-    }
-    if ((flags.has(MessageFlag::Highlighted) ||
-         flags.has(MessageFlag::HighlightedWhisper)) &&
+    if (this->message_->flags.has(MessageFlag::Highlighted) &&
         !this->flags.has(MessageLayoutFlag::IgnoreHighlights))
     {
-        assert(this->message_->highlightColor);
+        // NOTE: As we move more things into Highlighted, and less things to use custom flags for their color,
+        // they will start respecting the IgnoreHighlights flag. Keep this in mind.
         if (this->message_->highlightColor)
         {
             addHighlight(*this->message_->highlightColor);
@@ -511,64 +486,18 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             }
         }
     }
-    if (flags.has(MessageFlag::Announcement) &&
-        prefs.enableAnnouncementHighlight)
+    else if (this->message_->flags.has(MessageFlag::ChatWarning))
     {
-        addHighlight(
-            *ctx.colorProvider.color(colorTypeFromHelixAnnouncementColor(
-                this->message_->announcementColor,
-                prefs.enableColoredAnnouncementHighlight)));
+        replacement = QColor(64, 64, 64, 127);
     }
-    if (flags.has(MessageFlag::Subscription) && prefs.enableSubHighlight)
-    {
-        addHighlight(*ctx.colorProvider.color(ColorType::Subscription));
-    }
-    if (flags.has(MessageFlag::Follow) && prefs.enableFollowHighlight)
-    {
-        addHighlight(*ctx.colorProvider.color(ColorType::Follow));
-    }
-    if ((flags.has(MessageFlag::RedeemedHighlight) ||
-         (flags.has(MessageFlag::RedeemedChannelPointReward) &&
-          !this->message_->usesTwitchGigantifyPresentation())) &&
-        prefs.enableRedeemedHighlight)
-    {
-        addHighlight(*ctx.colorProvider.color(ColorType::RedeemedHighlight));
-    }
-    if (flags.has(MessageFlag::ChatWarning) && prefs.enableAutomodHighlight)
-    {
-        addHighlight(*ctx.colorProvider.color(ColorType::AutomodHighlight));
-    }
-    if (flags.has(MessageFlag::AutoMod) ||
-        flags.has(MessageFlag::LowTrustUsers))
-    {
-        if (prefs.enableAutomodHighlight &&
-            (flags.has(MessageFlag::AutoModOffendingMessage) ||
-             flags.has(MessageFlag::AutoModOffendingMessageHeader)))
-        {
-            addHighlight(*ctx.colorProvider.color(ColorType::AutomodHighlight));
-        }
-        else
-        {
-            // see-through like Moltorino's, so a wallpaper still shows
-            replacement = QColor(64, 64, 64, 140);
-        }
-    }
-    else if (flags.has(MessageFlag::Debug))
+    else if (this->message_->flags.has(MessageFlag::Debug))
     {
         replacement = QColor(0x4A273D);
     }
-    else
+    else if (const auto clientColor = clientDetectionHighlightColor(
+                 this->message_->clientDetection, ctx.preferences))
     {
-        if (const auto clientColor = clientDetectionHighlightColor(
-                this->message_->clientDetection, ctx.preferences))
-        {
-            addHighlight(*clientColor);
-        }
-        if (flags.has(MessageFlag::UncategorizedNotification))
-        {
-            // TODO: Give this a better/its own color :-)
-            addHighlight(*ctx.colorProvider.color(ColorType::Subscription));
-        }
+        addHighlight(*clientColor);
     }
 
     if (!highlights.empty())

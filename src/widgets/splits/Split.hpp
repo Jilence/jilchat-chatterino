@@ -282,6 +282,7 @@ public Q_SLOTS:
     void clear();
     void openInBrowser();
     void openModViewInBrowser();
+    void openUnbanRequestsInBrowser();
     void openRewardQueue();
     void openWhispersInBrowser();
     void openBrowserPlayer();

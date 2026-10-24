@@ -2,6 +2,7 @@
 
 #include "Application.hpp"
 #include "controllers/emotes/EmoteController.hpp"
+#include "controllers/filters/lang/Filter.hpp"
 #include "controllers/highlights/HighlightController.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
 #include "messages/Emote.hpp"
@@ -10,6 +11,7 @@
 #include "messages/Message.hpp"
 #include "messages/MessageColor.hpp"
 #include "messages/MessageElement.hpp"
+#include "messages/MessageParseArgs.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/twitch/TwitchBadge.hpp"
 #include "providers/youtube/YouTubeApi.hpp"
@@ -76,10 +78,21 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     MessageParseArgs args;
-    const std::vector<TwitchBadge> noBadges;
-    auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
-        args, noBadges, builder->displayName, builder->messageText,
-        builder->flags, builder->platform, builder->channelName);
+    auto [highlighted, highlightResult] = getApp()->getHighlights()->check({
+        .args = args,
+        .twitchBadges = {},
+        .senderName = builder->displayName,
+        .originalMessage = builder->messageText,
+        .messageFlags = builder->flags,
+        .self = false,
+        .runContext =
+            filters::RunContext{
+                .message = builder.message(),
+                .channel = builder.channel(),
+            },
+        .platform = builder->platform,
+        .channelName = builder->channelName,
+    });
 
     if (!highlighted)
     {
@@ -87,16 +100,9 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     builder->flags.set(MessageFlag::Highlighted);
-    if (!highlightResult.matches.empty())
-    {
-        builder->highlightMatches =
-            std::make_shared<const std::vector<HighlightMatch>>(
-                std::move(highlightResult.matches));
-    }
     if (!builder->highlightColor)
     {
         builder->highlightColor = highlightResult.color;
-        builder->extraHighlightColors = highlightResult.extraColors;
     }
 
     if (highlightResult.showInMentions)
@@ -105,8 +111,7 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     return {
-        .customSound = highlightResult.customSoundUrl.value_or(QUrl{}),
-        .playSound = highlightResult.playSound,
+        .sound = highlightResult.sound,
         .windowAlert = highlightResult.alert,
     };
 }

@@ -17,7 +17,8 @@ HighlightBlacklistModel::HighlightBlacklistModel(QObject *parent)
 }
 
 HighlightBlacklistUser HighlightBlacklistModel::getItemFromRow(
-    std::vector<QStandardItem *> &row, const HighlightBlacklistUser &original)
+    std::vector<QStandardItem *> &row, const HighlightBlacklistUser &original,
+    std::optional<QModelIndex> index, std::optional<int> role)
 {
     return HighlightBlacklistUser{
         row[Column::Pattern]->data(Qt::DisplayRole).toString(),
