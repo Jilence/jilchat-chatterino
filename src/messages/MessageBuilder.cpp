@@ -3268,6 +3268,12 @@ HighlightAlert MessageBuilder::parseHighlights(Communi::TagsRef tags,
 
     this->message().highlightColor = highlightResult.color;
     this->message().extraHighlightColors = highlightResult.extraColors;
+    if (!highlightResult.matches.empty())
+    {
+        this->message().highlightMatches =
+            std::make_shared<const std::vector<HighlightMatch>>(
+                std::move(highlightResult.matches));
+    }
 
     if (highlightResult.showInMentions)
     {

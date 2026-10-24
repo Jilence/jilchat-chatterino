@@ -5,6 +5,7 @@
 #include "controllers/highlights/ConfigureDialog.hpp"
 
 #include "Application.hpp"
+#include "controllers/highlights/HighlightMatch.hpp"
 #include "controllers/highlights/Sounds.hpp"
 #include "controllers/highlights/types/Common.hpp"
 #include "controllers/highlights/types/Concepts.hpp"
@@ -421,6 +422,65 @@ ConfigureDialog::ConfigureDialog(AnyHighlight _data, QWidget *parent)
                              });
             lbl->addAction(disableBackgroundColor);
             w->addAction(disableBackgroundColor);
+        }
+
+        if (auto *h = std::get_if<MessageHighlight>(&this->data))
+        {
+            auto *styleLbl = new QLabel("Mark matched text");
+            styleLbl->setToolTip(
+                "How the part of the message the pattern matched is marked.");
+            auto *style = new QComboBox();
+            for (auto s : {
+                     HighlightMatchStyle::None,
+                     HighlightMatchStyle::Outline,
+                     HighlightMatchStyle::Fill,
+                     HighlightMatchStyle::OutlineAndFill,
+                     HighlightMatchStyle::Underline,
+                 })
+            {
+                style->addItem(highlightMatchStyleName(s), static_cast<int>(s));
+            }
+            const auto selectStyle = [style, h] {
+                QSignalBlocker block(style);
+                style->setCurrentIndex(
+                    style->findData(static_cast<int>(h->getMatchStyle())));
+            };
+            selectStyle();
+            QObject::connect(
+                style, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                [style, h](int index) {
+                    h->extras.matchStyle = highlightMatchStyleName(
+                        static_cast<HighlightMatchStyle>(
+                            style->itemData(index).toInt()));
+                });
+            l->addRow(styleLbl, style);
+            addSettingMenu(styleLbl, style, [h, selectStyle] {
+                h->extras.matchStyle.clear();
+                selectStyle();
+            });
+
+            auto *colorLbl = new QLabel("Marker color");
+            auto *color = new ColorButton(h->getMatchColor());
+            color->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+            QObject::connect(color, &ColorButton::clicked, [h, color]() {
+                auto *dialog = new ColorPickerDialog(h->getMatchColor(), color);
+                QObject::connect(dialog, &ColorPickerDialog::colorConfirmed,
+                                 color, [h, color](auto selected) {
+                                     if (selected.isValid())
+                                     {
+                                         color->setColor(selected);
+                                         h->extras.matchColor =
+                                             selected.name(QColor::HexArgb);
+                                     }
+                                 });
+                dialog->setWindowModality(Qt::WindowModality::WindowModal);
+                dialog->show();
+            });
+            l->addRow(colorLbl, color);
+            addSettingMenu(colorLbl, color, [h, color] {
+                h->extras.matchColor.clear();
+                color->setColor(h->getMatchColor());
+            });
         }
 
         {

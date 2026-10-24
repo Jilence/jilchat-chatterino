@@ -6,6 +6,7 @@
 
 #include "common/QLogging.hpp"
 #include "controllers/highlights/ConfigureDialog.hpp"
+#include "controllers/highlights/HighlightMatch.hpp"
 #include "controllers/highlights/Model.hpp"
 #include "controllers/highlights/types/AnyHighlight.hpp"  // IWYU pragma: keep
 #include "singletons/Settings.hpp"
@@ -147,6 +148,9 @@ HighlightingWidget::HighlightingWidget()
             auto id = highlights::generateID();
             highlights::MessageHighlight h{id};
             h.setPattern("my phrase");
+            // white, so the marker stands out from the background color
+            h.extras.matchColor =
+                defaultNewHighlightMatchColor().name(QColor::HexArgb);
             auto vectorIndex = getSettings()->sharedHighlights.append(h);
             this->openConfigureDialog(view, vectorIndex,
                                       ConfigureCloseBehaviour::Remove);

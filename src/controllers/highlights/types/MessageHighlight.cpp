@@ -64,9 +64,82 @@ HighlightCheck MessageHighlight::buildCheck() const
                 return std::nullopt;
             }
 
-            return highlight.outcome.makeSimpleResult<H>();
+            auto result = highlight.outcome.makeSimpleResult<H>();
+
+            const auto style = highlight.getMatchStyle();
+            if (style != HighlightMatchStyle::None)
+            {
+                const auto color = highlight.getMatchColor();
+                for (const auto &[start, length] :
+                     highlight.findMatches(p.originalMessage))
+                {
+                    result.matches.push_back({
+                        .start = start,
+                        .length = length,
+                        .color = color,
+                        .ruleName = highlight.getPattern(),
+                        .pattern = highlight.getPattern(),
+                        .source = HighlightMatchSource::Phrase,
+                        .style = style,
+                        .paintID = {},
+                    });
+                }
+            }
+
+            return result;
         },
     };
+}
+
+HighlightMatchStyle MessageHighlight::getMatchStyle() const
+{
+    return highlightMatchStyleFromName(this->extras.matchStyle);
+}
+
+QColor MessageHighlight::getMatchColor() const
+{
+    QColor color(this->extras.matchColor);
+    // a fully transparent marker could not be seen, so it counts as unset
+    if (color.isValid() && color.alpha() > 0)
+    {
+        return color;
+    }
+    // white, so the marker stands out from the background color
+    return defaultNewHighlightMatchColor();
+}
+
+std::vector<std::pair<qsizetype, qsizetype>> MessageHighlight::findMatches(
+    const QString &subject) const
+{
+    constexpr size_t MAX_MATCHES = 128;
+
+    std::vector<std::pair<qsizetype, qsizetype>> matches;
+    if (!this->isValid())
+    {
+        return matches;
+    }
+
+    auto it = this->regexPattern.globalMatch(subject);
+    while (it.hasNext() && matches.size() < MAX_MATCHES)
+    {
+        const auto match = it.next();
+        auto start = match.capturedStart();
+        auto end = match.capturedEnd();
+        // a phrase is matched together with the whitespace around it
+        while (start < end && subject.at(start).isSpace())
+        {
+            ++start;
+        }
+        while (end > start && subject.at(end - 1).isSpace())
+        {
+            --end;
+        }
+        if (end > start)
+        {
+            matches.emplace_back(start, end - start);
+        }
+    }
+    return matches;
 }
 
 void MessageHighlight::rebuildInternalRegularExpression()

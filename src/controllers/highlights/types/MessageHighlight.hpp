@@ -5,6 +5,7 @@
 #pragma once
 
 #include "controllers/highlights/HighlightCheck.hpp"
+#include "controllers/highlights/HighlightMatch.hpp"
 #include "controllers/highlights/types/Common.hpp"
 #include "controllers/highlights/types/HighlightExtras.hpp"
 #include "controllers/highlights/types/Outcome.hpp"
@@ -21,6 +22,8 @@
 
 #include <cassert>
 #include <optional>
+#include <utility>
+#include <vector>
 
 namespace chatterino::highlights {
 
@@ -88,6 +91,12 @@ struct MessageHighlight {
     /// Marker and channel scope, see HighlightExtras
     HighlightExtras extras;
 
+    /// How the matched text is marked. If unconfigured, Outline.
+    HighlightMatchStyle getMatchStyle() const;
+    /// The color the matched text is marked with. If unconfigured or fully
+    /// transparent, white.
+    QColor getMatchColor() const;
+
 public:
     HighlightCheck buildCheck() const;
 
@@ -118,6 +127,10 @@ protected:
     {
         return this->regexPattern.match(subject).hasMatch();
     }
+
+    /// The parts of `subject` the pattern matches, as start and length
+    std::vector<std::pair<qsizetype, qsizetype>> findMatches(
+        const QString &subject) const;
 };
 
 }  // namespace chatterino::highlights

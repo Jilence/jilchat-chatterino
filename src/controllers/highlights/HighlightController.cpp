@@ -113,6 +113,8 @@ void HighlightController::rebuildChecks(Settings &settings)
 std::pair<bool, HighlightResult> HighlightController::check(
     const HighlightCheckParams &params) const
 {
+    constexpr size_t MAX_MATCHES_PER_MESSAGE = 256;
+
     bool highlighted = false;
     auto result = HighlightResult::emptyResult();
 
@@ -166,6 +168,18 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 {
                     result.showInMentions = checkResult->showInMentions;
                 }
+            }
+
+            if (!checkResult->matches.empty() &&
+                result.matches.size() < MAX_MATCHES_PER_MESSAGE)
+            {
+                const auto count =
+                    std::min(MAX_MATCHES_PER_MESSAGE - result.matches.size(),
+                             checkResult->matches.size());
+                result.matches.insert(result.matches.end(),
+                                      checkResult->matches.begin(),
+                                      checkResult->matches.begin() +
+                                          static_cast<std::ptrdiff_t>(count));
             }
 
             // No early out once the result is full: every further match can

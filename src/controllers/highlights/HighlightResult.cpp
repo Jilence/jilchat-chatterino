@@ -14,6 +14,7 @@ HighlightResult HighlightResult::emptyResult()
         .color = nullptr,
         .showInMentions = false,
         .extraColors = {},
+        .matches = {},
     };
 }
 
@@ -51,6 +52,11 @@ bool HighlightResult::operator==(const HighlightResult &other) const
         {
             return false;
         }
+    }
+
+    if (this->matches != other.matches)
+    {
+        return false;
     }
 
     return true;

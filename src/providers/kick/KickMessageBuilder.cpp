@@ -479,6 +479,12 @@ HighlightAlert processHighlights(KickMessageBuilder &builder,
     builder->flags.set(MessageFlag::Highlighted);
     builder->highlightColor = highlightResult.color;
     builder->extraHighlightColors = highlightResult.extraColors;
+    if (!highlightResult.matches.empty())
+    {
+        builder->highlightMatches =
+            std::make_shared<const std::vector<HighlightMatch>>(
+                std::move(highlightResult.matches));
+    }
     if (highlightResult.showInMentions)
     {
         builder->flags.set(MessageFlag::ShowInMentions);

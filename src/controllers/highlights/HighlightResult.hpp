@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "controllers/highlights/HighlightMatch.hpp"
+
 #include <QColor>
 #include <QStringList>
 #include <QUrl>
@@ -42,6 +44,9 @@ struct HighlightResult {
     /// The colors of the further highlights that matched, after `color`,
     /// for when every matching highlight gets its own band
     std::vector<std::shared_ptr<QColor>> extraColors;
+
+    /// The parts of the message text that were matched, to be marked
+    std::vector<HighlightMatch> matches;
 
     bool operator==(const HighlightResult &other) const;
     bool operator!=(const HighlightResult &other) const;

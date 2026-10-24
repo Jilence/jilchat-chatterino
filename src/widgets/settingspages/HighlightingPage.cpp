@@ -74,6 +74,9 @@ HighlightingPage::HighlightingPage()
         layout.append(createCheckBox(
             "Flash taskbar only stops highlighting when Chatterino is focused",
             getSettings()->longAlerts));
+        layout.append(createCheckBox(
+            "Mark the exact part of a message that triggered a highlight",
+            getSettings()->highlightMatchedFragments));
     }
 }
 
