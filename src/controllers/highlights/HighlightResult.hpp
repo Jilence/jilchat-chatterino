@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <ostream>
+#include <vector>
 
 namespace chatterino {
 
@@ -37,6 +38,10 @@ struct HighlightResult {
      * @brief true if highlight should show message in the /mentions split
      **/
     bool showInMentions{false};
+
+    /// The colors of the further highlights that matched, after `color`,
+    /// for when every matching highlight gets its own band
+    std::vector<std::shared_ptr<QColor>> extraColors;
 
     bool operator==(const HighlightResult &other) const;
     bool operator!=(const HighlightResult &other) const;

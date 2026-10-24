@@ -604,6 +604,7 @@ void Connection::onChannelFollow(
         {
             msg->flags.set(MessageFlag::Highlighted);
             msg->highlightColor = highlightResult.color;
+            msg->extraHighlightColors = highlightResult.extraColors;
 
             MessageBuilder::triggerHighlights(
                 channel, msg,

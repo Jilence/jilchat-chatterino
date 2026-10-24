@@ -478,6 +478,7 @@ HighlightAlert processHighlights(KickMessageBuilder &builder,
     // This message triggered one or more highlights, act upon the highlight result
     builder->flags.set(MessageFlag::Highlighted);
     builder->highlightColor = highlightResult.color;
+    builder->extraHighlightColors = highlightResult.extraColors;
     if (highlightResult.showInMentions)
     {
         builder->flags.set(MessageFlag::ShowInMentions);

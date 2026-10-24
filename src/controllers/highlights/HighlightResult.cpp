@@ -13,6 +13,7 @@ HighlightResult HighlightResult::emptyResult()
         .sound = {},
         .color = nullptr,
         .showInMentions = false,
+        .extraColors = {},
     };
 }
 
@@ -38,6 +39,18 @@ bool HighlightResult::operator==(const HighlightResult &other) const
     if (this->showInMentions != other.showInMentions)
     {
         return false;
+    }
+
+    if (this->extraColors.size() != other.extraColors.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < this->extraColors.size(); ++i)
+    {
+        if (*this->extraColors[i] != *other.extraColors[i])
+        {
+            return false;
+        }
     }
 
     return true;

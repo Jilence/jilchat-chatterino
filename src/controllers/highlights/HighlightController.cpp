@@ -15,6 +15,8 @@
 #include "providers/twitch/TwitchAccount.hpp"  // IWYU pragma: keep
 #include "singletons/Settings.hpp"
 
+#include <algorithm>
+
 namespace chatterino {
 
 template <typename T>
@@ -147,6 +149,14 @@ std::pair<bool, HighlightResult> HighlightController::check(
                     {
                         result.color = checkResult->color;
                     }
+                    else if (*result.color != *checkResult->color &&
+                             std::ranges::none_of(
+                                 result.extraColors, [&](const auto &c) {
+                                     return *c == *checkResult->color;
+                                 }))
+                    {
+                        result.extraColors.push_back(checkResult->color);
+                    }
                 }
             }
 
@@ -158,11 +168,8 @@ std::pair<bool, HighlightResult> HighlightController::check(
                 }
             }
 
-            if (result.full())
-            {
-                // The final highlight result does not have room to add any more parameters, early out
-                break;
-            }
+            // No early out once the result is full: every further match can
+            // still add a color band
         }
     }
 

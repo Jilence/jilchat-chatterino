@@ -103,6 +103,7 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     if (!builder->highlightColor)
     {
         builder->highlightColor = highlightResult.color;
+        builder->extraHighlightColors = highlightResult.extraColors;
     }
 
     if (highlightResult.showInMentions)
