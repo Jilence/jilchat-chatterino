@@ -4,7 +4,9 @@
 
 #include "widgets/settingspages/LeafyrinoPage.hpp"
 
+#include "Application.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/WindowManager.hpp"
 #include "widgets/BaseWindow.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
@@ -74,6 +76,53 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"limerino"})
         ->setTooltip("Founder and event badges.")
         ->addTo(layout);
+
+    layout.addTitle("JilTV");
+    layout.addDescription("Paints, badges and emotes from jiltv.app.");
+    SettingWidget::checkbox("Enable JilTV", s.enableJiltv)
+        ->addKeywords({"jiltv", "paints", "emotes", "badges"})
+        ->addTo(layout);
+    SettingWidget::checkbox("JilTV emotes", s.enableJiltvEmotes)
+        ->addKeywords({"jiltv", "emotes"})
+        ->setTooltip("Global JilTV emotes and the emotes of channels that use "
+                     "JilTV.")
+        ->addTo(layout);
+    SettingWidget::checkbox("JilTV comes first", s.jiltvPriority)
+        ->addKeywords({"jiltv", "priority", "7tv", "paints", "emotes"})
+        ->setTooltip("A JilTV paint is drawn instead of a 7TV or BetterTTV "
+                     "one (with 'Username paints' on Automatic), and a JilTV "
+                     "emote wins over 7TV, BetterTTV and FrankerFaceZ emotes "
+                     "of the same name. Off: JilTV comes last.")
+        ->addTo(layout);
+    SettingWidget::checkbox("JilTV badges", s.showBadgesJiltv)
+        ->addKeywords({"jiltv", "badges"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Animate JilTV paints", s.jiltvAnimatedPaints)
+        ->addKeywords({"jiltv", "paints", "animation"})
+        ->setTooltip("Off: paints stand still on their first frame.")
+        ->addTo(layout);
+    SettingWidget::checkbox("JilTV paint shadows and outlines",
+                            s.jiltvPaintShadows)
+        ->addKeywords({"jiltv", "paints", "shadow", "outline"})
+        ->addTo(layout);
+    SettingWidget::checkbox("Show JilTV emotes waiting for review",
+                            s.jiltvShowPendingEmotes)
+        ->addKeywords({"jiltv", "emotes", "pending", "review"})
+        ->addTo(layout);
+    SettingWidget::lineEdit("JilTV API", s.jiltvApiUrl,
+                            "https://api.jiltv.app")
+        ->addKeywords({"jiltv", "api", "dev"})
+        ->setTooltip("Only change this to try a local JilTV server, e.g. "
+                     "http://localhost:8080.")
+        ->addTo(layout);
+    {
+        auto redraw = [] {
+            getApp()->getWindows()->invalidateChannelViewBuffers();
+        };
+        s.jiltvPriority.connect(redraw, false);
+        s.jiltvAnimatedPaints.connect(redraw, false);
+        s.jiltvPaintShadows.connect(redraw, false);
+    }
 
     layout.addTitle("Client");
     SettingWidget::checkbox("Show select badge button", s.showSelectBadgeButton)

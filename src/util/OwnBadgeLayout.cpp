@@ -103,6 +103,9 @@ constexpr std::array PROVIDERS{
     Provider{.flag = MessageElementFlag::BadgeJilChat,
              .key = u"jc",
              .name = u"JilChat"},
+    Provider{.flag = MessageElementFlag::BadgeJiltv,
+             .key = u"jt",
+             .name = u"JilTV"},
 };
 
 /// The key of a badge and what to call it. The key is empty for

@@ -471,6 +471,11 @@ set(SOURCE_FILES
         providers/jilchat/JilChatVoice.cpp
         providers/jilchat/JilChatVoice.hpp
 
+        providers/jiltv/Jiltv.cpp
+        providers/jiltv/Jiltv.hpp
+        providers/jiltv/JiltvPaint.cpp
+        providers/jiltv/JiltvPaint.hpp
+
         providers/limerino/LimerinoBadges.cpp
         providers/limerino/LimerinoBadges.hpp
 

@@ -9,6 +9,7 @@
 #include "common/network/NetworkResult.hpp"
 #include "messages/Image.hpp"
 #include "providers/bttv/BttvLiveUpdates.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
@@ -577,6 +578,23 @@ bool usernamePaintsEnabled()
 std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick)
 {
     const auto source = getSettings()->usernamePaintSource.getEnum();
+    const bool jiltv = !kick && getSettings()->enableJiltv;
+    const auto jiltvPaint = [&] {
+        return Jiltv::instance().paint(userName);
+    };
+
+    if (jiltv && (source == UsernamePaintSource::JilTV ||
+                  (source == UsernamePaintSource::Automatic && jiltvFirst())))
+    {
+        if (auto paint = jiltvPaint())
+        {
+            return paint;
+        }
+        if (source == UsernamePaintSource::JilTV)
+        {
+            return nullptr;
+        }
+    }
 
     if (source == UsernamePaintSource::SevenTV ||
         source == UsernamePaintSource::Automatic)
@@ -590,7 +608,14 @@ std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick)
     if (!kick && (source == UsernamePaintSource::BetterTTV ||
                   source == UsernamePaintSource::Automatic))
     {
-        return BttvUsernameEffects::instance().getPaint(userName);
+        if (auto paint = BttvUsernameEffects::instance().getPaint(userName))
+        {
+            return paint;
+        }
+    }
+    if (jiltv && source == UsernamePaintSource::Automatic && !jiltvFirst())
+    {
+        return jiltvPaint();
     }
     return nullptr;
 }

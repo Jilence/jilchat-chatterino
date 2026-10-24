@@ -103,7 +103,9 @@ enum class TabStyle : std::uint8_t {
 enum class UsernamePaintSource : std::uint8_t {
     SevenTV,
     BetterTTV,
-    /// What the user has; the 7TV paint if it's both.
+    JilTV,
+    /// What the user has; with several, JilTV (when it comes first), then
+    /// 7TV, then BetterTTV.
     Automatic,
     Off,
 };
@@ -446,6 +448,18 @@ public:
                                            false};
     BoolSetting displaySevenTVPaintShadows = {
         "/misc/displaySevenTVPaintShadows", true};
+
+    /// JilTV (jiltv.app): paints, badges and emotes.
+    BoolSetting enableJiltv = {"/jiltv/enabled", true};
+    BoolSetting enableJiltvEmotes = {"/jiltv/emotes", true};
+    /// JilTV paints and emotes win over 7TV, BetterTTV and FrankerFaceZ.
+    BoolSetting jiltvPriority = {"/jiltv/priority", true};
+    BoolSetting jiltvAnimatedPaints = {"/jiltv/animatedPaints", true};
+    /// Shadows and outlines of JilTV paints.
+    BoolSetting jiltvPaintShadows = {"/jiltv/paintShadows", true};
+    /// Emotes still waiting for review on JilTV.
+    BoolSetting jiltvShowPendingEmotes = {"/jiltv/showPendingEmotes", false};
+    QStringSetting jiltvApiUrl = {"/jiltv/apiUrl", "https://api.jiltv.app"};
     BoolSetting largeSevenTVPaintShadows = {"/misc/largeSevenTVPaintShadows",
                                             true};
     BoolSetting boldUsernames = {"/appearance/messages/boldUsernames", true};
@@ -522,6 +536,7 @@ public:
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
     BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
+    BoolSetting showBadgesJiltv = {"/appearance/badges/jiltv", true};
     BoolSetting showBadgesBluzyrino = {"/appearance/badges/bluzyrino", true};
     BoolSetting bluzyrinoFounderVisible = {"/bluzyrino/badges/founder/visible",
                                            true};
@@ -1608,6 +1623,9 @@ constexpr magic_enum::customize::customize_t
     {
         case chatterino::UsernamePaintSource::SevenTV:
             return "7TV";
+
+        case chatterino::UsernamePaintSource::JilTV:
+            return "JilTV";
 
         case chatterino::UsernamePaintSource::BetterTTV:
         case chatterino::UsernamePaintSource::Automatic:

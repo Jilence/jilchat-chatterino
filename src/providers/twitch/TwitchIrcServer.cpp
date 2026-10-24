@@ -20,6 +20,7 @@
 #include "providers/irc/IrcConnection2.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
@@ -476,6 +477,22 @@ void TwitchIrcServer::initialize()
             this->reloadAllSevenTVChannelEmotes();
         },
         this->signalHolder, false);
+    // JilTV: emotes after their switches, everything after the API changes.
+    const auto reloadJiltvEmotes = [this] {
+        Jiltv::instance().loadGlobalEmotes();
+        this->reloadAllJiltvChannelEmotes();
+    };
+    getSettings()->enableJiltvEmotes.connect(reloadJiltvEmotes,
+                                             this->signalHolder, false);
+    getSettings()->jiltvShowPendingEmotes.connect(reloadJiltvEmotes,
+                                                  this->signalHolder, false);
+    const auto reloadJiltv = [reloadJiltvEmotes] {
+        Jiltv::instance().loadCatalog();
+        reloadJiltvEmotes();
+        getApp()->getWindows()->invalidateChannelViewBuffers();
+    };
+    getSettings()->enableJiltv.connect(reloadJiltv, this->signalHolder, false);
+    getSettings()->jiltvApiUrl.connect(reloadJiltv, this->signalHolder, false);
 }
 
 void TwitchIrcServer::aboutToQuit()
@@ -1316,6 +1333,16 @@ void TwitchIrcServer::reloadAllSevenTVChannelEmotes()
         if (auto *channel = dynamic_cast<TwitchChannel *>(chan.get()))
         {
             channel->refreshSevenTVChannelEmotes(false);
+        }
+    });
+}
+
+void TwitchIrcServer::reloadAllJiltvChannelEmotes()
+{
+    this->forEachChannel([](const auto &chan) {
+        if (auto *channel = dynamic_cast<TwitchChannel *>(chan.get()))
+        {
+            Jiltv::instance().loadChannelEmotes(channel->roomId());
         }
     });
 }

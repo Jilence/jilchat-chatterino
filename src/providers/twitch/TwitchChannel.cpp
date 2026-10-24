@@ -37,6 +37,7 @@
 #include "providers/publiclogs/PublicLogs.hpp"
 #include "providers/recentmessages/Api.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
@@ -1568,6 +1569,7 @@ void TwitchChannel::roomIdChanged()
     this->refreshFFZChannelEmotes(false);
     this->refreshBTTVChannelEmotes(false);
     this->refreshSevenTVChannelEmotes(false);
+    Jiltv::instance().loadChannelEmotes(roomId);
     this->refreshPinnedMessage();
 }
 

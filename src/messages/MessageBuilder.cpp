@@ -39,6 +39,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
@@ -719,9 +720,21 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
     const auto *globalSeventvEmotes = getApp()->getSeventvEmotes();
 
     std::optional<EmotePtr> emote{};
+    // JilTV's emotes come first in each group, or after the others.
+    const bool jiltvFirstHere = jiltvFirst();
+    auto &jiltv = Jiltv::instance();
 
     if (twitchChannel != nullptr)
     {
+        if (jiltvFirstHere)
+        {
+            emote = jiltv.channelEmote(twitchChannel->roomId(), name);
+            if (emote)
+            {
+                return *emote;
+            }
+        }
+
         // Check for channel emotes
         emote = getApp()->getSeventvPersonalEmotes()->getEmoteForTwitchUser(
             userID, name);
@@ -753,9 +766,27 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
         {
             return *emote;
         }
+
+        if (!jiltvFirstHere)
+        {
+            emote = jiltv.channelEmote(twitchChannel->roomId(), name);
+            if (emote)
+            {
+                return *emote;
+            }
+        }
     }
 
     // Check for global emotes
+
+    if (jiltvFirstHere)
+    {
+        emote = jiltv.globalEmote(name);
+        if (emote)
+        {
+            return *emote;
+        }
+    }
 
     emote = globalFfzEmotes->emote(name);
     if (emote)
@@ -773,6 +804,15 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
     if (emote)
     {
         return *emote;
+    }
+
+    if (!jiltvFirstHere)
+    {
+        emote = jiltv.globalEmote(name);
+        if (emote)
+        {
+            return *emote;
+        }
     }
 
     return {};
@@ -1496,6 +1536,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         MessageElementFlag::BadgeJilChat,
         MessageElementFlag::BadgeBadgeHQ,
         MessageElementFlag::BadgeLimerino,
+        MessageElementFlag::BadgeJiltv,
     };
 
     // Same order as makeIrcMessage.
@@ -1514,6 +1555,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendBadgeHQBadges(message.userID);
     builder.appendLimerinoBadges(message.userID);
     builder.appendJilChatBadges(message.userID);
+    builder.appendJiltvBadges(message.loginName);
 
     auto &elements = message.elements;
     const auto isThirdParty = [&](const std::unique_ptr<MessageElement> &el) {
@@ -2334,6 +2376,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendBadgeHQBadges(userID);
         builder.appendLimerinoBadges(userID);
         builder.appendJilChatBadges(userID);
+        builder.appendJiltvBadges(builder->loginName);
         if (senderIsCurrentUser)
         {
             // the order the user wants their own badges in
@@ -4049,6 +4092,15 @@ void MessageBuilder::appendJilChatBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendJiltvBadges(const QString &login)
+{
+    if (auto badge = Jiltv::instance().badge(login))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeJiltv);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
 void MessageBuilder::appendBluzyrinoBadges(const QString &userID)
 {
     if (!getSettings()->showBadgesBluzyrino)
@@ -4344,6 +4396,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendBadgeHQBadges(userId);
     builder.appendLimerinoBadges(userId);
     builder.appendJilChatBadges(userId);
+    builder.appendJiltvBadges(loginName);
 
     MessageParseArgs args;
     args.isAction = true;

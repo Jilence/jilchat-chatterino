@@ -13,6 +13,7 @@
 #include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/kick/KickChatServer.hpp"
@@ -175,6 +176,10 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
             {
                 addEmotes(emotes, *seventv, "Channel 7TV");
             }
+            if (auto jiltv = Jiltv::instance().channelEmotes(tc->roomId()))
+            {
+                addEmotes(emotes, *jiltv, "Channel JilTV");
+            }
         }
     }
 
@@ -207,6 +212,10 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
         if (auto seventvG = app->getSeventvEmotes()->globalEmotes())
         {
             addEmotes(emotes, *seventvG, "Global 7TV");
+        }
+        if (auto jiltvG = Jiltv::instance().globalEmotes())
+        {
+            addEmotes(emotes, *jiltvG, "Global JilTV");
         }
     }
 

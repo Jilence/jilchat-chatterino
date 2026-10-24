@@ -22,6 +22,7 @@
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/pronouns/Pronouns.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/twitch/eventsub/Controller.hpp"
@@ -304,6 +305,8 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->bttvEmotes->loadEmotes();
     this->ffzEmotes->loadEmotes();
     this->seventvEmotes->loadGlobalEmotes();
+    Jiltv::instance().loadCatalog();
+    Jiltv::instance().loadGlobalEmotes();
 
     this->twitch->initialize();
     this->kickChatServer->initialize();

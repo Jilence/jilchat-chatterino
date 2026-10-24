@@ -387,6 +387,9 @@ private:
     void appendLimerinoBadges(const QString &userID);
     void appendMoltorinoBadges(const QString &userID);
     void appendJilChatBadges(const QString &userID);
+    /// The JilTV badge of the chatter `login` (by login, as JilTV looks
+    /// chatters up).
+    void appendJiltvBadges(const QString &login);
     void appendBluzyrinoBadges(const QString &userID);
 
     [[nodiscard]] static bool isIgnored(const QString &originalMessage,

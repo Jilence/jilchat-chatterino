@@ -21,6 +21,7 @@
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/kick/KickAccount.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
@@ -902,6 +903,11 @@ void EmotePopup::reloadEmotes()
             addEmotes(*channelChannel, *this->twitchChannel_->seventvEmotes(),
                       "7TV");
         }
+        if (auto jiltv =
+                Jiltv::instance().channelEmotes(this->twitchChannel_->roomId()))
+        {
+            addEmotes(*channelChannel, *jiltv, "JilTV");
+        }
 
         for (const auto &map :
              getApp()->getSeventvPersonalEmotes()->getEmoteSetsForTwitchUser(
@@ -949,6 +955,10 @@ void EmotePopup::reloadEmotes()
     {
         addEmotes(*globalChannel, *getApp()->getSeventvEmotes()->globalEmotes(),
                   "7TV");
+    }
+    if (auto jiltv = Jiltv::instance().globalEmotes())
+    {
+        addEmotes(*globalChannel, *jiltv, "JilTV");
     }
 
     this->favouriteEmotes_.clear();

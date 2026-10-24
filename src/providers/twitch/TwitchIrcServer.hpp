@@ -121,6 +121,7 @@ public:
     void reloadAllBTTVChannelEmotes();
     void reloadAllFFZChannelEmotes();
     void reloadAllSevenTVChannelEmotes();
+    void reloadAllJiltvChannelEmotes();
 
     /** Calls `func` with all twitch channels that have `emoteSetId` added. */
     void forEachSeventvEmoteSet(const QString &emoteSetId,
