@@ -5,6 +5,8 @@
 #pragma once
 
 #include "common/FlagsEnum.hpp"
+#include "controllers/filters/lang/expressions/Expression.hpp"
+#include "messages/Message.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -18,19 +20,24 @@ namespace chatterino {
 struct HighlightResult;
 struct MessageParseArgs;
 class TwitchBadge;
-enum class MessagePlatform : std::uint8_t;
 
 enum class MessageFlag : std::int64_t;
 using MessageFlags = FlagsEnum<MessageFlag>;
 
-struct HighlightCheck {
-    using Checker = std::function<std::optional<HighlightResult>(
-        const MessageParseArgs &args,
-        const std::vector<TwitchBadge> &twitchBadges, const QString &senderName,
-        const QString &originalMessage, const MessageFlags &messageFlags,
-        bool self, MessagePlatform platform, const QString &channelName,
-        bool collectMatches)>;
-    Checker cb;
+struct HighlightCheckParams {
+    const MessageParseArgs &args;
+    const std::vector<TwitchBadge> &twitchBadges;
+    const QString &senderName;
+    const QString &originalMessage;
+    const MessageFlags &messageFlags;
+    bool self;
+    filters::RunContext runContext;
+    MessagePlatform platform = MessagePlatform::AnyOrTwitch;
+    /// The channel the message is in, without the #. May be empty.
+    QString channelName;
 };
+
+using HighlightCheck = std::function<std::optional<HighlightResult>(
+    const HighlightCheckParams &params)>;
 
 }  // namespace chatterino

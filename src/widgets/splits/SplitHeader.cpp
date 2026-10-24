@@ -489,6 +489,279 @@ MultiViewerSum sumMultichannelViewers(const MultiChannel &mc)
     return result;
 }
 
+constexpr int MULTI_TOOLTIP_MAX_LINES = 12;
+
+bool multiTooltipHidesCounts()
+{
+    return getApp()->getStreamerMode()->isEnabled() &&
+           getSettings()->streamerModeHideViewerCountAndDuration;
+}
+
+QString multiTooltipPlatformLabel(MultiChannel::Platform platform)
+{
+    switch (platform)
+    {
+        case MultiChannel::Platform::Twitch:
+            return u"Twitch"_s;
+        case MultiChannel::Platform::Kick:
+            return u"Kick"_s;
+        case MultiChannel::Platform::YouTube:
+            return u"YouTube"_s;
+    }
+    return {};
+}
+
+struct MultiTooltipRow {
+    QString html;
+    bool live = false;
+    bool active = false;
+};
+
+QString multiTooltipName(const Channel &channel, bool mixed,
+                         MultiChannel::Platform platform)
+{
+    auto name = channel.getLocalizedName();
+    if (name.isEmpty())
+    {
+        name = channel.getName();
+    }
+
+    auto html = name.toHtmlEscaped();
+    if (mixed)
+    {
+        html =
+            multiTooltipPlatformLabel(platform).toHtmlEscaped() % u" · " % html;
+    }
+    return html;
+}
+
+void appendMultiTooltipCounts(QStringList &parts, qint64 viewers,
+                              const QString &uptime, bool hideCounts)
+{
+    if (hideCounts)
+    {
+        return;
+    }
+
+    parts.push_back(formatCompactNumber(viewers));
+    if (!uptime.isEmpty())
+    {
+        parts.push_back(uptime.toHtmlEscaped());
+    }
+}
+
+QString multiTooltipDetail(const QString &category, bool rerun)
+{
+    if (rerun)
+    {
+        return u"Vod-casting"_s;
+    }
+    if (category.isEmpty())
+    {
+        return u"live"_s;
+    }
+    return shortenString(category).toHtmlEscaped();
+}
+
+MultiTooltipRow makeMultiTooltipRow(const MultiChannel::ChildChannel &child,
+                                    bool mixed, bool active, bool hideCounts)
+{
+    MultiTooltipRow row;
+    row.active = active;
+    const auto name = multiTooltipName(*child.channel, mixed, child.platform);
+
+    auto finish = [&](QString html) {
+        if (active)
+        {
+            html = u"→ " % html;
+        }
+        row.html = std::move(html);
+        return row;
+    };
+    auto offline = [&] {
+        return finish(name % u" - offline");
+    };
+
+    auto *chan = child.channel.get();
+    if (auto *twitch = dynamic_cast<TwitchChannel *>(chan))
+    {
+        const auto status = twitch->accessStreamStatus();
+        row.live = status->live;
+        if (!row.live)
+        {
+            return offline();
+        }
+
+        QStringList parts{multiTooltipDetail(status->game, status->rerun)};
+        appendMultiTooltipCounts(parts,
+                                 static_cast<qint64>(status->viewerCount),
+                                 status->uptime, hideCounts);
+        return finish(name % u" - " % parts.join(u" · "));
+    }
+
+    if (auto *kick = dynamic_cast<KickChannel *>(chan))
+    {
+        const auto &stream = kick->streamData();
+        row.live = stream.isLive;
+        if (!row.live)
+        {
+            return offline();
+        }
+
+        QStringList parts{multiTooltipDetail(stream.category, false)};
+        appendMultiTooltipCounts(parts, static_cast<qint64>(stream.viewerCount),
+                                 stream.uptime, hideCounts);
+        return finish(name % u" - " % parts.join(u" · "));
+    }
+
+    if (auto *youtube = dynamic_cast<YouTubeChannel *>(chan))
+    {
+        const auto &stream = youtube->streamData();
+        row.live = stream.isLive;
+        if (!row.live)
+        {
+            return offline();
+        }
+
+        QStringList parts{u"live"_s};
+        if (!hideCounts && stream.viewerCount >= 0)
+        {
+            parts.push_back(formatCompactNumber(stream.viewerCount));
+        }
+        return finish(name % u" - " % parts.join(u" · "));
+    }
+
+    return offline();
+}
+
+QString multiTooltipSummary(int liveCount, int total, qint64 viewers,
+                            bool hideCounts)
+{
+    auto text = QString("%1 of %2 live").arg(liveCount).arg(total);
+    if (liveCount > 0 && !hideCounts)
+    {
+        text += u" · " % formatCompactNumber(viewers) % u" viewers";
+    }
+    return text;
+}
+
+QString formatMultiChannelTooltip(const MultiChannel &mc)
+{
+    const auto children = mc.channels();
+    if (children.empty())
+    {
+        return {};
+    }
+
+    const bool hideCounts = multiTooltipHidesCounts();
+    const auto firstPlatform = children.front().platform;
+    const bool mixed = std::ranges::any_of(children, [&](const auto &child) {
+        return child.platform != firstPlatform;
+    });
+
+    const auto *active = mc.activeChannel();
+    const Channel *activeChannel = nullptr;
+    if (active != nullptr)
+    {
+        activeChannel = active->channel.get();
+    }
+
+    std::vector<MultiTooltipRow> rows;
+    rows.reserve(children.size());
+    int liveCount = 0;
+    for (const auto &child : children)
+    {
+        auto row = makeMultiTooltipRow(
+            child, mixed, child.channel.get() == activeChannel, hideCounts);
+        if (row.live)
+        {
+            ++liveCount;
+        }
+        rows.push_back(std::move(row));
+    }
+
+    const auto viewers = sumMultichannelViewers(mc);
+    const int total = static_cast<int>(rows.size());
+    QStringList lines{
+        multiTooltipSummary(liveCount, total, viewers.sum, hideCounts),
+    };
+
+    if (1 + total <= MULTI_TOOLTIP_MAX_LINES)
+    {
+        for (const auto &row : rows)
+        {
+            lines.push_back(row.html);
+        }
+    }
+    else
+    {
+        const int offlineCount = total - liveCount;
+        const int footerLines = offlineCount > 0 ? 1 : 0;
+        int liveSlots = MULTI_TOOLTIP_MAX_LINES - 1 - footerLines;
+        bool liveCut = false;
+        if (liveCount > liveSlots)
+        {
+            liveCut = true;
+            --liveSlots;
+            if (liveSlots < 0)
+            {
+                liveSlots = 0;
+            }
+        }
+
+        std::vector<const MultiTooltipRow *> visible;
+        visible.reserve(static_cast<size_t>(liveSlots));
+        const MultiTooltipRow *activeLive = nullptr;
+        for (const auto &row : rows)
+        {
+            if (!row.live)
+            {
+                continue;
+            }
+            if (row.active)
+            {
+                activeLive = &row;
+            }
+            if (static_cast<int>(visible.size()) < liveSlots)
+            {
+                visible.push_back(&row);
+            }
+        }
+        if (liveCut && activeLive != nullptr && !visible.empty())
+        {
+            bool activeShown = false;
+            for (const auto *row : visible)
+            {
+                if (row == activeLive)
+                {
+                    activeShown = true;
+                    break;
+                }
+            }
+            if (!activeShown)
+            {
+                visible.back() = activeLive;
+            }
+        }
+
+        for (const auto *row : visible)
+        {
+            lines.push_back(row->html);
+        }
+        if (liveCut)
+        {
+            const int hiddenLive = liveCount - static_cast<int>(visible.size());
+            lines.push_back(QString("and %1 more live").arg(hiddenLive));
+        }
+        if (offlineCount > 0)
+        {
+            lines.push_back(QString("%1 offline").arg(offlineCount));
+        }
+    }
+
+    return u"<p style=\"text-align: left;\">" % lines.join(u"<br>") % u"</p>";
+}
+
 auto distance(QPoint a, QPoint b)
 {
     auto x = std::abs(a.x() - b.x());
@@ -950,6 +1223,14 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
                 OPEN_MOD_VIEW_IN_BROWSER,
                 h->getDisplaySequence(HotkeyCategory::Split, "openModView"),
                 this->split_, &Split::openModViewInBrowser);
+        }
+
+        if (twitchChannel && twitchChannel->hasModRights())
+        {
+            menu->addAction(OPEN_UNBAN_REQUESTS_IN_BROWSER,
+                            h->getDisplaySequence(HotkeyCategory::Split,
+                                                  "openUnbanRequests"),
+                            this->split_, &Split::openUnbanRequestsInBrowser);
         }
 
         if (twitchChannel && twitchChannel->hasModRights())
@@ -1732,6 +2013,7 @@ void SplitHeader::updateChannelText()
         this->titleLabel_->setShouldElide(true);
         this->titleLabel_->setElideSuffix(suffix);
         this->titleLabel_->setText(mainText.isEmpty() ? "<empty>" : mainText);
+        this->tooltipText_ = formatMultiChannelTooltip(*mc);
         return;
     }
 
@@ -2074,7 +2356,12 @@ void SplitHeader::enterEvent(QEvent *event)
     if (!this->tooltipText_.isEmpty())
     {
         this->tooltipWidget_->setOne({nullptr, this->tooltipText_});
-        this->tooltipWidget_->setWordWrap(true);
+        const bool isMulti = dynamic_cast<MultiChannel *>(
+                                 this->split_->getChannel().get()) != nullptr;
+        // A wrapping label sizes to a break in the text, which drops the
+        // status of a long channel name onto the next line. Multi rows are
+        // already one line each, so size the tooltip to the longest row.
+        this->tooltipWidget_->setWordWrap(!isMulti);
         this->tooltipWidget_->adjustSize();
 
         // On Windows, a lot of the resizing/activating happens when calling

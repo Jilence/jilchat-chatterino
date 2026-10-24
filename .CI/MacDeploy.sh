@@ -22,14 +22,9 @@ if [ ! -d "${_app_bundle}" ]; then
     exit 1
 fi
 
-if [ -n "$Qt5_DIR" ]; then
-    echo "Using Qt DIR from Qt5_DIR: $Qt5_DIR"
-    _QT_DIR="$Qt5_DIR"
-    _img_version="5.15.2"
-elif [ -n "$Qt6_DIR" ]; then
+if [ -n "$Qt6_DIR" ]; then
     echo "Using Qt DIR from Qt6_DIR: $Qt6_DIR"
     _QT_DIR="$Qt6_DIR"
-    _img_version="6.9.3"
 fi
 
 if [ -n "$_QT_DIR" ]; then

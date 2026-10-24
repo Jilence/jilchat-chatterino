@@ -1935,8 +1935,9 @@ std::string_view LinkElement::type() const
 
 EmoteLinkElement::EmoteLinkElement(const EmotePtr &emote,
                                    MessageElementFlags flags,
-                                   const MessageColor &color)
-    : TextElement(emote->name.string, flags, color)
+                                   const MessageColor &color,
+                                   const QString &name)
+    : TextElement(name.isEmpty() ? emote->name.string : name, flags, color)
     , emote_(emote)
 {
     this->setTooltip(emote->tooltip.string);
@@ -1955,6 +1956,7 @@ std::unique_ptr<MessageElement> EmoteLinkElement::clone() const
 {
     auto el = std::make_unique<EmoteLinkElement>(this->emote_, this->getFlags(),
                                                  this->color());
+    el->words_ = this->words_;
     el->cloneFrom(*this);
     return el;
 }

@@ -21,7 +21,9 @@ public:
 
 protected:
     Nickname getItemFromRow(std::vector<QStandardItem *> &row,
-                            const Nickname &original) override;
+                            const Nickname &original,
+                            std::optional<QModelIndex> index,
+                            std::optional<int> role) override;
 
     void getRowFromItem(const Nickname &item,
                         std::vector<QStandardItem *> &row) override;

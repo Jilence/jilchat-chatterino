@@ -13,17 +13,17 @@ RegexExpression::RegexExpression(const QString &regex, bool caseInsensitive)
           regex, caseInsensitive ? QRegularExpression::CaseInsensitiveOption
                                  : QRegularExpression::NoPatternOption)) {};
 
-QVariant RegexExpression::execute(const ContextMap &) const
+QVariant RegexExpression::execute(RunContext /*context*/) const
 {
     return this->regex_;
 }
 
-PossibleType RegexExpression::synthesizeType(const TypingContext &) const
+PossibleType RegexExpression::synthesizeType() const
 {
     return TypeClass{Type::RegularExpression};
 }
 
-QString RegexExpression::debug(const TypingContext &) const
+QString RegexExpression::debug() const
 {
     return QString("RegEx(%1)").arg(this->regexString_);
 }

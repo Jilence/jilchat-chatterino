@@ -20,7 +20,9 @@ public:
 
 protected:
     FilterRecordPtr getItemFromRow(std::vector<QStandardItem *> &row,
-                                   const FilterRecordPtr &original) override;
+                                   const FilterRecordPtr &original,
+                                   std::optional<QModelIndex> index,
+                                   std::optional<int> role) override;
 
     void getRowFromItem(const FilterRecordPtr &item,
                         std::vector<QStandardItem *> &row) override;

@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace chatterino {
@@ -30,6 +31,9 @@ public:
                           ChannelPtr channel);
 
     void setInputAction(ActionCallback callback);
+
+    std::optional<std::pair<QStringList, int>> selectedCompletions(
+        bool isFirstWord) const;
 
     bool eventFilter(QObject *watched, QEvent *event) override;
     bool hasResults() const;
@@ -57,6 +61,8 @@ private:
 
     std::optional<CompletionKind> currentKind_{};
     ChannelPtr currentChannel_{};
+
+    friend class PopupCycleFixture;
 };
 
 }  // namespace chatterino

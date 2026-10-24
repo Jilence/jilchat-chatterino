@@ -207,6 +207,8 @@ set(SOURCE_FILES
         controllers/filters/lang/expressions/Expression.hpp
         controllers/filters/lang/expressions/BinaryOperation.cpp
         controllers/filters/lang/expressions/BinaryOperation.hpp
+        controllers/filters/lang/expressions/IdentifierExpression.cpp
+        controllers/filters/lang/expressions/IdentifierExpression.hpp
         controllers/filters/lang/expressions/ListExpression.cpp
         controllers/filters/lang/expressions/ListExpression.hpp
         controllers/filters/lang/expressions/RegexExpression.cpp
@@ -224,10 +226,8 @@ set(SOURCE_FILES
         controllers/filters/lang/Types.cpp
         controllers/filters/lang/Types.hpp
 
-        controllers/highlights/BadgeHighlightModel.cpp
-        controllers/highlights/BadgeHighlightModel.hpp
-        controllers/highlights/HighlightBadge.cpp
-        controllers/highlights/HighlightBadge.hpp
+        controllers/highlights/ConfigureDialog.cpp
+        controllers/highlights/ConfigureDialog.hpp
         controllers/highlights/HighlightBlacklistModel.cpp
         controllers/highlights/HighlightBlacklistModel.hpp
         controllers/highlights/HighlightChannelScope.cpp
@@ -235,16 +235,60 @@ set(SOURCE_FILES
         controllers/highlights/HighlightCheck.hpp
         controllers/highlights/HighlightController.cpp
         controllers/highlights/HighlightController.hpp
-        controllers/highlights/HighlightModel.cpp
-        controllers/highlights/HighlightModel.hpp
-        controllers/highlights/HighlightPhrase.cpp
-        controllers/highlights/HighlightPhrase.hpp
         controllers/highlights/HighlightResult.cpp
         controllers/highlights/HighlightResult.hpp
+        controllers/highlights/HighlightMatch.cpp
+        controllers/highlights/HighlightMatch.hpp
         controllers/highlights/HighlightWordList.cpp
         controllers/highlights/HighlightWordList.hpp
-        controllers/highlights/UserHighlightModel.cpp
-        controllers/highlights/UserHighlightModel.hpp
+        controllers/highlights/Legacy.hpp
+        controllers/highlights/Model.cpp
+        controllers/highlights/Model.hpp
+        controllers/highlights/Sounds.cpp
+        controllers/highlights/Sounds.hpp
+        controllers/highlights/types/AnyHighlightForward.hpp
+        controllers/highlights/types/AnyHighlight.hpp
+        controllers/highlights/types/AnnouncementsHighlight.cpp
+        controllers/highlights/types/AnnouncementsHighlight.hpp
+        controllers/highlights/types/AutomodCaughtHighlight.cpp
+        controllers/highlights/types/AutomodCaughtHighlight.hpp
+        controllers/highlights/types/BadgeHighlight.cpp
+        controllers/highlights/types/BadgeHighlight.hpp
+        controllers/highlights/types/ChannelPointsHighlight.cpp
+        controllers/highlights/types/ChannelPointsHighlight.hpp
+        controllers/highlights/types/Common.cpp
+        controllers/highlights/types/Common.hpp
+        controllers/highlights/types/Concepts.hpp
+        controllers/highlights/types/FilterHighlight.cpp
+        controllers/highlights/types/FilterHighlight.hpp
+        controllers/highlights/types/FirstMessageHighlight.cpp
+        controllers/highlights/types/FirstMessageHighlight.hpp
+        controllers/highlights/types/FollowHighlight.cpp
+        controllers/highlights/types/FollowHighlight.hpp
+        controllers/highlights/types/InvalidHighlight.cpp
+        controllers/highlights/types/InvalidHighlight.hpp
+        controllers/highlights/types/LowTrustUserHighlight.cpp
+        controllers/highlights/types/LowTrustUserHighlight.hpp
+        controllers/highlights/types/MessageHighlight.cpp
+        controllers/highlights/types/MessageHighlight.hpp
+        controllers/highlights/types/Outcome.cpp
+        controllers/highlights/types/Outcome.hpp
+        controllers/highlights/types/SubscribedThreadHighlight.cpp
+        controllers/highlights/types/SubscribedThreadHighlight.hpp
+        controllers/highlights/types/SubscriptionsHighlight.cpp
+        controllers/highlights/types/SubscriptionsHighlight.hpp
+        controllers/highlights/types/UncategorizedNotificationHighlight.cpp
+        controllers/highlights/types/UncategorizedNotificationHighlight.hpp
+        controllers/highlights/types/UserHighlight.cpp
+        controllers/highlights/types/UserHighlight.hpp
+        controllers/highlights/types/WatchStreakHighlight.cpp
+        controllers/highlights/types/WatchStreakHighlight.hpp
+        controllers/highlights/types/WhispersHighlight.cpp
+        controllers/highlights/types/WhispersHighlight.hpp
+        controllers/highlights/types/YourMessagesHighlight.cpp
+        controllers/highlights/types/YourMessagesHighlight.hpp
+        controllers/highlights/types/YourUsernameHighlight.cpp
+        controllers/highlights/types/YourUsernameHighlight.hpp
 
         controllers/hotkeys/ActionNames.hpp
         controllers/hotkeys/Hotkey.cpp
@@ -924,6 +968,10 @@ set(SOURCE_FILES
         widgets/dialogs/EmotePopup.hpp
         widgets/dialogs/GifPickerDialog.cpp
         widgets/dialogs/GifPickerDialog.hpp
+        widgets/dialogs/HighlightChannelScopeDialog.cpp
+        widgets/dialogs/HighlightChannelScopeDialog.hpp
+        widgets/dialogs/HighlightTesterDialog.cpp
+        widgets/dialogs/HighlightTesterDialog.hpp
 
         widgets/dialogs/font/FontDialog.cpp
         widgets/dialogs/font/FontDialog.hpp
@@ -1100,6 +1148,10 @@ set(SOURCE_FILES
         widgets/settingspages/TechnorinoPage.hpp
         widgets/settingspages/HighlightingPage.cpp
         widgets/settingspages/HighlightingPage.hpp
+        widgets/settingspages/HighlightingWidget.cpp
+        widgets/settingspages/HighlightingWidget.hpp
+        widgets/settingspages/HighlightWordListsWidget.cpp
+        widgets/settingspages/HighlightWordListsWidget.hpp
         widgets/settingspages/IgnoresPage.cpp
         widgets/settingspages/IgnoresPage.hpp
         widgets/settingspages/JilChatPage.cpp

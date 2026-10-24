@@ -125,7 +125,7 @@ find appdir/usr/bin appdir/usr/lib appdir/usr/plugins \
 echo "Run AppImageTool"
 
 # shellcheck disable=SC2016
-echo '#!/bin/sh
+echo '#!/bin/bash
 here="$(dirname "$(readlink -f "${0}")")"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$here/usr/plugins"
 
