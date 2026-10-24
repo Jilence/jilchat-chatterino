@@ -13,7 +13,7 @@
 namespace chatterino::highlights {
 
 FilterHighlight::FilterHighlight(QStringView _id)
-    : id(_id)
+    : id(_id.toString())
 {
     this->rebuildFilter();
 }

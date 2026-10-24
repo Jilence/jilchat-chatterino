@@ -32,7 +32,7 @@ const QList<DisplayBadge> &twitchBadges()
 }
 
 BadgeHighlight::BadgeHighlight(QStringView _id)
-    : id(_id)
+    : id(_id.toString())
 {
     this->rebuildBadgeCheck();
 }
