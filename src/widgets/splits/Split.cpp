@@ -511,6 +511,11 @@ void Split::addShortcuts()
              this->openModViewInBrowser();
              return "";
          }},
+        {"openUnbanRequests",
+         [this](const std::vector<QString> &) -> QString {
+             this->openUnbanRequestsInBrowser();
+             return "";
+         }},
         {"openRewardQueue",
          [this](const std::vector<QString> &) -> QString {
              this->openRewardQueue();
@@ -2504,6 +2509,17 @@ void Split::openModViewInBrowser()
     {
         QDesktopServices::openUrl("https://dashboard.kick.com/moderator/" +
                                   kc->slug());
+    }
+}
+
+void Split::openUnbanRequestsInBrowser()
+{
+    auto channel = this->getSelectedChannel();
+
+    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
+    {
+        QDesktopServices::openUrl("https://www.twitch.tv/popout/moderator/" +
+                                  twitchChannel->getName() + "/unban-requests");
     }
 }
 

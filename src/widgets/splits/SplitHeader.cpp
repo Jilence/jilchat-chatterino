@@ -1223,6 +1223,14 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
 
         if (twitchChannel && twitchChannel->hasModRights())
         {
+            menu->addAction(OPEN_UNBAN_REQUESTS_IN_BROWSER,
+                            h->getDisplaySequence(HotkeyCategory::Split,
+                                                  "openUnbanRequests"),
+                            this->split_, &Split::openUnbanRequestsInBrowser);
+        }
+
+        if (twitchChannel && twitchChannel->hasModRights())
+        {
             menu->addAction(
                 "Open &reward queue",
                 h->getDisplaySequence(HotkeyCategory::Split, "openRewardQueue"),
