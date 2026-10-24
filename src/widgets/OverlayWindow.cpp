@@ -105,7 +105,7 @@ OverlayWindow::OverlayWindow(IndirectChannel channel,
     , interaction_(this)
 {
     this->setAttribute(Qt::WA_DeleteOnClose);
-    this->setWindowTitle(u"Leafyrino - Overlay"_s);
+    this->setWindowTitle(u"JilChat Chatterino - Overlay"_s);
     this->setWindowRole(u"chatterino.overlay"_s);
 
     auto *grid = new QGridLayout(this);
@@ -497,9 +497,9 @@ void OverlayWindow::triggerFirstActivation()
                    "href=\"https://github.com/Chatterino/chatterino2/"
                    "discussions\">on GitHub</a>.";
 
-    auto *box =
-        new QMessageBox(QMessageBox::Information, u"Leafyrino - Overlay"_s,
-                        welcomeText, QMessageBox::Ok, this);
+    auto *box = new QMessageBox(QMessageBox::Information,
+                                u"JilChat Chatterino - Overlay"_s, welcomeText,
+                                QMessageBox::Ok, this);
     box->open();
 }
 

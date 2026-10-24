@@ -131,7 +131,8 @@ void WindowManager::showSettingsDialog(QWidget *parent,
 
     if (this->appArgs.dontSaveSettings)
     {
-        QMessageBox::critical(parent, "Leafyrino - Editing Settings Forbidden",
+        QMessageBox::critical(parent,
+                              "JilChat Chatterino - Editing Settings Forbidden",
                               "Settings cannot be edited when running with\n"
                               "commandline arguments such as '-c'.");
     }
