@@ -1203,10 +1203,10 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             ? (QDateTime::currentMSecsSinceEpoch() % durationMs) * 30 / 1000
             : -1;
 
-    if (!centerVertically)
-    {
-        padding = 0;
-    }
+    // The chat gives the name `padding` (overflow()) on every side for the
+    // glow and draws the pixmap over that larger rect, so the pixmap must
+    // include it, centered or not; otherwise the name gets stretched.
+    padding = std::max<qreal>(0, padding);
     const auto key = QStringLiteral("%1|%2|%3x%4|%5|%6|%7|%8|%9")
                          .arg(text, font.key())
                          .arg(size.width())
