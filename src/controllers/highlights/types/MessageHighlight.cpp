@@ -52,10 +52,16 @@ HighlightCheck MessageHighlight::buildCheck() const
     }
 
     return {
-        [highlight = *this](const Params &p) -> std::optional<HighlightResult> {
+        [highlight = *this, scope = this->extras.getChannelScope()](
+            const Params &p) -> std::optional<HighlightResult> {
             if (p.self)
             {
                 // Phrase checks should ignore highlights from the user
+                return std::nullopt;
+            }
+
+            if (!scope.appliesTo(p.platform, p.channelName))
+            {
                 return std::nullopt;
             }
 

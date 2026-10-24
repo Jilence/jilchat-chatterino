@@ -20,9 +20,15 @@ HighlightCheck UserHighlight::buildCheck() const
     using Params = HighlightCheckParams;
 
     return {
-        [highlight = *this](const Params &p) -> std::optional<HighlightResult> {
+        [highlight = *this, scope = this->extras.getChannelScope()](
+            const Params &p) -> std::optional<HighlightResult> {
             if (highlight.username.compare(p.senderName, Qt::CaseInsensitive) !=
                 0)
+            {
+                return std::nullopt;
+            }
+
+            if (!scope.appliesTo(p.platform, p.channelName))
             {
                 return std::nullopt;
             }

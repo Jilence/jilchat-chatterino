@@ -14,6 +14,7 @@
 #include "util/DisplayBadge.hpp"
 #include "util/Variant.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
+#include "widgets/dialogs/HighlightChannelScopeDialog.hpp"
 #include "widgets/helper/color/ColorButton.hpp"
 
 #include <QCheckBox>
@@ -480,6 +481,45 @@ ConfigureDialog::ConfigureDialog(AnyHighlight _data, QWidget *parent)
             addSettingMenu(colorLbl, color, [h, color] {
                 h->extras.matchColor.clear();
                 color->setColor(h->getMatchColor());
+            });
+        }
+
+        HighlightExtras *extras = nullptr;
+        if (auto *h = std::get_if<MessageHighlight>(&this->data))
+        {
+            extras = &h->extras;
+        }
+        else if (auto *h = std::get_if<UserHighlight>(&this->data))
+        {
+            extras = &h->extras;
+        }
+        if (extras != nullptr)
+        {
+            auto *lbl = new QLabel("Channels");
+            lbl->setToolTip("The channels this highlight applies in.");
+            auto *w = new QPushButton;
+            const auto showScope = [w, extras] {
+                const auto scope = extras->getChannelScope();
+                w->setText(highlightChannelScopeSummary(
+                    scope.mode(), scope.targets().size()));
+                w->setToolTip(highlightChannelScopeDescription(
+                    scope.mode(), scope.targets()));
+            };
+            showScope();
+            QObject::connect(
+                w, &QPushButton::clicked, this, [this, extras, showScope] {
+                    HighlightChannelScopeDialog dialog(
+                        this, getName(this->data), extras->getChannelScope());
+                    if (dialog.exec() == QDialog::Accepted)
+                    {
+                        extras->setChannelScope(dialog.scope());
+                        showScope();
+                    }
+                });
+            l->addRow(lbl, w);
+            addSettingMenu(lbl, w, [extras, showScope] {
+                extras->setChannelScope({});
+                showScope();
             });
         }
 

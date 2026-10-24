@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "controllers/highlights/HighlightChannelScope.hpp"
 #include "util/RapidjsonHelpers.hpp"
 #include "util/RapidJsonSerializeQString.hpp"  // IWYU pragma: keep
 
@@ -29,6 +30,36 @@ struct HighlightExtras {
     std::vector<QString> channelTargets;
 
     bool operator==(const HighlightExtras &other) const = default;
+
+    HighlightChannelScope getChannelScope() const
+    {
+        std::vector<HighlightChannelTarget> targets;
+        for (const auto &encoded : this->channelTargets)
+        {
+            if (auto target = decodeHighlightChannelTarget(encoded))
+            {
+                targets.emplace_back(std::move(*target));
+            }
+        }
+        return {highlightChannelScopeModeFromKey(this->channelScope),
+                std::move(targets)};
+    }
+
+    void setChannelScope(const HighlightChannelScope &scope)
+    {
+        this->channelTargets.clear();
+        if (scope.mode() == HighlightChannelScopeMode::Everywhere)
+        {
+            this->channelScope.clear();
+            return;
+        }
+        this->channelScope = highlightChannelScopeModeKey(scope.mode());
+        for (const auto &target : scope.targets())
+        {
+            this->channelTargets.emplace_back(
+                encodeHighlightChannelTarget(target));
+        }
+    }
 
     void serialize(rapidjson::Value &ret,
                    rapidjson::Document::AllocatorType &a) const

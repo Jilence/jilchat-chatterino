@@ -968,6 +968,8 @@ set(SOURCE_FILES
         widgets/dialogs/EmotePopup.hpp
         widgets/dialogs/GifPickerDialog.cpp
         widgets/dialogs/GifPickerDialog.hpp
+        widgets/dialogs/HighlightChannelScopeDialog.cpp
+        widgets/dialogs/HighlightChannelScopeDialog.hpp
 
         widgets/dialogs/font/FontDialog.cpp
         widgets/dialogs/font/FontDialog.hpp
