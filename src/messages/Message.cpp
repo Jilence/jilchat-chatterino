@@ -3,7 +3,6 @@
 #include "Application.hpp"
 #include "common/Literals.hpp"
 #include "messages/MessageThread.hpp"
-#include "providers/colors/ColorProvider.hpp"
 #include "providers/twitch/TwitchBadge.hpp"
 #include "singletons/Settings.hpp"
 #include "util/DebugCount.hpp"
@@ -32,89 +31,17 @@ Message::~Message()
 
 ScrollbarHighlight Message::getScrollBarHighlight() const
 {
-    if (this->flags.has(MessageFlag::Highlighted) ||
-        this->flags.has(MessageFlag::HighlightedWhisper))
+    if (this->flags.has(MessageFlag::Highlighted))
     {
         return {
             this->highlightColor,
         };
     }
 
-    if (this->flags.has(MessageFlag::WatchStreak) &&
-        getSettings()->enableWatchStreakHighlight)
-    {
-        return {
-            ColorProvider::instance().color(ColorType::WatchStreak),
-        };
-    }
-
-    if (this->flags.has(MessageFlag::Subscription) &&
-        getSettings()->enableSubHighlight)
-    {
-        return {
-            ColorProvider::instance().color(ColorType::Subscription),
-        };
-    }
-
-    if (this->flags.has(MessageFlag::Follow) &&
-        getSettings()->enableFollowHighlight)
-    {
-        return {
-            ColorProvider::instance().color(ColorType::Follow),
-        };
-    }
-
-    if (this->flags.has(MessageFlag::RedeemedHighlight) ||
-        (this->flags.has(MessageFlag::RedeemedChannelPointReward) &&
-         !this->usesTwitchGigantifyPresentation()))
-    {
-        return {
-            ColorProvider::instance().color(ColorType::RedeemedHighlight),
-            ScrollbarHighlight::Default,
-            true,
-        };
-    }
-
-    if (this->flags.has(MessageFlag::FirstMessage))
-    {
-        return {
-            ColorProvider::instance().color(ColorType::FirstMessageHighlight),
-            ScrollbarHighlight::Default,
-            false,
-            true,
-        };
-    }
-
-    if (this->flags.has(MessageFlag::AutoModOffendingMessage) ||
-        this->flags.has(MessageFlag::AutoModOffendingMessageHeader))
-    {
-        return {
-            ColorProvider::instance().color(ColorType::AutomodHighlight),
-        };
-    }
-
     if (this->flags.has(MessageFlag::ChatWarning))
     {
         return {
-            ColorProvider::instance().color(ColorType::AutomodHighlight),
-        };
-    }
-
-    if (this->flags.has(MessageFlag::Announcement) &&
-        getSettings()->enableAnnouncementHighlight)
-    {
-        return {
-            ColorProvider::instance().color(colorTypeFromHelixAnnouncementColor(
-                this->announcementColor,
-                getSettings()->enableColoredAnnouncementHighlight)),
-        };
-    }
-
-    if (this->flags.has(MessageFlag::UncategorizedNotification))
-    {
-        // TODO: Give this a better/its own color :-)
-        return {
-            ColorProvider::instance().color(ColorType::Subscription),
+            std::make_shared<QColor>(64, 64, 64, 127),
         };
     }
 

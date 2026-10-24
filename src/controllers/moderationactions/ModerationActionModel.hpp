@@ -24,7 +24,9 @@ public:
 
 protected:
     ModerationAction getItemFromRow(std::vector<QStandardItem *> &row,
-                                    const ModerationAction &original) override;
+                                    const ModerationAction &original,
+                                    std::optional<QModelIndex> index,
+                                    std::optional<int> role) override;
 
     void getRowFromItem(const ModerationAction &item,
                         std::vector<QStandardItem *> &row) override;

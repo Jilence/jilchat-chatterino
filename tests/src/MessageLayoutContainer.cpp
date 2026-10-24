@@ -113,10 +113,12 @@ TEST(AsciiArtLayout, LimitsTheMessageWidth)
         .imageScale = 1.0F,
         .message = message,
     };
-    container.beginLayout(ctx.width, ctx.scale, ctx.imageScale, {});
+    container.beginLayout(ctx.width, ctx.scale, ctx.imageScale, ctx.emoteScale,
+                          ctx.badgeScale, ctx.centerBadges, {});
 
     EXPECT_GT(container.remainingWidth(), 300);
-    container.beginLayout(ctx.width, ctx.scale, ctx.imageScale,
+    container.beginLayout(ctx.width, ctx.scale, ctx.imageScale, ctx.emoteScale,
+                          ctx.badgeScale, ctx.centerBadges,
                           MessageFlag::AsciiArt);
     EXPECT_EQ(container.remainingWidth(), 300);
 
@@ -130,14 +132,17 @@ TEST(MessageLayoutContainer, InlineGifCopyText)
 {
     MockApplication mockApplication;
     MessageLayoutContainer container;
+    Message msg;
     MessageLayoutContext ctx{
         .messageColors = {},
         .flags = MessageElementFlag::TwitchGif,
         .width = 1000,
         .scale = 1.0F,
         .imageScale = 1.0F,
+        .message = msg,
     };
-    container.beginLayout(ctx.width, ctx.scale, ctx.imageScale, {});
+    container.beginLayout(ctx.width, ctx.scale, ctx.imageScale, ctx.emoteScale,
+                          ctx.badgeScale, ctx.centerBadges, {});
 
     ScalingImageElement gif(
         ImageSet{Image::fromResourcePixmap(getResources().twitch.automod)},

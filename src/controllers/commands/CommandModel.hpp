@@ -26,7 +26,9 @@ class CommandModel : public SignalVectorModel<Command>
 
 protected:
     Command getItemFromRow(std::vector<QStandardItem *> &row,
-                           const Command &command) override;
+                           const Command &command,
+                           std::optional<QModelIndex> index,
+                           std::optional<int> role) override;
 
     void getRowFromItem(const Command &item,
                         std::vector<QStandardItem *> &row) override;

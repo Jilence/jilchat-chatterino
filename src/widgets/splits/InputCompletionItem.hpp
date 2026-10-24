@@ -18,6 +18,9 @@ public:
     InputCompletionItem(const EmotePtr &emote, const QString &text,
                         ActionCallback action);
 
+    QString insertionText() const;
+
+    // GenericListItem interface
     void action() override;
     void paint(QPainter *painter, const QRect &rect) const override;
     QSize sizeHint(const QRect &rect) const override;

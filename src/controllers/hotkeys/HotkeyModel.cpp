@@ -16,7 +16,8 @@ HotkeyModel::HotkeyModel(QObject *parent)
 }
 
 std::shared_ptr<Hotkey> HotkeyModel::getItemFromRow(
-    std::vector<QStandardItem *> &row, const std::shared_ptr<Hotkey> &original)
+    std::vector<QStandardItem *> &row, const std::shared_ptr<Hotkey> &original,
+    std::optional<QModelIndex> index, std::optional<int> role)
 {
     return original;
 }

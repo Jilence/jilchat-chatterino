@@ -95,6 +95,11 @@ protected:
     {
         assertInGuiThread();
 
+        if (this->isSubscribed(subscription))
+        {
+            return;
+        }
+
         if (this->trySubscribe(subscription))
         {
             return;
@@ -257,6 +262,19 @@ private:
         this->clients_.emplace(id, std::move(client));
     }
 
+    bool isSubscribed(const Subscription &subscription) const
+    {
+        for (const auto &client : this->clients_)
+        {
+            if (client.second->isSubscribed(subscription))
+            {
+                return true;
+            }
+        }
+        return std::ranges::find(this->pendingSubscriptions_, subscription) !=
+               this->pendingSubscriptions_.end();
+    }
+
     bool trySubscribe(const Subscription &subscription)
     {
         for (auto &client : this->clients_)
@@ -267,13 +285,6 @@ private:
             }
         }
         return false;
-    }
-
-    bool isSubscribed(const Subscription &subscription) const
-    {
-        return std::ranges::any_of(this->clients_, [&](const auto &c) {
-            return c.second->isSubscribed(subscription);
-        });
     }
 
     Client *resolve(size_t id)

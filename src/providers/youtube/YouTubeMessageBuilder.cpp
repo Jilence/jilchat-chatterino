@@ -4,7 +4,9 @@
 #include "controllers/emotes/EmoteController.hpp"
 #include "controllers/highlights/HighlightController.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/filters/lang/Filter.hpp"
 #include "messages/Emote.hpp"
+#include "messages/MessageParseArgs.hpp"
 #include "messages/Image.hpp"
 #include "messages/Link.hpp"
 #include "messages/Message.hpp"
@@ -76,10 +78,20 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     MessageParseArgs args;
-    const std::vector<TwitchBadge> noBadges;
-    auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
-        args, noBadges, builder->displayName, builder->messageText,
-        builder->flags, builder->platform);
+    auto [highlighted, highlightResult] = getApp()->getHighlights()->check({
+        .args = args,
+        .twitchBadges = {},
+        .senderName = builder->displayName,
+        .originalMessage = builder->messageText,
+        .messageFlags = builder->flags,
+        .self = false,
+        .runContext =
+            filters::RunContext{
+                .message = builder.message(),
+                .channel = builder.channel(),
+            },
+        .platform = builder->platform,
+    });
 
     if (!highlighted)
     {
@@ -98,8 +110,7 @@ HighlightAlert processHighlights(YouTubeMessageBuilder &builder)
     }
 
     return {
-        .customSound = highlightResult.customSoundUrl.value_or(QUrl{}),
-        .playSound = highlightResult.playSound,
+        .sound = highlightResult.sound,
         .windowAlert = highlightResult.alert,
     };
 }

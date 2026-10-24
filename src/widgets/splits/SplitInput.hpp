@@ -407,6 +407,7 @@ private Q_SLOTS:
 
     friend class Split;
     friend class ReplyThreadPopup;
+    friend class PopupCycleFixture;
 };
 
 }  // namespace chatterino

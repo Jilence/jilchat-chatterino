@@ -94,6 +94,22 @@ public:
             }
         });
 
+        this->signalHolder.managedConnect(vec->itemsCleared, [this]() {
+            // NOTE: When a row is normally removed, we call `afterRemoved`.
+            // We don't call that here, so don't use clear if you use rely on `afterRemoved` being called.
+
+            this->beginResetModel();
+            for (const auto &row : this->rows_)
+            {
+                for (auto *item : row.items)
+                {
+                    delete item;
+                }
+            }
+            this->rows_.clear();
+            this->endResetModel();
+        });
+
         this->afterInit();
     }
 
@@ -178,7 +194,8 @@ public:
 
             assert(this->rows_[row].original);
             TVectorItem item = this->getItemFromRow(
-                this->rows_[row].items, this->rows_[row].original.value());
+                this->rows_[row].items, this->rows_[row].original.value(),
+                index, role);
             this->vector_->insert(item, vecRow, this);
 
             QVector<int> roles = QVector<int>();
@@ -266,7 +283,8 @@ public:
                   const QModelIndex &destinationParent,
                   int destinationChild) override
     {
-        if (count != 1)
+        if (count != 1 || !sourceParent.isValid() ||
+            !destinationParent.isValid())
         {
             return false;
         }
@@ -280,7 +298,8 @@ public:
 
         TVectorItem item =
             this->getItemFromRow(this->rows_[sourceRow].items,
-                                 this->rows_[sourceRow].original.value());
+                                 this->rows_[sourceRow].original.value(),
+                                 std::nullopt, std::nullopt);
         this->vector_->removeAt(signalVectorRow);
         this->vector_->insert(
             item, this->getVectorIndexFromModelIndex(destinationChild));
@@ -375,8 +394,17 @@ protected:
     {
     }
 
+    /// Build the vector item from the model row state.
+    /// Called when any data in the row as updated (e.g. when a checkbox is toggled), or when the row is moved.
+    ///
+    /// @param row The vector of cells/items in the row
+    /// @param original The vector item of this row prior to this call
+    /// @param index The model index that was just updated if called as part of a model edit
+    /// @param role The role that was just updated if called as part of a model edit
     virtual TVectorItem getItemFromRow(std::vector<QStandardItem *> &row,
-                                       const TVectorItem &original) = 0;
+                                       const TVectorItem &original,
+                                       std::optional<QModelIndex> index,
+                                       std::optional<int> role) = 0;
 
     virtual void getRowFromItem(const TVectorItem &item,
                                 std::vector<QStandardItem *> &row) = 0;
