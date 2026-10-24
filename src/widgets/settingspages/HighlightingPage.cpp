@@ -12,6 +12,7 @@
 #include "widgets/dialogs/HighlightTesterDialog.hpp"
 #include "widgets/helper/EditableModelView.hpp"
 #include "widgets/settingspages/HighlightingWidget.hpp"
+#include "widgets/settingspages/HighlightWordListsWidget.hpp"
 
 #include <QFileDialog>
 #include <QHBoxLayout>
@@ -33,6 +34,7 @@ HighlightingPage::HighlightingPage()
         {
             // HIGHLIGHTS
             tabs->addTab(new HighlightingWidget, "Highlights");
+            tabs->addTab(new HighlightWordListsWidget, "Moderator Word Lists");
 
             auto disabledUsers =
                 tabs.appendTab(new QVBoxLayout, "Blacklisted Users");

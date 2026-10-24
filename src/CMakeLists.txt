@@ -1150,6 +1150,8 @@ set(SOURCE_FILES
         widgets/settingspages/HighlightingPage.hpp
         widgets/settingspages/HighlightingWidget.cpp
         widgets/settingspages/HighlightingWidget.hpp
+        widgets/settingspages/HighlightWordListsWidget.cpp
+        widgets/settingspages/HighlightWordListsWidget.hpp
         widgets/settingspages/IgnoresPage.cpp
         widgets/settingspages/IgnoresPage.hpp
         widgets/settingspages/KeyboardSettingsPage.cpp

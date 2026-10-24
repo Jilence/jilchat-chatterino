@@ -7,6 +7,7 @@
 #include "controllers/highlights/HighlightCheck.hpp"
 #include "controllers/highlights/HighlightMatch.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/HighlightWordList.hpp"
 #include "controllers/highlights/types/AnyHighlight.hpp"
 #include "controllers/highlights/types/Common.hpp"
 #include "messages/Message.hpp"
@@ -237,6 +238,52 @@ void HighlightTesterDialog::updateResult()
         }
     }
 
+    const auto wordLists = getSettings()->highlightWordLists.readOnly();
+    for (const auto &list : *wordLists)
+    {
+        if (!list.enabled())
+        {
+            continue;
+        }
+        auto match = list.match(text, channel, platform);
+        if (match.matched)
+        {
+            matched.append(
+                QStringLiteral("Moderator word list \"%1\" (%2, %3) matched.")
+                    .arg(list.name(),
+                         list.isRegex() ? QStringLiteral("regular expressions")
+                                        : QStringLiteral("words and phrases"),
+                         list.caseSensitive()
+                             ? QStringLiteral("case sensitive")
+                             : QStringLiteral("case insensitive")));
+            matches.insert(matches.end(), match.matches.begin(),
+                           match.matches.end());
+            continue;
+        }
+        if (!list.matchSubject(text).matched)
+        {
+            continue;
+        }
+
+        const auto channelDescription =
+            list.channels().empty()
+                ? QStringLiteral("every channel")
+                : QStringLiteral("%1 selected %2")
+                      .arg(list.channels().size())
+                      .arg(list.channels().size() == 1
+                               ? QStringLiteral("channel")
+                               : QStringLiteral("channels"));
+        scopeRejections.append(
+            QStringLiteral("Moderator word list \"%1\" matched, but it "
+                           "applies to %2 on %3. This test uses %4%5.")
+                .arg(list.name(), channelDescription,
+                     highlightWordListPlatformName(list.platform()),
+                     this->platform_->currentText(),
+                     channel.isEmpty()
+                         ? QStringLiteral(" with no channel entered")
+                         : QStringLiteral(" channel \"%1\"").arg(channel)));
+    }
+
     QStringList explanation;
     if (matched.isEmpty())
     {
@@ -263,9 +310,16 @@ void HighlightTesterDialog::updateResult()
         const auto matchedText =
             text.mid(match.start, match.length).replace(u'\n', u' ');
         explanation.append(
-            QStringLiteral("Pattern \"%1\" matched \"%2\" at characters %3 "
-                           "through %4.")
-                .arg(match.pattern, matchedText)
+            QStringLiteral("%1 \"%2\" matched \"%3\" at characters %4 "
+                           "through %5.")
+                .arg(match.source == HighlightMatchSource::WordList
+                         ? QStringLiteral("Rule \"%1\" of word list")
+                               .arg(match.pattern)
+                         : QStringLiteral("Pattern"),
+                     match.source == HighlightMatchSource::WordList
+                         ? match.ruleName
+                         : match.pattern,
+                     matchedText)
                 .arg(match.start + 1)
                 .arg(match.start + match.length));
     }

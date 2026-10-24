@@ -7,8 +7,11 @@
 #include "Application.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
+#include "controllers/highlights/HighlightChannelScope.hpp"
 #include "controllers/highlights/HighlightCheck.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
+#include "controllers/highlights/HighlightWordList.hpp"
+#include "controllers/highlights/Sounds.hpp"
 #include "controllers/highlights/types/AnyHighlight.hpp"
 #include "controllers/highlights/types/Common.hpp"
 #include "controllers/highlights/types/LowTrustUserHighlight.hpp"
@@ -64,6 +67,64 @@ bool rebuildSharedHighlights(Settings &settings,
     return isSubscribedThreadHighlightEnabled;
 }
 
+void rebuildWordListHighlights(Settings &settings,
+                               std::vector<HighlightCheck> &checks)
+{
+    auto wordLists = settings.highlightWordLists.readOnly();
+    for (const auto &wordList : *wordLists)
+    {
+        if (!wordList.enabled())
+        {
+            continue;
+        }
+
+        QUrl sound;
+        if (wordList.hasSound())
+        {
+            if (wordList.hasCustomSound())
+            {
+                sound = wordList.soundUrl();
+            }
+            else if (auto defaultSound =
+                         highlights::resolveDefaultSound(u"001-ping2"))
+            {
+                sound = QUrl{defaultSound->resourcePath};
+            }
+        }
+        const bool hasMarker =
+            wordList.matchStyle() != HighlightMatchStyle::None;
+
+        checks.emplace_back(
+            [wordList, sound,
+             hasMarker](const HighlightCheckParams &p)
+                -> std::optional<HighlightResult> {
+                if (p.self)
+                {
+                    return std::nullopt;
+                }
+                // looking for where it matches costs more than whether
+                auto match = wordList.matchForNormalizedChannel(
+                    p.originalMessage,
+                    normalizeHighlightChannelName(p.channelName), p.platform,
+                    hasMarker ? HighlightWordListMatchMode::WithRanges
+                              : HighlightWordListMatchMode::MatchOnly);
+                if (!match.matched)
+                {
+                    return std::nullopt;
+                }
+
+                auto result = HighlightResult{
+                    .alert = wordList.hasAlert(),
+                    .sound = sound,
+                    .color = wordList.color(),
+                    .showInMentions = wordList.showInMentions(),
+                };
+                result.matches = std::move(match.matches);
+                return result;
+            });
+    }
+}
+
 }  // namespace
 
 HighlightController::HighlightController(Settings &settings,
@@ -97,6 +158,13 @@ HighlightController::HighlightController(Settings &settings,
             this->rebuildChecks(settings);
         });
 
+    this->signalHolder_.managedConnect(
+        getSettings()->highlightWordLists.delayedItemsChanged,
+        [this, &settings] {
+            qCDebug(LOG) << "Rebuild checks because word lists changed";
+            this->rebuildChecks(settings);
+        });
+
     this->rebuildChecks(settings);
 }
 
@@ -108,6 +176,7 @@ void HighlightController::rebuildChecks(Settings &settings)
 
     this->isSubscribedThreadHighlightEnabled =
         rebuildSharedHighlights(settings, *checks);
+    rebuildWordListHighlights(settings, *checks);
 }
 
 std::pair<bool, HighlightResult> HighlightController::check(
