@@ -122,7 +122,7 @@ void showTutorialVideo(QWidget *parent, const QString &source,
             BaseWindow::BoundsCheckOnShow,
         },
         parent);
-    window->setWindowTitle("Leafyrino - " + title);
+    window->setWindowTitle("JilChat Chatterino - " + title);
     window->setAttribute(Qt::WA_DeleteOnClose);
     auto *layout = new QVBoxLayout();
     layout->addWidget(new QLabel(description));
@@ -449,7 +449,7 @@ void Split::addShortcuts()
          [](const std::vector<QString> &) -> QString {
              auto *popup = new DebugPopup;
              popup->setAttribute(Qt::WA_DeleteOnClose);
-             popup->setWindowTitle("Leafyrino - Debug popup");
+             popup->setWindowTitle("JilChat Chatterino - Debug popup");
              popup->show();
              return "";
          }},
