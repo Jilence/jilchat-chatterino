@@ -79,11 +79,12 @@ EmoteMap parseEmotes(const QJsonArray &emotes, const QString &cdn,
             return Url{u"%1/%2/%3/%4x.webp"_s.arg(cdn, id, version,
                                                   QString::number(scale))};
         };
-        auto tooltip = name + u"<br>JilTV " + kind + u" Emote";
+        auto tooltip = name + QStringLiteral("<br>JilTV ") + kind +
+                       QStringLiteral(" Emote");
         const auto original = e.value("original_name").toString();
         if (!original.isEmpty() && original != name)
         {
-            tooltip += u"<br>Alias of " + original;
+            tooltip += QStringLiteral("<br>Alias of ") + original;
         }
         Emote emote{
             .name = EmoteName{name},
@@ -94,7 +95,7 @@ EmoteMap parseEmotes(const QJsonArray &emotes, const QString &cdn,
                     Image::fromUrl(url(4), 0.25, base * 4),
                 },
             .tooltip = Tooltip{tooltip},
-            .homePage = Url{WEB_URL + u"/emotes/" + id},
+            .homePage = Url{WEB_URL + QStringLiteral("/emotes/") + id},
             .zeroWidth =
                 e.value("zwo").toBool() || (flags & FLAG_ZERO_WIDTH) != 0,
             .id = EmoteId{id},
@@ -178,7 +179,8 @@ void Jiltv::loadCatalog()
     {
         return;
     }
-    NetworkRequest(QUrl(this->apiUrl() + u"/v1/cosmetics/catalog"))
+    NetworkRequest(
+        QUrl(this->apiUrl() + QStringLiteral("/v1/cosmetics/catalog")))
         .timeout(30000)
         .onSuccess([this](const NetworkResult &result) {
             this->applyCatalog(result.parseJson());
@@ -206,7 +208,7 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         auto name = p.value("name").toString();
         if (const auto r = rarityName(p.value("r").toString()); !r.isEmpty())
         {
-            name += u" (" + r + u")";
+            name += QStringLiteral(" (") + r + QStringLiteral(")");
         }
         paints[id] = std::make_shared<JiltvPaint>(
             id, name, p.value("data").toObject(), cdn);
@@ -223,16 +225,16 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         {
             continue;
         }
-        const Url url{cdn + u"/badges/" + image};
+        const Url url{cdn + QStringLiteral("/badges/") + image};
         const QSize base(18, 18);
         auto tooltip = b.value("name").toString();
         if (const auto r = rarityName(b.value("r").toString()); !r.isEmpty())
         {
-            tooltip += u" (" + r + u")";
+            tooltip += QStringLiteral(" (") + r + QStringLiteral(")");
         }
-        tooltip += u"<br>JilTV Badge";
+        tooltip += QStringLiteral("<br>JilTV Badge");
         badges[id] = std::make_shared<const Emote>(Emote{
-            .name = EmoteName{u"jiltv:" + id},
+            .name = EmoteName{QStringLiteral("jiltv:") + id},
             .images =
                 ImageSet{
                     Image::fromAutoscaledUrl(url, 18),
@@ -340,7 +342,8 @@ void Jiltv::flushLookups()
         }
     };
 
-    NetworkRequest(QUrl(this->apiUrl() + u"/v1/cosmetics/twitch?logins=" +
+    NetworkRequest(QUrl(this->apiUrl() +
+                        QStringLiteral("/v1/cosmetics/twitch?logins=") +
                         batch.join(u',')))
         .timeout(20000)
         .onSuccess([finish](const NetworkResult &result) {
@@ -395,7 +398,7 @@ void Jiltv::loadGlobalEmotes()
         this->global_ = std::make_shared<const EmoteMap>();
         return;
     }
-    NetworkRequest(QUrl(this->apiUrl() + u"/v1/sets/global"))
+    NetworkRequest(QUrl(this->apiUrl() + QStringLiteral("/v1/sets/global")))
         .timeout(30000)
         .onSuccess([this](const NetworkResult &result) {
             auto map = std::make_shared<const EmoteMap>(
@@ -422,8 +425,9 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
         }
         return;
     }
-    NetworkRequest(
-        QUrl(this->apiUrl() + u"/v1/channels/twitch/" + roomId + u"/bootstrap"))
+    NetworkRequest(QUrl(this->apiUrl() +
+                        QStringLiteral("/v1/channels/twitch/") + roomId +
+                        QStringLiteral("/bootstrap")))
         .timeout(30000)
         .onSuccess([this, roomId, done](const NetworkResult &result) {
             auto map = std::make_shared<const EmoteMap>(
@@ -511,7 +515,8 @@ void Jiltv::follow(const QString &roomId)
     {
         return;
     }
-    const QUrl url(this->apiUrl() + u"/v1/events/channels/twitch/" + roomId);
+    const QUrl url(this->apiUrl() +
+                   QStringLiteral("/v1/events/channels/twitch/") + roomId);
     auto &stream = this->channelStreams_[roomId];
     if (stream && stream->url() == url)
     {
@@ -530,7 +535,7 @@ void Jiltv::followCosmetics()
     {
         return;
     }
-    const QUrl url(this->apiUrl() + u"/v1/events/cosmetics");
+    const QUrl url(this->apiUrl() + QStringLiteral("/v1/events/cosmetics"));
     if (this->cosmeticsStream_ && this->cosmeticsStream_->url() == url)
     {
         return;
@@ -602,7 +607,9 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         return id;
     };
     const auto actor = data.value("actor").toObject().value("name").toString();
-    const auto by = actor.isEmpty() ? QString{} : u" (" + actor + u")";
+    const auto by = actor.isEmpty()
+                        ? QString{}
+                        : QStringLiteral(" (") + actor + QStringLiteral(")");
     QStringList notices;
     if (type == u"set.batch")
     {
@@ -621,36 +628,39 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         for (const auto &r : data.value("renamed").toArray())
         {
             const auto o = r.toObject();
-            renamed.append(nameOf(o.value("emote_id").toString()) + u" to " +
-                           o.value("name").toString());
+            renamed.append(nameOf(o.value("emote_id").toString()) +
+                           QStringLiteral(" to ") + o.value("name").toString());
         }
         if (!added.isEmpty())
         {
-            notices.append(u"JilTV: added " + added.join(u", ") + by);
+            notices.append(QStringLiteral("JilTV: added ") +
+                           added.join(QStringLiteral(", ")) + by);
         }
         if (!removed.isEmpty())
         {
-            notices.append(u"JilTV: removed " + removed.join(u", ") + by);
+            notices.append(QStringLiteral("JilTV: removed ") +
+                           removed.join(QStringLiteral(", ")) + by);
         }
         if (!renamed.isEmpty())
         {
-            notices.append(u"JilTV: renamed " + renamed.join(u", ") + by);
+            notices.append(QStringLiteral("JilTV: renamed ") +
+                           renamed.join(QStringLiteral(", ")) + by);
         }
     }
     else if (type == u"set.emote_added")
     {
-        notices.append(u"JilTV: added " +
+        notices.append(QStringLiteral("JilTV: added ") +
                        data.value("emote").toObject().value("name").toString() +
                        by);
     }
     else if (type == u"set.emote_removed")
     {
-        notices.append(u"JilTV: removed " +
+        notices.append(QStringLiteral("JilTV: removed ") +
                        nameOf(data.value("emote_id").toString()) + by);
     }
     else if (type == u"channel.set_switched")
     {
-        notices.append(u"JilTV: switched the emote set" + by);
+        notices.append(QStringLiteral("JilTV: switched the emote set") + by);
     }
 
     this->loadChannelEmotes(roomId, [roomId, notices](int) {
