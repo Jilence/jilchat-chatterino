@@ -1399,7 +1399,7 @@ if (BUILD_APP)
     target_link_libraries(${EXECUTABLE_PROJECT} PUBLIC ${LIBRARY_PROJECT})
 
     set_target_directory_hierarchy(${EXECUTABLE_PROJECT})
-    set_target_properties(${EXECUTABLE_PROJECT} PROPERTIES OUTPUT_NAME "Leafyrino")
+    set_target_properties(${EXECUTABLE_PROJECT} PROPERTIES OUTPUT_NAME "JilChatChatterino")
 
     # ffmpeg and ffprobe convert the videos chosen as theme backgrounds. They
     # and their licenses sit in support/media next to the program, also in
@@ -1521,12 +1521,12 @@ if (BUILD_APP)
                 )
 
         install(FILES ${CMAKE_SOURCE_DIR}/resources/com.chatterino.chatterino.desktop
-                RENAME com.leafyzito.leafyrino.desktop
+                RENAME com.jilence.jilchatchatterino.desktop
                 DESTINATION share/applications
                 )
 
         install(FILES ${CMAKE_SOURCE_DIR}/resources/icon.png
-                RENAME com.leafyzito.leafyrino.png
+                RENAME com.jilence.jilchatchatterino.png
                 DESTINATION share/icons/hicolor/256x256/apps
                 )
     endif ()
@@ -1627,8 +1627,8 @@ if (APPLE AND BUILD_APP)
     set_target_properties(${EXECUTABLE_PROJECT} PROPERTIES MACOSX_BUNDLE TRUE)
     set_target_properties(${EXECUTABLE_PROJECT}
         PROPERTIES
-        MACOSX_BUNDLE_BUNDLE_NAME "Leafyrino"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.leafyzito.leafyrino"
+        MACOSX_BUNDLE_BUNDLE_NAME "JilChat Chatterino"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.jilence.jilchatchatterino"
         MACOSX_BUNDLE_LONG_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"

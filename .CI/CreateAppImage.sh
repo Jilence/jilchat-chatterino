@@ -7,9 +7,9 @@ set -x
 
 _QT_DIR=""
 
-if [ -f ./bin/Leafyrino ] && [ -x ./bin/Leafyrino ]; then
-    app_binary="./bin/Leafyrino"
-    app_executable="Leafyrino"
+if [ -f ./bin/JilChatChatterino ] && [ -x ./bin/JilChatChatterino ]; then
+    app_binary="./bin/JilChatChatterino"
+    app_executable="JilChatChatterino"
 elif [ -f ./bin/chatterino ] && [ -x ./bin/chatterino ]; then
     app_binary="./bin/chatterino"
     app_executable="chatterino"
