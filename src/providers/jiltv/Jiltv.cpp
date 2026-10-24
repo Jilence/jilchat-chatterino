@@ -103,7 +103,9 @@ EmoteMap parseEmotes(const QJsonArray &emotes, const QString &cdn,
         {
             emote.baseName = EmoteName{original};
         }
-        map[emote.name] = std::make_shared<const Emote>(std::move(emote));
+        // The key first: the right side of = runs first and moves `emote`.
+        auto key = emote.name;
+        map[key] = std::make_shared<const Emote>(std::move(emote));
     }
     return map;
 }
@@ -427,6 +429,8 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
             auto map = std::make_shared<const EmoteMap>(
                 parseBootstrap(result.parseJson(), QStringLiteral("Channel")));
             const auto n = static_cast<int>(map->size());
+            qCDebug(chatterinoSeventv)
+                << "JilTV: channel" << roomId << "has" << n << "emotes";
             {
                 const std::scoped_lock lock(this->mutex_);
                 this->channels_[roomId] = std::move(map);
@@ -437,8 +441,11 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
                 done(n);
             }
         })
-        .onError([this, roomId, done](const NetworkResult &) {
+        .onError([this, roomId, done](const NetworkResult &result) {
             // 404: the channel doesn't use JilTV.
+            qCWarning(chatterinoSeventv)
+                << "JilTV: channel" << roomId
+                << "emotes failed:" << result.formatError();
             {
                 const std::scoped_lock lock(this->mutex_);
                 this->channels_.erase(roomId);
@@ -580,43 +587,83 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
 
     // Say in chat what changed, like 7TV does; names are looked up before
     // the set is reloaded, so removed emotes still have theirs.
-    QString notice;
-    const auto actor = data.value("actor").toObject().value("name").toString();
-    const auto by = actor.isEmpty() ? QString{} : u" (" + actor + u")";
-    if (type == u"set.emote_added")
-    {
-        notice = u"JilTV: added " +
-                 data.value("emote").toObject().value("name").toString() + by;
-    }
-    else if (type == u"set.emote_removed")
-    {
-        const auto id = data.value("emote_id").toString();
-        QString name = id;
-        if (const auto map = this->channelEmotes(roomId))
+    const auto current = this->channelEmotes(roomId);
+    const auto nameOf = [&current](const QString &id) {
+        if (current)
         {
-            for (const auto &[n, e] : *map)
+            for (const auto &[n, e] : *current)
             {
                 if (e->id.string == id)
                 {
-                    name = n.string;
-                    break;
+                    return n.string;
                 }
             }
         }
-        notice = u"JilTV: removed " + name + by;
+        return id;
+    };
+    const auto actor = data.value("actor").toObject().value("name").toString();
+    const auto by = actor.isEmpty() ? QString{} : u" (" + actor + u")";
+    QStringList notices;
+    if (type == u"set.batch")
+    {
+        // Several changes at once (the website's set editor sends these).
+        QStringList added;
+        for (const auto &e : data.value("added").toArray())
+        {
+            added.append(e.toObject().value("name").toString());
+        }
+        QStringList removed;
+        for (const auto &id : data.value("removed").toArray())
+        {
+            removed.append(nameOf(id.toString()));
+        }
+        QStringList renamed;
+        for (const auto &r : data.value("renamed").toArray())
+        {
+            const auto o = r.toObject();
+            renamed.append(nameOf(o.value("emote_id").toString()) + u" to " +
+                           o.value("name").toString());
+        }
+        if (!added.isEmpty())
+        {
+            notices.append(u"JilTV: added " + added.join(u", ") + by);
+        }
+        if (!removed.isEmpty())
+        {
+            notices.append(u"JilTV: removed " + removed.join(u", ") + by);
+        }
+        if (!renamed.isEmpty())
+        {
+            notices.append(u"JilTV: renamed " + renamed.join(u", ") + by);
+        }
+    }
+    else if (type == u"set.emote_added")
+    {
+        notices.append(u"JilTV: added " +
+                       data.value("emote").toObject().value("name").toString() +
+                       by);
+    }
+    else if (type == u"set.emote_removed")
+    {
+        notices.append(u"JilTV: removed " +
+                       nameOf(data.value("emote_id").toString()) + by);
     }
     else if (type == u"channel.set_switched")
     {
-        notice = u"JilTV: switched the emote set" + by;
+        notices.append(u"JilTV: switched the emote set" + by);
     }
 
-    this->loadChannelEmotes(roomId, [roomId, notice](int) {
-        if (notice.isEmpty())
+    this->loadChannelEmotes(roomId, [roomId, notices](int) {
+        if (notices.isEmpty())
         {
             return;
         }
         auto channel = getApp()->getTwitch()->getChannelOrEmptyByID(roomId);
-        if (!channel->isEmpty())
+        if (channel->isEmpty())
+        {
+            return;
+        }
+        for (const auto &notice : notices)
         {
             channel->addSystemMessage(notice);
         }
