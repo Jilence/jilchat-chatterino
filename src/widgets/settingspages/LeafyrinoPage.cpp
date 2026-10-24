@@ -81,19 +81,6 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->setTooltip("Show the badge picker button in the chat input bar.")
         ->addTo(layout);
 
-    layout.addTitle("Voice messages");
-    SettingWidget::intInput("Default voice message volume",
-                            s.jilChatVoiceVolume,
-                            {
-                                .min = 0,
-                                .max = 100,
-                                .singleStep = 5,
-                                .suffix = QStringLiteral("%"),
-                            })
-        ->addKeywords({"jilchat", "voice", "volume", "sound"})
-        ->setTooltip("Controls the volume for JilChat voice messages.")
-        ->addTo(layout);
-
     layout.addTitle("YouTube");
     SettingWidget::checkbox("Highlight Super Chats",
                             s.highlightYouTubeSuperChats)
@@ -147,17 +134,6 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
             {"youtube", "split", "header", "handle", "username", "channel"})
         ->setTooltip("Show the channel @handle in the split header instead of "
                      "the display name. Hovering always shows the handle.")
-        ->addTo(layout);
-
-    layout.addTitle("Public logs");
-    layout.addDescription("Older messages from logs.zonian.dev, the logs "
-                          "behind lurkology.com.");
-    SettingWidget::checkbox("Use public logs",
-                            s.loadOlderMessagesFromPublicLogs)
-        ->setTooltip("Load older messages from logs.zonian.dev. This sends "
-                     "channel names and usernames to that service.")
-        ->addKeywords({"logs", "zonian", "lurkology", "supa", "history",
-                       "older", "public"})
         ->addTo(layout);
 
     layout.addTitle("Usercard");
@@ -234,25 +210,6 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "channel, show who gifted it on the usercard.")
         ->addKeywords({"usercard", "gift", "gifter", "subscription", "sub"})
         ->addTo(layout);
-    SettingWidget::checkbox("Load older messages", s.loadOlderUsercardMessages)
-        ->setTooltip("Load older messages of a user on the usercard, beyond "
-                     "what is in the chat. When disabled, the usercard only "
-                     "shows messages from the chat.")
-        ->addKeywords({"usercard", "messages", "history", "logs"})
-        ->addTo(layout);
-    SettingWidget::intInput("Messages per load",
-                            s.usercardOlderMessagesPageSize,
-                            {
-                                .min = 10,
-                                .max = 100,
-                                .singleStep = 10,
-                            })
-        ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
-        ->setTooltip("How many older messages the usercard loads from the "
-                     "public logs at a time. The Twitch moderator history "
-                     "loads in pages set by Twitch.")
-        ->addKeywords({"usercard", "messages", "logs", "page", "count"})
-        ->addTo(layout);
 
     layout.addTitle("Messages per second");
     SettingWidget::checkbox("Show messages-per-second (mps) overlay in splits",
@@ -274,20 +231,6 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::checkbox("Show 0 mps", s.showSplitMpsWhenZero)
         ->conditionallyEnabledBy(s.showSplitMps)
-        ->addTo(layout);
-
-    layout.addTitle("Chat history");
-    SettingWidget::intInput("Messages per load", s.publicLogsPageSize,
-                            {
-                                .min = 10,
-                                .max = 100,
-                                .singleStep = 10,
-                            })
-        ->conditionallyEnabledBy(s.loadOlderMessagesFromPublicLogs)
-        ->setTooltip("How many older messages are loaded from the public "
-                     "logs each time you scroll to the top of a chat.")
-        ->addKeywords({"logs", "zonian", "scroll", "page", "count", "messages",
-                       "chat", "history", "older", "public"})
         ->addTo(layout);
 
     layout.addTitle("Events");

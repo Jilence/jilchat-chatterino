@@ -253,9 +253,36 @@ QDateTime SearchPopup::rangeEnd() const
 
 void SearchPopup::updateCustomRangeVisibility()
 {
-    const bool custom = this->timeRangeCombo_->currentData().toInt() < 0;
+    const bool custom = this->timeRangeCombo_->currentData().toInt() < 0 &&
+                        !this->timeRangeCombo_->isHidden();
     this->rangeFromEdit_->setVisible(custom);
     this->rangeToEdit_->setVisible(custom);
+}
+
+void SearchPopup::updateLogControlsVisibility()
+{
+    const bool logs = !this->searchLogsCheckbox_->isHidden() &&
+                      this->searchLogsCheckbox_->isChecked();
+    if (!logs)
+    {
+        // Nothing hidden may keep filtering the search.
+        if (!this->userInput_->text().isEmpty())
+        {
+            this->userInput_->clear();
+        }
+        if (this->timeRangeCombo_->currentIndex() != 0)
+        {
+            this->timeRangeCombo_->setCurrentIndex(0);
+        }
+    }
+    // the choice of channels is useful without the logs too
+    const bool channels = this->searchChannels_.size() > 1;
+    this->userInput_->setVisible(logs);
+    this->timeLabel_->setVisible(logs);
+    this->timeRangeCombo_->setVisible(logs);
+    this->channelsButton_->setVisible(channels);
+    this->optionsRow_->setVisible(logs || channels);
+    this->updateCustomRangeVisibility();
 }
 
 void SearchPopup::rebuildChannelsMenu()
@@ -581,6 +608,7 @@ void SearchPopup::updateLogSearchVisibility()
     this->searchLogsCheckbox_->setVisible(available);
     this->logStatusLabel_->setVisible(available &&
                                       this->searchLogsCheckbox_->isChecked());
+    this->updateLogControlsVisibility();
     this->updateLogSearch();
 }
 
@@ -1141,6 +1169,7 @@ void SearchPopup::initLayout()
                 QObject::connect(this->searchLogsCheckbox_, &QCheckBox::toggled,
                                  this, [this](bool checked) {
                                      this->searchPublicLogsSetting() = checked;
+                                     this->updateLogControlsVisibility();
                                      this->updateLogSearch();
                                      this->search();
                                  });
@@ -1151,11 +1180,13 @@ void SearchPopup::initLayout()
         }
 
         {
-            auto *options = new QHBoxLayout();
+            this->optionsRow_ = new QWidget(this);
+            auto *options = new QHBoxLayout(this->optionsRow_);
             options->setContentsMargins(8, 0, 8, 6);
             options->setSpacing(8);
 
-            options->addWidget(new QLabel(u"Time:"_s, this));
+            this->timeLabel_ = new QLabel(u"Time:"_s, this);
+            options->addWidget(this->timeLabel_);
             this->timeRangeCombo_ = new QComboBox(this);
             const std::array<std::pair<const char *, int>, 7> ranges{{
                 {"Any time", 0},
@@ -1212,7 +1243,7 @@ void SearchPopup::initLayout()
             this->channelsButton_->setVisible(false);
             options->addWidget(this->channelsButton_);
 
-            layout1->addLayout(options);
+            layout1->addWidget(this->optionsRow_);
         }
 
         {

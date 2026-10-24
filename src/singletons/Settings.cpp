@@ -22,6 +22,7 @@
 #include "util/WindowsHelper.hpp"
 
 #include <pajlada/signals/scoped-connection.hpp>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -105,10 +106,79 @@ constexpr auto SETTINGS_IMPORT_FORMAT = "leafyrino-settings-export";
 constexpr auto PENDING_SETTINGS_IMPORT_FILENAME =
     "pending-settings-import.json";
 const QStringList SETTINGS_IMPORT_FILES = {
-    u"settings.json"_s,
-    u"commands.json"_s,
-    u"window-layout.json"_s,
+    u"settings.json"_s,         u"commands.json"_s,  u"window-layout.json"_s,
+    u"chat-automations.json"_s, u"user-data.json"_s,
 };
+
+bool writeJsonFile(const QString &path, const QJsonObject &object);
+
+/// Whether `name` is a plain file name, nothing that leads elsewhere
+bool isPlainFileName(const QString &name)
+{
+    return !name.isEmpty() && name != u"."_s && name != u".."_s &&
+           !name.contains(u'/') && !name.contains(u'\\') &&
+           !name.contains(u':');
+}
+
+/// The exported themes and the backgrounds they use. A background is
+/// pointed to where it is on this computer.
+void importThemes(const QJsonObject &importObject,
+                  const QString &settingsDirectory)
+{
+    const QDir themesDirectory(
+        QDir::cleanPath(settingsDirectory + u"/../Themes"_s));
+    const auto wallpapersPath = themesDirectory.filePath(u"Wallpapers"_s);
+
+    const auto wallpapers = importObject[u"wallpapers"_s].toObject();
+    if (!wallpapers.isEmpty())
+    {
+        QDir().mkpath(wallpapersPath);
+    }
+    for (auto it = wallpapers.begin(); it != wallpapers.end(); ++it)
+    {
+        if (!isPlainFileName(it.key()))
+        {
+            continue;
+        }
+        QSaveFile file(QDir(wallpapersPath).filePath(it.key()));
+        if (file.open(QIODevice::WriteOnly))
+        {
+            file.write(
+                QByteArray::fromBase64(it.value().toString().toLatin1()));
+            file.commit();
+        }
+    }
+
+    const auto themes = importObject[u"themes"_s].toObject();
+    if (!themes.isEmpty())
+    {
+        QDir().mkpath(themesDirectory.path());
+    }
+    for (auto it = themes.begin(); it != themes.end(); ++it)
+    {
+        if (!isPlainFileName(it.key()) || !it.key().endsWith(u".json"_s) ||
+            !it.value().isObject())
+        {
+            continue;
+        }
+        auto theme = it.value().toObject();
+        auto metadata = theme[u"metadata"_s].toObject();
+        auto moltorino = metadata[u"moltorino"_s].toObject();
+        auto wallpaper = moltorino[u"wallpaper"_s].toObject();
+        const auto source = wallpaper[u"source"_s].toString();
+        const auto fileName = QFileInfo(source).fileName();
+        if (!source.isEmpty() && !source.startsWith(u":/"_s) &&
+            wallpapers.contains(fileName))
+        {
+            wallpaper.insert(u"source"_s,
+                             QDir(wallpapersPath).filePath(fileName));
+            moltorino.insert(u"wallpaper"_s, wallpaper);
+            metadata.insert(u"moltorino"_s, moltorino);
+            theme.insert(u"metadata"_s, metadata);
+        }
+        writeJsonFile(themesDirectory.filePath(it.key()), theme);
+    }
+}
 
 QJsonDocument readJsonFile(const QString &path)
 {
@@ -206,6 +276,8 @@ void applyPendingSettingsImport(const QString &settingsDirectory)
             return;
         }
     }
+
+    importThemes(importObject, settingsDirectory);
 
     QFile::remove(pendingPath);
 }
