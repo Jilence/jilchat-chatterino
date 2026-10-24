@@ -104,6 +104,15 @@ try {
         if ($LASTEXITCODE) { throw 'cmake configure failed' }
     }
 
+    # Windows locks a running exe, so the linker can't replace it: close the
+    # dev build if it's open (only this one, never an installed Leafyrino).
+    $running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
+    foreach ($p in $running) {
+        Write-Host "== Closing the running dev build (PID $($p.Id))"
+        $p.CloseMainWindow() | Out-Null
+        if (-not $p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force }
+    }
+
     Write-Host '== Build'
     cmake --build . --parallel
     if ($LASTEXITCODE) { throw 'build failed' }
