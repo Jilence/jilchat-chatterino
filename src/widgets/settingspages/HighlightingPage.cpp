@@ -9,10 +9,12 @@
 #include "controllers/highlights/HighlightController.hpp"
 #include "singletons/Settings.hpp"
 #include "util/LayoutCreator.hpp"
+#include "widgets/dialogs/HighlightTesterDialog.hpp"
 #include "widgets/helper/EditableModelView.hpp"
 #include "widgets/settingspages/HighlightingWidget.hpp"
 
 #include <QFileDialog>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QPushButton>
 #include <QTableView>
@@ -77,6 +79,17 @@ HighlightingPage::HighlightingPage()
         layout.append(createCheckBox(
             "Mark the exact part of a message that triggered a highlight",
             getSettings()->highlightMatchedFragments));
+        {
+            auto tools = layout.emplace<QHBoxLayout>().withoutMargin();
+            auto tester = tools.emplace<QPushButton>("Test highlights...");
+            tools->addStretch(1);
+            QObject::connect(tester.getElement(), &QPushButton::clicked, this,
+                             [this] {
+                                 auto *dialog = new HighlightTesterDialog(this);
+                                 dialog->setAttribute(Qt::WA_DeleteOnClose);
+                                 dialog->open();
+                             });
+        }
     }
 }
 

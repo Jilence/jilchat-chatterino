@@ -970,6 +970,8 @@ set(SOURCE_FILES
         widgets/dialogs/GifPickerDialog.hpp
         widgets/dialogs/HighlightChannelScopeDialog.cpp
         widgets/dialogs/HighlightChannelScopeDialog.hpp
+        widgets/dialogs/HighlightTesterDialog.cpp
+        widgets/dialogs/HighlightTesterDialog.hpp
 
         widgets/dialogs/font/FontDialog.cpp
         widgets/dialogs/font/FontDialog.hpp
