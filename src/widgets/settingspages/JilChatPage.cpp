@@ -153,7 +153,7 @@ void JilChatPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
         delete item;
     }
 
-    auto &controller = getApp()->getAccounts()->desktopPresence();
+    auto *controller = &getApp()->getAccounts()->desktopPresence();
     const auto accounts = getApp()->getAccounts()->twitch.accounts.readOnly();
     if (accounts->empty())
     {
@@ -165,10 +165,10 @@ void JilChatPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
         row->setContentsMargins(0, 0, 0, 0);
 
         auto *checkBox = new SCheckBox(account->getUserName());
-        checkBox->setChecked(controller.isEnabled(account->getUserId()));
+        checkBox->setChecked(controller->isEnabled(account->getUserId()));
         QObject::connect(checkBox, &QCheckBox::toggled, this,
-                         [account, &controller](bool enabled) {
-                             controller.setEnabled(account, enabled);
+                         [account, controller](bool enabled) {
+                             controller->setEnabled(account, enabled);
                          });
         row->addWidget(checkBox);
 
@@ -192,7 +192,7 @@ void JilChatPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
         row->addStretch(1);
         layout->addLayout(row);
 
-        const auto status = controller.statusText(account->getUserId());
+        const auto status = controller->statusText(account->getUserId());
         if (!status.isEmpty())
         {
             auto *statusLabel = new QLabel(status);

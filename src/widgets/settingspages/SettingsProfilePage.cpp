@@ -206,8 +206,9 @@ void exportSettingsProfile(QWidget *parent)
     QJsonObject themes;
     QJsonObject wallpapers;
     QStringList skippedWallpapers;
-    for (const auto &entry :
-         themesDirectory.entryInfoList({u"*.json"_s}, QDir::Files))
+    const auto themeFiles =
+        themesDirectory.entryInfoList({u"*.json"_s}, QDir::Files);
+    for (const auto &entry : themeFiles)
     {
         auto theme = readJsonFile(entry.absoluteFilePath(), nullptr);
         if (theme.isNull())
