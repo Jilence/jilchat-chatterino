@@ -95,8 +95,7 @@ void rebuildWordListHighlights(Settings &settings,
             wordList.matchStyle() != HighlightMatchStyle::None;
 
         checks.emplace_back(
-            [wordList, sound,
-             hasMarker](const HighlightCheckParams &p)
+            [wordList, sound, hasMarker](const HighlightCheckParams &p)
                 -> std::optional<HighlightResult> {
                 if (p.self)
                 {
@@ -134,11 +133,12 @@ HighlightController::HighlightController(Settings &settings,
 
     // currentUserChanged is boost::signals2 in leafyrino, not a pajlada signal.
     this->bConnections.emplace_back(
-        accounts->twitch.currentUserChanged.connect([this, &settings] {
-            qCDebug(LOG)
-                << "Rebuild checks because Twitch user swapped accounts";
-            this->rebuildChecks(settings);
-        }));
+        accounts->twitch.currentUserChanged.connect(
+            [this, &settings] {
+                qCDebug(LOG)
+                    << "Rebuild checks because Twitch user swapped accounts";
+                this->rebuildChecks(settings);
+            }));
 
     this->signalHolder_.managedConnect(
         accounts->twitch.currentUserNameChanged, [this, &settings] {
