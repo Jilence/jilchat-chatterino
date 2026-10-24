@@ -1509,9 +1509,10 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
 
     SettingWidget::dropdown("Username paints", s.usernamePaintSource)
-        ->setTooltip("Whether names are drawn with their 7TV Paint or with "
-                     "their BetterTTV username effect. Automatic takes what "
-                     "a user has, and the 7TV Paint if it's both.")
+        ->setTooltip("Whether names are drawn with their JilTV or 7TV Paint "
+                     "or with their BetterTTV username effect. Automatic takes "
+                     "what a user has. With 'JilTV comes first' (Leafyrino "
+                     "page) a JilTV paint also wins on 7TV.")
         ->addTo(layout);
     SettingWidget::checkbox("Show the paint's name when hovering a name",
                             s.showSevenTVPaintTooltip)

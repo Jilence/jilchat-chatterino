@@ -583,8 +583,13 @@ std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick)
         return Jiltv::instance().paint(userName);
     };
 
-    if (jiltv && (source == UsernamePaintSource::JilTV ||
-                  (source == UsernamePaintSource::Automatic && jiltvFirst())))
+    // With "JilTV comes first" a JilTV paint also wins over 7TV's; only
+    // BetterTTV-only and Off leave it out.
+    const bool jiltvBefore =
+        source == UsernamePaintSource::JilTV ||
+        (jiltvFirst() && (source == UsernamePaintSource::Automatic ||
+                          source == UsernamePaintSource::SevenTV));
+    if (jiltv && jiltvBefore)
     {
         if (auto paint = jiltvPaint())
         {

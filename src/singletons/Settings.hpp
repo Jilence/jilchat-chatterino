@@ -442,7 +442,7 @@ public:
         "/misc/displayBttvUsernameEffectOutlines", true};
     EnumStringSetting<UsernamePaintSource> usernamePaintSource = {
         "/misc/usernamePaintSource",
-        UsernamePaintSource::SevenTV,
+        UsernamePaintSource::Automatic,
     };
     BoolSetting showSevenTVPaintTooltip = {"/misc/showSevenTVPaintTooltip",
                                            false};
