@@ -10,7 +10,7 @@
 namespace chatterino::highlights {
 
 UserHighlight::UserHighlight(QStringView _id)
-    : id(_id)
+    : id(_id.toString())
 {
 }
 

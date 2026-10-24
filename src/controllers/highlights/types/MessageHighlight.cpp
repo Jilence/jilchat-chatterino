@@ -13,7 +13,7 @@
 namespace chatterino::highlights {
 
 MessageHighlight::MessageHighlight(QStringView _id)
-    : id(_id)
+    : id(_id.toString())
 {
     this->rebuildInternalRegularExpression();
 }
