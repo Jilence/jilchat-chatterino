@@ -1166,9 +1166,14 @@ MessagePtr makeAutoModReviewMessage(TwitchChannel *channel,
 
     // The background comes from the "AutoMod caught" highlight. Alerts and
     // sounds are left out: the message is built again for every change.
+    // The marked words stay those AutoMod caught, and /mentions is handled
+    // by the review itself.
+    auto autoModMatches = builder->highlightMatches;
     QVariantMap tagsMap;
     Communi::TagsRef tags(tagsMap);
     std::ignore = builder.parseHighlights(tags, item.messageText, {}, channel);
+    builder->highlightMatches = std::move(autoModMatches);
+    builder->flags.unset(MessageFlag::ShowInMentions);
 
     return builder.release();
 }
