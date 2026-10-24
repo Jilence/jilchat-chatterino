@@ -475,6 +475,8 @@ set(SOURCE_FILES
         providers/jiltv/Jiltv.hpp
         providers/jiltv/JiltvPaint.cpp
         providers/jiltv/JiltvPaint.hpp
+        providers/jiltv/JiltvStream.cpp
+        providers/jiltv/JiltvStream.hpp
 
         providers/limerino/LimerinoBadges.cpp
         providers/limerino/LimerinoBadges.hpp

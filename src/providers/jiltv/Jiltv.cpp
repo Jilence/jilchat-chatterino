@@ -5,18 +5,24 @@
 #include "providers/jiltv/Jiltv.hpp"
 
 #include "Application.hpp"
+#include "common/Channel.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
+#include "messages/MessageBuilder.hpp"
 #include "providers/jiltv/JiltvPaint.hpp"
+#include "providers/jiltv/JiltvStream.hpp"
+#include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/PostToThread.hpp"
 
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QNetworkAccessManager>
 #include <QUrl>
 
 namespace chatterino {
@@ -140,7 +146,17 @@ Jiltv::Jiltv()
         this->loadCatalog();
     });
     this->catalogTimer_.start();
+    this->network_ = new QNetworkAccessManager();
+    QObject::connect(QCoreApplication::instance(),
+                     &QCoreApplication::aboutToQuit, [this] {
+                         this->channelStreams_.clear();
+                         this->cosmeticsStream_.reset();
+                         delete this->network_;
+                         this->network_ = nullptr;
+                     });
 }
+
+Jiltv::~Jiltv() = default;
 
 QString Jiltv::apiUrl() const
 {
@@ -164,6 +180,7 @@ void Jiltv::loadCatalog()
         .timeout(30000)
         .onSuccess([this](const NetworkResult &result) {
             this->applyCatalog(result.parseJson());
+            this->followCosmetics();
         })
         .onError([](const NetworkResult &result) {
             qCWarning(chatterinoSeventv)
@@ -414,6 +431,7 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
                 const std::scoped_lock lock(this->mutex_);
                 this->channels_[roomId] = std::move(map);
             }
+            this->follow(roomId);
             if (done)
             {
                 done(n);
@@ -476,6 +494,133 @@ std::optional<EmotePtr> Jiltv::globalEmote(EmoteNameView name) const
     }
     const auto it = map->find(name);
     return it == map->end() ? std::nullopt : std::optional(it->second);
+}
+
+// --- live updates ---
+
+void Jiltv::follow(const QString &roomId)
+{
+    if (this->network_ == nullptr)
+    {
+        return;
+    }
+    const QUrl url(this->apiUrl() + u"/v1/events/channels/twitch/" + roomId);
+    auto &stream = this->channelStreams_[roomId];
+    if (stream && stream->url() == url)
+    {
+        return;
+    }
+    stream = std::make_unique<JiltvStream>(
+        this->network_, url,
+        [this, roomId](const QString &type, const QJsonObject &data) {
+            this->onChannelEvent(roomId, type, data);
+        });
+}
+
+void Jiltv::followCosmetics()
+{
+    if (this->network_ == nullptr)
+    {
+        return;
+    }
+    const QUrl url(this->apiUrl() + u"/v1/events/cosmetics");
+    if (this->cosmeticsStream_ && this->cosmeticsStream_->url() == url)
+    {
+        return;
+    }
+    this->cosmeticsStream_ = std::make_unique<JiltvStream>(
+        this->network_, url,
+        [this](const QString &type, const QJsonObject &data) {
+            if (type == u"user.cosmetics")
+            {
+                this->setWorn(data.value("login").toString(),
+                              data.value("p").toString(),
+                              data.value("b").toString());
+            }
+        });
+}
+
+void Jiltv::setWorn(const QString &login, const QString &paint,
+                    const QString &badge)
+{
+    if (login.isEmpty())
+    {
+        return;
+    }
+    bool changed = false;
+    {
+        const std::scoped_lock lock(this->mutex_);
+        auto &slot = this->worn_[login.toLower()];
+        changed = slot.paint != paint || slot.badge != badge;
+        slot = {paint, badge, QDateTime::currentDateTimeUtc()};
+    }
+    if (changed)
+    {
+        getApp()->getWindows()->invalidateChannelViewBuffers();
+    }
+}
+
+void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
+                           const QJsonObject &data)
+{
+    if (type == u"presence.joined")
+    {
+        // A JilTV user arrived: know their cosmetics before they write.
+        const auto cosmetics = data.value("cosmetics").toObject();
+        this->setWorn(data.value("login").toString(),
+                      cosmetics.value("p").toString(),
+                      cosmetics.value("b").toString());
+        return;
+    }
+    if (!type.startsWith(u"set.") && type != u"channel.set_switched" &&
+        type != u"emote.updated" && type != u"resync")
+    {
+        return;
+    }
+
+    // Say in chat what changed, like 7TV does; names are looked up before
+    // the set is reloaded, so removed emotes still have theirs.
+    QString notice;
+    const auto actor = data.value("actor").toObject().value("name").toString();
+    const auto by = actor.isEmpty() ? QString{} : u" (" + actor + u")";
+    if (type == u"set.emote_added")
+    {
+        notice = u"JilTV: added " +
+                 data.value("emote").toObject().value("name").toString() + by;
+    }
+    else if (type == u"set.emote_removed")
+    {
+        const auto id = data.value("emote_id").toString();
+        QString name = id;
+        if (const auto map = this->channelEmotes(roomId))
+        {
+            for (const auto &[n, e] : *map)
+            {
+                if (e->id.string == id)
+                {
+                    name = n.string;
+                    break;
+                }
+            }
+        }
+        notice = u"JilTV: removed " + name + by;
+    }
+    else if (type == u"channel.set_switched")
+    {
+        notice = u"JilTV: switched the emote set" + by;
+    }
+
+    this->loadChannelEmotes(roomId, [roomId, notice](int) {
+        if (notice.isEmpty())
+        {
+            return;
+        }
+        auto channel = getApp()->getTwitch()->getChannelOrEmptyByID(roomId);
+        if (!channel->isEmpty())
+        {
+            channel->addSystemMessage(notice);
+        }
+    });
 }
 
 bool jiltvFirst()

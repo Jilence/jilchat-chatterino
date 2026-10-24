@@ -23,6 +23,12 @@ struct Emote;
 using EmotePtr = std::shared_ptr<const Emote>;
 class EmoteMap;
 class Paint;
+class JiltvStream;
+}  // namespace chatterino
+
+class QNetworkAccessManager;
+
+namespace chatterino {
 
 /// JilTV (jiltv.app): paints and badges of chatters and the emotes of
 /// channels, read from the same public API the browser extension uses.
@@ -33,6 +39,8 @@ class Paint;
 ///   (GET /v1/cosmetics/twitch?logins=), and kept for five minutes
 /// - emotes: the global sets (GET /v1/sets/global) and each joined
 ///   channel's set (GET /v1/channels/twitch/{id}/bootstrap)
+/// - live updates: an event stream per channel (emote changes, chatters
+///   arriving with their cosmetics) and one for cosmetics changes
 class Jiltv
 {
 public:
@@ -64,6 +72,16 @@ public:
 
 private:
     Jiltv();
+    ~Jiltv();
+
+    /// Follows a channel's events (once per channel and API).
+    void follow(const QString &roomId);
+    void followCosmetics();
+    void onChannelEvent(const QString &roomId, const QString &type,
+                        const QJsonObject &data);
+    /// Remembers what `login` wears and redraws when it changed.
+    void setWorn(const QString &login, const QString &paint,
+                 const QString &badge);
 
     struct Worn {
         QString paint;
@@ -89,6 +107,12 @@ private:
     std::shared_ptr<const EmoteMap> global_;
 
     QTimer catalogTimer_;
+
+    /// Live updates; GUI thread only. Torn down when the app quits, before
+    /// the static instance itself goes away.
+    QNetworkAccessManager *network_ = nullptr;
+    std::unordered_map<QString, std::unique_ptr<JiltvStream>> channelStreams_;
+    std::unique_ptr<JiltvStream> cosmeticsStream_;
 };
 
 /// Whether JilTV comes first among paint and emote providers (setting).
