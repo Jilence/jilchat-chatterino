@@ -226,7 +226,7 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         auto tooltip = b.value("name").toString();
         if (const auto r = rarityName(b.value("r").toString()); !r.isEmpty())
         {
-            tooltip += u" · " + r;
+            tooltip += u" (" + r + u")";
         }
         tooltip += u"<br>JilTV Badge";
         badges[id] = std::make_shared<const Emote>(Emote{
