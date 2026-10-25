@@ -8,7 +8,6 @@
 #define MyAppExeName "JilChatChatterino.exe"
 #define MyAppProductName "JilChat Chatterino"
 #define MyAppDescription "JilChat Chatterino Installer"
-#define MyAppCopyright "Copyright (C) Leafyzito"
 
 ; used in build-installer.ps1
 ; if set, must end in a backslash
@@ -43,14 +42,12 @@ VersionInfoProductVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppDescription}
 VersionInfoProductName={#MyAppProductName}
-VersionInfoCopyright={#MyAppCopyright}
 VersionInfoOriginalFileName=JilChat Chatterino Updater.exe
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-AppCopyright={#MyAppCopyright}
 DefaultDirName={autopf}\{#MyAppName}
 UninstallDisplayName={#MyAppName}
 DisableProgramGroupPage=yes
