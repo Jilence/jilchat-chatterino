@@ -568,8 +568,8 @@ bool isWarningAcknowledgeNotice(const QString &text)
 QString chatWarningAuthFallbackText(const QString &channelName)
 {
     return QString("You have an active warning in this channel. "
-                   "Authenticate in Settings -> Moltorino -> Authentication to "
-                   "view and acknowledge it in Leafyrino, or open "
+                   "Authenticate in Settings -> JilChat Chatterino -> Authentication to "
+                   "view and acknowledge it in JilChat Chatterino, or open "
                    "https://www.twitch.tv/%1 in your browser.")
         .arg(channelName);
 }
