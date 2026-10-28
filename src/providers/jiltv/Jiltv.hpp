@@ -58,6 +58,10 @@ public:
     std::optional<EmotePtr> channelEmote(const QString &roomId,
                                          EmoteNameView name) const;
     std::optional<EmotePtr> globalEmote(EmoteNameView name) const;
+    /// A personal emote of `login`. Unknown chatters are looked up, so their
+    /// personal emotes show from their next message on.
+    std::optional<EmotePtr> personalEmote(const QString &login,
+                                          EmoteNameView name);
     std::shared_ptr<const EmoteMap> channelEmotes(const QString &roomId) const;
     std::shared_ptr<const EmoteMap> globalEmotes() const;
 
@@ -113,7 +117,21 @@ private:
     bool flushScheduled_ = false;
     std::unordered_map<QString, std::shared_ptr<const EmoteMap>> channels_;
     std::shared_ptr<const EmoteMap> global_;
-    std::unordered_map<QString, std::shared_ptr<const EmoteMap>> personal_;
+    struct Personal {
+        std::shared_ptr<const EmoteMap> emotes;
+        QDateTime fetched;
+    };
+    /// By lowercase login. Guarded by mutex_.
+    std::unordered_map<QString, Personal> personal_;
+    QSet<QString> personalPending_;
+    QSet<QString> personalInFlight_;
+    bool personalFlushScheduled_ = false;
+    void flushPersonalLookups();
+    /// Stores the personal emotes of the logins in `users`, from a response
+    /// of /v1/personal-emotes/twitch. Logins in `logins` that are missing in
+    /// it have none.
+    void storePersonalEmotes(const QStringList &logins,
+                             const QJsonObject &root);
 
     QTimer catalogTimer_;
 

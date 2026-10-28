@@ -491,19 +491,117 @@ void Jiltv::loadPersonalEmotes(const QString &login, std::function<void()> done)
         .timeout(30000)
         .onSuccess(
             [this, key, done = std::move(done)](const NetworkResult &result) {
-                const auto root = result.parseJson();
-                auto map = std::make_shared<const EmoteMap>(parseEmotes(
-                    root.value("users").toObject().value(key).toArray(),
-                    root.value("cdn").toString(), QStringLiteral("Personal")));
-                {
-                    const std::scoped_lock lock(this->mutex_);
-                    this->personal_[key] = std::move(map);
-                }
+                this->storePersonalEmotes({key}, result.parseJson());
                 if (done)
                 {
                     done();
                 }
             })
+        .execute();
+}
+
+void Jiltv::storePersonalEmotes(const QStringList &logins,
+                                const QJsonObject &root)
+{
+    const auto users = root.value("users").toObject();
+    const auto cdn = root.value("cdn").toString();
+    const auto now = QDateTime::currentDateTimeUtc();
+    const std::scoped_lock lock(this->mutex_);
+    for (const auto &login : logins)
+    {
+        this->personal_[login] = {
+            .emotes = std::make_shared<const EmoteMap>(parseEmotes(
+                users.value(login).toArray(), cdn, QStringLiteral("Personal"))),
+            .fetched = now,
+        };
+    }
+}
+
+std::optional<EmotePtr> Jiltv::personalEmote(const QString &login,
+                                             EmoteNameView name)
+{
+    if (login.isEmpty() || !getSettings()->enableJiltv ||
+        !getSettings()->enableJiltvEmotes)
+    {
+        return std::nullopt;
+    }
+    const auto key = login.toLower();
+    const std::scoped_lock lock(this->mutex_);
+    std::shared_ptr<const EmoteMap> emotes;
+    bool fresh = false;
+    if (const auto it = this->personal_.find(key); it != this->personal_.end())
+    {
+        emotes = it->second.emotes;
+        fresh = it->second.fetched.secsTo(QDateTime::currentDateTimeUtc()) <
+                WORN_TTL_SECS;
+    }
+    if (!fresh && !this->personalInFlight_.contains(key))
+    {
+        this->personalPending_.insert(key);
+        if (!this->personalFlushScheduled_)
+        {
+            this->personalFlushScheduled_ = true;
+            postToThread([this] {
+                QTimer::singleShot(LOOKUP_DELAY_MS, [this] {
+                    this->flushPersonalLookups();
+                });
+            });
+        }
+    }
+    if (!emotes)
+    {
+        return std::nullopt;
+    }
+    const auto it = emotes->find(name);
+    return it == emotes->end() ? std::nullopt : std::optional(it->second);
+}
+
+void Jiltv::flushPersonalLookups()
+{
+    QStringList batch;
+    {
+        const std::scoped_lock lock(this->mutex_);
+        this->personalFlushScheduled_ = false;
+        for (auto it = this->personalPending_.begin();
+             it != this->personalPending_.end() && batch.size() < LOOKUP_BATCH;)
+        {
+            batch.append(*it);
+            this->personalInFlight_.insert(*it);
+            it = this->personalPending_.erase(it);
+        }
+        if (!this->personalPending_.isEmpty())
+        {
+            this->personalFlushScheduled_ = true;
+            QTimer::singleShot(LOOKUP_DELAY_MS, [this] {
+                this->flushPersonalLookups();
+            });
+        }
+    }
+    if (batch.isEmpty())
+    {
+        return;
+    }
+
+    const auto done = [this, batch] {
+        const std::scoped_lock lock(this->mutex_);
+        for (const auto &login : batch)
+        {
+            this->personalInFlight_.remove(login);
+        }
+    };
+    QUrl url(this->apiUrl() + QStringLiteral("/v1/personal-emotes/twitch"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("logins"), batch.join(u','));
+    url.setQuery(query);
+    NetworkRequest(url)
+        .timeout(20000)
+        .onSuccess([this, batch, done](const NetworkResult &result) {
+            this->storePersonalEmotes(batch, result.parseJson());
+            done();
+        })
+        .onError([done](const NetworkResult &) {
+            done();  // asked again with the next message
+        })
         .execute();
 }
 
@@ -516,7 +614,7 @@ std::shared_ptr<const EmoteMap> Jiltv::personalEmotes(
     }
     const std::scoped_lock lock(this->mutex_);
     const auto it = this->personal_.find(login.toLower());
-    return it == this->personal_.end() ? nullptr : it->second;
+    return it == this->personal_.end() ? nullptr : it->second.emotes;
 }
 
 std::shared_ptr<const EmoteMap> Jiltv::globalEmotes() const
@@ -622,11 +720,22 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
 {
     if (type == u"presence.joined")
     {
-        // A JilTV user arrived: know their cosmetics before they write.
+        // A JilTV user arrived: know their cosmetics and personal emotes
+        // before they write.
+        const auto login = data.value("login").toString();
         const auto cosmetics = data.value("cosmetics").toObject();
-        this->setWorn(data.value("login").toString(),
-                      cosmetics.value("p").toString(),
+        this->setWorn(login, cosmetics.value("p").toString(),
                       cosmetics.value("b").toString());
+        if (!login.isEmpty() && data.contains("personal_emotes"))
+        {
+            const auto key = login.toLower();
+            this->storePersonalEmotes(
+                {key}, QJsonObject{
+                           {"users",
+                            QJsonObject{{key, data.value("personal_emotes")}}},
+                           {"cdn", data.value("cdn")},
+                       });
+        }
         return;
     }
     if (!type.startsWith(u"set.") && type != u"channel.set_switched" &&
