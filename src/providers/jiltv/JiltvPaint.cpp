@@ -961,7 +961,7 @@ JiltvPaint::JiltvPaint(QString id, QString name, const QJsonObject &data,
         if (l.kind == u"shader" && !l.asset.isEmpty() && !cdn.isEmpty())
         {
             this->loops_[l.id] =
-                Image::fromUrl(Url{cdn + u"/paints/" + l.asset + u".webp"});
+                Image::fromUrl(Url{cdn + u"/paints/"_s + l.asset + u".webp"_s});
         }
     }
 }
