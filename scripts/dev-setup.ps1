@@ -1,6 +1,6 @@
 # One-time setup for local Windows builds (see scripts/dev-build.ps1).
 #
-# Installs Qt 6.9.3 (the version CI uses) with the modules Leafyrino needs to
+# Installs Qt 6.9.3 (the version CI uses) with the modules JilChat Chatterino needs to
 # C:\Qt via aqtinstall. Visual Studio 2022 with the C++ workload, Python and
 # Conan are expected to be installed already. Nothing outside C:\Qt and your
 # Python user packages is changed; your Conan profile stays as it is.
