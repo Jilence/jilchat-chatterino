@@ -115,7 +115,7 @@ private:
     std::unique_ptr<JiltvStream> cosmeticsStream_;
 };
 
-/// Whether JilTV comes first among paint and emote providers (setting).
+/// Whether JilTV emotes come first among the emote providers (setting).
 bool jiltvFirst();
 
 }  // namespace chatterino

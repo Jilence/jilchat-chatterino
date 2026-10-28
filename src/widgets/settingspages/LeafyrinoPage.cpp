@@ -61,26 +61,24 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     SettingWidget::checkbox("Enable JilTV", s.enableJiltv)
         ->addKeywords({"jiltv", "paints", "emotes", "badges"})
         ->addTo(layout);
-    SettingWidget::checkbox("JilTV emotes", s.enableJiltvEmotes)
+    SettingWidget::checkbox("Show JilTV emotes", s.enableJiltvEmotes)
         ->addKeywords({"jiltv", "emotes"})
         ->setTooltip("Global JilTV emotes and the emotes of channels that use "
                      "JilTV.")
         ->addTo(layout);
-    SettingWidget::checkbox("JilTV comes first", s.jiltvPriority)
-        ->addKeywords({"jiltv", "priority", "7tv", "paints", "emotes"})
-        ->setTooltip("A JilTV paint is drawn instead of a 7TV or BetterTTV "
-                     "one (with 'Username paints' on Automatic), and a JilTV "
-                     "emote wins over 7TV, BetterTTV and FrankerFaceZ emotes "
-                     "of the same name. Off: JilTV comes last.")
+    SettingWidget::checkbox("Prefer JilTV emotes", s.jiltvPriority)
+        ->addKeywords({"jiltv", "priority", "7tv", "emotes"})
+        ->setTooltip("A JilTV emote wins over 7TV, BetterTTV and FrankerFaceZ "
+                     "emotes of the same name. Off: JilTV emotes come last.")
         ->addTo(layout);
-    SettingWidget::checkbox("JilTV badges", s.showBadgesJiltv)
+    SettingWidget::checkbox("Show JilTV badges", s.showBadgesJiltv)
         ->addKeywords({"jiltv", "badges"})
         ->addTo(layout);
     SettingWidget::checkbox("Animate JilTV paints", s.jiltvAnimatedPaints)
         ->addKeywords({"jiltv", "paints", "animation"})
         ->setTooltip("Off: paints stand still on their first frame.")
         ->addTo(layout);
-    SettingWidget::checkbox("JilTV paint shadows and outlines",
+    SettingWidget::checkbox("Show JilTV paint shadows and outlines",
                             s.jiltvPaintShadows)
         ->addKeywords({"jiltv", "paints", "shadow", "outline"})
         ->addTo(layout);
