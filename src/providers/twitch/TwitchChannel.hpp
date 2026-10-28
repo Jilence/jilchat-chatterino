@@ -410,6 +410,10 @@ public:
 
     /** Adds a 7TV channel emote to this channel. */
     void addSeventvEmote(const seventv::eventapi::EmoteAddDispatch &dispatch);
+    /// Says in chat that a JilTV emote was added or removed, combined with
+    /// the updates just before it like the 7TV and BetterTTV ones
+    void addJiltvEmoteUpdate(bool isEmoteAdd, const QString &actor,
+                             const LiveUpdateEmote &emote);
     /** Updates a 7TV channel emote's name in this channel */
     void updateSeventvEmote(
         const seventv::eventapi::EmoteUpdateDispatch &dispatch);

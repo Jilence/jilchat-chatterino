@@ -64,6 +64,8 @@ public:
                                           EmoteNameView name);
     std::shared_ptr<const EmoteMap> channelEmotes(const QString &roomId) const;
     std::shared_ptr<const EmoteMap> globalEmotes() const;
+    /// The name of a channel's active JilTV emote set, empty when unknown
+    QString channelSetName(const QString &roomId) const;
 
     /// Loads a joined channel's JilTV emotes (nothing if it doesn't use
     /// JilTV). `done` gets the number of emotes, from the GUI thread.
@@ -117,6 +119,8 @@ private:
     bool flushScheduled_ = false;
     std::unordered_map<QString, std::shared_ptr<const EmoteMap>> channels_;
     std::shared_ptr<const EmoteMap> global_;
+    /// The name of each channel's active set, by room ID
+    std::unordered_map<QString, QString> channelSetNames_;
     struct Personal {
         std::shared_ptr<const EmoteMap> emotes;
         QDateTime fetched;
