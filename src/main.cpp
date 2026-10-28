@@ -166,7 +166,7 @@ int main(int argc, char **argv)
     QCoreApplication::setOrganizationDomain("chatterino.com");
     // Must match the installed .desktop / Flatpak app-id so the shell
     // associates this window with Leafyrino's icon (not Chatterino's).
-    QGuiApplication::setDesktopFileName("com.leafyzito.leafyrino");
+    QGuiApplication::setDesktopFileName("com.jilence.jilchatchatterino");
 #ifdef Q_OS_WIN
     SetCurrentProcessExplicitAppUserModelID(
         Version::instance().appUserModelID().c_str());

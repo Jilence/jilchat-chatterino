@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Leafyrino
-GenericName=Leafyrino
+Name=JilChat Chatterino
+GenericName=JilChat Chatterino
 Comment=Chat client for Twitch
-Exec=Leafyrino
-Icon=com.leafyzito.leafyrino
+Exec=JilChatChatterino
+Icon=com.jilence.jilchatchatterino
 Terminal=false
 Categories=Network;InstantMessaging;
 StartupWMClass=chatterino

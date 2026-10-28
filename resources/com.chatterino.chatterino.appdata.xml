@@ -1,33 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- 2019 Artem Polishchuk <ego.cordatus@gmail.com> -->
 <component type="desktop-application">
-    <id>com.moltobenne.moltorino.desktop</id>
-    <launchable type="desktop-id">com.moltobenne.moltorino.desktop</launchable>
+    <id>com.jilence.jilchatchatterino</id>
+    <launchable type="desktop-id">com.jilence.jilchatchatterino.desktop</launchable>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>MIT</project_license>
     <content_rating type="oars-1.0">
         <content_attribute id="social-chat">intense</content_attribute>
     </content_rating>
-    <name>Moltorino</name>
-    <developer_name>MoltoBenne</developer_name>
+    <name>JilChat Chatterino</name>
+    <developer_name>Jilence</developer_name>
     <summary>
         Chat client for twitch.tv
     </summary>
     <description>
         <p>
-            Moltorino is a chat client for Twitch.tv.
+            JilChat Chatterino is a chat client for Twitch.tv.
         </p>
     </description>
     <screenshots>
         <screenshot type="default">
-            <image>https://raw.githubusercontent.com/MoltoBenne/Moltorino/master/resources/icon.png</image>
+            <image>https://raw.githubusercontent.com/Jilence/jilchat-chatterino/main/resources/icon.png</image>
         </screenshot>
     </screenshots>
     <keywords>
         <keyword>chat</keyword>
         <keyword>twitch</keyword>
     </keywords>
-    <url type="homepage">https://github.com/MoltoBenne/Moltorino</url>
+    <url type="homepage">https://github.com/Jilence/jilchat-chatterino</url>
     <url type="bugtracker">https://github.com/MoltoBenne/Moltorino/issues</url>
     <url type="donation">https://github.com/MoltoBenne/Moltorino</url>
     <provides>
