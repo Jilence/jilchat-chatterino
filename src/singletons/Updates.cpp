@@ -124,9 +124,10 @@ Updates::Updates(const Modes &modes_, const Paths &paths_, Settings &settings)
         this->checkForUpdates();
     });
     this->checkTimer_.setInterval(CHECK_INTERVAL_MS);
-    QObject::connect(&this->checkTimer_, &QTimer::timeout, [this] {
-        this->checkForUpdates();
-    });
+    QObject::connect(&this->checkTimer_, &QTimer::timeout, &this->checkTimer_,
+                     [this] {
+                         this->checkForUpdates();
+                     });
     this->checkTimer_.start();
 }
 
@@ -344,8 +345,8 @@ void Updates::downloadVerified(const QString &url, const QString &assetName,
                     done = std::move(done)](const NetworkResult &result) {
             // Lines of sha256sum: "<hash>  <name>" (or "<hash> *<name>")
             QString expected;
-            for (const auto &line :
-                 QString::fromUtf8(result.getData()).split(u'\n'))
+            const auto lines = QString::fromUtf8(result.getData()).split(u'\n');
+            for (const auto &line : lines)
             {
                 const auto parts = line.trimmed().split(
                     QRegularExpression(u"\\s+"_s), Qt::SkipEmptyParts);
@@ -434,7 +435,7 @@ void Updates::checkForUpdates()
 
     // Releases are matched by commit, so a build has to know its own. Builds
     // made elsewhere than this repository aren't in it and get no updates.
-    const auto commit = version.commitHash();
+    const auto &commit = version.commitHash();
     if (commit.isEmpty() || commit.startsWith(u"GIT-"_s))
     {
         qCDebug(chatterinoUpdate)
@@ -461,7 +462,8 @@ void Updates::checkForUpdates()
             // "Receive beta updates"
             const bool beta = getSettings()->betaUpdates;
             QJsonObject release;
-            for (const auto &value : result.parseJsonArray())
+            const auto releases = result.parseJsonArray();
+            for (const auto &value : releases)
             {
                 const auto o = value.toObject();
                 if (o["draft"_L1].toBool() ||
@@ -489,7 +491,7 @@ void Updates::checkForUpdates()
                     this->setStatus_(NoUpdateAvailable);
                 })
                 .onSuccess([this, release](const NetworkResult &compare) {
-                    if (compare.parseJson()["status"_L1].toString() !=
+                    if (compare.parseJson().value("status"_L1).toString() !=
                         u"ahead"_s)
                     {
                         this->setStatus_(NoUpdateAvailable);
@@ -509,15 +511,25 @@ void Updates::takeRelease(const QJsonObject &release)
     // "Title, tag", or only one of them when the other is missing or the same
     const auto name = release["name"_L1].toString().trimmed();
     const auto tag = release["tag_name"_L1].toString().trimmed();
-    this->onlineVersion_ = name.isEmpty() || name == tag ? tag
-                           : tag.isEmpty()               ? name
-                                                         : name + u", "_s + tag;
+    if (name.isEmpty() || name == tag)
+    {
+        this->onlineVersion_ = tag;
+    }
+    else if (tag.isEmpty())
+    {
+        this->onlineVersion_ = name;
+    }
+    else
+    {
+        this->onlineVersion_ = name + u", "_s + tag;
+    }
     this->updateGuideLink_ = release["html_url"_L1].toString();
     this->updateExe_.clear();
     this->updateExeName_.clear();
     this->checksumsUrl_.clear();
 
-    for (const auto &value : release["assets"_L1].toArray())
+    const auto assets = release.value("assets"_L1).toArray();
+    for (const auto &value : assets)
     {
         const auto asset = value.toObject();
         const auto assetName = asset["name"_L1].toString();
@@ -528,7 +540,7 @@ void Updates::takeRelease(const QJsonObject &release)
             continue;
         }
 
-#if defined(Q_OS_WIN)
+#ifdef Q_OS_WIN
         // ARM installers are marked as such, everything else is x64
         const bool arm =
             assetName.startsWith(u"Experimental-ARM64-"_s, Qt::CaseInsensitive);
