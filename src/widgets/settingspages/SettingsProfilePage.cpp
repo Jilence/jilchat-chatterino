@@ -154,9 +154,9 @@ void exportSettingsProfile(QWidget *parent)
     getSettings()->requestSave();
 
     const auto fileName = QFileDialog::getSaveFileName(
-        parent, "Export Leafyrino settings",
-        QDir::homePath() + "/leafyrino-settings.json",
-        "Leafyrino settings (*.json);;JSON files (*.json)");
+        parent, "Export JilChat Chatterino settings",
+        QDir::homePath() + "/jilchat-chatterino-settings.json",
+        "JilChat Chatterino settings (*.json);;JSON files (*.json)");
     if (fileName.isEmpty())
     {
         return;
@@ -270,8 +270,8 @@ void exportSettingsProfile(QWidget *parent)
 void importSettingsProfile(QWidget *parent)
 {
     const auto fileName = QFileDialog::getOpenFileName(
-        parent, "Import Leafyrino settings", QDir::homePath(),
-        "Leafyrino settings (*.json);;JSON files (*.json)");
+        parent, "Import JilChat Chatterino settings", QDir::homePath(),
+        "JilChat Chatterino settings (*.json);;JSON files (*.json)");
     if (fileName.isEmpty())
     {
         return;
@@ -290,8 +290,9 @@ void importSettingsProfile(QWidget *parent)
     if (exportObject[u"format"_s].toString() != SETTINGS_EXPORT_FORMAT ||
         !exportObject[u"files"_s].isObject())
     {
-        QMessageBox::critical(parent, "Import failed",
-                              "This is not a Leafyrino settings export.");
+        QMessageBox::critical(
+            parent, "Import failed",
+            "This is not a JilChat Chatterino settings export.");
         return;
     }
 
@@ -316,10 +317,10 @@ void importSettingsProfile(QWidget *parent)
         return;
     }
 
-    QMessageBox::information(
-        parent, "Import complete",
-        "Settings will be imported on the next Leafyrino start. Restart "
-        "Leafyrino to load everything.");
+    QMessageBox::information(parent, "Import complete",
+                             "Settings will be imported on the next JilChat "
+                             "Chatterino start. Restart "
+                             "JilChat Chatterino to load everything.");
 }
 
 }  // namespace

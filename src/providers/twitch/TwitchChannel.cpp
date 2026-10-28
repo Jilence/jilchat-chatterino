@@ -578,7 +578,7 @@ QString chatWarningMissingDetailsText(const QString &channelName)
 {
     return QString(
                "Your message was blocked because of an active warning, but "
-               "Leafyrino could not load the warning details yet. Try again in "
+               "JilChat Chatterino could not load the warning details yet. Try again in "
                "a moment, or open https://www.twitch.tv/%1 in your browser to "
                "acknowledge it.")
         .arg(channelName);
@@ -603,7 +603,7 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
 {
     const auto reason = sanitizeChatWarningReason(warning.reason);
     const auto text =
-        QStringLiteral("Leafyrino: You received a warning: \"%1\" Acknowledge")
+        QStringLiteral("JilChat Chatterino: You received a warning: \"%1\" Acknowledge")
             .arg(reason);
     const auto timestamp = warning.createdAt.isValid()
                                ? warning.createdAt.toLocalTime().time()
@@ -613,8 +613,8 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
     builder.message().id = chatWarningMessageId(warning);
     builder.message().channelName = channel.getName();
     builder.message().loginName = QStringLiteral("leafyrino");
-    builder.message().displayName = QStringLiteral("Leafyrino");
-    builder.message().localizedName = QStringLiteral("Leafyrino");
+    builder.message().displayName = QStringLiteral("JilChat Chatterino");
+    builder.message().localizedName = QStringLiteral("JilChat Chatterino");
     builder.message().usernameColor = QColor("#FFA500");
     builder.message().serverReceivedTime =
         warning.createdAt.isValid() ? warning.createdAt
@@ -627,7 +627,7 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
     builder.message().flags.set(MessageFlag::DoNotTriggerNotification);
 
     builder.emplace<TimestampElement>(timestamp);
-    builder.emplace<TextElement>("Leafyrino:", MessageElementFlag::Text,
+    builder.emplace<TextElement>("JilChat Chatterino:", MessageElementFlag::Text,
                                  MessageColor(QColor("#FFA500")),
                                  FontStyle::ChatMediumBold);
     builder.emplace<TextElement>("You received a warning:",

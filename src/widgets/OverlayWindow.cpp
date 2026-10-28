@@ -481,14 +481,14 @@ void OverlayWindow::triggerFirstActivation()
         welcomeText +=
             u"To toggle the click-through mode, "
             "add a hotkey for \"Toggle overlay click-through\" in the split "
-            "category to press while any Leafyrino window is focused."_s;
+            "category to press while any JilChat Chatterino window is focused."_s;
     }
     else
     {
         welcomeText +=
             u"To toggle the click-through mode, press %1 (customizable "_s
-            "in the settings) while any Leafyrino window is focused.".arg(
-                actualShortcut.toString());
+            "in the settings) while any JilChat Chatterino window is focused."
+                .arg(actualShortcut.toString());
     }
 
     welcomeText += u"<br><br>"_s
