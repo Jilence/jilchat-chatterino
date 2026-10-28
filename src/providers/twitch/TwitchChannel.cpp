@@ -568,7 +568,8 @@ bool isWarningAcknowledgeNotice(const QString &text)
 QString chatWarningAuthFallbackText(const QString &channelName)
 {
     return QString("You have an active warning in this channel. "
-                   "Authenticate in Settings -> JilChat Chatterino -> Authentication to "
+                   "Authenticate in Settings -> JilChat Chatterino -> "
+                   "Authentication to "
                    "view and acknowledge it in JilChat Chatterino, or open "
                    "https://www.twitch.tv/%1 in your browser.")
         .arg(channelName);
@@ -578,7 +579,8 @@ QString chatWarningMissingDetailsText(const QString &channelName)
 {
     return QString(
                "Your message was blocked because of an active warning, but "
-               "JilChat Chatterino could not load the warning details yet. Try again in "
+               "JilChat Chatterino could not load the warning details yet. Try "
+               "again in "
                "a moment, or open https://www.twitch.tv/%1 in your browser to "
                "acknowledge it.")
         .arg(channelName);
@@ -603,7 +605,8 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
 {
     const auto reason = sanitizeChatWarningReason(warning.reason);
     const auto text =
-        QStringLiteral("JilChat Chatterino: You received a warning: \"%1\" Acknowledge")
+        QStringLiteral(
+            "JilChat Chatterino: You received a warning: \"%1\" Acknowledge")
             .arg(reason);
     const auto timestamp = warning.createdAt.isValid()
                                ? warning.createdAt.toLocalTime().time()
@@ -627,9 +630,9 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
     builder.message().flags.set(MessageFlag::DoNotTriggerNotification);
 
     builder.emplace<TimestampElement>(timestamp);
-    builder.emplace<TextElement>("JilChat Chatterino:", MessageElementFlag::Text,
-                                 MessageColor(QColor("#FFA500")),
-                                 FontStyle::ChatMediumBold);
+    builder.emplace<TextElement>(
+        "JilChat Chatterino:", MessageElementFlag::Text,
+        MessageColor(QColor("#FFA500")), FontStyle::ChatMediumBold);
     builder.emplace<TextElement>("You received a warning:",
                                  MessageElementFlag::Text, MessageColor::Text);
     builder.emplace<TextElement>(u"\"" % reason % u"\"",

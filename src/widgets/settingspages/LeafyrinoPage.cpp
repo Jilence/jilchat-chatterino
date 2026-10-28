@@ -222,7 +222,8 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::checkbox("Show follow button", s.showFollowButtonInUsercard)
         ->setTooltip("Show a follow/unfollow button on usercards. Requires "
-                     "JilChat Chatterino login (Settings → JilChat Chatterino → Authentication).")
+                     "JilChat Chatterino login (Settings → JilChat Chatterino "
+                     "→ Authentication).")
         ->addKeywords({"usercard", "follow", "button"})
         ->addTo(layout);
     SettingWidget::checkbox("Confirm before unfollowing from usercard",
@@ -263,7 +264,8 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     layout.addTitle("Events");
     layout.addDescription(
         "Channel event messages in chat. Requires JilChat Chatterino login "
-        "(Settings → JilChat Chatterino → Authentication), experimental EventSub "
+        "(Settings → JilChat Chatterino → Authentication), experimental "
+        "EventSub "
         "enabled under Settings → General, and an app restart after turning "
         "EventSub on.");
 
