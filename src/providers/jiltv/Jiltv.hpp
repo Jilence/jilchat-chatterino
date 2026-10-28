@@ -66,6 +66,14 @@ public:
     void loadChannelEmotes(const QString &roomId,
                            std::function<void(int)> done = {});
     void loadGlobalEmotes();
+
+    /// The personal emotes of `login`, usable in every channel, or nullptr
+    /// when they weren't loaded
+    std::shared_ptr<const EmoteMap> personalEmotes(const QString &login) const;
+    /// Loads the personal emotes of `login`. `done` runs in the GUI thread
+    /// once they are there.
+    void loadPersonalEmotes(const QString &login,
+                            std::function<void()> done = {});
     void loadCatalog();
 
     QString apiUrl() const;
@@ -105,6 +113,7 @@ private:
     bool flushScheduled_ = false;
     std::unordered_map<QString, std::shared_ptr<const EmoteMap>> channels_;
     std::shared_ptr<const EmoteMap> global_;
+    std::unordered_map<QString, std::shared_ptr<const EmoteMap>> personal_;
 
     QTimer catalogTimer_;
 

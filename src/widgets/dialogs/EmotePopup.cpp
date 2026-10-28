@@ -38,6 +38,7 @@
 
 #include <QAbstractButton>
 #include <QHBoxLayout>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QStringBuilder>
@@ -720,6 +721,20 @@ void EmotePopup::loadChannel(ChannelPtr channel)
         std::make_shared<Channel>("", Channel::Type::None));
 
     this->reloadEmotes();
+
+    // The own JilTV personal emotes are asked for each time, as they can
+    // change on the website
+    if (this->twitchChannel_)
+    {
+        Jiltv::instance().loadPersonalEmotes(
+            getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+            [self = QPointer(this)] {
+                if (self)
+                {
+                    self->reloadEmotes();
+                }
+            });
+    }
 }
 
 void EmotePopup::addFavouriteEmoji(const QString &shortCode)
@@ -909,6 +924,11 @@ void EmotePopup::reloadEmotes()
             addEmotes(*channelChannel, *jiltv, "JilTV");
         }
 
+        if (auto jiltvPersonal = Jiltv::instance().personalEmotes(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName()))
+        {
+            addEmotes(*subChannel, *jiltvPersonal, "JilTV (Personal)");
+        }
         for (const auto &map :
              getApp()->getSeventvPersonalEmotes()->getEmoteSetsForTwitchUser(
                  getApp()->getAccounts()->twitch.getCurrent()->getUserId()))

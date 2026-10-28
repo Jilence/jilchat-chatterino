@@ -24,6 +24,7 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QUrl>
+#include <QUrlQuery>
 
 namespace chatterino {
 
@@ -472,6 +473,50 @@ std::shared_ptr<const EmoteMap> Jiltv::channelEmotes(
     const std::scoped_lock lock(this->mutex_);
     const auto it = this->channels_.find(roomId);
     return it == this->channels_.end() ? nullptr : it->second;
+}
+
+void Jiltv::loadPersonalEmotes(const QString &login, std::function<void()> done)
+{
+    const auto key = login.toLower();
+    if (key.isEmpty() || !getSettings()->enableJiltv ||
+        !getSettings()->enableJiltvEmotes)
+    {
+        return;
+    }
+    QUrl url(this->apiUrl() + QStringLiteral("/v1/personal-emotes/twitch"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("logins"), key);
+    url.setQuery(query);
+    NetworkRequest(url)
+        .timeout(30000)
+        .onSuccess(
+            [this, key, done = std::move(done)](const NetworkResult &result) {
+                const auto root = result.parseJson();
+                auto map = std::make_shared<const EmoteMap>(parseEmotes(
+                    root.value("users").toObject().value(key).toArray(),
+                    root.value("cdn").toString(), QStringLiteral("Personal")));
+                {
+                    const std::scoped_lock lock(this->mutex_);
+                    this->personal_[key] = std::move(map);
+                }
+                if (done)
+                {
+                    done();
+                }
+            })
+        .execute();
+}
+
+std::shared_ptr<const EmoteMap> Jiltv::personalEmotes(
+    const QString &login) const
+{
+    if (!getSettings()->enableJiltv || !getSettings()->enableJiltvEmotes)
+    {
+        return nullptr;
+    }
+    const std::scoped_lock lock(this->mutex_);
+    const auto it = this->personal_.find(login.toLower());
+    return it == this->personal_.end() ? nullptr : it->second;
 }
 
 std::shared_ptr<const EmoteMap> Jiltv::globalEmotes() const
