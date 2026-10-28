@@ -21,12 +21,10 @@ enum class SettingsTabId {
     None,
     General,
     Customization,
-    Moltorino,
-    Leafyrino,
+    JilChat,
     Accounts,
     Moderation,
     About,
-    Technorino
 };
 
 class SettingsDialogTab : public BaseWidget

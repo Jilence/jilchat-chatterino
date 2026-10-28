@@ -12,7 +12,10 @@
 #include "widgets/helper/SvgWidget.hpp"
 #include "widgets/settingspages/CustomWidgets.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
+#include "widgets/settingspages/LeafyrinoPage.hpp"
+#include "widgets/settingspages/MoltorinoPage.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
+#include "widgets/settingspages/TechnorinoPage.hpp"
 
 #include <QCheckBox>
 #include <QFrame>
@@ -22,7 +25,11 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <initializer_list>
+
 namespace chatterino {
+
+using namespace Qt::StringLiterals;
 
 JilChatPage::JilChatPage()
 {
@@ -38,6 +45,71 @@ JilChatPage::JilChatPage()
     this->setLayout(outer);
 
     this->initLayout(*view);
+
+    // The settings that came from the other forks write into the same view.
+    // They are hidden widgets of their own that only hold their state.
+    this->leafyrino_ = new LeafyrinoPage(*view);
+    this->moltorino_ = new MoltorinoPage(*view);
+    this->technorino_ = new TechnorinoPage(*view);
+    for (QWidget *section : std::initializer_list<QWidget *>{
+             this->leafyrino_, this->moltorino_, this->technorino_})
+    {
+        section->setParent(this);
+        section->hide();
+    }
+
+    view->arrangeGroups({
+        "Authentication",
+        "JilTV",
+        "Voice messages",
+        "JilChat Desktop Presence",
+        "Public logs",
+        "Badges",
+        "Chat",
+        "Input Box",
+        "Pinned Messages",
+        "Poll and Prediction",
+        "Points and Rewards",
+        "Events",
+        "Messages per second",
+        "Commands",
+        "Chat automations",
+        "Translation",
+        "YouTube",
+        "Usercards",
+        "Moderation",
+        "AutoMod",
+        "Client",
+        "Client detection",
+        "Tray",
+        "Fun",
+        "Miscellaneous",
+    });
+
+    auto *credits = new QLabel(
+        u"Some features are inspired by "
+        u"<a href=\"https://moltorino.com\">Moltorino</a>, "
+        u"<a href=\"https://leafyrino.leafyzito.dev/\">Leafyrino</a> and "
+        u"<a href=\"https://github.com/2547techno/technorino\">Technorino</a>."_s);
+    credits->setOpenExternalLinks(true);
+    credits->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    credits->setWordWrap(true);
+    credits->setContentsMargins(0, 24, 0, 8);
+    view->pushWidget(credits);
+
+    // the rest of the page stays empty instead of spreading the sections
+    view->addStretch();
+}
+
+void JilChatPage::showBotBadgeSettings()
+{
+    this->moltorino_->showBotBadgeSettings();
+}
+
+void JilChatPage::hideEvent(QHideEvent *event)
+{
+    SettingsPage::hideEvent(event);
+    this->moltorino_->resetOnPageHide();
 }
 
 bool JilChatPage::filterElements(const QString &query)
@@ -98,7 +170,8 @@ void JilChatPage::initLayout(GeneralPageView &layout)
                             s.loadOlderMessagesFromPublicLogs)
         ->setTooltip(
             "Load older messages from logs.zonian.dev, in the chat when you "
-            "scroll to the top and on the usercard in channels your Moltorino "
+            "scroll to the top and on the usercard in channels your JilChat "
+            "Chatterino "
             "login can't moderate. This sends channel names and usernames to "
             "that "
             "service. When disabled, nothing is loaded from the public logs.")
@@ -126,15 +199,13 @@ void JilChatPage::initLayout(GeneralPageView &layout)
                                 .singleStep = 10,
                             })
         ->conditionallyEnabledBy(s.loadOlderMessagesFromPublicLogs)
-        ->setTooltip("How many older messages of a user the usercard loads "
-                     "from the public logs at a time, in channels your "
-                     "Moltorino login can't moderate. Twitch's moderator "
-                     "history loads in pages set by Twitch.")
+        ->setTooltip(
+            "How many older messages of a user the usercard loads "
+            "from the public logs at a time, in channels your "
+            "JilChat Chatterino login can't moderate. Twitch's moderator "
+            "history loads in pages set by Twitch.")
         ->addKeywords({"usercard", "messages", "logs", "page", "count"})
         ->addTo(layout);
-
-    // the rest of the page stays empty instead of spreading the sections
-    layout.addStretch();
 }
 
 void JilChatPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)

@@ -53,11 +53,9 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
-#include <QStackedWidget>
 #ifndef Q_OS_MACOS
 #    include <QSystemTrayIcon>
 #endif
-#include <QTabBar>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTabWidget>
@@ -149,39 +147,16 @@ QString formatTimestampStatus(const QString &isoTimestamp)
 
 namespace chatterino {
 
-MoltorinoPage::MoltorinoPage()
+MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
 {
-    auto *rootLayout = new QVBoxLayout;
-    rootLayout->setContentsMargins(9, 6, 9, 0);
-    rootLayout->setSpacing(4);
-
-    auto *tabBar = new QTabBar(this);
-    tabBar->setExpanding(false);
-    tabBar->setDocumentMode(true);
-    tabBar->setDrawBase(false);
-    rootLayout->addWidget(tabBar);
-
-    auto *stack = new QStackedWidget(this);
-    rootLayout->addWidget(stack);
-    this->setLayout(rootLayout);
-
-    auto *settingsTab = new QWidget(stack);
-    auto *settingsLayout = new QHBoxLayout(settingsTab);
-    settingsLayout->setContentsMargins(0, 0, 0, 0);
-    auto *view = GeneralPageView::withNavigation(settingsTab);
+    auto *view = &pageView;
     this->settingsView_ = view;
-    settingsLayout->addWidget(view);
-    stack->addWidget(settingsTab);
-    tabBar->addTab("Settings");
-
-    QObject::connect(tabBar, &QTabBar::currentChanged, stack,
-                     &QStackedWidget::setCurrentIndex);
 
     auto &s = *getSettings();
 
     view->addTitle("Authentication");
     view->addDescription(
-        "Logging in enables Leafyrino features like pins, polls, "
+        "Logging in enables JilChat Chatterino features like pins, polls, "
         "predictions, and channel points.");
 
     auto *tokenControls = new QFrame(view);
@@ -195,7 +170,7 @@ MoltorinoPage::MoltorinoPage()
 
     this->addAuthAccountButton_ = new QPushButton("Log In", tokenControls);
     this->addAuthAccountButton_->setToolTip(
-        "Log in or manage saved Leafyrino accounts.");
+        "Log in or manage saved JilChat Chatterino accounts.");
     this->refreshAuthAccountsButton_ =
         new QPushButton("Refresh Accounts", tokenControls);
     this->refreshAuthAccountsButton_->setToolTip(
@@ -549,12 +524,13 @@ MoltorinoPage::MoltorinoPage()
     view->addDescription("Poll, prediction, and banner behavior options.");
 
     SettingWidget::checkbox("Show predictions", s.enablePredictions)
-        ->setTooltip(
-            "Show prediction banners and open prediction menus from Leafyrino.")
+        ->setTooltip("Show prediction banners and open prediction menus from "
+                     "JilChat Chatterino.")
         ->addTo(*view);
 
     SettingWidget::checkbox("Show polls", s.enablePolls)
-        ->setTooltip("Show poll banners and open poll menus from Leafyrino.")
+        ->setTooltip(
+            "Show poll banners and open poll menus from JilChat Chatterino.")
         ->addTo(*view);
 
     addBannerScaleDropdown("Prediction banner content scale",
@@ -1290,7 +1266,8 @@ MoltorinoPage::MoltorinoPage()
                             s.loadOlderUsercardMessages)
         ->setTooltip(
             "Load older messages of a user on the usercard, beyond what is in "
-            "the chat. In channels your Moltorino login (Moltorino -> "
+            "the chat. In channels your JilChat Chatterino login (JilChat "
+            "Chatterino -> "
             "Authentication) can moderate they come from Twitch's moderator "
             "history, elsewhere from the public logs (needs \"Use "
             "public logs\" on the JilChat Chatterino page). When disabled, the "
@@ -1300,10 +1277,11 @@ MoltorinoPage::MoltorinoPage()
     SettingWidget::checkbox("Show load more messages button",
                             s.showUsercardLoadMoreMessagesButton)
         ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
-        ->setTooltip("Show a usercard button for loading older messages: from "
-                     "the Twitch mod history in channels your Moltorino login "
-                     "(Moltorino -> Authentication) can moderate, otherwise "
-                     "from the public logs.")
+        ->setTooltip(
+            "Show a usercard button for loading older messages: from "
+            "the Twitch mod history in channels your JilChat Chatterino login "
+            "(JilChat Chatterino -> Authentication) can moderate, otherwise "
+            "from the public logs.")
         ->addKeywords({"usercard", "messages", "load", "button"})
         ->addTo(*view);
     SettingWidget::checkbox("Always load more messages when possible",
@@ -1348,8 +1326,8 @@ MoltorinoPage::MoltorinoPage()
 
 #ifndef Q_OS_MACOS
     view->addTitle("Tray");
-    view->addDescription(
-        "Keep Leafyrino running in the tray after closing the window.");
+    view->addDescription("Keep JilChat Chatterino running in the tray after "
+                         "closing the window.");
 
     const bool trayAvailable = QSystemTrayIcon::isSystemTrayAvailable();
     const bool notificationAvailable =
@@ -1368,10 +1346,11 @@ MoltorinoPage::MoltorinoPage()
     }
 
     auto *hideToTrayWidget =
-        SettingWidget::checkbox("Hide to tray when closing Leafyrino",
+        SettingWidget::checkbox("Hide to tray when closing JilChat Chatterino",
                                 s.trayHideOnClose)
-            ->setTooltip("Closing the main window hides Leafyrino to the "
-                         "system tray instead of disconnecting from chat.");
+            ->setTooltip(
+                "Closing the main window hides JilChat Chatterino to the "
+                "system tray instead of disconnecting from chat.");
     hideToTrayWidget->setEnabled(trayAvailable);
     hideToTrayWidget->addTo(*view);
 
@@ -1381,7 +1360,7 @@ MoltorinoPage::MoltorinoPage()
             s.trayNotifyOnSoundHighlights)
             ->setTooltip("Only highlight rules with Play sound enabled "
                          "will show a notification while "
-                         "Leafyrino is hidden.");
+                         "JilChat Chatterino is hidden.");
     notifyWidget->setEnabled(notificationAvailable);
     notifyWidget->addTo(*view);
 #endif
@@ -1568,7 +1547,8 @@ MoltorinoPage::MoltorinoPage()
 
     view->addTitle("Miscellaneous");
     auto *miscDesc = new SignalLabel(this);
-    miscDesc->setText("General Leafyrino tweaks and interface adjustments.");
+    miscDesc->setText(
+        "General JilChat Chatterino tweaks and interface adjustments.");
     miscDesc->setWordWrap(true);
     miscDesc->setStyleSheet("QLabel { color: #9aa0a6; }");
     view->addWidget(miscDesc);
@@ -1632,16 +1612,6 @@ MoltorinoPage::MoltorinoPage()
 
     view->addWidget(this->botBadgeFrame_, {"Bot Badge", "Developer", "Verify",
                                            "Client ID", "Client Secret"});
-}
-
-bool MoltorinoPage::filterElements(const QString &query)
-{
-    if (this->settingsView_ == nullptr)
-    {
-        return query.isEmpty();
-    }
-
-    return this->settingsView_->filterElements(query) || query.isEmpty();
 }
 
 void MoltorinoPage::openAuthDialog()
@@ -2038,9 +2008,8 @@ void MoltorinoPage::verifyBotBadgeConfiguration()
         .execute();
 }
 
-void MoltorinoPage::hideEvent(QHideEvent *event)
+void MoltorinoPage::resetOnPageHide()
 {
-    SettingsPage::hideEvent(event);
     this->logoClickCount_ = 0;
     this->revealBotBadgeSettings(false);
 }

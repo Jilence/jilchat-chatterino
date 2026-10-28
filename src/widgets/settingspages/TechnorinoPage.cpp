@@ -72,33 +72,11 @@ void addKeyboardModifierSetting(GeneralPageView &layout, const QString &title,
 
 namespace chatterino {
 
-TechnorinoPage::TechnorinoPage()
+TechnorinoPage::TechnorinoPage(GeneralPageView &view)
 {
-    auto *y = new QVBoxLayout;
-    auto *x = new QHBoxLayout;
-    auto *view = GeneralPageView::withNavigation(this);
-    this->view_ = view;
-    x->addWidget(view);
-    auto *z = new QFrame;
-    z->setLayout(x);
-    y->addWidget(z);
-    this->setLayout(y);
-
-    this->initLayout(*view);
+    this->initLayout(view);
 
     this->initExtra();
-}
-
-bool TechnorinoPage::filterElements(const QString &query)
-{
-    if (this->view_)
-    {
-        return this->view_->filterElements(query) || query.isEmpty();
-    }
-    else
-    {
-        return false;
-    }
 }
 
 void TechnorinoPage::initLayout(GeneralPageView &layout)
