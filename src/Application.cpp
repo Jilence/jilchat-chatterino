@@ -274,8 +274,8 @@ void Application::initialize(Settings &settings, const Paths &paths)
         getSettings()->currentVersion.getValue() != "" &&
         getSettings()->currentVersion.getValue() != CHATTERINO_VERSION)
     {
-        auto *box = new QMessageBox(QMessageBox::Information, "Leafyrino",
-                                    "Show changelog?",
+        auto *box = new QMessageBox(QMessageBox::Information,
+                                    "JilChat Chatterino", "Show changelog?",
                                     QMessageBox::Yes | QMessageBox::No);
         box->setAttribute(Qt::WA_DeleteOnClose);
         if (box->exec() == QMessageBox::Yes)

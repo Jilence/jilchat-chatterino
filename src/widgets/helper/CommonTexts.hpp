@@ -14,6 +14,8 @@ inline const QString OPEN_PLAYER_IN_BROWSER =
     QStringLiteral("Open &player in browser");
 inline const QString OPEN_MOD_VIEW_IN_BROWSER =
     QStringLiteral("Open &mod view in browser");
+inline const QString OPEN_UNBAN_REQUESTS_IN_BROWSER =
+    QStringLiteral("Open &unban requests in browser");
 inline const QString OPEN_IN_STREAMLINK = QStringLiteral("Open in stream&link");
 inline const QString OPEN_IN_CUSTOM_PLAYER =
     QStringLiteral("Open in &custom player");

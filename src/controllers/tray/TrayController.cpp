@@ -188,7 +188,7 @@ void TrayController::ensureTrayIcon()
 
     this->trayIcon_ =
         new QSystemTrayIcon(QIcon(QStringLiteral(":/icon.ico")), this);
-    this->trayIcon_->setToolTip(QStringLiteral("Leafyrino"));
+    this->trayIcon_->setToolTip(QStringLiteral("JilChat Chatterino"));
 
     this->menu_ = new QMenu;
     this->openAction_ =

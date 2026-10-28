@@ -131,7 +131,8 @@ void WindowManager::showSettingsDialog(QWidget *parent,
 
     if (this->appArgs.dontSaveSettings)
     {
-        QMessageBox::critical(parent, "Leafyrino - Editing Settings Forbidden",
+        QMessageBox::critical(parent,
+                              "JilChat Chatterino - Editing Settings Forbidden",
                               "Settings cannot be edited when running with\n"
                               "commandline arguments such as '-c'.");
     }
@@ -218,11 +219,7 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->forceLayoutChannelViewsListener.add(
         settings.moderationActions.delayedItemsChanged);
     this->forceLayoutChannelViewsListener.add(
-        settings.highlightedMessages.delayedItemsChanged);
-    this->forceLayoutChannelViewsListener.add(
-        settings.highlightedUsers.delayedItemsChanged);
-    this->forceLayoutChannelViewsListener.add(
-        settings.highlightedBadges.delayedItemsChanged);
+        settings.sharedHighlights.delayedItemsChanged);
     this->forceLayoutChannelViewsListener.add(
         settings.removeSpacesBetweenEmotes);
     this->forceLayoutChannelViewsListener.add(settings.emoteScale);
@@ -233,7 +230,6 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->forceLayoutChannelViewsListener.add(
         settings.showTimestampDateTooltip);
     this->forceLayoutChannelViewsListener.add(settings.collpseMessagesMinLines);
-    this->forceLayoutChannelViewsListener.add(settings.enableRedeemedHighlight);
     this->forceLayoutChannelViewsListener.add(settings.multipleHighlightBands);
     this->forceLayoutChannelViewsListener.add(settings.enableGigantifyEmotes);
     this->forceLayoutChannelViewsListener.add(

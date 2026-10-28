@@ -197,11 +197,7 @@ MessagePtr makeAutoModReviewMessage(
     AutoModReviewPresentation presentation =
         AutoModReviewPresentation::ChatAdvanced);
 
-MessagePtr makeSuspiciousUserMessageHeader(
-    TwitchChannel *channel, const QDateTime &time,
-    const lib::payload::channel_suspicious_user_message::v1::Event &event);
-
-MessagePtr makeSuspiciousUserMessageBody(
+std::pair<MessagePtr, HighlightAlert> makeSuspiciousUserMessage(
     TwitchChannel *channel, const QDateTime &time,
     const lib::payload::channel_suspicious_user_message::v1::Event &event);
 

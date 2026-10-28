@@ -17,7 +17,9 @@ IgnoreModel::IgnoreModel(QObject *parent)
 }
 
 IgnorePhrase IgnoreModel::getItemFromRow(std::vector<QStandardItem *> &row,
-                                         const IgnorePhrase &original)
+                                         const IgnorePhrase &original,
+                                         std::optional<QModelIndex> index,
+                                         std::optional<int> role)
 {
     return IgnorePhrase{row[0]->data(Qt::DisplayRole).toString(),
                         row[1]->data(Qt::CheckStateRole).toBool(),

@@ -7,9 +7,9 @@ set -x
 
 _QT_DIR=""
 
-if [ -f ./bin/Leafyrino ] && [ -x ./bin/Leafyrino ]; then
-    app_binary="./bin/Leafyrino"
-    app_executable="Leafyrino"
+if [ -f ./bin/JilChatChatterino ] && [ -x ./bin/JilChatChatterino ]; then
+    app_binary="./bin/JilChatChatterino"
+    app_executable="JilChatChatterino"
 elif [ -f ./bin/chatterino ] && [ -x ./bin/chatterino ]; then
     app_binary="./bin/chatterino"
     app_executable="chatterino"
@@ -125,7 +125,7 @@ find appdir/usr/bin appdir/usr/lib appdir/usr/plugins \
 echo "Run AppImageTool"
 
 # shellcheck disable=SC2016
-echo '#!/bin/sh
+echo '#!/bin/bash
 here="$(dirname "$(readlink -f "${0}")")"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$here/usr/plugins"
 

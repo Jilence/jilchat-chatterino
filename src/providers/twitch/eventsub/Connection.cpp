@@ -8,16 +8,19 @@
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/automod/AutoModReviewController.hpp"
+#include "controllers/filters/lang/Filter.hpp"
 #include "controllers/highlights/HighlightController.hpp"
 #include "controllers/highlights/HighlightResult.hpp"
 #include "messages/Link.hpp"
 #include "messages/Message.hpp"
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
+#include "messages/MessageParseArgs.hpp"
 #include "providers/twitch/eventsub/Controller.hpp"
 #include "providers/twitch/eventsub/MessageBuilder.hpp"
 #include "providers/twitch/eventsub/MessageHandlers.hpp"
 #include "providers/twitch/PubSubManager.hpp"
+#include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchBadge.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
@@ -461,12 +464,19 @@ void Connection::onChannelSuspiciousUserMessage(
     }
 
     auto time = chronoToQDateTime(metadata.messageTimestamp);
-    auto header = makeSuspiciousUserMessageHeader(channel, time, payload.event);
-    auto body = makeSuspiciousUserMessageBody(channel, time, payload.event);
+    auto [message, messageAlert] =
+        makeSuspiciousUserMessage(channel, time, payload.event);
 
-    runInGuiThread([channel, header, body] {
-        channel->addMessage(header, MessageContext::Original);
-        channel->addMessage(body, MessageContext::Original);
+    runInGuiThread([channel, message, messageAlert] {
+        MessageBuilder::triggerHighlights(channel, messageAlert);
+
+        channel->addMessage(message, MessageContext::Original);
+
+        if (message->flags.has(MessageFlag::ShowInMentions))
+        {
+            getApp()->getTwitch()->getMentionsChannel()->addMessage(
+                message, MessageContext::Original);
+        }
     });
 }
 
@@ -575,19 +585,31 @@ void Connection::onChannelFollow(
     runInGuiThread([channel, login, message = std::move(message)] {
         auto msg = message;
 
-        auto [highlighted, highlightResult] = getApp()->getHighlights()->check(
-            {}, {}, login, msg->messageText, msg->flags);
+        MessageParseArgs args;
+        auto [highlighted, highlightResult] = getApp()->getHighlights()->check({
+            .args = args,
+            .twitchBadges = {},
+            .senderName = login,
+            .originalMessage = msg->messageText,
+            .messageFlags = msg->flags,
+            .self = false,
+            .runContext =
+                filters::RunContext{
+                    .message = *msg,
+                    .channel = channel,
+                },
+            .platform = msg->platform,
+        });
         if (highlighted)
         {
             msg->flags.set(MessageFlag::Highlighted);
             msg->highlightColor = highlightResult.color;
+            msg->extraHighlightColors = highlightResult.extraColors;
 
             MessageBuilder::triggerHighlights(
                 channel, msg,
                 {
-                    .customSound =
-                        highlightResult.customSoundUrl.value_or<QUrl>({}),
-                    .playSound = highlightResult.playSound,
+                    .sound = highlightResult.sound,
                     .windowAlert = highlightResult.alert,
                 });
         }

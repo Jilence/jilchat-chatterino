@@ -33,8 +33,8 @@ env:
   CHATTERINO_REQUIRE_CLEAN_GIT: On
   CHATTERINO_BUILD_TYPE: ${{ case(inputs.buildType != '', inputs.buildType, 'auto') }}
   CONAN_VERSION: 2.28.1
-  C2_APP_EXECUTABLE: Leafyrino
-  C2_APP_BUNDLE: Leafyrino.app
+  C2_APP_EXECUTABLE: JilChatChatterino
+  C2_APP_BUNDLE: JilChatChatterino.app
 
 jobs:
   build-ubuntu:
@@ -74,6 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ case(github.event_name == 'pull_request', github.event.pull_request.head.sha, '') }} # checkout pull request HEAD if PR triggered this job
           submodules: recursive
           fetch-depth: 0 # allows for tags access
           persist-credentials: false
@@ -182,8 +183,8 @@ jobs:
         if: matrix.build-appimage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Leafyrino-x86_64-Qt-${{ matrix.qt-version }}.AppImage
-          path: build/Leafyrino-x86_64.AppImage
+          name: JilChatChatterino-x86_64-Qt-${{ matrix.qt-version }}.AppImage
+          path: build/JilChatChatterino-x86_64.AppImage
 
       - name: Package - .deb (Ubuntu)
         if: matrix.build-deb
@@ -212,7 +213,7 @@ jobs:
           persist-credentials: false
       - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6.8
         with:
-          bundle: leafyrino.flatpak
+          bundle: jilchat-chatterino.flatpak
           manifest-path: .CI/com.chatterino.chatterino.yml
           cache-key: flatpak-builder-${{ github.sha }}
 
@@ -221,10 +222,10 @@ jobs:
       # bundle with an oversized delta part from reaching a release.
       - name: Verify Flatpak bundle is installable
         run: |
-          test "$(stat -c %s leafyrino.flatpak)" -lt 536870912
+          test "$(stat -c %s jilchat-chatterino.flatpak)" -lt 536870912
           verify_repo="$(mktemp -d)"
           ostree init --repo="$verify_repo" --mode=archive
-          flatpak build-import-bundle "$verify_repo" leafyrino.flatpak
+          flatpak build-import-bundle "$verify_repo" jilchat-chatterino.flatpak
           ostree --repo="$verify_repo" fsck
 
   # MARK: Main build
@@ -236,19 +237,19 @@ jobs:
         include:
           # Windows
           - os: windows-latest
-            qt-version: 6.9.3
+            qt-version: 6.12.0
             force-lto: true
             skip-artifact: false
             skip-crashpad: false
           # Windows on ARM
           - os: windows-11-arm
-            qt-version: 6.9.3
+            qt-version: 6.12.0
             force-lto: true
             skip-artifact: false
             skip-crashpad: false
           # macOS (ARM)
           - os: macos-latest
-            qt-version: 6.9.3
+            qt-version: 6.12.0
             macosx-deployment-target: "13.0"
             force-lto: true
             skip-artifact: false
@@ -264,6 +265,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ case(github.event_name == 'pull_request', github.event.pull_request.head.sha, '') }} # checkout pull request HEAD if PR triggered this job
           submodules: recursive
           fetch-depth: 0 # allows for tags access
           persist-credentials: false
@@ -299,6 +301,8 @@ jobs:
           cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v3
           modules: qtimageformats qtcharts qtmultimedia
           version: ${{ matrix.qt-version }}
+          # https://github.com/miurahr/aqtinstall/pull/1052
+          aqtsource: git+https://github.com/pzhlkj6612/forked-aqtinstall@7b60b0f64e2fdd28552d7603e9831b027172afb0
 
       # MARK: Windows
       - name: Setup sccache (Windows)
@@ -444,7 +448,7 @@ jobs:
           ninja chatterino-crash-handler
           mkdir Chatterino2/crashpad
           cp bin/crashpad/crashpad-handler.exe Chatterino2/crashpad/crashpad-handler.exe
-          7z a bin/leafyrino-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.pdb.7z bin/${{ env.C2_APP_EXECUTABLE }}.pdb
+          7z a bin/jilchat-chatterino-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.pdb.7z bin/${{ env.C2_APP_EXECUTABLE }}.pdb
 
       - name: Prepare build dir (windows)
         if: startsWith(matrix.os, 'windows')
@@ -471,8 +475,8 @@ jobs:
         if: startsWith(matrix.os, 'windows') && !matrix.skip-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leafyrino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}-symbols.pdb.7z
-          path: build/bin/leafyrino-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.pdb.7z
+          name: jilchat-chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}-symbols.pdb.7z
+          path: build/bin/jilchat-chatterino-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.pdb.7z
 
       # MARK: macOS
       - name: Install dependencies (MacOS)
@@ -590,6 +594,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ case(github.event_name == 'pull_request', github.event.pull_request.head.sha, '') }} # checkout pull request HEAD if PR triggered this job
           fetch-depth: 0 # allows for tags access
           persist-credentials: true # Required to update the nightly-build tag.
 
@@ -603,9 +608,9 @@ jobs:
         run: |
           ls -l
           # Rename the macos build to indicate that it's for macOS 13.0 users
-          mv chatterino-macos-Qt-6.9.3-universal.dmg Chatterino-macOS-13.0-universal.dmg
+          mv chatterino-macos-Qt-6.12.0-universal.dmg Chatterino-macOS-13.0-universal.dmg
           # Rename Windows ARM64 to indicate that it's not well tested
-          mv chatterino-windows-arm-Qt-6.9.3.zip Experimental-ARM64-chatterino-windows-Qt-6.9.3.zip
+          mv chatterino-windows-arm-Qt-6.12.0.zip Experimental-ARM64-chatterino-windows-Qt-6.12.0.zip
         working-directory: release-artifacts
         shell: bash
 

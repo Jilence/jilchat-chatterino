@@ -92,6 +92,10 @@ void tryMigrateLinuxSettingsInto(const QString &destinationPath)
 
     if (qEnvironmentVariableIsSet("FLATPAK_ID"))
     {
+        // the Flatpak was called com.leafyzito.leafyrino before
+        candidatePaths.emplace_back(
+            QDir::homePath() +
+            "/.var/app/com.leafyzito.leafyrino/data/chatterino");
         candidatePaths.emplace_back(
             QDir::homePath() +
             "/.var/app/com.chatterino.chatterino/data/chatterino");

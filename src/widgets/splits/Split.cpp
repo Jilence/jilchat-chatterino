@@ -122,7 +122,7 @@ void showTutorialVideo(QWidget *parent, const QString &source,
             BaseWindow::BoundsCheckOnShow,
         },
         parent);
-    window->setWindowTitle("Leafyrino - " + title);
+    window->setWindowTitle("JilChat Chatterino - " + title);
     window->setAttribute(Qt::WA_DeleteOnClose);
     auto *layout = new QVBoxLayout();
     layout->addWidget(new QLabel(description));
@@ -449,7 +449,7 @@ void Split::addShortcuts()
          [](const std::vector<QString> &) -> QString {
              auto *popup = new DebugPopup;
              popup->setAttribute(Qt::WA_DeleteOnClose);
-             popup->setWindowTitle("Leafyrino - Debug popup");
+             popup->setWindowTitle("JilChat Chatterino - Debug popup");
              popup->show();
              return "";
          }},
@@ -559,6 +559,11 @@ void Split::addShortcuts()
         {"openModView",
          [this](const std::vector<QString> &) -> QString {
              this->openModViewInBrowser();
+             return "";
+         }},
+        {"openUnbanRequests",
+         [this](const std::vector<QString> &) -> QString {
+             this->openUnbanRequestsInBrowser();
              return "";
          }},
         {"openRewardQueue",
@@ -2086,7 +2091,7 @@ void Split::setChannel(IndirectChannel newChannel)
 
     this->indirectChannelChangedConnection_ =
         newChannel.getChannelChanged().connect([this] {
-            QTimer::singleShot(0, [this] {
+            QTimer::singleShot(0, this, [this] {
                 this->setChannel(this->channel_);
             });
         });
@@ -2631,6 +2636,17 @@ void Split::openModViewInBrowser()
     {
         QDesktopServices::openUrl("https://dashboard.kick.com/moderator/" +
                                   kc->slug());
+    }
+}
+
+void Split::openUnbanRequestsInBrowser()
+{
+    auto channel = this->getSelectedChannel();
+
+    if (auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get()))
+    {
+        QDesktopServices::openUrl("https://www.twitch.tv/popout/moderator/" +
+                                  twitchChannel->getName() + "/unban-requests");
     }
 }
 

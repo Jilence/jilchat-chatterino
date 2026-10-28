@@ -18,7 +18,9 @@ class NotificationModel : public SignalVectorModel<QString>
 
 protected:
     QString getItemFromRow(std::vector<QStandardItem *> &row,
-                           const QString &original) override;
+                           const QString &original,
+                           std::optional<QModelIndex> index,
+                           std::optional<int> role) override;
 
     void getRowFromItem(const QString &item,
                         std::vector<QStandardItem *> &row) override;

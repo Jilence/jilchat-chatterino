@@ -554,7 +554,8 @@ public:
     static constexpr std::string_view TYPE = "emote-link";
 
     EmoteLinkElement(const EmotePtr &emote, MessageElementFlags flags,
-                     const MessageColor &color = MessageColor::System);
+                     const MessageColor &color = MessageColor::System,
+                     const QString &name = {});
     ~EmoteLinkElement() override = default;
 
     EmotePtr getEmote() const;

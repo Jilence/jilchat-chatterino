@@ -40,7 +40,7 @@ QString getStreamlinkPath()
 void showStreamlinkNotFoundError()
 {
     static auto *msg = new QErrorMessage;
-    msg->setWindowTitle("Leafyrino - streamlink not found");
+    msg->setWindowTitle("JilChat Chatterino - streamlink not found");
 
     if (getSettings()->streamlinkUseCustomPath)
     {

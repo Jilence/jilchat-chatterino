@@ -758,7 +758,7 @@ void Notebook::showTabVisibilityInfoPopup()
             ")";
     }
     QMessageBox msgBox(this->window());
-    msgBox.window()->setWindowTitle("Leafyrino - hidden tabs");
+    msgBox.window()->setWindowTitle("JilChat Chatterino - hidden tabs");
     msgBox.setText("You've just hidden your tabs.");
     msgBox.setInformativeText(
         "You can toggle tabs by using the keyboard shortcut " + hotkeyInfo +

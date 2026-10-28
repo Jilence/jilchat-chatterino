@@ -4,9 +4,9 @@
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/Version.hpp"
+#include "controllers/highlights/types/YourUsernameHighlight.hpp"
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
-#include "providers/colors/ColorProvider.hpp"
 #include "providers/twitch/TwitchBadges.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/Settings.hpp"
@@ -1726,8 +1726,8 @@ protected:
                     {
                         rowBackground = blendThemeHighlight(
                             rowBackground,
-                            *ColorProvider::instance().color(
-                                ColorType::SelfHighlight),
+                            highlights::YourUsernameHighlight::
+                                BACKGROUND_COLOR_DEFAULT,
                             this->profile_.highlightOpacityAdjustment);
                     }
                     target.fillRect(row.rect, rowBackground);

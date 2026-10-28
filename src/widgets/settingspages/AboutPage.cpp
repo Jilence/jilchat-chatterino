@@ -174,29 +174,17 @@ AboutPage::AboutPage()
         {
             auto l = attributions.emplace<QVBoxLayout>();
 
-            l.emplace<QLabel>("Twemoji emojis provided by <a "
-                              "href=\"https://github.com/twitter/"
-                              "twemoji\">Twitter's Twemoji</a>")
-                ->setOpenExternalLinks(true);
-            l.emplace<QLabel>("Facebook emojis provided by <a "
-                              "href=\"https://facebook.com\">Facebook</a>")
-                ->setOpenExternalLinks(true);
-            l.emplace<QLabel>("Apple emojis provided by <a "
-                              "href=\"https://apple.com\">Apple</a>")
-                ->setOpenExternalLinks(true);
-            l.emplace<QLabel>("Google emojis provided by <a "
-                              "href=\"https://google.com\">Google</a>")
-                ->setOpenExternalLinks(true);
-            l.emplace<QLabel>(
-                 "Emoji datasource provided by <a "
-                 "href=\"https://www.iamcal.com/\">Cal Henderson</a> "
-                 "(<a "
-                 "href=\"https://github.com/iamcal/emoji-data/blob/master/"
-                 "LICENSE\">show license</a>)")
-                ->setOpenExternalLinks(true);
-            l.emplace<QLabel>("Twitch emote data provided by <a "
-                              "href=\"https://chatvau.lt/\">Chat Vault</a>")
-                ->setOpenExternalLinks(true);
+            // clang-format off
+            l.emplace<QLabel>("Twemoji emojis provided by <a href=\"https://github.com/twitter/twemoji\">Twitter's Twemoji</a>")->setOpenExternalLinks(true);
+            l.emplace<QLabel>("Facebook emojis provided by <a href=\"https://facebook.com\">Facebook</a>")->setOpenExternalLinks(true);
+            l.emplace<QLabel>("Apple emojis provided by <a href=\"https://apple.com\">Apple</a>")->setOpenExternalLinks(true);
+            l.emplace<QLabel>("Google emojis provided by <a href=\"https://google.com\">Google</a>")->setOpenExternalLinks(true);
+            l.emplace<QLabel>("Emoji datasource provided by <a href=\"https://www.iamcal.com/\">Cal Henderson</a> "
+                              "(<a href=\"https://github.com/iamcal/emoji-data/blob/master/LICENSE\">show license</a>)")->setOpenExternalLinks(true);
+            l.emplace<QLabel>("Twitch emote data provided by <a href=\"https://chatvau.lt/\">Chat Vault</a>")->setOpenExternalLinks(true);
+            l.emplace<QLabel>(R"(<a href="https://freesound.org/people/Sadiquecat/sounds/865918/">Sadiquecat C4 Harmonic</a> by <a href="https://freesound.org/people/Sadiquecat/">freesound.org/people/Sadiquecat</a>)")->setOpenExternalLinks(true);
+            l.emplace<QLabel>(R"(<a href="https://freesound.org/people/CAT-FOX_ALEX/sounds/859006/">CAT-FOX_Alex FX-Jump 3</a> by <a href="https://freesound.org/people/CAT-FOX_ALEX/">freesound.org/people/CAT-FOX_ALEX</a>)")->setOpenExternalLinks(true);
+            l.emplace<QLabel>(R"(<a href="https://freesound.org/people/yfjesse/sounds/235911/">Notification Sound</a> by <a href="https://freesound.org/people/yfjesse/">freesound.org/people/yfjesse</a>)")->setOpenExternalLinks(true);
             // clang-format on
         }
 
@@ -309,7 +297,7 @@ void AboutPage::addLicense(QFormLayout *form, const QString &name,
                     BaseWindow::BoundsCheckOnShow,
                 },
                 parent);
-            window->setWindowTitle("Leafyrino - License for " + name);
+            window->setWindowTitle("JilChat Chatterino - License for " + name);
             window->setAttribute(Qt::WA_DeleteOnClose);
             auto *layout = new QVBoxLayout();
             auto *edit = new QTextEdit;

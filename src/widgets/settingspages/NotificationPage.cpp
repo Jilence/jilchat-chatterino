@@ -5,11 +5,8 @@
 #include "widgets/settingspages/NotificationPage.hpp"
 
 #include "Application.hpp"
-#include "controllers/accounts/AccountController.hpp"
-#include "controllers/notifications/DesktopPresenceController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
 #include "controllers/notifications/NotificationModel.hpp"
-#include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Toasts.hpp"
 #include "util/LayoutCreator.hpp"
@@ -18,7 +15,6 @@
 
 #include <QCheckBox>
 #include <QFileDialog>
-#include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
 #include <QListView>
@@ -55,27 +51,6 @@ NotificationPage::NotificationPage()
                     "Suppress live notifications on startup",
                     getSettings()->suppressInitialLiveNotification));
 
-                auto presenceBox =
-                    settings.emplace<QGroupBox>("JilChat Desktop Presence");
-                auto *presenceLayout = new QVBoxLayout;
-                presenceBox->setLayout(presenceLayout);
-                this->rebuildDesktopPresenceAccounts(presenceLayout);
-                this->managedConnections_.managedConnect(
-                    getApp()->getAccounts()->twitch.userListUpdated,
-                    [this, presenceLayout] {
-                        QTimer::singleShot(0, this, [this, presenceLayout] {
-                            this->rebuildDesktopPresenceAccounts(
-                                presenceLayout);
-                        });
-                    });
-                this->managedConnections_.managedConnect(
-                    getApp()->getAccounts()->desktopPresence().changed,
-                    [this, presenceLayout] {
-                        QTimer::singleShot(0, this, [this, presenceLayout] {
-                            this->rebuildDesktopPresenceAccounts(
-                                presenceLayout);
-                        });
-                    });
 #if defined(Q_OS_WIN) || defined(CHATTERINO_WITH_LIBNOTIFY)
                 settings.append(this->createCheckBox(
                     "Show notification", getSettings()->notificationToast));
@@ -161,48 +136,6 @@ NotificationPage::NotificationPage()
     }
 }
 
-void NotificationPage::rebuildDesktopPresenceAccounts(QVBoxLayout *layout)
-{
-    while (auto *item = layout->takeAt(0))
-    {
-        delete item->widget();
-        delete item;
-    }
-
-    auto &controller = getApp()->getAccounts()->desktopPresence();
-    const auto accounts = getApp()->getAccounts()->twitch.accounts.readOnly();
-    if (accounts->empty())
-    {
-        layout->addWidget(new QLabel("No Twitch account is logged in."));
-    }
-    for (const auto &account : *accounts)
-    {
-        auto *checkBox = new QCheckBox(
-            account->getUserName() +
-            " — Pause mobile notifications while JilChat Desktop is running");
-        checkBox->setChecked(controller.isEnabled(account->getUserId()));
-        QObject::connect(checkBox, &QCheckBox::toggled, this,
-                         [account, &controller](bool enabled) {
-                             controller.setEnabled(account, enabled);
-                         });
-        layout->addWidget(checkBox);
-
-        const auto status = controller.statusText(account->getUserId());
-        if (!status.isEmpty())
-        {
-            auto *statusLabel = new QLabel(status);
-            statusLabel->setStyleSheet("color: palette(mid);");
-            statusLabel->setContentsMargins(24, 0, 0, 0);
-            layout->addWidget(statusLabel);
-        }
-    }
-
-    auto *hint = new QLabel(
-        "When the program is closed or crashes, notifications resume "
-        "automatically within 90 seconds.");
-    hint->setWordWrap(true);
-    layout->addWidget(hint);
-}
 QComboBox *NotificationPage::createToastReactionComboBox()
 {
     QComboBox *toastReactionOptions = new QComboBox();

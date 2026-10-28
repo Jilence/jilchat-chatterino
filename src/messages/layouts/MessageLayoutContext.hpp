@@ -56,14 +56,6 @@ struct MessagePreferences {
     QColor lastMessageColor;
     Qt::BrushStyle lastMessagePattern{};
 
-    bool enableRedeemedHighlight{};
-    bool enableFirstMessageHighlight{};
-    bool enableSubHighlight{};
-    bool enableFollowHighlight{};
-    bool enableWatchStreakHighlight{};
-    bool enableAutomodHighlight{};
-    bool enableAnnouncementHighlight{};
-    bool enableColoredAnnouncementHighlight{};
     bool enableClientDetectionHighlight{};
     bool multipleHighlightBands{};
 

@@ -12,7 +12,6 @@
 #include "providers/twitch/TwitchBadge.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
-#include "util/QMagicEnum.hpp"
 
 #include <QString>
 
@@ -131,7 +130,8 @@ const AccessorMap &accessorMap()
             {
                 Type::StringList,
                 [](RunContext ctx) {
-                    QStringList badges(static_cast<qsizetype>(
+                    QStringList badges;
+                    badges.reserve(static_cast<qsizetype>(
                         ctx.message.twitchBadges.size()));
                     for (const auto &e : ctx.message.twitchBadges)
                     {
@@ -231,6 +231,10 @@ const AccessorMap &accessorMap()
                 [](RunContext ctx) {
                     auto chan =
                         getApp()->getTwitch()->getWatchingChannel().get();
+                    if (chan == nullptr)
+                    {
+                        return false;
+                    }
                     return !chan->getName().isEmpty() &&
                            chan->getName().compare(ctx.message.channelName,
                                                    Qt::CaseInsensitive) == 0;
@@ -328,6 +332,14 @@ const AccessorMap &accessorMap()
             {Type::Bool, flagAccessor<MessageFlag::Similar>},
         },
         {
+            u"flags.repeated_message"_s,
+            {Type::Bool, flagAccessor<MessageFlag::RepeatedMessage>},
+        },
+        {
+            u"flags.repeated_messages"_s,
+            {Type::Bool, flagAccessor<MessageFlag::RepeatedMessage>},
+        },
+        {
             u"flags.watch_streak"_s,
             {Type::Bool, flagAccessor<MessageFlag::WatchStreak>},
         },
@@ -394,7 +406,6 @@ const AccessorMap &accessorMap()
                 },
             },
         },
-
         {
             u"flags.webchat_detected"_s,
             {
@@ -410,7 +421,17 @@ const AccessorMap &accessorMap()
             {
                 Type::String,
                 [](RunContext ctx) {
-                    return chatterino::qmagicenum::enumNameString(
+                    return Message::clientDetectionStatusToString(
+                        ctx.message.clientDetection);
+                },
+            },
+        },
+        {
+            u"moltorino.client_detection"_s,
+            {
+                Type::String,
+                [](RunContext ctx) {
+                    return Message::clientDetectionStatusToString(
                         ctx.message.clientDetection);
                 },
             },

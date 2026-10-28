@@ -22,7 +22,9 @@ class ChannelLoggingModel : public SignalVectorModel<ChannelLog>
 
 protected:
     ChannelLog getItemFromRow(std::vector<QStandardItem *> &row,
-                              const ChannelLog &original) override;
+                              const ChannelLog &original,
+                              std::optional<QModelIndex> index,
+                              std::optional<int> role) override;
 
     void getRowFromItem(const ChannelLog &item,
                         std::vector<QStandardItem *> &row) override;

@@ -19,7 +19,9 @@ public:
 
 protected:
     IgnorePhrase getItemFromRow(std::vector<QStandardItem *> &row,
-                                const IgnorePhrase &original) override;
+                                const IgnorePhrase &original,
+                                std::optional<QModelIndex> index,
+                                std::optional<int> role) override;
 
     void getRowFromItem(const IgnorePhrase &item,
                         std::vector<QStandardItem *> &row) override;

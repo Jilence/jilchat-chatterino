@@ -41,12 +41,12 @@ esac
 echo "Building Ubuntu .deb file on '$ubuntu_release'"
 echo "Dependencies: $dependencies"
 
-if [ -f ./bin/Leafyrino ] && [ -x ./bin/Leafyrino ]; then
-    app_executable="Leafyrino"
+if [ -f ./bin/JilChatChatterino ] && [ -x ./bin/JilChatChatterino ]; then
+    app_executable="JilChatChatterino"
 elif [ -f ./bin/chatterino ] && [ -x ./bin/chatterino ]; then
     app_executable="chatterino"
 else
-    echo "ERROR: No Leafyrino or chatterino binary file found. This script must be run in the build folder, and the app must be built first."
+    echo "ERROR: No JilChatChatterino or chatterino binary file found. This script must be run in the build folder, and the app must be built first."
     exit 1
 fi
 
@@ -67,12 +67,12 @@ cat >> "$packaging_dir/DEBIAN/control" << EOF
 Package: chatterino
 Version: $chatterino_version
 Architecture: amd64
-Maintainer: Leafyzito <https://github.com/leafyzito>
+Maintainer: Jilence <https://github.com/Jilence>
 Depends: $dependencies
 Section: net
 Priority: optional
-Homepage: https://github.com/leafyzito/leafyrino
-Description: Leafyrino - chat client for Twitch (built for $ubuntu_release)
+Homepage: https://github.com/Jilence/jilchat-chatterino
+Description: JilChat Chatterino - chat client for Twitch (built for $ubuntu_release)
 EOF
 cat "$packaging_dir/DEBIAN/control"
 breakline

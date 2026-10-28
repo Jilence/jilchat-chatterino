@@ -18,7 +18,6 @@ public:
 
 private:
     QComboBox *createToastReactionComboBox();
-    void rebuildDesktopPresenceAccounts(QVBoxLayout *layout);
 };
 
 }  // namespace chatterino
