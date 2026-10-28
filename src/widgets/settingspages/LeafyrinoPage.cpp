@@ -109,8 +109,7 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                             s.jiltvShowPendingEmotes)
         ->addKeywords({"jiltv", "emotes", "pending", "review"})
         ->addTo(layout);
-    SettingWidget::lineEdit("JilTV API", s.jiltvApiUrl,
-                            "https://api.jiltv.app")
+    SettingWidget::lineEdit("JilTV API", s.jiltvApiUrl, "https://api.jiltv.app")
         ->addKeywords({"jiltv", "api", "dev"})
         ->setTooltip("Only change this to try a local JilTV server, e.g. "
                      "http://localhost:8080.")
