@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <ranges>
 
 // The paint format is defined by @jiltv/paint (jiltv-paint/src/types.ts);
 // this mirrors its CSS compiler (compile.ts), color math (color.ts) and
@@ -1282,9 +1283,8 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         // from the name with the shadows before it; the first lies on top.
         QImage result = blank(devSize);
         QPainter rp(&result);
-        for (auto it = doc.shadows.rbegin(); it != doc.shadows.rend(); ++it)
+        for (const auto &s : std::ranges::reverse_view(doc.shadows))
         {
-            const auto &s = *it;
             if (s.color.a <= 0)
             {
                 continue;
@@ -1360,14 +1360,14 @@ qreal JiltvPaint::overflow() const
     // from the shape. The room is in CSS pixels, but the chat zooms the
     // paint, so it is doubled to leave the glow whole up to a zoom of
     // about 1.3 and nearly whole above.
-    constexpr double ZOOM_ROOM = 2;
+    constexpr double zoomRoom = 2;
     double room = this->doc_.stroke ? this->doc_.stroke->x / 2 : 0;
     for (const auto &s : this->doc_.shadows)
     {
         room = std::max(
             room, std::max(std::abs(s.x), std::abs(s.y)) + (1.5 * s.blur));
     }
-    return room * ZOOM_ROOM;
+    return room * zoomRoom;
 }
 
 QString JiltvPaint::sourceName() const
