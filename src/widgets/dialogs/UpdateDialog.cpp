@@ -109,6 +109,13 @@ void UpdateDialog::updateStatusChanged(Updates::Status status)
         }
         break;
 
+        case Updates::VerifyFailed: {
+            this->ui_.label->setText(
+                "The update could not be verified against the checksums of "
+                "its release, so it was not installed.");
+        }
+        break;
+
         default: {
             this->ui_.label->setText("You shouldn't be seeing this dialog.");
         }

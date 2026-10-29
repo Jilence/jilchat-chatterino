@@ -6,8 +6,11 @@
 
 #include <pajlada/signals/scoped-connection.hpp>
 #include <pajlada/signals/signal.hpp>
+#include <QJsonObject>
 #include <QString>
+#include <QTimer>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -36,6 +39,8 @@ public:
         WriteFileFailed,
         MissingPortableUpdater,
         RunUpdaterFailed,
+        /// The download didn't match the checksum its release lists
+        VerifyFailed,
     };
 
     static bool isDowngradeOf(const QString &online, const QString &current);
@@ -65,9 +70,24 @@ private:
     Status status_ = None;
     bool isDowngrade_{};
 
+    /// The installer (Windows) or disk image (macOS) of the release
     QString updateExe_;
-    QString updatePortable_;
+    QString updateExeName_;
+    /// The release's page, for what isn't installed automatically
     QString updateGuideLink_;
+    /// The release's sha256-checksums.txt
+    QString checksumsUrl_;
+
+    /// Checks again every few hours
+    QTimer checkTimer_;
+
+    /// Downloads `url`, checks it against the release's checksums and saves
+    /// it as `fileName` in the misc directory; `done` gets its path.
+    /// Remembers what `release` offers for this platform
+    void takeRelease(const QJsonObject &release);
+    void downloadVerified(const QString &url, const QString &assetName,
+                          const QString &fileName,
+                          std::function<void(const QString &)> done);
 
     void setStatus_(Status status);
 
