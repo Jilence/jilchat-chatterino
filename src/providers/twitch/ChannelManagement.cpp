@@ -302,7 +302,8 @@ QString editorAccessMessage(const QString &channelLogin)
 {
     return QString("Channel management for #%1 requires the broadcaster's "
                    "Twitch account or an enabled saved editor account. Add or "
-                   "refresh it in Settings -> Moltorino -> Authentication.")
+                   "refresh it in Settings -> JilChat Chatterino -> "
+                   "Authentication.")
         .arg(channelLogin);
 }
 

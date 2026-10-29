@@ -17,30 +17,9 @@
 
 namespace chatterino {
 
-LeafyrinoPage::LeafyrinoPage()
+LeafyrinoPage::LeafyrinoPage(GeneralPageView &view)
 {
-    auto *outer = new QVBoxLayout;
-    auto *inner = new QHBoxLayout;
-    auto *view = GeneralPageView::withNavigation(this);
-    this->view_ = view;
-
-    inner->addWidget(view);
-    auto *frame = new QFrame;
-    frame->setLayout(inner);
-    outer->addWidget(frame);
-    this->setLayout(outer);
-
-    this->initLayout(*view);
-}
-
-bool LeafyrinoPage::filterElements(const QString &query)
-{
-    if (this->view_)
-    {
-        return this->view_->filterElements(query) || query.isEmpty();
-    }
-
-    return false;
+    this->initLayout(view);
 }
 
 void LeafyrinoPage::initLayout(GeneralPageView &layout)
@@ -184,7 +163,7 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "the display name. Hovering always shows the handle.")
         ->addTo(layout);
 
-    layout.addTitle("Usercard");
+    layout.addTitle("Usercards");
     layout.addDescription("Choose which extra details appear on usercards.");
 
     SettingWidget::checkbox("Show follower count", s.showUsercardFollowerCount)
@@ -243,7 +222,8 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::checkbox("Show follow button", s.showFollowButtonInUsercard)
         ->setTooltip("Show a follow/unfollow button on usercards. Requires "
-                     "Moltorino auth (Settings → Moltorino → Authentication).")
+                     "JilChat Chatterino login (Settings → JilChat Chatterino "
+                     "→ Authentication).")
         ->addKeywords({"usercard", "follow", "button"})
         ->addTo(layout);
     SettingWidget::checkbox("Confirm before unfollowing from usercard",
@@ -283,8 +263,9 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
 
     layout.addTitle("Events");
     layout.addDescription(
-        "Channel event messages in chat. Requires Moltorino auth "
-        "(Settings → Moltorino → Authentication), experimental EventSub "
+        "Channel event messages in chat. Requires JilChat Chatterino login "
+        "(Settings → JilChat Chatterino → Authentication), experimental "
+        "EventSub "
         "enabled under Settings → General, and an app restart after turning "
         "EventSub on.");
 

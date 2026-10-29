@@ -135,7 +135,8 @@ namespace chatterino {
 Args::Args(const QApplication &app)
 {
     QCommandLineParser parser;
-    parser.setApplicationDescription("Leafyrino Client for Twitch Chat");
+    parser.setApplicationDescription(
+        "JilChat Chatterino Client for Twitch Chat");
     parser.addHelpOption();
 
     auto crashRecoveryOption = hiddenOption("crash-recovery");

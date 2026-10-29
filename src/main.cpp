@@ -240,21 +240,24 @@ int main(int argc, char **argv)
         }
 
         qCInfo(chatterinoApp).noquote()
-            << "Leafyrino Qt SSL library build version:"
+            << "JilChat Chatterino Qt SSL library build version:"
             << QSslSocket::sslLibraryBuildVersionString();
         qCInfo(chatterinoApp).noquote()
-            << "Leafyrino Qt SSL library version:"
+            << "JilChat Chatterino Qt SSL library version:"
             << QSslSocket::sslLibraryVersionString();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
         qCInfo(chatterinoApp).noquote()
-            << "Leafyrino Qt SSL active backend:" << QSslSocket::activeBackend()
-            << "of" << QSslSocket::availableBackends().join(", ");
+            << "JilChat Chatterino Qt SSL active backend:"
+            << QSslSocket::activeBackend() << "of"
+            << QSslSocket::availableBackends().join(", ");
 #    if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
-        qCInfo(chatterinoApp) << "Leafyrino Qt SSL active backend features:"
-                              << QSslSocket::supportedFeatures();
+        qCInfo(chatterinoApp)
+            << "JilChat Chatterino Qt SSL active backend features:"
+            << QSslSocket::supportedFeatures();
 #    endif
-        qCInfo(chatterinoApp) << "Leafyrino Qt SSL active backend protocols:"
-                              << QSslSocket::supportedProtocols();
+        qCInfo(chatterinoApp)
+            << "JilChat Chatterino Qt SSL active backend protocols:"
+            << QSslSocket::supportedProtocols();
 #endif
 
         Settings settings(modes, args, paths->settingsDirectory);

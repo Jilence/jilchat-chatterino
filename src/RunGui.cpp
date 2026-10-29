@@ -90,16 +90,16 @@ std::unique_ptr<QLocalServer> createGuiActivationServer(const Paths &paths)
             QLocalServer::removeServer(serverName);
             if (!server->listen(serverName))
             {
-                qCWarning(chatterinoApp)
-                    << "Failed to listen for Leafyrino activation requests:"
-                    << server->errorString();
+                qCWarning(chatterinoApp) << "Failed to listen for JilChat "
+                                            "Chatterino activation requests:"
+                                         << server->errorString();
                 return nullptr;
             }
         }
         else
         {
             qCDebug(chatterinoApp)
-                << "Leafyrino activation server already exists.";
+                << "JilChat Chatterino activation server already exists.";
             return nullptr;
         }
     }

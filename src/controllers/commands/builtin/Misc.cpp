@@ -120,7 +120,8 @@ QString normalizeFollowError(bool unfollow, const QString &error)
     {
         normalized =
             "This saved login cannot use follow commands. Re-login with "
-            "Device Login in Settings -> Moltorino -> Authentication, then "
+            "Device Login in Settings -> JilChat Chatterino -> Authentication, "
+            "then "
             "try again.";
     }
     return normalized;
