@@ -902,7 +902,12 @@ void EmotePopup::reloadEmotes()
             *globalChannel, *subChannel, twitchChannel_->roomId(),
             twitchChannel_->getName());
 
-        // channel
+        // channel, JilTV first
+        if (auto jiltv =
+                Jiltv::instance().channelEmotes(this->twitchChannel_->roomId()))
+        {
+            addEmotes(*channelChannel, *jiltv, "JilTV");
+        }
         if (getSettings()->enableBTTVChannelEmotes)
         {
             addEmotes(*channelChannel, *this->twitchChannel_->bttvEmotes(),
@@ -917,11 +922,6 @@ void EmotePopup::reloadEmotes()
         {
             addEmotes(*channelChannel, *this->twitchChannel_->seventvEmotes(),
                       "7TV");
-        }
-        if (auto jiltv =
-                Jiltv::instance().channelEmotes(this->twitchChannel_->roomId()))
-        {
-            addEmotes(*channelChannel, *jiltv, "JilTV");
         }
 
         if (auto jiltvPersonal = Jiltv::instance().personalEmotes(

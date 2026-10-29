@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <ranges>
 
 // The paint format is defined by @jiltv/paint (jiltv-paint/src/types.ts);
 // this mirrors its CSS compiler (compile.ts), color math (color.ts) and
@@ -647,7 +648,9 @@ void fillTiled(QPainter &p, const QImage &tile, QRectF rect, QPointF origin)
 }
 
 /// Three box blurs: close to a Gaussian with standard deviation `sigma`.
-void blurAlpha(QImage &img, double sigma)
+/// Blurs the shape in `img` and fills it with `color`, so it spreads beyond
+/// the shape like a CSS drop-shadow
+void blurAlpha(QImage &img, double sigma, const QColor &color)
 {
     if (sigma < 0.5)
     {
@@ -717,17 +720,11 @@ void blurAlpha(QImage &img, double sigma)
         auto *line = reinterpret_cast<QRgb *>(img.scanLine(y));
         for (int x = 0; x < w; x++)
         {
-            // The image is one premultiplied color: scale it by the alpha.
-            const QRgb c = line[x];
+            // The blurred alpha in the shadow's color, also where the shape
+            // wasn't: that is where the glow shows
             const int na = a[(y * w) + x];
-            const int oa = qAlpha(c);
-            if (oa == 0)
-            {
-                line[x] = 0;
-                continue;
-            }
-            line[x] = qRgba(qRed(c) * na / oa, qGreen(c) * na / oa,
-                            qBlue(c) * na / oa, na);
+            line[x] = qPremultiply(
+                qRgba(color.red(), color.green(), color.blue(), na));
         }
     }
 }
@@ -1269,33 +1266,43 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         bt.translate(nameBox.left(), nameBox.top());
         bt.scale(1 / dpr, 1 / dpr);
         brush.setTransform(bt);
-        p.setPen(Qt::NoPen);
-        p.setBrush(brush);
-        p.drawPath(name);
+        // The name itself as text, so its letters look like those of names
+        // without a paint (hinted), only the stroke follows its shape
+        QPen pen;
+        pen.setBrush(brush);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.setFont(font);
+        p.drawText(QPointF(textRect.left(), baseline), nametag);
     }
     applyFilters(img, doc.hue, doc.saturate, doc.brightness);
 
-    if (effects)
+    if (effects && !doc.shadows.empty())
     {
-        for (const auto &s : doc.shadows)
+        // Each shadow comes from the name alone, like CSS text-shadow, not
+        // from the name with the shadows before it; the first lies on top.
+        QImage result = blank(devSize);
+        QPainter rp(&result);
+        for (const auto &s : std::ranges::reverse_view(doc.shadows))
         {
             if (s.color.a <= 0)
             {
                 continue;
             }
+            const auto shadowColor = toQColor(s.color);
             QImage shadow = blank(devSize);
             {
                 QPainter sp(&shadow);
                 sp.drawImage(QPointF(s.x * cssPx, s.y * cssPx), img);
                 sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                sp.fillRect(shadow.rect(), toQColor(s.color));
+                sp.fillRect(shadow.rect(), shadowColor);
             }
-            blurAlpha(shadow, s.blur / 2 * cssPx);
-            QPainter sp(&shadow);
-            sp.drawImage(0, 0, img);
-            sp.end();
-            img.swap(shadow);
+            blurAlpha(shadow, s.blur / 2 * cssPx, shadowColor);
+            rp.drawImage(0, 0, shadow);
         }
+        rp.drawImage(0, 0, img);
+        rp.end();
+        img.swap(result);
     }
 
     if (colon)
@@ -1349,12 +1356,18 @@ qreal JiltvPaint::overflow() const
     {
         return 0;
     }
+    // A blur fades out about three standard deviations (1.5 times its value)
+    // from the shape. The room is in CSS pixels, but the chat zooms the
+    // paint, so it is doubled to leave the glow whole up to a zoom of
+    // about 1.3 and nearly whole above.
+    constexpr double zoomRoom = 2;
     double room = this->doc_.stroke ? this->doc_.stroke->x / 2 : 0;
     for (const auto &s : this->doc_.shadows)
     {
-        room = std::max(room, std::max(std::abs(s.x), std::abs(s.y)) + s.blur);
+        room = std::max(
+            room, std::max(std::abs(s.x), std::abs(s.y)) + (1.5 * s.blur));
     }
-    return room;
+    return room * zoomRoom;
 }
 
 QString JiltvPaint::sourceName() const
