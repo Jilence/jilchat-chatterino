@@ -54,8 +54,9 @@ QString appImagePath()
 /// Replaces the app bundle with the one in the disk image once this
 /// instance has quit, then starts it again.
 /// Arguments: the PID to wait for, the disk image, the bundle to replace.
+// clang-format off
 constexpr const char *MACOS_UPDATE_SCRIPT =
-    R"(#!/bin/bash
+    R"SH(#!/bin/bash
 pid="$1"
 dmg="$2"
 app="$3"
@@ -64,28 +65,29 @@ while kill -0 "$pid" 2>/dev/null; do
     sleep 0.5
 done
 
-mnt="$(mktemp -d /tmp/jilchat-update.XXXXXX)" ||
-    exit 1 if !hdiutil attach - nobrowse - readonly - noautoopen -
-            mountpoint "$mnt"
-                       "$dmg" >
-        / dev / null;
-then open "$app" exit 1 fi
+mnt="$(mktemp -d /tmp/jilchat-update.XXXXXX)" || exit 1
+if ! hdiutil attach -nobrowse -readonly -noautoopen \
+        -mountpoint "$mnt" "$dmg" >/dev/null; then
+    open "$app"
+    exit 1
+fi
 
-    src = "$(find " $mnt " -maxdepth 1 -name '*.app' -print -quit)" new =
-        "${app%.app}.updating.app" rm - rf "$new" if[-z "$src"] || !ditto
-                                                                   "$src"
-                                                                   "$new";
-then hdiutil detach "$mnt" - quiet rm -
-        rf "$new" open "$app" exit 1 fi hdiutil detach "$mnt" -
-        quiet rmdir "$mnt" 2 >
-    / dev /
-        null
+src="$(find "$mnt" -maxdepth 1 -name '*.app' -print -quit)"
+new="${app%.app}.updating.app"
+rm -rf "$new"
+if [ -z "$src" ] || ! ditto "$src" "$new"; then
+    hdiutil detach "$mnt" -quiet
+    rm -rf "$new"
+    open "$app"
+    exit 1
+fi
+hdiutil detach "$mnt" -quiet
+rmdir "$mnt" 2>/dev/null
 
-#    Swap the bundles; keep the old one until the new one is in place
-            old = "${app%.app}.old.app" rm - rf "$old" if mv "$app"
-                                                             "$old" &&
-                  mv "$new"
-                     "$app"; then
+# Swap the bundles; keep the old one until the new one is in place
+old="${app%.app}.old.app"
+rm -rf "$old"
+if mv "$app" "$old" && mv "$new" "$app"; then
     rm -rf "$old"
 else
     [ -d "$old" ] && [ ! -d "$app" ] && mv "$old" "$app"
@@ -95,7 +97,8 @@ fi
 xattr -dr com.apple.quarantine "$app" 2>/dev/null
 rm -f "$dmg"
 open "$app"
-)";
+)SH";
+// clang-format on
 #endif
 
 }  // namespace
