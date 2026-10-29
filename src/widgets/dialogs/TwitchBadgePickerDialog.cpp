@@ -945,6 +945,11 @@ public:
     }
 
 protected:
+    bool event(QEvent *event) override
+    {
+        return handleTileTooltip(this, event) || QPushButton::event(event);
+    }
+
     void paintEvent(QPaintEvent * /*event*/) override
     {
         QPainter painter(this);
