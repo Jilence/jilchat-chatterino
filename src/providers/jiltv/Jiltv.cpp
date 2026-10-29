@@ -398,6 +398,10 @@ std::shared_ptr<Paint> Jiltv::paint(const QString &login)
 
 ImagePtr Jiltv::frame(const QString &login)
 {
+    if (!getSettings()->showJiltvFrames)
+    {
+        return nullptr;
+    }
     const auto w = this->worn(login);
     if (!w || w->frame.isEmpty())
     {
