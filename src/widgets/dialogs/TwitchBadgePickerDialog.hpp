@@ -72,6 +72,9 @@ private:
         Bluzyrino,
         SevenTvBadges,
         SevenTvPaints,
+        JiltvPaints,
+        JiltvBadges,
+        JiltvFrames,
     };
 
     struct SevenTvPaint {
@@ -130,6 +133,11 @@ private:
     void disconnectSevenTv();
     void selectSevenTv(bool paint, const QString &id);
     void loadSevenTvPaintData();
+    void loadJiltv(bool force = false);
+    void rebuildJiltv();
+    void signInJiltv();
+    void signOutJiltv();
+    void selectJiltv(View kind, const QString &id);
     void sevenTvRequest(const QString &query, const QJsonObject &variables,
                         const std::function<void(const QJsonObject &)> &onData,
                         const std::function<void(const QString &)> &onError);
@@ -168,6 +176,9 @@ private:
     QPushButton *bluzyrinoTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
     QPushButton *sevenTvPaintTabButton_{};
+    QPushButton *jiltvPaintTabButton_{};
+    QPushButton *jiltvBadgeTabButton_{};
+    QPushButton *jiltvFrameTabButton_{};
     QWidget *searchRowWidget_{};
     QLineEdit *searchInput_{};
     Button *pinButton_{};
@@ -244,6 +255,17 @@ private:
     QString sevenTvActivePaint_;
     bool sevenTvLoading_ = false;
     bool sevenTvLoaded_ = false;
+
+    /// What the user owns on JilTV (signed in with JilTV, see JiltvAuth).
+    /// Frames are the avatar decorations.
+    QVector<SevenTvPaint> jiltvPaints_;
+    QVector<GqlBadge> jiltvBadges_;
+    QVector<GqlBadge> jiltvFrames_;
+    QString jiltvActivePaint_;
+    QString jiltvActiveBadge_;
+    QString jiltvActiveFrame_;
+    bool jiltvLoading_ = false;
+    bool jiltvLoaded_ = false;
 
     static std::vector<QPointer<TwitchBadgePickerDialog>> activeDialogs_;
 };

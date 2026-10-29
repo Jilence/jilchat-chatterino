@@ -51,6 +51,11 @@ public:
     std::shared_ptr<Paint> paint(const QString &login);
     /// The badge `login` wears, or nullptr (looked up like paint()).
     EmotePtr badge(const QString &login);
+    /// A paint from the catalog, or nullptr
+    std::shared_ptr<Paint> paintById(const QString &id) const;
+    /// Remembers what `login` wears and redraws when it changed.
+    void setWorn(const QString &login, const QString &paint,
+                 const QString &badge);
     /// Asks for what `login` wears ahead of drawing it, e.g. when their
     /// message arrives.
     void prefetch(const QString &login);
@@ -93,9 +98,6 @@ private:
     void followCosmetics();
     void onChannelEvent(const QString &roomId, const QString &type,
                         const QJsonObject &data);
-    /// Remembers what `login` wears and redraws when it changed.
-    void setWorn(const QString &login, const QString &paint,
-                 const QString &badge);
 
     struct Worn {
         QString paint;
