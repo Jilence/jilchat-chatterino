@@ -14,6 +14,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "providers/jiltv/JiltvPaint.hpp"
 #include "providers/jiltv/JiltvStream.hpp"
+#include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/WindowManager.hpp"
@@ -24,6 +25,10 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QUrl>
+#include <QUrlQuery>
+
+#include <cstdint>
+#include <vector>
 
 namespace chatterino {
 
@@ -418,6 +423,7 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
         {
             const std::scoped_lock lock(this->mutex_);
             this->channels_.erase(roomId);
+            this->channelSetNames_.erase(roomId);
         }
         if (done)
         {
@@ -430,14 +436,18 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
                         QStringLiteral("/bootstrap")))
         .timeout(30000)
         .onSuccess([this, roomId, done](const NetworkResult &result) {
+            const auto root = result.parseJson();
             auto map = std::make_shared<const EmoteMap>(
-                parseBootstrap(result.parseJson(), QStringLiteral("Channel")));
+                parseBootstrap(root, QStringLiteral("Channel")));
+            auto setName =
+                root.value("set").toObject().value("name").toString();
             const auto n = static_cast<int>(map->size());
             qCDebug(chatterinoSeventv)
                 << "JilTV: channel" << roomId << "has" << n << "emotes";
             {
                 const std::scoped_lock lock(this->mutex_);
                 this->channels_[roomId] = std::move(map);
+                this->channelSetNames_[roomId] = std::move(setName);
             }
             this->follow(roomId);
             if (done)
@@ -453,6 +463,7 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
             {
                 const std::scoped_lock lock(this->mutex_);
                 this->channels_.erase(roomId);
+                this->channelSetNames_.erase(roomId);
             }
             if (done)
             {
@@ -472,6 +483,155 @@ std::shared_ptr<const EmoteMap> Jiltv::channelEmotes(
     const std::scoped_lock lock(this->mutex_);
     const auto it = this->channels_.find(roomId);
     return it == this->channels_.end() ? nullptr : it->second;
+}
+
+void Jiltv::loadPersonalEmotes(const QString &login, std::function<void()> done)
+{
+    const auto key = login.toLower();
+    if (key.isEmpty() || !getSettings()->enableJiltv ||
+        !getSettings()->enableJiltvEmotes)
+    {
+        return;
+    }
+    QUrl url(this->apiUrl() + QStringLiteral("/v1/personal-emotes/twitch"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("logins"), key);
+    url.setQuery(query);
+    NetworkRequest(url)
+        .timeout(30000)
+        .onSuccess(
+            [this, key, done = std::move(done)](const NetworkResult &result) {
+                this->storePersonalEmotes({key}, result.parseJson());
+                if (done)
+                {
+                    done();
+                }
+            })
+        .execute();
+}
+
+void Jiltv::storePersonalEmotes(const QStringList &logins,
+                                const QJsonObject &root)
+{
+    const auto users = root.value("users").toObject();
+    const auto cdn = root.value("cdn").toString();
+    const auto now = QDateTime::currentDateTimeUtc();
+    const std::scoped_lock lock(this->mutex_);
+    for (const auto &login : logins)
+    {
+        this->personal_[login] = {
+            .emotes = std::make_shared<const EmoteMap>(parseEmotes(
+                users.value(login).toArray(), cdn, QStringLiteral("Personal"))),
+            .fetched = now,
+        };
+    }
+}
+
+std::optional<EmotePtr> Jiltv::personalEmote(const QString &login,
+                                             EmoteNameView name)
+{
+    if (login.isEmpty() || !getSettings()->enableJiltv ||
+        !getSettings()->enableJiltvEmotes)
+    {
+        return std::nullopt;
+    }
+    const auto key = login.toLower();
+    const std::scoped_lock lock(this->mutex_);
+    std::shared_ptr<const EmoteMap> emotes;
+    bool fresh = false;
+    if (const auto it = this->personal_.find(key); it != this->personal_.end())
+    {
+        emotes = it->second.emotes;
+        fresh = it->second.fetched.secsTo(QDateTime::currentDateTimeUtc()) <
+                WORN_TTL_SECS;
+    }
+    if (!fresh && !this->personalInFlight_.contains(key))
+    {
+        this->personalPending_.insert(key);
+        if (!this->personalFlushScheduled_)
+        {
+            this->personalFlushScheduled_ = true;
+            postToThread([this] {
+                QTimer::singleShot(LOOKUP_DELAY_MS, [this] {
+                    this->flushPersonalLookups();
+                });
+            });
+        }
+    }
+    if (!emotes)
+    {
+        return std::nullopt;
+    }
+    const auto it = emotes->find(name);
+    return it == emotes->end() ? std::nullopt : std::optional(it->second);
+}
+
+void Jiltv::flushPersonalLookups()
+{
+    QStringList batch;
+    {
+        const std::scoped_lock lock(this->mutex_);
+        this->personalFlushScheduled_ = false;
+        for (auto it = this->personalPending_.begin();
+             it != this->personalPending_.end() && batch.size() < LOOKUP_BATCH;)
+        {
+            batch.append(*it);
+            this->personalInFlight_.insert(*it);
+            it = this->personalPending_.erase(it);
+        }
+        if (!this->personalPending_.isEmpty())
+        {
+            this->personalFlushScheduled_ = true;
+            QTimer::singleShot(LOOKUP_DELAY_MS, [this] {
+                this->flushPersonalLookups();
+            });
+        }
+    }
+    if (batch.isEmpty())
+    {
+        return;
+    }
+
+    const auto done = [this, batch] {
+        const std::scoped_lock lock(this->mutex_);
+        for (const auto &login : batch)
+        {
+            this->personalInFlight_.remove(login);
+        }
+    };
+    QUrl url(this->apiUrl() + QStringLiteral("/v1/personal-emotes/twitch"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("logins"), batch.join(u','));
+    url.setQuery(query);
+    NetworkRequest(url)
+        .timeout(20000)
+        .onSuccess([this, batch, done](const NetworkResult &result) {
+            this->storePersonalEmotes(batch, result.parseJson());
+            done();
+        })
+        .onError([done](const NetworkResult &) {
+            done();  // asked again with the next message
+        })
+        .execute();
+}
+
+std::shared_ptr<const EmoteMap> Jiltv::personalEmotes(
+    const QString &login) const
+{
+    if (!getSettings()->enableJiltv || !getSettings()->enableJiltvEmotes)
+    {
+        return nullptr;
+    }
+    const std::scoped_lock lock(this->mutex_);
+    const auto it = this->personal_.find(login.toLower());
+    return it == this->personal_.end() ? nullptr : it->second.emotes;
+}
+
+QString Jiltv::channelSetName(const QString &roomId) const
+{
+    const std::scoped_lock lock(this->mutex_);
+    const auto it = this->channelSetNames_.find(roomId);
+    return it == this->channelSetNames_.end() ? QString{} : it->second;
 }
 
 std::shared_ptr<const EmoteMap> Jiltv::globalEmotes() const
@@ -577,11 +737,22 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
 {
     if (type == u"presence.joined")
     {
-        // A JilTV user arrived: know their cosmetics before they write.
+        // A JilTV user arrived: know their cosmetics and personal emotes
+        // before they write.
+        const auto login = data.value("login").toString();
         const auto cosmetics = data.value("cosmetics").toObject();
-        this->setWorn(data.value("login").toString(),
-                      cosmetics.value("p").toString(),
+        this->setWorn(login, cosmetics.value("p").toString(),
                       cosmetics.value("b").toString());
+        if (!login.isEmpty() && data.contains("personal_emotes"))
+        {
+            const auto key = login.toLower();
+            this->storePersonalEmotes(
+                {key}, QJsonObject{
+                           {"users",
+                            QJsonObject{{key, data.value("personal_emotes")}}},
+                           {"cdn", data.value("cdn")},
+                       });
+        }
         return;
     }
     if (!type.startsWith(u"set.") && type != u"channel.set_switched" &&
@@ -590,92 +761,177 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         return;
     }
 
-    // Say in chat what changed, like 7TV does; names are looked up before
-    // the set is reloaded, so removed emotes still have theirs.
+    // Say in chat what changed, with the same messages as 7TV and
+    // BetterTTV. Names and images of removed and renamed emotes are taken
+    // before the set is reloaded, while they are still in it.
     const auto current = this->channelEmotes(roomId);
-    const auto nameOf = [&current](const QString &id) {
+    const auto emoteOf = [&current](const QString &id) -> EmotePtr {
         if (current)
         {
             for (const auto &[n, e] : *current)
             {
                 if (e->id.string == id)
                 {
-                    return n.string;
+                    return e;
                 }
             }
         }
-        return id;
+        return nullptr;
+    };
+    const auto nameOf = [&emoteOf](const QString &id) {
+        const auto emote = emoteOf(id);
+        return emote ? emote->name.string : id;
     };
     const auto actor = data.value("actor").toObject().value("name").toString();
-    const auto by = actor.isEmpty()
-                        ? QString{}
-                        : QStringLiteral(" (") + actor + QStringLiteral(")");
-    QStringList notices;
+
+    struct Change {
+        enum class Kind : std::uint8_t { Added, Removed, Renamed };
+        Kind kind;
+        QString name;
+        QString oldName;
+        EmotePtr old;
+    };
+    std::vector<Change> changes;
+    const auto removed = [&](const QString &id) {
+        changes.push_back({
+            .kind = Change::Kind::Removed,
+            .name = nameOf(id),
+            .oldName = {},
+            .old = emoteOf(id),
+        });
+    };
+    const auto renamed = [&](const QString &id, const QString &name) {
+        changes.push_back({
+            .kind = Change::Kind::Renamed,
+            .name = name,
+            .oldName = nameOf(id),
+            .old = emoteOf(id),
+        });
+    };
+    const auto added = [&](const QString &name) {
+        changes.push_back({
+            .kind = Change::Kind::Added,
+            .name = name,
+            .oldName = {},
+            .old = nullptr,
+        });
+    };
+
+    bool switched = false;
     if (type == u"set.batch")
     {
-        // Several changes at once (the website's set editor sends these).
-        QStringList added;
-        for (const auto &e : data.value("added").toArray())
-        {
-            added.append(e.toObject().value("name").toString());
-        }
-        QStringList removed;
+        // Several changes at once (the website's set editor sends these):
+        // removals first, then renames, then additions
         for (const auto &id : data.value("removed").toArray())
         {
-            removed.append(nameOf(id.toString()));
+            removed(id.toString());
         }
-        QStringList renamed;
         for (const auto &r : data.value("renamed").toArray())
         {
             const auto o = r.toObject();
-            renamed.append(nameOf(o.value("emote_id").toString()) +
-                           QStringLiteral(" to ") + o.value("name").toString());
+            renamed(o.value("emote_id").toString(), o.value("name").toString());
         }
-        if (!added.isEmpty())
+        for (const auto &e : data.value("added").toArray())
         {
-            notices.append(QStringLiteral("JilTV: added ") +
-                           added.join(QStringLiteral(", ")) + by);
-        }
-        if (!removed.isEmpty())
-        {
-            notices.append(QStringLiteral("JilTV: removed ") +
-                           removed.join(QStringLiteral(", ")) + by);
-        }
-        if (!renamed.isEmpty())
-        {
-            notices.append(QStringLiteral("JilTV: renamed ") +
-                           renamed.join(QStringLiteral(", ")) + by);
+            added(e.toObject().value("name").toString());
         }
     }
     else if (type == u"set.emote_added")
     {
-        notices.append(QStringLiteral("JilTV: added ") +
-                       data.value("emote").toObject().value("name").toString() +
-                       by);
+        added(data.value("emote").toObject().value("name").toString());
     }
     else if (type == u"set.emote_removed")
     {
-        notices.append(QStringLiteral("JilTV: removed ") +
-                       nameOf(data.value("emote_id").toString()) + by);
+        removed(data.value("emote_id").toString());
+    }
+    else if (type == u"set.emote_renamed")
+    {
+        renamed(data.value("emote_id").toString(),
+                data.value("name").toString());
     }
     else if (type == u"channel.set_switched")
     {
-        notices.append(QStringLiteral("JilTV: switched the emote set") + by);
+        switched = true;
     }
 
-    this->loadChannelEmotes(roomId, [roomId, notices](int) {
-        if (notices.isEmpty())
-        {
-            return;
-        }
+    this->loadChannelEmotes(roomId, [roomId, actor, changes, switched](int) {
         auto channel = getApp()->getTwitch()->getChannelOrEmptyByID(roomId);
-        if (channel->isEmpty())
+        auto *twitch = dynamic_cast<TwitchChannel *>(channel.get());
+        if (twitch == nullptr)
         {
             return;
         }
-        for (const auto &notice : notices)
+        const auto now = Jiltv::instance().channelEmotes(roomId);
+        const auto emoteNamed = [&now](const QString &name) -> EmotePtr {
+            if (!now)
+            {
+                return nullptr;
+            }
+            const auto it = now->find(EmoteName{name});
+            return it == now->end() ? nullptr : it->second;
+        };
+        const auto liveEmote = [](const EmotePtr &emote, const QString &name) {
+            if (emote)
+            {
+                return LiveUpdateEmote{emote};
+            }
+            LiveUpdateEmote e;
+            e.name = name;
+            return e;
+        };
+
+        for (const auto &change : changes)
         {
-            channel->addSystemMessage(notice);
+            switch (change.kind)
+            {
+                case Change::Kind::Added:
+                    twitch->addJiltvEmoteUpdate(
+                        true, actor,
+                        liveEmote(emoteNamed(change.name), change.name));
+                    break;
+                case Change::Kind::Removed:
+                    twitch->addJiltvEmoteUpdate(
+                        false, actor, liveEmote(change.old, change.name));
+                    break;
+                case Change::Kind::Renamed: {
+                    auto emote = emoteNamed(change.name);
+                    twitch->addMessage(
+                        MessageBuilder(liveUpdatesUpdateEmoteMessage,
+                                       QStringLiteral("JilTV"), actor,
+                                       change.name, change.oldName,
+                                       emote ? emote : change.old)
+                            .release(),
+                        MessageContext::Original);
+                }
+                break;
+            }
+        }
+        if (switched)
+        {
+            // The new set's name comes with the bootstrap just reloaded
+            const auto setName = Jiltv::instance().channelSetName(roomId);
+            if (!actor.isEmpty() && !setName.isEmpty())
+            {
+                twitch->addMessage(
+                    MessageBuilder(liveUpdatesUpdateEmoteSetMessage,
+                                   QStringLiteral("JilTV"), actor, setName)
+                        .release(),
+                    MessageContext::Original);
+            }
+            else if (!setName.isEmpty())
+            {
+                twitch->addSystemMessage(
+                    u"The active JilTV Emote Set was switched to \"%1\"."_s.arg(
+                        setName));
+            }
+            else
+            {
+                twitch->addSystemMessage(
+                    actor.isEmpty()
+                        ? QStringLiteral("The JilTV Emote Set was turned off.")
+                        : actor + QStringLiteral(
+                                      " turned off the JilTV Emote Set."));
+            }
         }
     });
 }

@@ -58,14 +58,28 @@ public:
     std::optional<EmotePtr> channelEmote(const QString &roomId,
                                          EmoteNameView name) const;
     std::optional<EmotePtr> globalEmote(EmoteNameView name) const;
+    /// A personal emote of `login`. Unknown chatters are looked up, so their
+    /// personal emotes show from their next message on.
+    std::optional<EmotePtr> personalEmote(const QString &login,
+                                          EmoteNameView name);
     std::shared_ptr<const EmoteMap> channelEmotes(const QString &roomId) const;
     std::shared_ptr<const EmoteMap> globalEmotes() const;
+    /// The name of a channel's active JilTV emote set, empty when unknown
+    QString channelSetName(const QString &roomId) const;
 
     /// Loads a joined channel's JilTV emotes (nothing if it doesn't use
     /// JilTV). `done` gets the number of emotes, from the GUI thread.
     void loadChannelEmotes(const QString &roomId,
                            std::function<void(int)> done = {});
     void loadGlobalEmotes();
+
+    /// The personal emotes of `login`, usable in every channel, or nullptr
+    /// when they weren't loaded
+    std::shared_ptr<const EmoteMap> personalEmotes(const QString &login) const;
+    /// Loads the personal emotes of `login`. `done` runs in the GUI thread
+    /// once they are there.
+    void loadPersonalEmotes(const QString &login,
+                            std::function<void()> done = {});
     void loadCatalog();
 
     QString apiUrl() const;
@@ -105,6 +119,23 @@ private:
     bool flushScheduled_ = false;
     std::unordered_map<QString, std::shared_ptr<const EmoteMap>> channels_;
     std::shared_ptr<const EmoteMap> global_;
+    /// The name of each channel's active set, by room ID
+    std::unordered_map<QString, QString> channelSetNames_;
+    struct Personal {
+        std::shared_ptr<const EmoteMap> emotes;
+        QDateTime fetched;
+    };
+    /// By lowercase login. Guarded by mutex_.
+    std::unordered_map<QString, Personal> personal_;
+    QSet<QString> personalPending_;
+    QSet<QString> personalInFlight_;
+    bool personalFlushScheduled_ = false;
+    void flushPersonalLookups();
+    /// Stores the personal emotes of the logins in `users`, from a response
+    /// of /v1/personal-emotes/twitch. Logins in `logins` that are missing in
+    /// it have none.
+    void storePersonalEmotes(const QStringList &logins,
+                             const QJsonObject &root);
 
     QTimer catalogTimer_;
 
@@ -115,7 +146,7 @@ private:
     std::unique_ptr<JiltvStream> cosmeticsStream_;
 };
 
-/// Whether JilTV comes first among paint and emote providers (setting).
+/// Whether JilTV emotes come first among the emote providers (setting).
 bool jiltvFirst();
 
 }  // namespace chatterino

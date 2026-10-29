@@ -680,7 +680,7 @@ EmotePtr makeSharedChatBadge(const QString &sourceName,
 }
 
 EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
-                    EmoteNameView name)
+                    const QString &login, EmoteNameView name)
 {
     // Emote order:
     //  - 7TV Personal Emotes
@@ -706,6 +706,11 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
         if (jiltvFirstHere)
         {
             emote = jiltv.channelEmote(twitchChannel->roomId(), name);
+            if (emote)
+            {
+                return *emote;
+            }
+            emote = jiltv.personalEmote(login, name);
             if (emote)
             {
                 return *emote;
@@ -747,6 +752,11 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
         if (!jiltvFirstHere)
         {
             emote = jiltv.channelEmote(twitchChannel->roomId(), name);
+            if (emote)
+            {
+                return *emote;
+            }
+            emote = jiltv.personalEmote(login, name);
             if (emote)
             {
                 return *emote;
@@ -2547,6 +2557,7 @@ void MessageBuilder::addTextOrEmote(TextState &state, QString string,
                directModifiers.size() < MAX_MODIFIERS)
         {
             const auto modifier = parseEmote(state.twitchChannel, state.userID,
+                                             this->message().loginName,
                                              EmoteNameView{remainder.first(2)});
             if (modifier == nullptr ||
                 modifier->modifierPlacement != EmoteModifierPlacement::Prefix)
@@ -2559,8 +2570,9 @@ void MessageBuilder::addTextOrEmote(TextState &state, QString string,
 
         if (!directModifiers.empty())
         {
-            const auto base = parseEmote(state.twitchChannel, state.userID,
-                                         EmoteNameView{remainder});
+            const auto base =
+                parseEmote(state.twitchChannel, state.userID,
+                           this->message().loginName, EmoteNameView{remainder});
             if (base != nullptr &&
                 base->modifierPlacement == EmoteModifierPlacement::None)
             {
@@ -3415,7 +3427,8 @@ Outcome MessageBuilder::tryAppendEmote(TwitchChannel *twitchChannel,
                                        const QString &userID,
                                        EmoteNameView name)
 {
-    auto emote = parseEmote(twitchChannel, userID, name);
+    auto emote =
+        parseEmote(twitchChannel, userID, this->message().loginName, name);
 
     if (!emote)
     {

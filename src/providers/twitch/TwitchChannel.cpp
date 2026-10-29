@@ -3001,6 +3001,12 @@ void TwitchChannel::addSeventvEmote(
                                            LiveUpdateEmote{*emote});
 }
 
+void TwitchChannel::addJiltvEmoteUpdate(bool isEmoteAdd, const QString &actor,
+                                        const LiveUpdateEmote &emote)
+{
+    this->addOrReplaceLiveUpdatesAddRemove(isEmoteAdd, "JilTV", actor, emote);
+}
+
 void TwitchChannel::updateSeventvEmote(
     const seventv::eventapi::EmoteUpdateDispatch &dispatch)
 {
