@@ -252,10 +252,27 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         });
     }
 
+    // Frames are square, transparent in the middle, and drawn at 120 % of
+    // the profile picture
+    std::unordered_map<QString, ImagePtr> frames;
+    for (const auto &value : root.value("decorations").toArray())
+    {
+        const auto d = value.toObject();
+        const auto id = d.value("id").toString();
+        const auto image = d.value("data").toObject().value("image").toString();
+        if (id.isEmpty() || image.isEmpty())
+        {
+            continue;
+        }
+        frames[id] =
+            Image::fromUrl(Url{cdn + QStringLiteral("/decorations/") + image});
+    }
+
     {
         const std::scoped_lock lock(this->mutex_);
         this->paints_ = std::move(paints);
         this->badges_ = std::move(badges);
+        this->frames_ = std::move(frames);
     }
     getApp()->getWindows()->invalidateChannelViewBuffers();
     WindowManager::notifyBadgesUpdated();
@@ -335,9 +352,11 @@ void Jiltv::flushLookups()
                     continue;  // asked again the next time it's drawn
                 }
                 const auto u = users.value(login).toObject();
-                Worn w{u.value("p").toString(), u.value("b").toString(), now};
+                Worn w{u.value("p").toString(), u.value("b").toString(), now,
+                       u.value("d").toString()};
                 auto &slot = this->worn_[login];
-                changed |= slot.paint != w.paint || slot.badge != w.badge;
+                changed |= slot.paint != w.paint || slot.badge != w.badge ||
+                           slot.frame != w.frame;
                 slot = w;
             }
         }
@@ -375,6 +394,23 @@ std::shared_ptr<Paint> Jiltv::paint(const QString &login)
     const std::scoped_lock lock(this->mutex_);
     const auto it = this->paints_.find(w->paint);
     return it == this->paints_.end() ? nullptr : it->second;
+}
+
+ImagePtr Jiltv::frame(const QString &login)
+{
+    const auto w = this->worn(login);
+    if (!w || w->frame.isEmpty())
+    {
+        return nullptr;
+    }
+    return this->frameById(w->frame);
+}
+
+ImagePtr Jiltv::frameById(const QString &id) const
+{
+    const std::scoped_lock lock(this->mutex_);
+    const auto it = this->frames_.find(id);
+    return it == this->frames_.end() ? nullptr : it->second;
 }
 
 std::shared_ptr<Paint> Jiltv::paintById(const QString &id) const
@@ -712,15 +748,15 @@ void Jiltv::followCosmetics()
         [this](const QString &type, const QJsonObject &data) {
             if (type == u"user.cosmetics")
             {
-                this->setWorn(data.value("login").toString(),
-                              data.value("p").toString(),
-                              data.value("b").toString());
+                this->setWorn(
+                    data.value("login").toString(), data.value("p").toString(),
+                    data.value("b").toString(), data.value("d").toString());
             }
         });
 }
 
 void Jiltv::setWorn(const QString &login, const QString &paint,
-                    const QString &badge)
+                    const QString &badge, const std::optional<QString> &frame)
 {
     if (login.isEmpty())
     {
@@ -730,8 +766,10 @@ void Jiltv::setWorn(const QString &login, const QString &paint,
     {
         const std::scoped_lock lock(this->mutex_);
         auto &slot = this->worn_[login.toLower()];
-        changed = slot.paint != paint || slot.badge != badge;
-        slot = {paint, badge, QDateTime::currentDateTimeUtc()};
+        const auto newFrame = frame.value_or(slot.frame);
+        changed = slot.paint != paint || slot.badge != badge ||
+                  slot.frame != newFrame;
+        slot = {paint, badge, QDateTime::currentDateTimeUtc(), newFrame};
     }
     if (changed)
     {
@@ -749,7 +787,8 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         const auto login = data.value("login").toString();
         const auto cosmetics = data.value("cosmetics").toObject();
         this->setWorn(login, cosmetics.value("p").toString(),
-                      cosmetics.value("b").toString());
+                      cosmetics.value("b").toString(),
+                      cosmetics.value("d").toString());
         if (!login.isEmpty() && data.contains("personal_emotes"))
         {
             const auto key = login.toLower();

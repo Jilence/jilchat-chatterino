@@ -42,6 +42,7 @@
 #include "widgets/buttons/Button.hpp"
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
+#include "widgets/helper/AvatarFrame.hpp"
 #include "widgets/helper/color/ColorButton.hpp"
 #include "widgets/helper/Line.hpp"
 #include "widgets/helper/MessageView.hpp"
@@ -824,6 +825,161 @@ private:
     QString paintName_;
     QString userName_;
     QColor userColor_;
+    bool selected_ = false;
+    pajlada::Signals::SignalHolder connections_;
+};
+
+/// Draws a profile picture with a frame around it; the picture and frame
+/// come from functions, asked whenever it is painted.
+class AvatarWithFrame : public QWidget
+{
+public:
+    AvatarWithFrame(std::function<ImagePtr()> avatar,
+                    std::function<ImagePtr()> frame, QWidget *parent)
+        : QWidget(parent)
+        , avatar_(std::move(avatar))
+        , frame_(std::move(frame))
+    {
+        this->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        // Repaint while images load, and for animated frames
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                if (this->isVisible() && this->needsRepaint())
+                {
+                    this->update();
+                }
+            });
+        this->connections_.managedConnect(
+            getApp()->getWindows()->layoutRequested, [this](Channel *) {
+                if (this->isVisible() && this->needsRepaint())
+                {
+                    this->update();
+                }
+            });
+    }
+
+    void paintInto(QPainter &painter, const QRectF &rect)
+    {
+        const auto avatar = this->avatar_ ? this->avatar_() : nullptr;
+        const auto frame = this->frame_ ? this->frame_() : nullptr;
+        QPixmap avatarPixmap;
+        bool loading = false;
+        if (avatar)
+        {
+            if (auto pixmap = avatar->pixmapOrLoad())
+            {
+                avatarPixmap = *pixmap;
+            }
+            else
+            {
+                loading = true;
+            }
+        }
+        if (!paintAvatarWithFrame(painter, rect, avatarPixmap, frame))
+        {
+            loading = true;
+        }
+        this->loading_ = loading;
+        this->animated_ = frame && frame->animated();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        const auto side = std::min(this->width(), this->height());
+        this->paintInto(painter,
+                        QRectF((this->width() - side) / 2.0,
+                               (this->height() - side) / 2.0, side, side));
+    }
+
+private:
+    bool needsRepaint() const
+    {
+        return this->loading_ || this->animated_;
+    }
+
+    std::function<ImagePtr()> avatar_;
+    std::function<ImagePtr()> frame_;
+    bool loading_ = true;
+    bool animated_ = false;
+    pajlada::Signals::SignalHolder connections_;
+};
+
+/// A JilTV frame around the own profile picture, to pick it.
+class FrameTileButton final : public QPushButton
+{
+public:
+    FrameTileButton(const GqlBadge &frame, std::function<ImagePtr()> avatar,
+                    ImagePtr frameImage, QWidget *parent)
+        : QPushButton(parent)
+    {
+        this->setCursor(Qt::PointingHandCursor);
+        this->setFocusPolicy(Qt::StrongFocus);
+        this->setAttribute(Qt::WA_Hover, true);
+        this->setFlat(true);
+        this->setFixedSize(BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2,
+                           BADGE_ICON_SIZE.height() + BADGE_TILE_PADDING * 2);
+        this->setToolTip(frame.title);
+        this->picture_ = new AvatarWithFrame(
+            std::move(avatar),
+            [frameImage] {
+                return frameImage;
+            },
+            this);
+        this->picture_->hide();
+        // The hidden picture doesn't repaint itself, so the tile does
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                if (this->isVisible())
+                {
+                    this->update();
+                }
+            });
+    }
+
+    void setSelected(bool selected)
+    {
+        this->selected_ = selected;
+        this->update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const auto rect = this->rect().adjusted(0, 0, -1, -1);
+        if (this->selected_)
+        {
+            const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
+            painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(selectionRect, 3, 3);
+            paintBadgeTileBackground(painter,
+                                     selectionRect.adjusted(2, 2, -2, -2),
+                                     this->underMouse(), this->isDown());
+        }
+        else
+        {
+            paintBadgeTileBackground(painter, rect, this->underMouse(),
+                                     this->isDown());
+        }
+
+        const int pad = BADGE_TILE_PADDING / 2;
+        const auto side = std::min(rect.width(), rect.height()) - (pad * 2);
+        this->picture_->paintInto(
+            painter, QRectF((rect.width() - side) / 2.0,
+                            (rect.height() - side) / 2.0, side, side));
+
+        if (this->hasFocus())
+        {
+            paintBadgeTileFocusRing(painter, rect);
+        }
+    }
+
+private:
+    AvatarWithFrame *picture_{};
     bool selected_ = false;
     pajlada::Signals::SignalHolder connections_;
 };
@@ -1770,8 +1926,24 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
     previewLayout->setContentsMargins(0, scaledMetric(this->scale(), 4, 2), 0,
                                       scaledMetric(this->scale(), 4, 2));
     previewLayout->setSpacing(0);
+    auto *previewRow = new QHBoxLayout();
+    previewRow->setContentsMargins(0, 0, 0, 0);
+    previewRow->setSpacing(scaledMetric(this->scale(), 6, 3));
+    this->previewAvatar_ = new AvatarWithFrame(
+        [this] {
+            return this->ownAvatar_;
+        },
+        [this] {
+            return this->previewFrame();
+        },
+        this->previewWidget_);
+    const int avatarSide = scaledMetric(this->scale(), 40, 24);
+    this->previewAvatar_->setFixedSize(avatarSide, avatarSide);
+    previewRow->addWidget(this->previewAvatar_, 0, Qt::AlignVCenter);
     this->previewView_ = new MessageView(this->previewWidget_);
-    previewLayout->addWidget(this->previewView_);
+    previewRow->addWidget(this->previewView_, 1);
+    previewLayout->addLayout(previewRow);
+    this->loadOwnAvatar();
     this->mainLayout_->addWidget(this->previewWidget_);
 
     // Tab rows
@@ -3179,8 +3351,17 @@ void TwitchBadgePickerDialog::updatePreview()
     const auto message = this->buildPreviewMessage();
     const int contentWidth = measureMessageContentWidth(
         message, this->scale(), float(this->devicePixelRatioF()));
-    this->applyPreviewDialogWidth(contentWidth);
+    // Room for the profile picture next to the message
+    const int avatarWidth =
+        this->previewAvatar_ == nullptr
+            ? 0
+            : this->previewAvatar_->width() + scaledMetric(this->scale(), 6, 3);
+    this->applyPreviewDialogWidth(contentWidth + avatarWidth);
     this->previewView_->setWidth(contentWidth);
+    if (this->previewAvatar_ != nullptr)
+    {
+        this->previewAvatar_->update();
+    }
     this->previewView_->setFullMessage(message);
 }
 
@@ -5380,9 +5561,25 @@ void TwitchBadgePickerDialog::rebuildJiltv()
         {
             continue;
         }
-        auto *tile = new BadgeTileButton(item, gridWidget);
+        QPushButton *tile = nullptr;
+        if (kind == View::JiltvFrames)
+        {
+            auto *frameTile = new FrameTileButton(
+                item,
+                [this] {
+                    return this->ownAvatar_;
+                },
+                this->jiltvFrameImage(item.id), gridWidget);
+            frameTile->setSelected(item.id == active);
+            tile = frameTile;
+        }
+        else
+        {
+            auto *badgeTile = new BadgeTileButton(item, gridWidget);
+            badgeTile->setSelected(item.id == active);
+            tile = badgeTile;
+        }
         tile->setEnabled(!this->actionInFlight_);
-        tile->setSelected(item.id == active);
         QObject::connect(tile, &QPushButton::clicked, this,
                          [this, kind, id = item.id] {
                              this->selectJiltv(kind, id);
@@ -5551,6 +5748,67 @@ void TwitchBadgePickerDialog::signInJiltv()
     this->loadJiltv(true);
 }
 
+ImagePtr TwitchBadgePickerDialog::jiltvFrameImage(const QString &id) const
+{
+    if (id.isEmpty())
+    {
+        return nullptr;
+    }
+    if (auto image = Jiltv::instance().frameById(id))
+    {
+        return image;
+    }
+    // Not in the catalog (yet): the image from the inventory
+    for (const auto &frame : this->jiltvFrames_)
+    {
+        if (frame.id == id)
+        {
+            return Image::fromUrl(Url{frame.image1x});
+        }
+    }
+    return nullptr;
+}
+
+ImagePtr TwitchBadgePickerDialog::previewFrame() const
+{
+    // The one picked here once JilTV is loaded, else what JilTV says the
+    // user wears
+    if (this->jiltvLoaded_)
+    {
+        return this->jiltvFrameImage(this->jiltvActiveFrame_);
+    }
+    return Jiltv::instance().frame(
+        getApp()->getAccounts()->twitch.getCurrent()->getUserName());
+}
+
+void TwitchBadgePickerDialog::loadOwnAvatar()
+{
+    const auto user = getApp()->getAccounts()->twitch.getCurrent();
+    if (user->isAnon())
+    {
+        return;
+    }
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    getHelix()->getUserById(
+        user->getUserId(),
+        [self](const HelixUser &helixUser) {
+            if (!self || helixUser.profileImageUrl.isEmpty())
+            {
+                return;
+            }
+            self->ownAvatar_ = Image::fromUrl(Url{helixUser.profileImageUrl});
+            if (self->previewAvatar_ != nullptr)
+            {
+                self->previewAvatar_->update();
+            }
+            if (self->view_ == View::JiltvFrames)
+            {
+                self->rebuildContent();
+            }
+        },
+        [] {});
+}
+
 void TwitchBadgePickerDialog::signOutJiltv()
 {
     JiltvAuth::instance().signOut();
@@ -5620,14 +5878,13 @@ void TwitchBadgePickerDialog::selectJiltv(View kind, const QString &id)
                 return;
             }
             self->actionInFlight_ = false;
-            if (kind != View::JiltvFrames)
-            {
-                // Show it in this chat right away; others get it from the
-                // live cosmetics updates.
-                Jiltv::instance().setWorn(
-                    getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
-                    self->jiltvActivePaint_, self->jiltvActiveBadge_);
-            }
+            // Show it here right away; others get it from the live
+            // cosmetics updates.
+            Jiltv::instance().setWorn(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+                self->jiltvActivePaint_, self->jiltvActiveBadge_,
+                self->jiltvActiveFrame_);
+            self->updatePreview();
             if (id.isEmpty())
             {
                 self->channel_->addSystemMessage(

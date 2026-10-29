@@ -45,6 +45,7 @@ using MessagePtr = std::shared_ptr<const Message>;
 enum class MessagePlatform : uint8_t;
 class Label;
 class MarkdownLabel;
+class AvatarFrameOverlay;
 class EditUserNotesDialog;
 class ChannelView;
 class TooltipWidget;
@@ -317,6 +318,8 @@ private:
     class TimeoutWidget;
     struct {
         PixmapButton *avatarButton = nullptr;
+        /// The JilTV frame around the profile picture
+        AvatarFrameOverlay *avatarFrame = nullptr;
         PixmapButton *localizedNameCopyButton = nullptr;
 
         Label *nameLabel = nullptr;

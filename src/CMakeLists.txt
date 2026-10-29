@@ -1044,6 +1044,8 @@ set(SOURCE_FILES
         widgets/dialogs/switcher/SwitchSplitItem.cpp
         widgets/dialogs/switcher/SwitchSplitItem.hpp
 
+        widgets/helper/AvatarFrame.cpp
+        widgets/helper/AvatarFrame.hpp
         widgets/helper/color/AlphaSlider.cpp
         widgets/helper/color/AlphaSlider.hpp
         widgets/helper/color/Checkerboard.cpp

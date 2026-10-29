@@ -30,6 +30,8 @@ class QVBoxLayout;
 namespace chatterino {
 
 class MessageView;
+class Image;
+using ImagePtr = std::shared_ptr<Image>;
 class SvgButton;
 class Button;
 class TwitchChannel;
@@ -138,6 +140,11 @@ private:
     void signInJiltv();
     void signOutJiltv();
     void selectJiltv(View kind, const QString &id);
+    /// The image of a JilTV frame, or nullptr for none
+    ImagePtr jiltvFrameImage(const QString &id) const;
+    /// The frame shown around the own profile picture in the preview
+    ImagePtr previewFrame() const;
+    void loadOwnAvatar();
     void sevenTvRequest(const QString &query, const QJsonObject &variables,
                         const std::function<void(const QJsonObject &)> &onData,
                         const std::function<void(const QString &)> &onError);
@@ -189,6 +196,9 @@ private:
     QLabel *statusLabel_{};
     QWidget *previewWidget_{};
     MessageView *previewView_{};
+    QWidget *previewAvatar_{};
+    /// The own profile picture, for the preview and the frames
+    ImagePtr ownAvatar_;
 
     View view_ = View::GlobalBadges;
     GqlChatSettingsBadges badges_;
