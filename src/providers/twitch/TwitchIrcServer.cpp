@@ -18,9 +18,9 @@
 #include "providers/bttv/liveupdates/BttvLiveUpdateMessages.hpp"  // IWYU pragma: keep
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/irc/IrcConnection2.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/seventv/eventapi/Dispatch.hpp"
-#include "providers/jiltv/Jiltv.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"

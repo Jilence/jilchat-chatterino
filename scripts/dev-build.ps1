@@ -8,7 +8,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\dev-build.ps1 -Clean  # start over
 #
 # Everything lands in build-dev\ (ignored by git); the app is
-# build-dev\bin\Leafyrino.exe. It runs portable: settings and logins live in
+# build-dev\bin\JilChatChatterino.exe. It runs portable: settings and logins live in
 # build-dev\bin, your installed Chatterino's settings are never touched.
 # Pass -SharedSettings to use the normal settings folder instead.
 
@@ -23,7 +23,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $build = Join-Path $root 'build-dev'
-$exe = Join-Path $build 'bin\Leafyrino.exe'
+$exe = Join-Path $build 'bin\JilChatChatterino.exe'
 
 if (-not (Test-Path (Join-Path $QtDir 'bin\qmake.exe'))) {
     throw "Qt not found in $QtDir - run scripts\dev-setup.ps1 first."
@@ -105,7 +105,7 @@ try {
     }
 
     # Windows locks a running exe, so the linker can't replace it: close the
-    # dev build if it's open (only this one, never an installed Leafyrino).
+    # dev build if it's open (only this one, never an installed JilChat Chatterino).
     $running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
     foreach ($p in $running) {
         Write-Host "== Closing the running dev build (PID $($p.Id))"
