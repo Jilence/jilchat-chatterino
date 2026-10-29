@@ -139,19 +139,24 @@ public:
             painter.drawPath(name);
             painter.setClipping(false);
         }
-        painter.setPen(Qt::NoPen);
+        // The name itself as text, so its letters look like those of names
+        // without an effect (hinted), only the outline follows its shape
+        QPen pen;
         if (texture)
         {
             QBrush brush(*texture);
             brush.setTransform(
                 QTransform::fromTranslate(-step / 2.0, -step / 2.0));
-            painter.setBrush(brush);
+            pen.setBrush(brush);
         }
         else
         {
-            painter.setBrush(userColor);
+            pen.setColor(userColor);
         }
-        painter.drawPath(name);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+        painter.setFont(font);
+        painter.drawText(QPointF(textRect.left(), baseline), nametag);
 
         if (colon)
         {
