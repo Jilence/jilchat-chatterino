@@ -160,9 +160,10 @@ Jiltv::Jiltv()
     });
     this->catalogTimer_.start();
     this->presenceTimer_.setInterval(PRESENCE_INTERVAL_MS);
-    QObject::connect(&this->presenceTimer_, &QTimer::timeout, [this] {
-        this->updatePresence();
-    });
+    QObject::connect(&this->presenceTimer_, &QTimer::timeout,
+                     &this->presenceTimer_, [this] {
+                         this->updatePresence();
+                     });
     this->presenceTimer_.start();
     this->network_ = new QNetworkAccessManager();
     QObject::connect(QCoreApplication::instance(),
