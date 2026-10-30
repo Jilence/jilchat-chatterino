@@ -26,6 +26,7 @@
 #include "messages/MessageElement.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/IvrApi.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChatServer.hpp"
@@ -60,6 +61,7 @@
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/EditUserNotesDialog.hpp"
 #include "widgets/dialogs/UserBadgesDialog.hpp"
+#include "widgets/helper/AvatarFrame.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/InvisibleSizeGrip.hpp"
 #include "widgets/helper/Line.hpp"
@@ -1475,7 +1477,13 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         this->ui_.avatarButton = avatar;
         avatar->setScaleIndependentSize(100, 100);
         avatar->setDim(DimButton::Dim::None);
-        avatarLayout->addWidget(avatar, 0, 0);
+        avatar->setRound(true);
+        avatar->setMarginEnabled(false);
+        avatarLayout->addWidget(avatar, 0, 0, Qt::AlignCenter);
+
+        // A JilTV frame lies over the picture, which shrinks to fit inside
+        this->ui_.avatarFrame = new AvatarFrameOverlay(avatarFrame);
+        avatarLayout->addWidget(this->ui_.avatarFrame, 0, 0);
         QObject::connect(
             avatar, &Button::clicked, [this](Qt::MouseButton button) {
                 if (this->isKick_)
@@ -3931,6 +3939,26 @@ void UserInfoPopup::updateUserData()
         this->maybeStartUsercardMessageAutoLoad();
         this->helixAvatarUrl_ = user.profileImageUrl;
         this->updateAvatarUrl();
+        this->ui_.avatarFrame->setSource(
+            [login = user.login] {
+                return Jiltv::instance().frame(login);
+            },
+            [this](bool framed) {
+                auto *avatar = this->ui_.avatarButton;
+                if (framed)
+                {
+                    this->ui_.avatarFrame->setFixedSize(avatar->size());
+                    const int side = int(100 * AVATAR_IN_FRAME);
+                    avatar->setScaleIndependentSize(side, side);
+                }
+                else
+                {
+                    avatar->setScaleIndependentSize(100, 100);
+                    this->ui_.avatarFrame->setMinimumSize(0, 0);
+                    this->ui_.avatarFrame->setMaximumSize(QWIDGETSIZE_MAX,
+                                                          QWIDGETSIZE_MAX);
+                }
+            });
         this->updateNotes();
 
         // copyable button for login name of users with a localized username

@@ -467,6 +467,8 @@ public:
     BoolSetting jiltvAnimatedPaints = {"/jiltv/animatedPaints", true};
     /// Shadows and outlines of JilTV paints.
     BoolSetting jiltvPaintShadows = {"/jiltv/paintShadows", true};
+    /// The frames around profile pictures in usercards
+    BoolSetting showJiltvFrames = {"/jiltv/frames", true};
     /// Emotes still waiting for review on JilTV.
     BoolSetting jiltvShowPendingEmotes = {"/jiltv/showPendingEmotes", false};
     QStringSetting jiltvApiUrl = {"/jiltv/apiUrl", "https://api.jiltv.app"};

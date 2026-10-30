@@ -4,6 +4,8 @@
 
 #include "widgets/buttons/PixmapButton.hpp"
 
+#include <QPainterPath>
+
 namespace {
 
 void resizePixmap(QPixmap &target, const QPixmap &source, const QSize &size,
@@ -57,6 +59,12 @@ void PixmapButton::setMarginEnabled(bool enableMargin)
     this->update();
 }
 
+void PixmapButton::setRound(bool round)
+{
+    this->round_ = round;
+    this->update();
+}
+
 void PixmapButton::paintContent(QPainter &painter)
 {
     if (this->pixmap_.isNull())
@@ -84,7 +92,20 @@ void PixmapButton::paintContent(QPainter &painter)
     resizePixmap(this->resizedPixmap_, this->pixmap_, rect.size(),
                  this->devicePixelRatio());
 
-    painter.drawPixmap(rect, this->resizedPixmap_);
+    if (this->round_)
+    {
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        QPainterPath circle;
+        circle.addEllipse(QRectF(rect));
+        painter.setClipPath(circle);
+        painter.drawPixmap(rect, this->resizedPixmap_);
+        painter.restore();
+    }
+    else
+    {
+        painter.drawPixmap(rect, this->resizedPixmap_);
+    }
 
     painter.setOpacity(1);
 }

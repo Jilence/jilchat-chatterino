@@ -60,6 +60,8 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     layout.addDescription("Paints, badges and emotes from jiltv.app.");
     SettingWidget::checkbox("Enable JilTV", s.enableJiltv)
         ->addKeywords({"jiltv", "paints", "emotes", "badges"})
+        ->setTooltip("Everything from JilTV. Off: no JilTV paints, badges, "
+                     "frames or emotes.")
         ->addTo(layout);
     SettingWidget::checkbox("Show JilTV emotes", s.enableJiltvEmotes)
         ->addKeywords({"jiltv", "emotes"})
@@ -73,6 +75,11 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::checkbox("Show JilTV badges", s.showBadgesJiltv)
         ->addKeywords({"jiltv", "badges"})
+        ->setTooltip("The JilTV badge a chatter wears, next to their name.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Show JilTV frames", s.showJiltvFrames)
+        ->addKeywords({"jiltv", "frames", "decorations", "avatar"})
+        ->setTooltip("The frames around profile pictures in usercards.")
         ->addTo(layout);
     SettingWidget::checkbox("Animate JilTV paints", s.jiltvAnimatedPaints)
         ->addKeywords({"jiltv", "paints", "animation"})
@@ -81,10 +88,14 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     SettingWidget::checkbox("Show JilTV paint shadows and outlines",
                             s.jiltvPaintShadows)
         ->addKeywords({"jiltv", "paints", "shadow", "outline"})
+        ->setTooltip("The glow, shadows and outlines some paints have. Off: "
+                     "only the paint's colors.")
         ->addTo(layout);
     SettingWidget::checkbox("Show JilTV emotes waiting for review",
                             s.jiltvShowPendingEmotes)
         ->addKeywords({"jiltv", "emotes", "pending", "review"})
+        ->setTooltip("Emotes JilTV hasn't approved yet. Off: they show once "
+                     "they are approved.")
         ->addTo(layout);
     SettingWidget::lineEdit("JilTV API", s.jiltvApiUrl, "https://api.jiltv.app")
         ->addKeywords({"jiltv", "api", "dev"})
