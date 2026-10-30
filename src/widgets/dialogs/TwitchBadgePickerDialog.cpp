@@ -103,6 +103,8 @@ constexpr int HEADER_SEPARATOR_HEIGHT = 8;
 constexpr int BADGE_GRID_SPACING = 4;
 constexpr int BADGE_TILE_PADDING = 4;
 constexpr QSize BADGE_ICON_SIZE(36, 36);
+/// JilTV frames are larger than badges, so their details show
+constexpr int FRAME_TILE_SIZE = 56;
 constexpr float BADGE_IMAGE_SCALE =
     float(BADGE_ICON_SIZE.width()) / float(BADGE_ICON_SIZE.width() / 2);
 constexpr char BADGE_SELECTED_COLOR[] = "#9146ff";
@@ -191,7 +193,7 @@ int badgeTileSize()
     return BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2;
 }
 
-int badgeGridColumnsForWidth(int availableWidth)
+int badgeGridColumnsForWidth(int availableWidth, int tileSize = 0)
 {
     if (availableWidth <= 0)
     {
@@ -200,7 +202,8 @@ int badgeGridColumnsForWidth(int availableWidth)
         availableWidth = fallbackWidth;
     }
 
-    const int stride = badgeTileSize() + BADGE_GRID_SPACING;
+    const int stride =
+        (tileSize > 0 ? tileSize : badgeTileSize()) + BADGE_GRID_SPACING;
     return std::max(1, (availableWidth + BADGE_GRID_SPACING) / stride);
 }
 
@@ -275,8 +278,9 @@ ImageSet badgeImages(const GqlBadge &badge)
     };
 }
 
+/// `round` draws a circle instead of a rounded square, e.g. for frames
 void paintBadgeTileBackground(QPainter &painter, const QRect &rect,
-                              bool underMouse, bool isDown)
+                              bool underMouse, bool isDown, bool round = false)
 {
     const auto *theme = getApp()->getThemes();
     auto bg = theme->splits.header.background;
@@ -294,16 +298,31 @@ void paintBadgeTileBackground(QPainter &painter, const QRect &rect,
 
     painter.setPen(QPen(border, 1));
     painter.setBrush(bg);
-    painter.drawRoundedRect(rect, 3, 3);
+    if (round)
+    {
+        painter.drawEllipse(rect);
+    }
+    else
+    {
+        painter.drawRoundedRect(rect, 3, 3);
+    }
 }
 
-void paintBadgeTileFocusRing(QPainter &painter, const QRect &rect)
+void paintBadgeTileFocusRing(QPainter &painter, const QRect &rect,
+                             bool round = false)
 {
     auto focus = getApp()->getThemes()->window.text;
     focus.setAlpha(200);
     painter.setPen(QPen(focus, 1));
     painter.setBrush(Qt::NoBrush);
-    painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 3, 3);
+    if (round)
+    {
+        painter.drawEllipse(rect.adjusted(1, 1, -1, -1));
+    }
+    else
+    {
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 3, 3);
+    }
 }
 
 class BadgePickerToggleSwitch final : public QPushButton
@@ -503,15 +522,25 @@ bool handleTileTooltip(QWidget *tile, QEvent *event)
 class NoBadgeTileButton final : public QPushButton
 {
 public:
-    NoBadgeTileButton(QWidget *parent)
+    /// `round` for a round tile, next to the round frames
+    NoBadgeTileButton(QWidget *parent, bool round = false)
         : QPushButton(parent)
+        , round_(round)
     {
         this->setCursor(Qt::PointingHandCursor);
         this->setFocusPolicy(Qt::StrongFocus);
         this->setAttribute(Qt::WA_Hover, true);
         this->setFlat(true);
-        this->setFixedSize(BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2,
-                           BADGE_ICON_SIZE.height() + BADGE_TILE_PADDING * 2);
+        if (round)
+        {
+            this->setFixedSize(FRAME_TILE_SIZE, FRAME_TILE_SIZE);
+        }
+        else
+        {
+            this->setFixedSize(
+                BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2,
+                BADGE_ICON_SIZE.height() + BADGE_TILE_PADDING * 2);
+        }
         this->setToolTip("No Badge");
     }
 
@@ -539,21 +568,30 @@ protected:
             const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
             painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
             painter.setBrush(Qt::NoBrush);
-            painter.drawRoundedRect(selectionRect, 3, 3);
+            if (this->round_)
+            {
+                painter.drawEllipse(selectionRect);
+            }
+            else
+            {
+                painter.drawRoundedRect(selectionRect, 3, 3);
+            }
             const auto innerRect = selectionRect.adjusted(2, 2, -2, -2);
             paintBadgeTileBackground(painter, innerRect, this->underMouse(),
-                                     this->isDown());
+                                     this->isDown(), this->round_);
         }
         else
         {
             paintBadgeTileBackground(painter, rect, this->underMouse(),
-                                     this->isDown());
+                                     this->isDown(), this->round_);
         }
 
         const int pad = BADGE_TILE_PADDING;
         const QRect iconRect(pad, pad, rect.width() - pad * 2,
                              rect.height() - pad * 2);
-        const auto center = iconRect.center();
+        // The middle of the background and the selection ring, which leave
+        // out the last pixel; QRect::center() would round down
+        const auto center = QRectF(rect).center();
         const int radius =
             std::min(iconRect.width(), iconRect.height()) / 2 - 3;
 
@@ -569,11 +607,12 @@ protected:
 
         if (this->hasFocus())
         {
-            paintBadgeTileFocusRing(painter, rect);
+            paintBadgeTileFocusRing(painter, rect, this->round_);
         }
     }
 
 private:
+    bool round_ = false;
     bool selected_ = false;
 };
 
@@ -918,8 +957,7 @@ public:
         this->setFocusPolicy(Qt::StrongFocus);
         this->setAttribute(Qt::WA_Hover, true);
         this->setFlat(true);
-        this->setFixedSize(BADGE_ICON_SIZE.width() + (BADGE_TILE_PADDING * 2),
-                           BADGE_ICON_SIZE.height() + (BADGE_TILE_PADDING * 2));
+        this->setFixedSize(FRAME_TILE_SIZE, FRAME_TILE_SIZE);
         this->setToolTip(frame.title);
         this->picture_ = new AvatarWithFrame(
             std::move(avatar),
@@ -960,18 +998,19 @@ protected:
             const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
             painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
             painter.setBrush(Qt::NoBrush);
-            painter.drawRoundedRect(selectionRect, 3, 3);
+            painter.drawEllipse(selectionRect);
             paintBadgeTileBackground(painter,
                                      selectionRect.adjusted(2, 2, -2, -2),
-                                     this->underMouse(), this->isDown());
+                                     this->underMouse(), this->isDown(), true);
         }
         else
         {
             paintBadgeTileBackground(painter, rect, this->underMouse(),
-                                     this->isDown());
+                                     this->isDown(), true);
         }
 
-        const int pad = BADGE_TILE_PADDING / 2;
+        // A gap to the round edge, like badges have to theirs
+        const int pad = BADGE_TILE_PADDING;
         const auto side = std::min(rect.width(), rect.height()) - (pad * 2);
         this->picture_->paintInto(
             painter, QRectF((rect.width() - side) / 2.0,
@@ -979,7 +1018,7 @@ protected:
 
         if (this->hasFocus())
         {
-            paintBadgeTileFocusRing(painter, rect);
+            paintBadgeTileFocusRing(painter, rect, true);
         }
     }
 
@@ -2204,7 +2243,7 @@ void TwitchBadgePickerDialog::scaleChangedEvent(float scale)
     }
 }
 
-int TwitchBadgePickerDialog::badgeGridColumns() const
+int TwitchBadgePickerDialog::badgeGridColumns(int tileSize) const
 {
     int availableWidth = 0;
     if (this->scrollArea_ != nullptr)
@@ -2220,7 +2259,7 @@ int TwitchBadgePickerDialog::badgeGridColumns() const
             contentHorizontalMargin(scale) * 2;
     }
 
-    return badgeGridColumnsForWidth(availableWidth);
+    return badgeGridColumnsForWidth(availableWidth, tileSize);
 }
 
 void TwitchBadgePickerDialog::resizeEvent(QResizeEvent *event)
@@ -5531,7 +5570,8 @@ void TwitchBadgePickerDialog::rebuildJiltv()
     const auto &active = kind == View::JiltvBadges ? this->jiltvActiveBadge_
                                                    : this->jiltvActiveFrame_;
 
-    const int gridColumns = this->badgeGridColumns();
+    const int gridColumns =
+        this->badgeGridColumns(kind == View::JiltvFrames ? FRAME_TILE_SIZE : 0);
     auto *gridWidget = new QWidget(this->contentWidget_);
     auto *grid = new QGridLayout(gridWidget);
     grid->setContentsMargins(0, 0, 0, 0);
@@ -5548,7 +5588,8 @@ void TwitchBadgePickerDialog::rebuildJiltv()
 
     if (needle.isEmpty())
     {
-        auto *noneTile = new NoBadgeTileButton(gridWidget);
+        auto *noneTile =
+            new NoBadgeTileButton(gridWidget, kind == View::JiltvFrames);
         noneTile->setToolTip(QStringLiteral("No JilTV %1").arg(what));
         noneTile->setEnabled(!this->actionInFlight_);
         noneTile->setSelected(active.isEmpty());

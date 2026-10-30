@@ -164,7 +164,9 @@ private:
     void updatePreview();
     [[nodiscard]] MessagePtr buildPreviewMessage() const;
     void applyPreviewDialogWidth(int contentPixelWidth);
-    [[nodiscard]] int badgeGridColumns() const;
+    /// How many tiles of `tileSize` fit next to each other; badge tiles
+    /// without it.
+    [[nodiscard]] int badgeGridColumns(int tileSize = 0) const;
 
     TwitchChannel *channel_{};
 
