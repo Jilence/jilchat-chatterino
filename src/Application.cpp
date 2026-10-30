@@ -53,6 +53,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/jilchat/JilChatDailyQuote.hpp"
 #include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/potat/PotatCommands.hpp"
@@ -307,6 +308,7 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->seventvEmotes->loadGlobalEmotes();
     Jiltv::instance().loadCatalog();
     Jiltv::instance().loadGlobalEmotes();
+    JilChatDailyQuote::instance().start();
 
     this->twitch->initialize();
     this->kickChatServer->initialize();

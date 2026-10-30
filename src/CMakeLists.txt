@@ -512,6 +512,8 @@ set(SOURCE_FILES
 
         providers/jilchat/JilChatBadges.cpp
         providers/jilchat/JilChatBadges.hpp
+        providers/jilchat/JilChatDailyQuote.cpp
+        providers/jilchat/JilChatDailyQuote.hpp
         providers/jilchat/JilChatVoice.cpp
         providers/jilchat/JilChatVoice.hpp
 

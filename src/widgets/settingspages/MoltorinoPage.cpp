@@ -1515,6 +1515,12 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
             dialog.exec();
         });
 
+    SettingWidget::checkbox("Show quote of the day", s.showDailyQuote)
+        ->addKeywords({"quote", "daily", "zenquotes"})
+        ->setTooltip("Show a quote from zenquotes.io once in the "
+                     "selected chat when a new local day begins.")
+        ->addTo(*view);
+
     SettingWidget::intInput("Delay between /spam and /pyramid messages",
                             s.spamCommandIntervalMs,
                             {.min = 10,
