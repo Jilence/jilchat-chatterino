@@ -5792,6 +5792,8 @@ void TwitchBadgePickerDialog::signInJiltv()
 
     this->setStatus({});
     this->loadJiltv(true);
+    // Other clients see the personal emotes and cosmetics from now on
+    Jiltv::instance().updatePresence();
 }
 
 ImagePtr TwitchBadgePickerDialog::jiltvFrameImage(const QString &id) const

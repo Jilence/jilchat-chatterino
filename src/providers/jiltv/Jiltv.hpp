@@ -96,6 +96,11 @@ public:
                             std::function<void()> done = {});
     void loadCatalog();
 
+    /// Tells JilTV which JilTV channels the signed-in user is in, so other
+    /// clients show their personal emotes and cosmetics there from their
+    /// first message. Runs every few minutes; call it after signing in.
+    void updatePresence();
+
     QString apiUrl() const;
 
 private:
@@ -151,6 +156,12 @@ private:
                              const QJsonObject &root);
 
     QTimer catalogTimer_;
+    QTimer presenceTimer_;
+    /// Reports being in one channel, when signed in with JilTV.
+    void reportPresence(const QString &roomId);
+    /// The JilTV channel ID of each channel using JilTV, by room ID.
+    /// Guarded by mutex_.
+    std::unordered_map<QString, QString> channelIds_;
 
     /// Live updates; GUI thread only. Torn down when the app quits, before
     /// the static instance itself goes away.
