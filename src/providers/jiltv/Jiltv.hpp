@@ -42,7 +42,8 @@ namespace chatterino {
 /// - emotes: the global sets (GET /v1/sets/global) and each joined
 ///   channel's set (GET /v1/channels/twitch/{id}/bootstrap)
 /// - live updates: an event stream per channel (emote changes, chatters
-///   arriving with their cosmetics) and one for cosmetics changes
+///   arriving with their cosmetics) and one for cosmetics and personal
+///   emote changes
 class Jiltv
 {
 public:

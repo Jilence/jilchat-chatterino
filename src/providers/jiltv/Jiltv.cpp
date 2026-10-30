@@ -819,6 +819,22 @@ void Jiltv::followCosmetics()
                     data.value("login").toString(), data.value("p").toString(),
                     data.value("b").toString(), data.value("d").toString());
             }
+            else if (type == u"user.personal_emotes")
+            {
+                // Someone changed their personal emotes: the whole current
+                // list, used from their next message on (and in our own
+                // emote popup and completion when it's us).
+                const auto key = data.value("login").toString().toLower();
+                if (!key.isEmpty())
+                {
+                    this->storePersonalEmotes(
+                        {key},
+                        QJsonObject{
+                            {"users", QJsonObject{{key, data.value("emotes")}}},
+                            {"cdn", data.value("cdn")},
+                        });
+                }
+            }
         });
 }
 
