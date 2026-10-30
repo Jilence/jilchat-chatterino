@@ -517,6 +517,8 @@ set(SOURCE_FILES
 
         providers/jiltv/Jiltv.cpp
         providers/jiltv/Jiltv.hpp
+        providers/jiltv/JiltvAuth.cpp
+        providers/jiltv/JiltvAuth.hpp
         providers/jiltv/JiltvPaint.cpp
         providers/jiltv/JiltvPaint.hpp
         providers/jiltv/JiltvStream.cpp

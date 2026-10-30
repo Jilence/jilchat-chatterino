@@ -1204,7 +1204,7 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     // glow and draws the pixmap over that larger rect, so the pixmap must
     // include it, centered or not; otherwise the name gets stretched.
     padding = std::max<qreal>(0, padding);
-    const auto key = QStringLiteral("%1|%2|%3x%4|%5|%6|%7|%8|%9")
+    const auto key = QStringLiteral("%1|%2|%3x%4|%5|%6|%7|%8|%9|%10")
                          .arg(text, font.key())
                          .arg(size.width())
                          .arg(size.height())
@@ -1212,7 +1212,8 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                          .arg(dpr)
                          .arg(centerVertically)
                          .arg(padding)
-                         .arg(effects);
+                         .arg(effects)
+                         .arg(userColor.rgba());
     if (const auto *frame = this->frames_.object(key);
         frame != nullptr && frame->step == step)
     {
@@ -1247,7 +1248,14 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                          metrics.horizontalAdvance(nametag), textRect.height());
     const double cssPx = scale * dpr;  // device pixels per CSS pixel
     const QSize fillSize = (nameBox.size() * dpr).toSize().expandedTo({1, 1});
-    const QImage fill = this->renderFill(doc, fillSize, cssPx);
+    // Where the paint is (partly) transparent, the user's own color shows
+    // through, as on the website
+    QImage fill(fillSize, QImage::Format_ARGB32_Premultiplied);
+    fill.fill(userColor.isValid() ? userColor : this->fallbackColor());
+    {
+        QPainter fp(&fill);
+        fp.drawImage(0, 0, this->renderFill(doc, fillSize, cssPx));
+    }
 
     QImage img = blank(devSize);
     {
@@ -1317,7 +1325,6 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     auto pixmap = QPixmap::fromImage(std::move(img));
     pixmap.setDevicePixelRatio(dpr);
     this->frames_.insert(key, new Frame{.step = step, .pixmap = pixmap});
-    (void)userColor;
     return pixmap;
 }
 

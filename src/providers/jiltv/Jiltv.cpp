@@ -377,6 +377,13 @@ std::shared_ptr<Paint> Jiltv::paint(const QString &login)
     return it == this->paints_.end() ? nullptr : it->second;
 }
 
+std::shared_ptr<Paint> Jiltv::paintById(const QString &id) const
+{
+    const std::scoped_lock lock(this->mutex_);
+    const auto it = this->paints_.find(id);
+    return it == this->paints_.end() ? nullptr : it->second;
+}
+
 EmotePtr Jiltv::badge(const QString &login)
 {
     if (!getSettings()->showBadgesJiltv)

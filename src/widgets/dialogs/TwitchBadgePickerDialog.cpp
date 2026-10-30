@@ -19,6 +19,8 @@
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/jiltv/Jiltv.hpp"
+#include "providers/jiltv/JiltvAuth.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/seventv/paints/Paint.hpp"
@@ -128,6 +130,18 @@ constexpr auto SEVENTV_PAINTS_QUERY =
     "function color angle shape image_url repeat stops { at color } "
     "shadows { x_offset y_offset radius color } } } }";
 constexpr int PAINT_TILE_HEIGHT = 50;
+constexpr auto JILTV_INVENTORY_QUERY =
+    "{ viewer { user { paint { id } badge { id } decoration { id } "
+    "ownedPaints { paint { id name } } "
+    "ownedBadges { badge { id name imageUrl } } "
+    "ownedDecorations { decoration { id name imageUrl } } } } }";
+constexpr auto JILTV_EQUIP_PAINT_MUTATION =
+    "mutation($id: ID) { equipPaint(paintId: $id) { paint { id } } }";
+constexpr auto JILTV_EQUIP_BADGE_MUTATION =
+    "mutation($id: ID) { equipBadge(badgeId: $id) { badge { id } } }";
+constexpr auto JILTV_EQUIP_FRAME_MUTATION =
+    "mutation($id: ID) { equipDecoration(decorationId: $id) "
+    "{ decoration { id } } }";
 constexpr auto SEVENTV_CREDENTIAL_PROVIDER = "7tv";
 /// Run in the browser console on 7tv.app: copies the user's own 7TV token.
 constexpr auto SEVENTV_TOKEN_COMMAND =
@@ -689,9 +703,12 @@ private:
 class PaintTileButton final : public QPushButton
 {
 public:
+    /// `jiltv` for a JilTV paint, else a 7TV one.
     PaintTileButton(QString paintId, QString paintName, QString userName,
-                    const QColor &userColor, QWidget *parent)
+                    const QColor &userColor, QWidget *parent,
+                    bool jiltv = false)
         : QPushButton(parent)
+        , jiltv_(jiltv)
         , paintId_(std::move(paintId))
         , paintName_(std::move(paintName))
         , userName_(std::move(userName))
@@ -706,8 +723,7 @@ public:
         // Animated paints only move when the tile is painted again.
         this->connections_.managedConnect(
             getApp()->getEmotes()->getGIFTimer()->signal, [this] {
-                const auto paint =
-                    getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+                const auto paint = this->paint();
                 if (paint && paint->animated() && this->isVisible())
                 {
                     this->update();
@@ -756,10 +772,7 @@ protected:
                               nameMetrics.height());
         const QPointF namePos((rect.width() - nameSize.width()) / 2, 5);
 
-        const auto paint =
-            this->paintId_.isEmpty()
-                ? nullptr
-                : getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+        const auto paint = this->paint();
         if (paint)
         {
             const auto pixmap =
@@ -795,6 +808,18 @@ protected:
     }
 
 private:
+    std::shared_ptr<Paint> paint() const
+    {
+        if (this->paintId_.isEmpty())
+        {
+            return nullptr;
+        }
+        return this->jiltv_
+                   ? Jiltv::instance().paintById(this->paintId_)
+                   : getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+    }
+
+    bool jiltv_ = false;
     QString paintId_;
     QString paintName_;
     QString userName_;
@@ -1857,6 +1882,16 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
     this->sevenTvPaintTabButton_ =
         makeTab(paintTabRow, "7TV Paint", View::SevenTvPaints);
     tabRows->addLayout(paintTabRow);
+    auto *jiltvTabRow = new QHBoxLayout();
+    jiltvTabRow->setSpacing(tabSpacing);
+    this->jiltvPaintTabButton_ =
+        makeTab(jiltvTabRow, "JilTV Paint", View::JiltvPaints);
+    this->jiltvBadgeTabButton_ =
+        makeTab(jiltvTabRow, "JilTV Badge", View::JiltvBadges);
+    this->jiltvFrameTabButton_ =
+        makeTab(jiltvTabRow, "JilTV Frame", View::JiltvFrames);
+    // Right after the Twitch badges
+    tabRows->insertLayout(1, jiltvTabRow);
     this->sevenTvBadgeTabButton_ =
         makeTab(extraTabRow, "7TV Badge", View::SevenTvBadges);
     extraTabRow->addWidget(this->colorTabButton_, 1);
@@ -2105,7 +2140,9 @@ void TwitchBadgePickerDialog::rebuildContent()
         this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
         this->view_ != View::Moltorino && this->view_ != View::JilChat &&
         this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
-        this->view_ != View::SevenTvPaints && this->view_ != View::Order)
+        this->view_ != View::SevenTvPaints && this->view_ != View::Order &&
+        this->view_ != View::JiltvPaints && this->view_ != View::JiltvBadges &&
+        this->view_ != View::JiltvFrames)
     {
         this->setStatus("Loading badges...");
         this->contentLayout_->addStretch(1);
@@ -2144,6 +2181,12 @@ void TwitchBadgePickerDialog::rebuildContent()
              this->view_ == View::SevenTvPaints)
     {
         this->rebuildSevenTv();
+    }
+    else if (this->view_ == View::JiltvPaints ||
+             this->view_ == View::JiltvBadges ||
+             this->view_ == View::JiltvFrames)
+    {
+        this->rebuildJiltv();
     }
     else if (this->view_ == View::Order)
     {
@@ -2641,6 +2684,9 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->bluzyrinoTabButton_->setChecked(view == View::Bluzyrino);
     this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
     this->sevenTvPaintTabButton_->setChecked(view == View::SevenTvPaints);
+    this->jiltvPaintTabButton_->setChecked(view == View::JiltvPaints);
+    this->jiltvBadgeTabButton_->setChecked(view == View::JiltvBadges);
+    this->jiltvFrameTabButton_->setChecked(view == View::JiltvFrames);
     this->updateSearchVisibility();
 
     if (view == View::EventBadges)
@@ -2662,6 +2708,11 @@ void TwitchBadgePickerDialog::switchView(View view)
     else if (view == View::SevenTvBadges || view == View::SevenTvPaints)
     {
         this->loadSevenTv(false);
+    }
+    else if (view == View::JiltvPaints || view == View::JiltvBadges ||
+             view == View::JiltvFrames)
+    {
+        this->loadJiltv(false);
     }
 
     this->rebuildContent();
@@ -5052,6 +5103,565 @@ void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
             self->actionInFlight_ = false;
             (paint ? self->sevenTvActivePaint_ : self->sevenTvActiveBadge_) =
                 previous;
+            self->setStatus(error, true);
+            self->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::loadJiltv(bool force)
+{
+    if (this->jiltvLoading_ || (this->jiltvLoaded_ && !force))
+    {
+        return;
+    }
+
+    this->jiltvLoading_ = true;
+    this->setStatus("Loading JilTV...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    JiltvAuth::instance().load(this, [self] {
+        if (!self)
+        {
+            return;
+        }
+        if (!JiltvAuth::instance().signedIn())
+        {
+            self->jiltvLoading_ = false;
+            self->setStatus({});
+            self->rebuildContent();
+            return;
+        }
+
+        JiltvAuth::instance().graphql(
+            QString::fromLatin1(JILTV_INVENTORY_QUERY), {},
+            [self](const QJsonObject &data) {
+                if (!self)
+                {
+                    return;
+                }
+                self->jiltvLoading_ = false;
+                const auto user =
+                    data.value("viewer").toObject().value("user").toObject();
+                const auto idOf = [&](const char *key) {
+                    return user.value(key).toObject().value("id").toString();
+                };
+                self->jiltvActivePaint_ = idOf("paint");
+                self->jiltvActiveBadge_ = idOf("badge");
+                self->jiltvActiveFrame_ = idOf("decoration");
+
+                self->jiltvPaints_.clear();
+                const auto paints = user.value("ownedPaints").toArray();
+                for (const auto &value : paints)
+                {
+                    const auto paint =
+                        value.toObject().value("paint").toObject();
+                    const auto id = paint.value("id").toString();
+                    if (!id.isEmpty())
+                    {
+                        self->jiltvPaints_.push_back(
+                            {.id = id, .name = paint.value("name").toString()});
+                    }
+                }
+
+                // Badges and frames come as one image each.
+                const auto readImages = [](const QJsonArray &grants,
+                                           const char *key) {
+                    QVector<GqlBadge> out;
+                    for (const auto &value : grants)
+                    {
+                        const auto item =
+                            value.toObject().value(key).toObject();
+                        const auto id = item.value("id").toString();
+                        const auto image = item.value("imageUrl").toString();
+                        if (id.isEmpty() || image.isEmpty())
+                        {
+                            continue;
+                        }
+                        out.push_back({
+                            .id = id,
+                            .setID = id,
+                            .title = item.value("name").toString(),
+                            .image1x = image,
+                            .image2x = image,
+                            .image4x = image,
+                        });
+                    }
+                    return out;
+                };
+                self->jiltvBadges_ =
+                    readImages(user.value("ownedBadges").toArray(), "badge");
+                self->jiltvFrames_ = readImages(
+                    user.value("ownedDecorations").toArray(), "decoration");
+
+                self->jiltvLoaded_ = true;
+                self->setStatus({});
+                self->rebuildContent();
+            },
+            [self](const QString &error) {
+                if (!self)
+                {
+                    return;
+                }
+                self->jiltvLoading_ = false;
+                self->setStatus(error, true);
+                self->rebuildContent();
+            });
+    });
+}
+
+void TwitchBadgePickerDialog::rebuildJiltv()
+{
+    const auto kind = this->view_;
+    const bool connected = JiltvAuth::instance().signedIn();
+
+    QString titleText;
+    QString what;
+    if (kind == View::JiltvPaints)
+    {
+        titleText = "JilTV paint";
+        what = "paint";
+    }
+    else if (kind == View::JiltvBadges)
+    {
+        titleText = "JilTV badge";
+        what = "badge";
+    }
+    else
+    {
+        titleText = "JilTV frame";
+        what = "frame";
+    }
+
+    auto *headerRow = new QWidget(this->contentWidget_);
+    auto *header = new QHBoxLayout(headerRow);
+    header->setContentsMargins(0, 0, 0, 0);
+    auto *texts = new QVBoxLayout();
+    texts->setSpacing(0);
+    auto *title = new QLabel(titleText, this->contentWidget_);
+    title->setObjectName("TwitchBadgePickerSectionLabel");
+    texts->addWidget(title);
+    QString hintText;
+    if (!connected)
+    {
+        hintText =
+            QStringLiteral("Sign in with JilTV to choose a %1.").arg(what);
+    }
+    else if (kind == View::JiltvFrames)
+    {
+        hintText = "Choose the frame around your JilTV profile picture.";
+    }
+    else
+    {
+        hintText = QStringLiteral("Choose one of your JilTV %1s.").arg(what);
+    }
+    auto *hint = new QLabel(hintText, this->contentWidget_);
+    hint->setWordWrap(true);
+    texts->addWidget(hint);
+    header->addLayout(texts, 1);
+    auto *connectButton =
+        new QPushButton(connected ? "Sign out" : "Sign in", headerRow);
+    connectButton->setCursor(Qt::PointingHandCursor);
+    connectButton->setEnabled(!this->jiltvLoading_ && !this->actionInFlight_);
+    QObject::connect(connectButton, &QPushButton::clicked, this,
+                     [this, connected] {
+                         // Later: both rebuild the content, which deletes this
+                         // button.
+                         QTimer::singleShot(0, this, [this, connected] {
+                             if (connected)
+                             {
+                                 this->signOutJiltv();
+                             }
+                             else
+                             {
+                                 this->signInJiltv();
+                             }
+                         });
+                     });
+    header->addWidget(connectButton, 0, Qt::AlignTop);
+    this->contentLayout_->addWidget(headerRow);
+
+    if (!connected || this->jiltvLoading_ || !this->jiltvLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+
+    if (kind == View::JiltvPaints)
+    {
+        // Your name in each paint, two per row.
+        auto user = getApp()->getAccounts()->twitch.getCurrent();
+        const auto userName = user->getUserName();
+        auto userColor = user->color();
+        if (!userColor.isValid())
+        {
+            userColor = this->theme->window.text;
+        }
+
+        auto *list = new QWidget(this->contentWidget_);
+        auto *paintGrid = new QGridLayout(list);
+        paintGrid->setContentsMargins(0, 0, 0, 0);
+        paintGrid->setSpacing(BADGE_GRID_SPACING);
+        constexpr int paintColumns = 2;
+        int paintIndex = 0;
+        const auto addPaint = [&](const QString &id, const QString &name) {
+            auto *tile =
+                new PaintTileButton(id, name, userName, userColor, list, true);
+            tile->setSelected(id == this->jiltvActivePaint_);
+            tile->setEnabled(!this->actionInFlight_);
+            QObject::connect(tile, &QPushButton::clicked, this, [this, id] {
+                this->selectJiltv(View::JiltvPaints, id);
+            });
+            paintGrid->addWidget(tile, paintIndex / paintColumns,
+                                 paintIndex % paintColumns);
+            ++paintIndex;
+        };
+        if (needle.isEmpty())
+        {
+            addPaint({}, "No paint");
+        }
+        int shown = 0;
+        for (const auto &paint : std::as_const(this->jiltvPaints_))
+        {
+            if (paint.name.contains(needle, Qt::CaseInsensitive))
+            {
+                addPaint(paint.id, paint.name);
+                ++shown;
+            }
+        }
+        if (shown == 0 && !needle.isEmpty())
+        {
+            this->contentLayout_->addWidget(makeEmptyListLabel(
+                QStringLiteral("No matching paints."), this->contentWidget_));
+            return;
+        }
+        this->contentLayout_->addWidget(list);
+        return;
+    }
+
+    const auto &items =
+        kind == View::JiltvBadges ? this->jiltvBadges_ : this->jiltvFrames_;
+    const auto &active = kind == View::JiltvBadges ? this->jiltvActiveBadge_
+                                                   : this->jiltvActiveFrame_;
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noneTile = new NoBadgeTileButton(gridWidget);
+        noneTile->setToolTip(QStringLiteral("No JilTV %1").arg(what));
+        noneTile->setEnabled(!this->actionInFlight_);
+        noneTile->setSelected(active.isEmpty());
+        QObject::connect(noneTile, &QPushButton::clicked, this, [this, kind] {
+            this->selectJiltv(kind, {});
+        });
+        grid->addWidget(noneTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &item : items)
+    {
+        if (!badgeMatchesSearch(item, needle))
+        {
+            continue;
+        }
+        auto *tile = new BadgeTileButton(item, gridWidget);
+        tile->setEnabled(!this->actionInFlight_);
+        tile->setSelected(item.id == active);
+        QObject::connect(tile, &QPushButton::clicked, this,
+                         [this, kind, id = item.id] {
+                             this->selectJiltv(kind, id);
+                         });
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0 && !needle.isEmpty())
+    {
+        this->contentLayout_->addWidget(
+            makeEmptyListLabel(QStringLiteral("No matching %1s.").arg(what),
+                               this->contentWidget_));
+        return;
+    }
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::signInJiltv()
+{
+    // The popup deletes itself when it loses focus, which the sign-in window
+    // and the browser take. Keep it open meanwhile.
+    const auto deactivateAction = this->windowDeactivateAction;
+    this->windowDeactivateAction = WindowDeactivateAction::Nothing;
+    const QPointer<TwitchBadgePickerDialog> self = this;
+
+    QDialog dialog;
+    dialog.setWindowTitle(QStringLiteral("Sign in with JilTV"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *intro =
+        new QLabel(QStringLiteral("Getting a code from JilTV..."), &dialog);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    auto *codeLabel = new QLabel(&dialog);
+    codeLabel->setAlignment(Qt::AlignCenter);
+    codeLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    auto codeFont = codeLabel->font();
+    codeFont.setPointSizeF(codeFont.pointSizeF() * 2.2);
+    codeFont.setBold(true);
+    codeFont.setLetterSpacing(QFont::AbsoluteSpacing, 3);
+    codeLabel->setFont(codeFont);
+    codeLabel->hide();
+    layout->addWidget(codeLabel);
+
+    auto *openButton =
+        new QPushButton(QStringLiteral("Open jiltv.app"), &dialog);
+    openButton->hide();
+    layout->addWidget(openButton);
+
+    auto *stateLabel = new QLabel(&dialog);
+    stateLabel->setWordWrap(true);
+    layout->addWidget(stateLabel);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
+                     &QDialog::reject);
+    layout->addWidget(buttons);
+
+    // Polling, until the user answers or the code expires
+    QTimer pollTimer;
+    pollTimer.setSingleShot(true);
+    QString deviceCode;
+    int interval = 5;
+    QDateTime deadline;
+    QString failure;
+
+    const auto fail = [&](const QString &text) {
+        failure = text;
+        dialog.reject();
+    };
+
+    QObject::connect(&pollTimer, &QTimer::timeout, &dialog, [&] {
+        if (QDateTime::currentDateTimeUtc() > deadline)
+        {
+            fail(QStringLiteral("The JilTV code expired. Sign in again."));
+            return;
+        }
+        const QPointer<QDialog> alive = &dialog;
+        JiltvAuth::instance().poll(deviceCode, [&, alive](
+                                                   JiltvAuth::PollResult result,
+                                                   const QString &error) {
+            if (!alive)
+            {
+                return;
+            }
+            switch (result)
+            {
+                case JiltvAuth::PollResult::Done:
+                    dialog.accept();
+                    return;
+                case JiltvAuth::PollResult::SlowDown:
+                    interval += 5;
+                    [[fallthrough]];
+                case JiltvAuth::PollResult::Pending:
+                    pollTimer.start(interval * 1000);
+                    return;
+                case JiltvAuth::PollResult::Denied:
+                    fail(QStringLiteral("You declined the sign-in on "
+                                        "JilTV."));
+                    return;
+                case JiltvAuth::PollResult::Expired:
+                    fail(QStringLiteral(
+                        "The JilTV code expired. Sign in again."));
+                    return;
+                case JiltvAuth::PollResult::Failed:
+                    fail(QStringLiteral("JilTV sign-in failed: %1").arg(error));
+                    return;
+            }
+        });
+    });
+
+    const QPointer<QDialog> alive = &dialog;
+    JiltvAuth::requestDeviceCode(
+        [&, alive](const JiltvAuth::DeviceCode &code) {
+            if (!alive)
+            {
+                return;
+            }
+            deviceCode = code.deviceCode;
+            interval = std::max(code.interval, 1);
+            deadline = QDateTime::currentDateTimeUtc().addSecs(code.expiresIn);
+            intro->setText(QStringLiteral(
+                "Open jiltv.app, check that it shows this code and click "
+                "Allow:"));
+            codeLabel->setText(code.userCode);
+            codeLabel->show();
+            const auto url = code.verificationUriComplete.isEmpty()
+                                 ? code.verificationUri
+                                 : code.verificationUriComplete;
+            QObject::connect(openButton, &QPushButton::clicked, &dialog, [url] {
+                QDesktopServices::openUrl(QUrl(url));
+            });
+            openButton->show();
+            stateLabel->setText(QStringLiteral("Waiting for JilTV..."));
+            QDesktopServices::openUrl(QUrl(url));
+            pollTimer.start(interval * 1000);
+        },
+        [&, alive](const QString &error) {
+            if (alive)
+            {
+                fail(QStringLiteral("JilTV sign-in failed: %1").arg(error));
+            }
+        });
+
+    const auto accepted = dialog.exec() == QDialog::Accepted;
+    pollTimer.stop();
+    if (!self)
+    {
+        return;
+    }
+    this->windowDeactivateAction = deactivateAction;
+    this->activateWindow();
+    if (!accepted)
+    {
+        if (!failure.isEmpty())
+        {
+            this->setStatus(failure, true);
+            this->rebuildContent();
+        }
+        return;
+    }
+
+    this->setStatus({});
+    this->loadJiltv(true);
+}
+
+void TwitchBadgePickerDialog::signOutJiltv()
+{
+    JiltvAuth::instance().signOut();
+    this->jiltvLoaded_ = false;
+    this->jiltvPaints_.clear();
+    this->jiltvBadges_.clear();
+    this->jiltvFrames_.clear();
+    this->setStatus({});
+    this->rebuildContent();
+}
+
+void TwitchBadgePickerDialog::selectJiltv(View kind, const QString &id)
+{
+    QString *active = &this->jiltvActiveFrame_;
+    const char *mutation = JILTV_EQUIP_FRAME_MUTATION;
+    QString what = QStringLiteral("frame");
+    if (kind == View::JiltvPaints)
+    {
+        active = &this->jiltvActivePaint_;
+        mutation = JILTV_EQUIP_PAINT_MUTATION;
+        what = QStringLiteral("paint");
+    }
+    else if (kind == View::JiltvBadges)
+    {
+        active = &this->jiltvActiveBadge_;
+        mutation = JILTV_EQUIP_BADGE_MUTATION;
+        what = QStringLiteral("badge");
+    }
+
+    const auto previous = *active;
+    *active = id;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    QString name;
+    if (kind == View::JiltvPaints)
+    {
+        for (const auto &p : std::as_const(this->jiltvPaints_))
+        {
+            if (p.id == id)
+            {
+                name = p.name;
+            }
+        }
+    }
+    else
+    {
+        const auto &items =
+            kind == View::JiltvBadges ? this->jiltvBadges_ : this->jiltvFrames_;
+        for (const auto &item : items)
+        {
+            if (item.id == id)
+            {
+                name = item.title;
+            }
+        }
+    }
+
+    const auto value =
+        id.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(id);
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    JiltvAuth::instance().graphql(
+        QString::fromLatin1(mutation), {{"id", value}},
+        [self, kind, id, what, name](const QJsonObject &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            if (kind != View::JiltvFrames)
+            {
+                // Show it in this chat right away; others get it from the
+                // live cosmetics updates.
+                Jiltv::instance().setWorn(
+                    getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+                    self->jiltvActivePaint_, self->jiltvActiveBadge_);
+            }
+            if (id.isEmpty())
+            {
+                self->channel_->addSystemMessage(
+                    QStringLiteral("JilTV %1 removed.").arg(what));
+            }
+            else
+            {
+                self->channel_->addSystemMessage(
+                    QStringLiteral("JilTV %1 set to: %2").arg(what, name));
+            }
+            self->rebuildContent();
+        },
+        [self, kind, previous](const QString &error) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            if (kind == View::JiltvPaints)
+            {
+                self->jiltvActivePaint_ = previous;
+            }
+            else if (kind == View::JiltvBadges)
+            {
+                self->jiltvActiveBadge_ = previous;
+            }
+            else
+            {
+                self->jiltvActiveFrame_ = previous;
+            }
+            if (!JiltvAuth::instance().signedIn())
+            {
+                self->jiltvLoaded_ = false;
+            }
             self->setStatus(error, true);
             self->rebuildContent();
         });
