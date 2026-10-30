@@ -17,6 +17,7 @@
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "controllers/notifications/NotificationController.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/twitch/api/Helix.hpp"
@@ -2447,6 +2448,7 @@ void SplitHeader::reloadChannelEmotes()
         twitchChannel->refreshFFZChannelEmotes(true);
         twitchChannel->refreshBTTVChannelEmotes(true);
         twitchChannel->refreshSevenTVChannelEmotes(true);
+        Jiltv::instance().loadChannelEmotes(twitchChannel->roomId());
         twitchChannel->refreshBadgesProviders();
     }
     else if (auto *kc = dynamic_cast<KickChannel *>(channel.get()))

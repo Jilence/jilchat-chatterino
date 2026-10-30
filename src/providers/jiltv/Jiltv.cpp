@@ -12,6 +12,7 @@
 #include "messages/Emote.hpp"
 #include "messages/Image.hpp"
 #include "messages/MessageBuilder.hpp"
+#include "providers/jiltv/JiltvAuth.hpp"
 #include "providers/jiltv/JiltvPaint.hpp"
 #include "providers/jiltv/JiltvStream.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
@@ -40,6 +41,10 @@ constexpr int LOOKUP_BATCH = 100;
 constexpr int LOOKUP_DELAY_MS = 150;
 constexpr qint64 WORN_TTL_SECS = 5 * 60;
 constexpr int CATALOG_INTERVAL_MS = 10 * 60 * 1000;
+/// A presence expires after 10 minutes
+constexpr int PRESENCE_INTERVAL_MS = 5 * 60 * 1000;
+constexpr auto PRESENCE_MUTATION =
+    "mutation($c: ID!) { updatePresence(channelId: $c) { lastSeenAt } }";
 
 constexpr int FLAG_ZERO_WIDTH = 2;
 constexpr int FLAG_PENDING = 16;
@@ -154,6 +159,11 @@ Jiltv::Jiltv()
         this->loadCatalog();
     });
     this->catalogTimer_.start();
+    this->presenceTimer_.setInterval(PRESENCE_INTERVAL_MS);
+    QObject::connect(&this->presenceTimer_, &QTimer::timeout, [this] {
+        this->updatePresence();
+    });
+    this->presenceTimer_.start();
     this->network_ = new QNetworkAccessManager();
     QObject::connect(QCoreApplication::instance(),
                      &QCoreApplication::aboutToQuit, [this] {
@@ -448,6 +458,8 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
                 parseBootstrap(root, QStringLiteral("Channel")));
             auto setName =
                 root.value("set").toObject().value("name").toString();
+            const auto channelId =
+                root.value("channel").toObject().value("id").toString();
             const auto n = static_cast<int>(map->size());
             qCDebug(chatterinoSeventv)
                 << "JilTV: channel" << roomId << "has" << n << "emotes";
@@ -455,8 +467,10 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
                 const std::scoped_lock lock(this->mutex_);
                 this->channels_[roomId] = std::move(map);
                 this->channelSetNames_[roomId] = std::move(setName);
+                this->channelIds_[roomId] = channelId;
             }
             this->follow(roomId);
+            this->reportPresence(roomId);
             if (done)
             {
                 done(n);
@@ -478,6 +492,49 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
             }
         })
         .execute();
+}
+
+void Jiltv::updatePresence()
+{
+    getApp()->getTwitch()->forEachChannel([this](const ChannelPtr &chan) {
+        if (const auto *channel = dynamic_cast<TwitchChannel *>(chan.get()))
+        {
+            this->reportPresence(channel->roomId());
+        }
+    });
+}
+
+void Jiltv::reportPresence(const QString &roomId)
+{
+    if (!getSettings()->enableJiltv || roomId.isEmpty())
+    {
+        return;
+    }
+    QString channelId;
+    {
+        const std::scoped_lock lock(this->mutex_);
+        const auto it = this->channelIds_.find(roomId);
+        if (it == this->channelIds_.end() || it->second.isEmpty())
+        {
+            return;  // the channel doesn't use JilTV
+        }
+        channelId = it->second;
+    }
+
+    JiltvAuth::instance().load(QCoreApplication::instance(), [channelId] {
+        auto &auth = JiltvAuth::instance();
+        if (!auth.signedIn())
+        {
+            return;
+        }
+        auth.graphql(
+            QString::fromLatin1(PRESENCE_MUTATION), {{"c", channelId}},
+            [](const QJsonObject &) {},
+            [channelId](const QString &error) {
+                qCDebug(chatterinoSeventv)
+                    << "JilTV: presence in" << channelId << "failed:" << error;
+            });
+    });
 }
 
 std::shared_ptr<const EmoteMap> Jiltv::channelEmotes(
