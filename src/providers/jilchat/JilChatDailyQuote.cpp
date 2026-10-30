@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <tuple>
 
 namespace {
 
@@ -160,7 +161,7 @@ ChannelPtr selectedChannel()
 
 namespace chatterino {
 
-QString dailyQuoteLeadIn(const QTime &time, QRandomGenerator &random,
+QString dailyQuoteLeadIn(QTime time, QRandomGenerator &random,
                          QStringView previousLeadIn)
 {
     const auto *leadIns = &NEW_DAY_LEAD_INS;
@@ -180,7 +181,7 @@ QString dailyQuoteLeadIn(const QTime &time, QRandomGenerator &random,
     return chooseLeadIn(*leadIns, random, previousLeadIn);
 }
 
-bool dailyQuoteIsDue(const QDate &lastShownDate, const QDate &today)
+bool dailyQuoteIsDue(QDate lastShownDate, QDate today)
 {
     return today.isValid() &&
            (!lastShownDate.isValid() || lastShownDate < today);
@@ -275,7 +276,8 @@ void JilChatDailyQuote::showIfDue()
                                 MessageContext::Original);
             getSettings()->dailyQuoteLastLeadIn = leadIn;
             getSettings()->dailyQuoteLastDate = today.toString(Qt::ISODate);
-            getSettings()->requestSave();
+            // Saved right away, so a crash doesn't show it twice
+            std::ignore = getSettings()->requestSave();
             this->scheduleNextDay();
         })
         .onError([this](const NetworkResult &) {

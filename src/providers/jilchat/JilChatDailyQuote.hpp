@@ -17,9 +17,9 @@ namespace chatterino {
 
 /// A short opener for the quote that fits the time of day, never the same as
 /// `previousLeadIn`.
-QString dailyQuoteLeadIn(const QTime &time, QRandomGenerator &random,
+QString dailyQuoteLeadIn(QTime time, QRandomGenerator &random,
                          QStringView previousLeadIn = {});
-bool dailyQuoteIsDue(const QDate &lastShownDate, const QDate &today);
+bool dailyQuoteIsDue(QDate lastShownDate, QDate today);
 
 /// Shows a random quote from zenquotes.io once a day in the selected
 /// chat, when the local day begins or the app starts later that day.
