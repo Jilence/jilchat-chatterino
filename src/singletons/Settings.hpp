@@ -954,6 +954,10 @@ public:
                                              true};
     BoolSetting showUsercardCreatedDate = {"/usercard/showCreatedDate", true};
     BoolSetting showFollowButtonInUsercard{"/usercard/showFollowButton", true};
+    /// A quote from zenquotes.io, once a day in the selected chat
+    BoolSetting showDailyQuote{"/jilchat/dailyQuote/enabled", true};
+    QStringSetting dailyQuoteLastDate{"/jilchat/dailyQuote/lastShownDate", {}};
+    QStringSetting dailyQuoteLastLeadIn{"/jilchat/dailyQuote/lastLeadIn", {}};
     BoolSetting confirmUnfollowFromUsercard{"/usercard/confirmUnfollow", true};
     BoolSetting showUsercardFollowage = {"/usercard/showFollowage", true};
     BoolSetting showUsercardFollowageRelativeTime = {
