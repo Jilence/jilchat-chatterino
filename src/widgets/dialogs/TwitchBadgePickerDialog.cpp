@@ -5497,7 +5497,7 @@ void TwitchBadgePickerDialog::signInJiltv()
     });
 
     const QPointer<QDialog> alive = &dialog;
-    JiltvAuth::instance().requestDeviceCode(
+    JiltvAuth::requestDeviceCode(
         [&, alive](const JiltvAuth::DeviceCode &code) {
             if (!alive)
             {

@@ -82,8 +82,8 @@ bool JiltvAuth::signedIn() const
 }
 
 void JiltvAuth::requestDeviceCode(
-    std::function<void(const DeviceCode &)> onCode,
-    std::function<void(const QString &)> onError)
+    const std::function<void(const DeviceCode &)> &onCode,
+    const std::function<void(const QString &)> &onError)
 {
     NetworkRequest(endpoint(QStringLiteral("/v1/oauth/device/code")),
                    NetworkRequestType::Post)
@@ -117,8 +117,9 @@ void JiltvAuth::requestDeviceCode(
         .execute();
 }
 
-void JiltvAuth::poll(const QString &deviceCode,
-                     std::function<void(PollResult, const QString &)> done)
+void JiltvAuth::poll(
+    const QString &deviceCode,
+    const std::function<void(PollResult, const QString &)> &done)
 {
     NetworkRequest(endpoint(QStringLiteral("/v1/oauth/token")),
                    NetworkRequestType::Post)
@@ -137,7 +138,10 @@ void JiltvAuth::poll(const QString &deviceCode,
         })
         .onError([done](const NetworkResult &result) {
             const auto error = oauthError(result);
-            if (error == u"authorization_pending")
+            // No answer at all (network) counts as not answered yet: try
+            // again with the next poll
+            if (error == u"authorization_pending" ||
+                (error.isEmpty() && !result.status()))
             {
                 done(PollResult::Pending, {});
             }
@@ -152,11 +156,6 @@ void JiltvAuth::poll(const QString &deviceCode,
             else if (error == u"expired_token")
             {
                 done(PollResult::Expired, {});
-            }
-            else if (error.isEmpty() && !result.status())
-            {
-                // No answer (network): try again with the next poll
-                done(PollResult::Pending, {});
             }
             else
             {
@@ -241,8 +240,8 @@ void JiltvAuth::refresh(std::function<void(bool, const QString &)> done)
 }
 
 void JiltvAuth::graphql(const QString &query, const QJsonObject &variables,
-                        std::function<void(const QJsonObject &)> onData,
-                        std::function<void(const QString &)> onError)
+                        const std::function<void(const QJsonObject &)> &onData,
+                        const std::function<void(const QString &)> &onError)
 {
     if (!this->signedIn())
     {
@@ -267,10 +266,10 @@ void JiltvAuth::graphql(const QString &query, const QJsonObject &variables,
     this->sendGraphql(query, variables, false, onData, onError);
 }
 
-void JiltvAuth::sendGraphql(const QString &query, const QJsonObject &variables,
-                            bool retried,
-                            std::function<void(const QJsonObject &)> onData,
-                            std::function<void(const QString &)> onError)
+void JiltvAuth::sendGraphql(
+    const QString &query, const QJsonObject &variables, bool retried,
+    const std::function<void(const QJsonObject &)> &onData,
+    const std::function<void(const QString &)> &onError)
 {
     NetworkRequest(endpoint(QStringLiteral("/v1/graphql")),
                    NetworkRequestType::Post)

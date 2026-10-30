@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QString>
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -35,7 +36,7 @@ public:
         int interval = 5;
     };
 
-    enum class PollResult {
+    enum class PollResult : std::uint8_t {
         Pending,
         SlowDown,
         /// Signed in; the tokens are stored
@@ -52,17 +53,19 @@ public:
 
     /// Starts a sign-in. Call it when the user asks to sign in, not in the
     /// background (the API limits it to 20 per minute).
-    void requestDeviceCode(std::function<void(const DeviceCode &)> onCode,
-                           std::function<void(const QString &)> onError);
+    static void requestDeviceCode(
+        const std::function<void(const DeviceCode &)> &onCode,
+        const std::function<void(const QString &)> &onError);
     /// Asks once whether the user answered. `error` explains Failed.
-    void poll(const QString &deviceCode,
-              std::function<void(PollResult, const QString &error)> done);
+    void poll(
+        const QString &deviceCode,
+        const std::function<void(PollResult, const QString &error)> &done);
 
     /// A GraphQL request with the access token, renewed when it is about to
     /// expire or the API refuses it.
     void graphql(const QString &query, const QJsonObject &variables,
-                 std::function<void(const QJsonObject &data)> onData,
-                 std::function<void(const QString &)> onError);
+                 const std::function<void(const QJsonObject &data)> &onData,
+                 const std::function<void(const QString &)> &onError);
 
     /// Revokes the sign-in and forgets the tokens.
     void signOut();
@@ -77,8 +80,8 @@ private:
     void refresh(std::function<void(bool ok, const QString &error)> done);
     void sendGraphql(const QString &query, const QJsonObject &variables,
                      bool retried,
-                     std::function<void(const QJsonObject &)> onData,
-                     std::function<void(const QString &)> onError);
+                     const std::function<void(const QJsonObject &)> &onData,
+                     const std::function<void(const QString &)> &onError);
 
     /// The Twitch account the tokens belong to
     QString account_;
