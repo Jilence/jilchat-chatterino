@@ -255,7 +255,8 @@ void Jiltv::applyCatalog(const QJsonObject &root)
     // Frames are square, transparent in the middle, and drawn at 120 % of
     // the profile picture
     std::unordered_map<QString, ImagePtr> frames;
-    for (const auto &value : root.value("decorations").toArray())
+    const auto decorations = root.value("decorations").toArray();
+    for (const auto &value : decorations)
     {
         const auto d = value.toObject();
         const auto id = d.value("id").toString();
@@ -352,8 +353,12 @@ void Jiltv::flushLookups()
                     continue;  // asked again the next time it's drawn
                 }
                 const auto u = users.value(login).toObject();
-                Worn w{u.value("p").toString(), u.value("b").toString(), now,
-                       u.value("d").toString()};
+                Worn w{
+                    .paint = u.value("p").toString(),
+                    .badge = u.value("b").toString(),
+                    .fetched = now,
+                    .frame = u.value("d").toString(),
+                };
                 auto &slot = this->worn_[login];
                 changed |= slot.paint != w.paint || slot.badge != w.badge ||
                            slot.frame != w.frame;
@@ -773,7 +778,12 @@ void Jiltv::setWorn(const QString &login, const QString &paint,
         const auto newFrame = frame.value_or(slot.frame);
         changed = slot.paint != paint || slot.badge != badge ||
                   slot.frame != newFrame;
-        slot = {paint, badge, QDateTime::currentDateTimeUtc(), newFrame};
+        slot = {
+            .paint = paint,
+            .badge = badge,
+            .fetched = QDateTime::currentDateTimeUtc(),
+            .frame = newFrame,
+        };
     }
     if (changed)
     {

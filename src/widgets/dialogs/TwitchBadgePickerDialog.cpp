@@ -911,15 +911,15 @@ class FrameTileButton final : public QPushButton
 {
 public:
     FrameTileButton(const GqlBadge &frame, std::function<ImagePtr()> avatar,
-                    ImagePtr frameImage, QWidget *parent)
+                    const ImagePtr &frameImage, QWidget *parent)
         : QPushButton(parent)
     {
         this->setCursor(Qt::PointingHandCursor);
         this->setFocusPolicy(Qt::StrongFocus);
         this->setAttribute(Qt::WA_Hover, true);
         this->setFlat(true);
-        this->setFixedSize(BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2,
-                           BADGE_ICON_SIZE.height() + BADGE_TILE_PADDING * 2);
+        this->setFixedSize(BADGE_ICON_SIZE.width() + (BADGE_TILE_PADDING * 2),
+                           BADGE_ICON_SIZE.height() + (BADGE_TILE_PADDING * 2));
         this->setToolTip(frame.title);
         this->picture_ = new AvatarWithFrame(
             std::move(avatar),
@@ -5877,7 +5877,7 @@ void TwitchBadgePickerDialog::selectJiltv(View kind, const QString &id)
     const QPointer<TwitchBadgePickerDialog> self = this;
     JiltvAuth::instance().graphql(
         QString::fromLatin1(mutation), {{"id", value}},
-        [self, kind, id, what, name](const QJsonObject &) {
+        [self, id, what, name](const QJsonObject &) {
             if (!self)
             {
                 return;

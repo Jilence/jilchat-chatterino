@@ -12,7 +12,11 @@
 #include <QPainter>
 #include <QPainterPath>
 
+#include <chrono>
+
 namespace chatterino {
+
+using namespace std::chrono_literals;
 
 bool paintAvatarWithFrame(QPainter &painter, const QRectF &rect,
                           const QPixmap &avatar, const ImagePtr &frame)
@@ -61,7 +65,7 @@ AvatarFrameOverlay::AvatarFrameOverlay(QWidget *parent)
     this->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     this->setAttribute(Qt::WA_NoSystemBackground, true);
 
-    this->timer_.setInterval(1000);
+    this->timer_.setInterval(1s);
     QObject::connect(&this->timer_, &QTimer::timeout, this, [this] {
         this->refresh();
     });
