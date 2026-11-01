@@ -18,6 +18,7 @@
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
+#include "providers/streamnook/StreamNookBadges.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
 
@@ -110,6 +111,11 @@ void reloadBadgeProviders(const ChannelPtr &channel)
     {
         app->getDankChatBadges()->load(
             reloadMessage(channel, "DankChat badges"));
+    }
+    if (settings->showBadgesStreamNook)
+    {
+        app->getStreamNookBadges()->load(
+            reloadMessage(channel, "StreamNook badges"));
     }
     if (settings->showBadgesChatterino)
     {

@@ -206,6 +206,12 @@ public:
         return nullptr;
     }
 
+    StreamNookBadges *getStreamNookBadges() override
+    {
+        assert(!"getStreamNookBadges was called without being initialized");
+        return nullptr;
+    }
+
     ChatAutomationController *getChatAutomations() override
     {
         return nullptr;

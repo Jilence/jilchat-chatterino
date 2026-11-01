@@ -206,6 +206,7 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->updateWordTypeMaskListener.add(settings.showBadgesFolhinha);
     this->updateWordTypeMaskListener.add(settings.showBadgesFfzAp);
     this->updateWordTypeMaskListener.add(settings.showBadgesDankChat);
+    this->updateWordTypeMaskListener.add(settings.showBadgesStreamNook);
     this->updateWordTypeMaskListener.add(settings.showBadgesChatsen);
     this->updateWordTypeMaskListener.add(settings.showBadgesBluzyrino);
     this->updateWordTypeMaskListener.add(settings.showBadgesBadgeHQ);
@@ -360,6 +361,8 @@ void WindowManager::updateWordTypeMask()
     flags.set(settings->showBadgesFolhinha ? MEF::BadgeFolhinha : MEF::None);
     flags.set(settings->showBadgesFfzAp ? MEF::BadgeFfzAp : MEF::None);
     flags.set(settings->showBadgesDankChat ? MEF::BadgeDankChat : MEF::None);
+    flags.set(settings->showBadgesStreamNook ? MEF::BadgeStreamNook
+                                             : MEF::None);
     flags.set(settings->showBadgesChatsen ? MEF::BadgeChatsen : MEF::None);
     flags.set(settings->showBadgesJilChat ? MEF::BadgeJilChat : MEF::None);
     flags.set(settings->showBadgesJiltv ? MEF::BadgeJiltv : MEF::None);

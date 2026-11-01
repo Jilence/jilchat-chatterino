@@ -62,6 +62,7 @@
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
+#include "providers/streamnook/StreamNookBadges.hpp"
 #include "providers/supibot/SupibotCommands.hpp"
 #include "providers/twitch/ChannelPointReward.hpp"
 #include "providers/twitch/PubSubManager.hpp"
@@ -224,6 +225,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , folhinhaBadges(new FolhinhaBadges)
     , ffzApBadges(new FfzApBadges)
     , dankChatBadges(new DankChatBadges)
+    , streamNookBadges(new StreamNookBadges)
     , chatsenBadges(new ChatsenBadges)
     , limerinoBadges(new LimerinoBadges)
     , badgeHQBadges(new BadgeHQBadges)
@@ -593,6 +595,12 @@ DankChatBadges *Application::getDankChatBadges()
     return this->dankChatBadges.get();
 }
 
+StreamNookBadges *Application::getStreamNookBadges()
+{
+    assert(this->streamNookBadges);
+    return this->streamNookBadges.get();
+}
+
 ChatAutomationController *Application::getChatAutomations()
 {
     assertInGuiThread();
@@ -917,6 +925,7 @@ void Application::stop()
     this->homiesBadges.reset();
     this->ffzApBadges.reset();
     this->dankChatBadges.reset();
+    this->streamNookBadges.reset();
     this->chatsenBadges.reset();
     this->limerinoBadges.reset();
     this->badgeHQBadges.reset();

@@ -503,6 +503,8 @@ set(SOURCE_FILES
 
         providers/dankchat/DankChatBadges.cpp
         providers/dankchat/DankChatBadges.hpp
+        providers/streamnook/StreamNookBadges.cpp
+        providers/streamnook/StreamNookBadges.hpp
 
         providers/chatsen/ChatsenBadges.cpp
         providers/chatsen/ChatsenBadges.hpp

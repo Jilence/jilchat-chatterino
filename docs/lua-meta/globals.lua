@@ -883,6 +883,7 @@ c2.MessageElementFlag = {
     BadgeBadgeHQ = 0,
     BadgeLimerino = 0,
     BadgeJiltv = 0,
+    BadgeStreamNook = 0,
     Badges = 0,
     ChannelName = 0,
     BitsAmount = 0,
