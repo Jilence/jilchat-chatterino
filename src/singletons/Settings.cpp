@@ -121,6 +121,9 @@ QString formatOutgoingTranslationChannelSettings(
 }
 
 constexpr auto SETTINGS_IMPORT_FORMAT = "leafyrino-settings-export";
+/// A settings file exported from Moltorino: single settings by their path,
+/// plus some whole files
+constexpr auto MOLTORINO_IMPORT_FORMAT = "moltorino-settings";
 constexpr auto PENDING_SETTINGS_IMPORT_FILENAME =
     "pending-settings-import.json";
 const QStringList SETTINGS_IMPORT_FILES = {
@@ -247,6 +250,81 @@ QJsonObject preserveLocalAccounts(QJsonObject importedSettings,
     return importedSettings;
 }
 
+/// `object` with `value` at `path` ("appearance", "theme", "name"), the
+/// objects on the way created when missing
+QJsonObject withValueAt(QJsonObject object, const QStringList &path,
+                        const QJsonValue &value)
+{
+    if (path.isEmpty())
+    {
+        return object;
+    }
+    if (path.size() == 1)
+    {
+        object.insert(path.first(), value);
+        return object;
+    }
+    object.insert(path.first(), withValueAt(object[path.first()].toObject(),
+                                            path.mid(1), value));
+    return object;
+}
+
+/// Whether a Moltorino setting is left out: accounts stay those of this
+/// device, and the version is that of this app
+bool skipMoltorinoSetting(const QString &path)
+{
+    return !path.startsWith(u'/') || path.startsWith(u"/accounts"_s) ||
+           path.startsWith(u"/kickAccounts"_s) ||
+           path == u"/misc/currentVersion"_s;
+}
+
+/// Adds the settings of a Moltorino export to the current ones (its export
+/// only has some of them) and takes over its window layout and user data.
+void applyMoltorinoImport(const QJsonObject &importObject,
+                          const QString &settingsDirectory)
+{
+    const auto settingsPath = combinePath(settingsDirectory, "settings.json");
+    auto settings = QFileInfo::exists(settingsPath)
+                        ? readJsonFile(settingsPath).object()
+                        : QJsonObject{};
+
+    // {"appearance": {"/appearance/theme/name": "Sakura Dream", ...}, ...}
+    const auto categories = importObject[u"settings"_s].toObject();
+    for (const auto &category : categories)
+    {
+        const auto values = category.toObject();
+        for (auto it = values.begin(); it != values.end(); ++it)
+        {
+            if (skipMoltorinoSetting(it.key()))
+            {
+                continue;
+            }
+            settings = withValueAt(
+                settings, it.key().split(u'/', Qt::SkipEmptyParts), *it);
+        }
+    }
+    if (!writeJsonFile(settingsPath, settings))
+    {
+        return;
+    }
+
+    // {"layout": {"target": "window-layout.json", "data": {...}}, ...}
+    const auto files = importObject[u"files"_s].toObject();
+    for (const auto &value : files)
+    {
+        const auto file = value.toObject();
+        const auto target = file[u"target"_s].toString();
+        const auto data = file[u"data"_s].toObject();
+        // An empty one would only wipe what is here
+        if (target == u"settings.json"_s ||
+            !SETTINGS_IMPORT_FILES.contains(target) || data.isEmpty())
+        {
+            continue;
+        }
+        writeJsonFile(combinePath(settingsDirectory, target), data);
+    }
+}
+
 void applyPendingSettingsImport(const QString &settingsDirectory)
 {
     const auto pendingPath =
@@ -263,6 +341,13 @@ void applyPendingSettingsImport(const QString &settingsDirectory)
     }
 
     const auto importObject = importDocument.object();
+    if (importObject[u"format"_s].toString() == MOLTORINO_IMPORT_FORMAT &&
+        importObject[u"settings"_s].isObject())
+    {
+        applyMoltorinoImport(importObject, settingsDirectory);
+        QFile::remove(pendingPath);
+        return;
+    }
     if (importObject[u"format"_s].toString() != SETTINGS_IMPORT_FORMAT ||
         !importObject[u"files"_s].isObject())
     {

@@ -38,6 +38,8 @@ using namespace chatterino;
 using namespace chatterino::literals;
 
 const QString SETTINGS_EXPORT_FORMAT = u"leafyrino-settings-export"_s;
+/// Files from Moltorino's settings export can be imported too
+const QString MOLTORINO_EXPORT_FORMAT = u"moltorino-settings"_s;
 const QString SETTINGS_PENDING_IMPORT_FILENAME =
     u"pending-settings-import.json"_s;
 const QStringList SETTINGS_EXPORT_FILES = {
@@ -271,7 +273,8 @@ void importSettingsProfile(QWidget *parent)
 {
     const auto fileName = QFileDialog::getOpenFileName(
         parent, "Import JilChat Chatterino settings", QDir::homePath(),
-        "JilChat Chatterino settings (*.json);;JSON files (*.json)");
+        "JilChat Chatterino or Moltorino settings (*.json);;JSON files "
+        "(*.json)");
     if (fileName.isEmpty())
     {
         return;
@@ -287,21 +290,33 @@ void importSettingsProfile(QWidget *parent)
     }
 
     const auto exportObject = exportDocument.object();
-    if (exportObject[u"format"_s].toString() != SETTINGS_EXPORT_FORMAT ||
-        !exportObject[u"files"_s].isObject())
+    const bool fromMoltorino =
+        exportObject[u"format"_s].toString() == MOLTORINO_EXPORT_FORMAT &&
+        exportObject[u"settings"_s].isObject();
+    if (!fromMoltorino &&
+        (exportObject[u"format"_s].toString() != SETTINGS_EXPORT_FORMAT ||
+         !exportObject[u"files"_s].isObject()))
     {
-        QMessageBox::critical(
-            parent, "Import failed",
-            "This is not a JilChat Chatterino settings export.");
+        QMessageBox::critical(parent, "Import failed",
+                              "This is not a JilChat Chatterino or Moltorino "
+                              "settings export.");
         return;
     }
 
     auto reply = QMessageBox::question(
         parent, "Import settings",
-        "Importing will replace local settings, hotkeys, highlights, "
-        "moderation buttons, commands, tab layout, chat automations and user "
-        "notes, and add the exported themes. Twitch/Kick accounts on this "
-        "device will be kept.\n\nContinue?",
+        fromMoltorino
+            ? QStringLiteral(
+                  "This is a Moltorino settings export. Its settings, hotkeys "
+                  "and highlights will be added to your current ones, and its "
+                  "tab layout will replace yours. Twitch/Kick accounts on "
+                  "this device will be kept.\n\nContinue?")
+            : QStringLiteral(
+                  "Importing will replace local settings, hotkeys, "
+                  "highlights, moderation buttons, commands, tab layout, chat "
+                  "automations and user notes, and add the exported themes. "
+                  "Twitch/Kick accounts on this device will be "
+                  "kept.\n\nContinue?"),
         QMessageBox::Yes | QMessageBox::No);
     if (reply != QMessageBox::Yes)
     {
