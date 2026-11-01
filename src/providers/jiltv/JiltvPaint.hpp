@@ -8,6 +8,7 @@
 
 #include <QCache>
 #include <QJsonObject>
+#include <QPainter>
 #include <QString>
 
 #include <memory>
@@ -95,6 +96,8 @@ struct Doc {
     double hue = 0;
     double saturate = 1;
     double brightness = 1;
+    /// Turns every gradient and stripe pattern, in degrees.
+    double rotation = 0;
     std::vector<Track> tracks;
     Rgba fallback{1, 1, 1, 1};
 
@@ -133,7 +136,14 @@ public:
     QColor fallbackColor() const;
 
 private:
-    QImage renderFill(const jiltv::Doc &doc, QSize px, double cssPx) const;
+    struct Fill {
+        QImage image;
+        QPainter::CompositionMode mode;
+    };
+    /// The background layers of the name, bottom first: `base` (the user's
+    /// color), then one per paint layer with its blend mode.
+    std::vector<Fill> renderFills(const jiltv::Doc &doc, QSize px,
+                                  double cssPx, QColor base) const;
     QImage renderLayer(const jiltv::Layer &l, const jiltv::Doc &doc, QSize px,
                        double cssPx) const;
 

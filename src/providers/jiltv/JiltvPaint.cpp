@@ -89,7 +89,11 @@ Rgba oklabToRgb(double L, double A, double B, double alpha)
     };
 }
 
-constexpr double ACHROMATIC = 2e-4;
+// Below this chroma a color's hue doesn't count when mixing in OKLCH: the
+// other color's hue is used. Chrome counts colors up to 0.02 as gray, far
+// more than the spec (and color.ts) does; near-whites would otherwise turn
+// orange or green halfway.
+constexpr double ACHROMATIC = 0.02;
 
 Coords toSpace(const Rgba &c, Space space)
 {
@@ -474,6 +478,11 @@ void setTarget(Doc &doc, const QString &path, const Key &v)
         {
             setColor(doc.stroke->color);
         }
+        return;
+    }
+    if (parts.size() == 2 && parts[0] == u"paint" && parts[1] == u"rotation")
+    {
+        setNum(doc.rotation);
         return;
     }
     if (parts.size() == 2 && parts[0] == u"filter")
@@ -897,6 +906,7 @@ Doc Doc::parse(const QJsonObject &json)
     d.hue = num(filters, "hue", 0);
     d.saturate = num(filters, "saturate", 1);
     d.brightness = num(filters, "brightness", 1);
+    d.rotation = num(json, "rotation", 0);
     for (const auto &t : json.value("tracks").toArray())
     {
         const auto to = t.toObject();
@@ -974,6 +984,17 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
     const double h = px.height();
     const QRectF box(0, 0, w, h);
 
+    // The paint's rotation turns every angle and moves radial and conic
+    // centers around the middle (compile.ts: turned(), center()).
+    const double angle = l.angle + doc.rotation;
+    const auto center = [&]() {
+        const double r = doc.rotation * PI / 180;
+        const double dx = l.x - 50;
+        const double dy = l.y - 50;
+        return QPointF(
+            w * (50 + (dx * std::cos(r)) - (dy * std::sin(r))) / 100,
+            h * (50 + (dx * std::sin(r)) + (dy * std::cos(r))) / 100);
+    };
     const auto linearLine = [&](double angleDeg) {
         const double a = angleDeg * std::numbers::pi / 180;
         const QPointF d(std::sin(a), -std::cos(a));
@@ -1003,7 +1024,7 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
         }
         if (l.kind == u"linear")
         {
-            const auto [start, d, len] = linearLine(l.angle);
+            const auto [start, d, len] = linearLine(angle);
             QLinearGradient g(start + (d * (len * first / 100)),
                               start + (d * (len * last / 100)));
             g.setStops(qtStops(stops, first, last, l));
@@ -1022,7 +1043,8 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
                                : QGradient::PadSpread);
             QBrush brush(g);
             QTransform t;
-            t.translate(w * l.x / 100, h * l.y / 100);
+            const auto c = center();
+            t.translate(c.x(), c.y());
             t.scale(std::max(1e-3, w * l.rx / 100),
                     std::max(1e-3, h * l.ry / 100));
             brush.setTransform(t);
@@ -1048,8 +1070,7 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
                 }
                 turn.push_back({pos, colorAt(stops, q, l)});
             }
-            QConicalGradient g(QPointF(w * l.x / 100, h * l.y / 100),
-                               90 - l.angle);
+            QConicalGradient g(center(), 90 - angle);
             QGradientStops qs;
             for (auto it = turn.rbegin(); it != turn.rend(); ++it)
             {
@@ -1067,7 +1088,7 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
         const auto b = toQColor(l.b);
         if (l.pattern == u"stripes")
         {
-            const auto [start, d, len] = linearLine(l.angle);
+            const auto [start, d, len] = linearLine(angle);
             QLinearGradient g(start + (d * shift),
                               start + (d * (shift + size)));
             g.setStops({{0, a}, {0.5, a}, {0.5 + 1e-6, b}, {1, b}});
@@ -1139,50 +1160,58 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
         }
     }
     p.end();
-    (void)doc;
     return img;
 }
 
-QImage JiltvPaint::renderFill(const Doc &doc, QSize px, double cssPx) const
+std::vector<JiltvPaint::Fill> JiltvPaint::renderFills(const Doc &doc,
+                                                     QSize px, double cssPx,
+                                                     QColor base) const
 {
-    QImage fill = blank(px);
-    QPainter p(&fill);
     const QRectF box(QPointF(0, 0), QSizeF(px));
     const int tile =
         doc.tileWidth > 0
             ? std::max(1, static_cast<int>(std::lround(doc.tileWidth * cssPx)))
             : 0;
-    bool any = false;
+    std::vector<Fill> fills;
+    const auto solid = [&](QColor color) {
+        QImage img(px, QImage::Format_ARGB32_Premultiplied);
+        img.fill(color);
+        fills.push_back({std::move(img), QPainter::CompositionMode_SourceOver});
+    };
+    if (std::ranges::none_of(doc.layers, [](const Layer &l) {
+            return !l.hidden;
+        }))
+    {
+        solid(toQColor(doc.fallback));
+        return fills;
+    }
+    solid(base);
     for (const auto &l : doc.layers)
     {
         if (l.hidden)
         {
             continue;
         }
-        any = true;
+        QImage img = blank(px);
+        QPainter p(&img);
+        p.setOpacity(clamp01(l.opacity));
         // Dots and checkers have their own cell size; everything else is
         // sized by the mapping: the whole name, or one tile repeated.
         const bool ownSize = l.kind == u"pattern" &&
                              (l.pattern == u"dots" || l.pattern == u"checker");
-        p.setCompositionMode(compositionFor(l.blend));
-        p.setOpacity(clamp01(l.opacity));
         if (tile > 0 && !ownSize)
         {
-            const auto img =
-                this->renderLayer(l, doc, {tile, px.height()}, cssPx);
-            fillTiled(p, img, box, {0, 0});
+            fillTiled(p, this->renderLayer(l, doc, {tile, px.height()}, cssPx),
+                      box, {0, 0});
         }
         else
         {
             p.drawImage(QPointF(0, 0), this->renderLayer(l, doc, px, cssPx));
         }
+        p.end();
+        fills.push_back({std::move(img), compositionFor(l.blend)});
     }
-    if (!any)
-    {
-        p.fillRect(box, toQColor(doc.fallback));
-    }
-    p.end();
-    return fill;
+    return fills;
 }
 
 QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
@@ -1248,50 +1277,90 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                          metrics.horizontalAdvance(nametag), textRect.height());
     const double cssPx = scale * dpr;  // device pixels per CSS pixel
     const QSize fillSize = (nameBox.size() * dpr).toSize().expandedTo({1, 1});
-    // Where the paint is (partly) transparent, the user's own color shows
-    // through, as on the website
-    QImage fill(fillSize, QImage::Format_ARGB32_Premultiplied);
-    fill.fill(userColor.isValid() ? userColor : this->fallbackColor());
+    // Below the layers lies the user's own color, which shows where the
+    // paint is (partly) transparent, as on the website.
+    const auto fills = this->renderFills(
+        doc, fillSize, cssPx,
+        userColor.isValid() ? userColor : this->fallbackColor());
+
+    const bool stroked = effects && doc.stroke && doc.stroke->x > 0;
+    QPainterPath strokeOutline;
+    if (stroked)
     {
-        QPainter fp(&fill);
-        fp.drawImage(0, 0, this->renderFill(doc, fillSize, cssPx));
+        QPainterPathStroker stroker;
+        stroker.setWidth(doc.stroke->x * scale);
+        stroker.setJoinStyle(Qt::MiterJoin);
+        stroker.setCapStyle(Qt::FlatCap);
+        strokeOutline = stroker.createStroke(name);
+    }
+
+    // What a browser does with `background-clip: text`: the letters (and
+    // their stroke) become a mask, and every background layer is clipped to
+    // it on its own before it is blended onto those below. Where a letter
+    // covers a pixel partly, the layers add up there, so edges come out
+    // stronger than with a single clip; names with many layers look bolder.
+    const QPoint origin(static_cast<int>(std::floor(nameBox.left() * dpr)),
+                        static_cast<int>(std::floor(nameBox.top() * dpr)));
+    QImage mask = blank(fillSize);
+    {
+        QPainter mp(&mask);
+        mp.setRenderHint(QPainter::Antialiasing);
+        mp.translate(-origin);
+        mp.scale(dpr, dpr);
+        if (stroked)
+        {
+            // The outline, as the stroke follows it; hinted letters are a
+            // little wider and would hide part of the stroke.
+            mp.fillPath(name, Qt::white);
+            mp.fillPath(strokeOutline, Qt::white);
+        }
+        else
+        {
+            // Hinted, like the letters of names without a paint.
+            mp.setPen(Qt::white);
+            mp.setFont(font);
+            mp.drawText(QPointF(textRect.left(), baseline), nametag);
+        }
+    }
+    QImage painted = blank(fillSize);
+    {
+        QPainter pp(&painted);
+        for (const auto &fill : fills)
+        {
+            QImage layer = fill.image;
+            {
+                QPainter lp(&layer);
+                lp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                lp.drawImage(0, 0, mask);
+            }
+            pp.setCompositionMode(fill.mode);
+            pp.drawImage(0, 0, layer);
+        }
     }
 
     QImage img = blank(devSize);
     {
         QPainter p(&img);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.scale(dpr, dpr);
-        if (effects && doc.stroke && doc.stroke->x > 0)
+        p.drawImage(origin, painted);
+        // The text's own fill is transparent, so the whole stroke lies on
+        // top of the paint, not only its outer half (paint-order doesn't
+        // change that). Filled as an outline: Qt draws pens thinner than a
+        // pixel fainter than the browser does.
+        if (stroked)
         {
-            p.setPen(QPen(toQColor(doc.stroke->color), doc.stroke->x * scale,
-                          Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            p.setBrush(Qt::NoBrush);
-            p.drawPath(name);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.scale(dpr, dpr);
+            p.fillPath(strokeOutline, toQColor(doc.stroke->color));
         }
-        QBrush brush(fill);
-        QTransform bt;
-        bt.translate(nameBox.left(), nameBox.top());
-        bt.scale(1 / dpr, 1 / dpr);
-        brush.setTransform(bt);
-        // The name itself as text, so its letters look like those of names
-        // without a paint (hinted), only the stroke follows its shape
-        QPen pen;
-        pen.setBrush(brush);
-        p.setPen(pen);
-        p.setBrush(Qt::NoBrush);
-        p.setFont(font);
-        p.drawText(QPointF(textRect.left(), baseline), nametag);
     }
     applyFilters(img, doc.hue, doc.saturate, doc.brightness);
 
     if (effects && !doc.shadows.empty())
     {
-        // Each shadow comes from the name alone, like CSS text-shadow, not
-        // from the name with the shadows before it; the first lies on top.
-        QImage result = blank(devSize);
-        QPainter rp(&result);
-        for (const auto &s : std::ranges::reverse_view(doc.shadows))
+        // CSS `filter: drop-shadow(a) drop-shadow(b)` chains: each shadow is
+        // cast by the name together with the shadows before it, so a later
+        // shadow also tints the glow of an earlier one.
+        for (const auto &s : doc.shadows)
         {
             if (s.color.a <= 0)
             {
@@ -1305,12 +1374,15 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                 sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
                 sp.fillRect(shadow.rect(), shadowColor);
             }
-            blurAlpha(shadow, s.blur / 2 * cssPx, shadowColor);
-            rp.drawImage(0, 0, shadow);
+            // Browsers take a drop-shadow's blur as the standard deviation
+            // itself (box-shadow and text-shadow use half of it).
+            blurAlpha(shadow, s.blur * cssPx, shadowColor);
+            {
+                QPainter sp(&shadow);
+                sp.drawImage(0, 0, img);
+            }
+            img.swap(shadow);
         }
-        rp.drawImage(0, 0, img);
-        rp.end();
-        img.swap(result);
     }
 
     if (colon)
@@ -1363,18 +1435,22 @@ qreal JiltvPaint::overflow() const
     {
         return 0;
     }
-    // A blur fades out about three standard deviations (1.5 times its value)
+    // A blur fades out about three standard deviations (three times its value)
     // from the shape. The room is in CSS pixels, but the chat zooms the
     // paint, so it is doubled to leave the glow whole up to a zoom of
     // about 1.3 and nearly whole above.
     constexpr double zoomRoom = 2;
-    double room = this->doc_.stroke ? this->doc_.stroke->x / 2 : 0;
+    // The shadows are chained, so their offsets add up and their blurs
+    // combine like Gaussians do (variances add).
+    double offsets = 0;
+    double variance = 0;
     for (const auto &s : this->doc_.shadows)
     {
-        room = std::max(
-            room, std::max(std::abs(s.x), std::abs(s.y)) + (1.5 * s.blur));
+        offsets += std::max(std::abs(s.x), std::abs(s.y));
+        variance += s.blur * s.blur;
     }
-    return room * zoomRoom;
+    const double stroke = this->doc_.stroke ? this->doc_.stroke->x / 2 : 0;
+    return (stroke + offsets + (3 * std::sqrt(variance))) * zoomRoom;
 }
 
 QString JiltvPaint::sourceName() const
