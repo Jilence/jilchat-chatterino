@@ -19,6 +19,7 @@
 #include <QRadialGradient>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <ranges>
@@ -963,8 +964,29 @@ JiltvPaint::JiltvPaint(QString id, QString name, const QJsonObject &data,
     , doc_(Doc::parse(data))
     , hasTracks_(!this->doc_.tracks.empty())
 {
+    static quint64 instances = 0;
+    this->cacheId_ = QString::number(++instances) + u':' + this->id;
+
+    bool rotating = false;
+    for (const auto &track : this->doc_.tracks)
+    {
+        const auto parts = track.target.split(u':');
+        if (parts.size() >= 3 && parts[0] == u"layer")
+        {
+            this->movingLayers_.insert(parts[1]);
+        }
+        else if (track.target == u"paint:rotation")
+        {
+            rotating = true;
+        }
+    }
     for (const auto &l : this->doc_.layers)
     {
+        // The rotation turns gradients and patterns, not plain colors.
+        if (l.kind == u"shader" || (rotating && l.kind != u"solid"))
+        {
+            this->movingLayers_.insert(l.id);
+        }
         if (l.kind == u"shader" && !l.asset.isEmpty() && !cdn.isEmpty())
         {
             this->loops_[l.id] =
@@ -1163,55 +1185,158 @@ QImage JiltvPaint::renderLayer(const Layer &l, const Doc &doc, QSize px,
     return img;
 }
 
-std::vector<JiltvPaint::Fill> JiltvPaint::renderFills(const Doc &doc,
-                                                     QSize px, double cssPx,
-                                                     QColor base) const
+namespace {
+
+/// Where the shadows of a name come from and what they look like. Casting
+/// them (the blur) is the costly part, but it depends only on the outline of
+/// the name and where the shadows lie, not on the colors that move.
+struct ShadowCache {
+    /// The alpha of the name they were cast from.
+    QByteArray alpha;
+    /// Offset, blur and opacity of each shadow, in order.
+    std::vector<std::array<double, 4>> shapes;
+    /// Each shadow's blurred alpha, as it lies under the name.
+    std::vector<QByteArray> spread;
+    /// The colors `under` was made with.
+    std::vector<QRgb> colors;
+    /// All shadows over each other, to draw the name on.
+    QImage under;
+};
+
+/// What the pictures of one name share from frame to frame.
+struct NameState {
+    /// The stroke width the mask was made for; -1 without stroke.
+    double maskStroke = -2;
+    /// The letters (and stroke) in white: what the paint is clipped to.
+    QImage mask;
+    QPainterPath strokeOutline;
+
+    bool fillsValid = false;
+    /// The bottom fills, up to the first one that moves, clipped and
+    /// blended.
+    QImage stillBase;
+    size_t stillCount = 0;
+    /// The fills above, clipped; null for those that move.
+    std::vector<QImage> clipped;
+
+    ShadowCache shadows;
+
+    qint64 step = -2;
+    QPixmap pixmap;
+};
+
+/// Shared by all paints, in KiB.
+QCache<QString, NameState> &nameStates()
 {
-    const QRectF box(QPointF(0, 0), QSizeF(px));
-    const int tile =
-        doc.tileWidth > 0
-            ? std::max(1, static_cast<int>(std::lround(doc.tileWidth * cssPx)))
-            : 0;
-    std::vector<Fill> fills;
-    const auto solid = [&](QColor color) {
-        QImage img(px, QImage::Format_ARGB32_Premultiplied);
-        img.fill(color);
-        fills.push_back({std::move(img), QPainter::CompositionMode_SourceOver});
-    };
+    static QCache<QString, NameState> cache(64 * 1024);
+    return cache;
+}
+
+QByteArray alphaOf(const QImage &img)
+{
+    const int w = img.width();
+    QByteArray out(static_cast<qsizetype>(w) * img.height(), Qt::Uninitialized);
+    auto *dst = reinterpret_cast<uchar *>(out.data());
+    for (int y = 0; y < img.height(); y++)
+    {
+        const auto *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+        for (int x = 0; x < w; x++)
+        {
+            *dst++ = static_cast<uchar>(qAlpha(line[x]));
+        }
+    }
+    return out;
+}
+
+/// `alpha` (as from alphaOf) in one color, premultiplied.
+QImage colored(const QByteArray &alpha, QSize size, QRgb color)
+{
+    QImage img(size, QImage::Format_ARGB32_Premultiplied);
+    const auto *src = reinterpret_cast<const uchar *>(alpha.constData());
+    const int r = qRed(color);
+    const int g = qGreen(color);
+    const int b = qBlue(color);
+    for (int y = 0; y < size.height(); y++)
+    {
+        auto *line = reinterpret_cast<QRgb *>(img.scanLine(y));
+        for (int x = 0; x < size.width(); x++)
+        {
+            line[x] = qPremultiply(qRgba(r, g, b, *src++));
+        }
+    }
+    return img;
+}
+
+void clipTo(QImage &img, const QImage &mask)
+{
+    QPainter p(&img);
+    p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    p.drawImage(0, 0, mask);
+}
+
+}  // namespace
+
+std::vector<JiltvPaint::Fill> JiltvPaint::fills(const Doc &doc,
+                                                QColor base) const
+{
+    std::vector<Fill> out;
     if (std::ranges::none_of(doc.layers, [](const Layer &l) {
             return !l.hidden;
         }))
     {
-        solid(toQColor(doc.fallback));
-        return fills;
+        out.push_back({.color = toQColor(doc.fallback)});
+        return out;
     }
-    solid(base);
+    out.push_back({.color = base});
     for (const auto &l : doc.layers)
     {
         if (l.hidden)
         {
             continue;
         }
-        QImage img = blank(px);
-        QPainter p(&img);
-        p.setOpacity(clamp01(l.opacity));
-        // Dots and checkers have their own cell size; everything else is
-        // sized by the mapping: the whole name, or one tile repeated.
-        const bool ownSize = l.kind == u"pattern" &&
-                             (l.pattern == u"dots" || l.pattern == u"checker");
-        if (tile > 0 && !ownSize)
-        {
-            fillTiled(p, this->renderLayer(l, doc, {tile, px.height()}, cssPx),
-                      box, {0, 0});
-        }
-        else
-        {
-            p.drawImage(QPointF(0, 0), this->renderLayer(l, doc, px, cssPx));
-        }
-        p.end();
-        fills.push_back({std::move(img), compositionFor(l.blend)});
+        out.push_back({
+            .layer = &l,
+            .color = {},
+            .mode = compositionFor(l.blend),
+            .moving = this->movingLayers_.contains(l.id),
+        });
     }
-    return fills;
+    return out;
+}
+
+QImage JiltvPaint::renderFill(const Fill &fill, const Doc &doc, QSize px,
+                              double cssPx) const
+{
+    if (fill.layer == nullptr)
+    {
+        QImage img(px, QImage::Format_ARGB32_Premultiplied);
+        img.fill(fill.color);
+        return img;
+    }
+    const auto &l = *fill.layer;
+    const QRectF box(QPointF(0, 0), QSizeF(px));
+    const int tile =
+        doc.tileWidth > 0
+            ? std::max(1, static_cast<int>(std::lround(doc.tileWidth * cssPx)))
+            : 0;
+    QImage img = blank(px);
+    QPainter p(&img);
+    p.setOpacity(clamp01(l.opacity));
+    // Dots and checkers have their own cell size; everything else is
+    // sized by the mapping: the whole name, or one tile repeated.
+    const bool ownSize = l.kind == u"pattern" &&
+                         (l.pattern == u"dots" || l.pattern == u"checker");
+    if (tile > 0 && !ownSize)
+    {
+        fillTiled(p, this->renderLayer(l, doc, {tile, px.height()}, cssPx),
+                  box, {0, 0});
+    }
+    else
+    {
+        p.drawImage(QPointF(0, 0), this->renderLayer(l, doc, px, cssPx));
+    }
+    p.end();
+    return img;
 }
 
 QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
@@ -1233,8 +1358,8 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     // glow and draws the pixmap over that larger rect, so the pixmap must
     // include it, centered or not; otherwise the name gets stretched.
     padding = std::max<qreal>(0, padding);
-    const auto key = QStringLiteral("%1|%2|%3x%4|%5|%6|%7|%8|%9|%10")
-                         .arg(text, font.key())
+    const auto key = QStringLiteral("%1|%2|%3|%4x%5|%6|%7|%8|%9|%10|%11")
+                         .arg(this->cacheId_, text, font.key())
                          .arg(size.width())
                          .arg(size.height())
                          .arg(scale)
@@ -1243,10 +1368,15 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                          .arg(padding)
                          .arg(effects)
                          .arg(userColor.rgba());
-    if (const auto *frame = this->frames_.object(key);
-        frame != nullptr && frame->step == step)
+
+    // Everything of the name that stays the same between frames is kept, so
+    // a frame only draws what moves: the animated layers, and the shadows
+    // in their current colors.
+    auto &states = nameStates();
+    NameState *state = states.object(key);
+    if (state != nullptr && state->step == step && !state->pixmap.isNull())
     {
-        return frame->pixmap;
+        return state->pixmap;
     }
 
     const double t =
@@ -1269,41 +1399,63 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             ? textRect.top() + ((textRect.height() - metrics.height()) / 2) +
                   metrics.ascent()
             : textRect.bottom() - metrics.descent();
-    QPainterPath name;
-    name.addText(textRect.left(), baseline, font, nametag);
 
     // The paint covers the name's box, like a CSS background on the name.
     const QRectF nameBox(textRect.left(), textRect.top(),
                          metrics.horizontalAdvance(nametag), textRect.height());
     const double cssPx = scale * dpr;  // device pixels per CSS pixel
     const QSize fillSize = (nameBox.size() * dpr).toSize().expandedTo({1, 1});
-    // Below the layers lies the user's own color, which shows where the
-    // paint is (partly) transparent, as on the website.
-    const auto fills = this->renderFills(
-        doc, fillSize, cssPx,
-        userColor.isValid() ? userColor : this->fallbackColor());
-
-    const bool stroked = effects && doc.stroke && doc.stroke->x > 0;
-    QPainterPath strokeOutline;
-    if (stroked)
-    {
-        QPainterPathStroker stroker;
-        stroker.setWidth(doc.stroke->x * scale);
-        stroker.setJoinStyle(Qt::MiterJoin);
-        stroker.setCapStyle(Qt::FlatCap);
-        strokeOutline = stroker.createStroke(name);
-    }
-
-    // What a browser does with `background-clip: text`: the letters (and
-    // their stroke) become a mask, and every background layer is clipped to
-    // it on its own before it is blended onto those below. Where a letter
-    // covers a pixel partly, the layers add up there, so edges come out
-    // stronger than with a single clip; names with many layers look bolder.
     const QPoint origin(static_cast<int>(std::floor(nameBox.left() * dpr)),
                         static_cast<int>(std::floor(nameBox.top() * dpr)));
-    QImage mask = blank(fillSize);
+
+    // Below the layers lies the user's own color, which shows where the
+    // paint is (partly) transparent, as on the website.
+    const auto fills = this->fills(
+        doc, userColor.isValid() ? userColor : this->fallbackColor());
+
+    if (state == nullptr)
     {
-        QPainter mp(&mask);
+        // A rough size of what is kept: the images of the fills, the
+        // shadows and the frame, mostly as large as the frame.
+        const qint64 frameBytes =
+            static_cast<qint64>(devSize.width()) * devSize.height() * 4;
+        const auto cost = static_cast<qsizetype>(
+            (frameBytes * static_cast<qint64>(fills.size() + 4) +
+             (frameBytes / 4 * static_cast<qint64>(doc.shadows.size() + 1))) /
+            1024);
+        if (states.insert(key, new NameState, std::max<qsizetype>(1, cost)))
+        {
+            state = states.object(key);
+        }
+    }
+    // Too large to keep: drawn from scratch every time.
+    NameState uncached;
+    NameState &s = state != nullptr ? *state : uncached;
+
+    const bool stroked = effects && doc.stroke && doc.stroke->x > 0;
+    const double strokeWidth = stroked ? doc.stroke->x : -1;
+    if (s.mask.isNull() || s.maskStroke != strokeWidth)
+    {
+        QPainterPath name;
+        name.addText(textRect.left(), baseline, font, nametag);
+        s.strokeOutline = {};
+        if (stroked)
+        {
+            QPainterPathStroker stroker;
+            stroker.setWidth(doc.stroke->x * scale);
+            stroker.setJoinStyle(Qt::MiterJoin);
+            stroker.setCapStyle(Qt::FlatCap);
+            s.strokeOutline = stroker.createStroke(name);
+        }
+
+        // What a browser does with `background-clip: text`: the letters
+        // (and their stroke) become a mask, and every background layer is
+        // clipped to it on its own before it is blended onto those below.
+        // Where a letter covers a pixel partly, the layers add up there, so
+        // edges come out stronger than with a single clip; names with many
+        // layers look bolder.
+        s.mask = blank(fillSize);
+        QPainter mp(&s.mask);
         mp.setRenderHint(QPainter::Antialiasing);
         mp.translate(-origin);
         mp.scale(dpr, dpr);
@@ -1312,7 +1464,7 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             // The outline, as the stroke follows it; hinted letters are a
             // little wider and would hide part of the stroke.
             mp.fillPath(name, Qt::white);
-            mp.fillPath(strokeOutline, Qt::white);
+            mp.fillPath(s.strokeOutline, Qt::white);
         }
         else
         {
@@ -1321,27 +1473,66 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             mp.setFont(font);
             mp.drawText(QPointF(textRect.left(), baseline), nametag);
         }
+        mp.end();
+        s.maskStroke = strokeWidth;
+        s.fillsValid = false;
     }
-    QImage painted = blank(fillSize);
+
+    const auto clippedFill = [&](const Fill &fill) {
+        QImage img = this->renderFill(fill, doc, fillSize, cssPx);
+        clipTo(img, s.mask);
+        return img;
+    };
+    if (!s.fillsValid)
     {
-        QPainter pp(&painted);
-        for (const auto &fill : fills)
+        // The fills below the first moving one always blend to the same.
+        s.stillCount = 0;
+        while (s.stillCount < fills.size() && !fills[s.stillCount].moving)
         {
-            QImage layer = fill.image;
-            {
-                QPainter lp(&layer);
-                lp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-                lp.drawImage(0, 0, mask);
-            }
-            pp.setCompositionMode(fill.mode);
-            pp.drawImage(0, 0, layer);
+            s.stillCount++;
         }
+        s.stillBase = blank(fillSize);
+        {
+            QPainter bp(&s.stillBase);
+            for (size_t i = 0; i < s.stillCount; i++)
+            {
+                bp.setCompositionMode(fills[i].mode);
+                bp.drawImage(0, 0, clippedFill(fills[i]));
+            }
+        }
+        s.clipped.assign(fills.size(), {});
+        for (size_t i = s.stillCount; i < fills.size(); i++)
+        {
+            if (!fills[i].moving)
+            {
+                s.clipped[i] = clippedFill(fills[i]);
+            }
+        }
+        s.fillsValid = true;
     }
 
     QImage img = blank(devSize);
     {
         QPainter p(&img);
-        p.drawImage(origin, painted);
+        if (s.stillCount == fills.size())
+        {
+            p.drawImage(origin, s.stillBase);
+        }
+        else
+        {
+            QImage painted = s.stillBase.copy();
+            {
+                QPainter pp(&painted);
+                for (size_t i = s.stillCount; i < fills.size(); i++)
+                {
+                    pp.setCompositionMode(fills[i].mode);
+                    pp.drawImage(0, 0,
+                                 fills[i].moving ? clippedFill(fills[i])
+                                                 : s.clipped[i]);
+                }
+            }
+            p.drawImage(origin, painted);
+        }
         // The text's own fill is transparent, so the whole stroke lies on
         // top of the paint, not only its outer half (paint-order doesn't
         // change that). Filled as an outline: Qt draws pens thinner than a
@@ -1350,39 +1541,87 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         {
             p.setRenderHint(QPainter::Antialiasing);
             p.scale(dpr, dpr);
-            p.fillPath(strokeOutline, toQColor(doc.stroke->color));
+            p.fillPath(s.strokeOutline, toQColor(doc.stroke->color));
         }
     }
     applyFilters(img, doc.hue, doc.saturate, doc.brightness);
 
-    if (effects && !doc.shadows.empty())
+    std::vector<const Shadow *> shadows;
+    if (effects)
+    {
+        for (const auto &shadow : doc.shadows)
+        {
+            if (shadow.color.a > 0)
+            {
+                shadows.push_back(&shadow);
+            }
+        }
+    }
+    if (!shadows.empty())
     {
         // CSS `filter: drop-shadow(a) drop-shadow(b)` chains: each shadow is
         // cast by the name together with the shadows before it, so a later
-        // shadow also tints the glow of an earlier one.
-        for (const auto &s : doc.shadows)
+        // shadow also tints the glow of an earlier one. Where they lie
+        // depends only on the outline of the name and on the shapes and
+        // opacities of the shadows, so they are cast again only when one of
+        // those changes; moving colors only tint them anew.
+        auto &cache = s.shadows;
+        std::vector<std::array<double, 4>> shapes;
+        std::vector<QRgb> colors;
+        for (const auto *shadow : shadows)
         {
-            if (s.color.a <= 0)
-            {
-                continue;
-            }
-            const auto shadowColor = toQColor(s.color);
-            QImage shadow = blank(devSize);
-            {
-                QPainter sp(&shadow);
-                sp.drawImage(QPointF(s.x * cssPx, s.y * cssPx), img);
-                sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                sp.fillRect(shadow.rect(), shadowColor);
-            }
-            // Browsers take a drop-shadow's blur as the standard deviation
-            // itself (box-shadow and text-shadow use half of it).
-            blurAlpha(shadow, s.blur * cssPx, shadowColor);
-            {
-                QPainter sp(&shadow);
-                sp.drawImage(0, 0, img);
-            }
-            img.swap(shadow);
+            shapes.push_back({shadow->x, shadow->y, shadow->blur,
+                              toQColor(shadow->color).alphaF()});
+            colors.push_back(toQColor(shadow->color).rgba());
         }
+        auto alpha = alphaOf(img);
+        if (alpha != cache.alpha || shapes != cache.shapes)
+        {
+            cache.spread.clear();
+            cache.colors.clear();
+            QImage cast = img;
+            for (const auto *shadow : shadows)
+            {
+                const auto shadowColor = toQColor(shadow->color);
+                QImage layer = blank(devSize);
+                {
+                    QPainter sp(&layer);
+                    sp.drawImage(QPointF(shadow->x * cssPx, shadow->y * cssPx),
+                                 cast);
+                    sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                    sp.fillRect(layer.rect(), shadowColor);
+                }
+                // Browsers take a drop-shadow's blur as the standard
+                // deviation itself (box-shadow and text-shadow use half of
+                // it).
+                blurAlpha(layer, shadow->blur * cssPx, shadowColor);
+                cache.spread.push_back(alphaOf(layer));
+                {
+                    QPainter sp(&layer);
+                    sp.drawImage(0, 0, cast);
+                }
+                cast.swap(layer);
+            }
+            cache.alpha = std::move(alpha);
+            cache.shapes = std::move(shapes);
+        }
+        if (colors != cache.colors)
+        {
+            // The first shadow lies on top of the second, and so on.
+            cache.under = blank(devSize);
+            QPainter up(&cache.under);
+            for (size_t i = cache.spread.size(); i-- > 0;)
+            {
+                up.drawImage(0, 0, colored(cache.spread[i], devSize, colors[i]));
+            }
+            cache.colors = std::move(colors);
+        }
+        QImage out = cache.under.copy();
+        {
+            QPainter op(&out);
+            op.drawImage(0, 0, img);
+        }
+        img.swap(out);
     }
 
     if (colon)
@@ -1396,7 +1635,8 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
 
     auto pixmap = QPixmap::fromImage(std::move(img));
     pixmap.setDevicePixelRatio(dpr);
-    this->frames_.insert(key, new Frame{.step = step, .pixmap = pixmap});
+    s.step = step;
+    s.pixmap = pixmap;
     return pixmap;
 }
 

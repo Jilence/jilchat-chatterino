@@ -12,6 +12,7 @@
 #include <QString>
 
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 namespace chatterino {
@@ -136,14 +137,21 @@ public:
     QColor fallbackColor() const;
 
 private:
+    /// One background layer of the name: the user's color (`layer` null) or
+    /// a paint layer, with its blend mode.
     struct Fill {
-        QImage image;
-        QPainter::CompositionMode mode;
+        const jiltv::Layer *layer = nullptr;
+        QColor color;
+        QPainter::CompositionMode mode = QPainter::CompositionMode_SourceOver;
+        /// Whether its picture changes during the loop.
+        bool moving = false;
     };
     /// The background layers of the name, bottom first: `base` (the user's
-    /// color), then one per paint layer with its blend mode.
-    std::vector<Fill> renderFills(const jiltv::Doc &doc, QSize px,
-                                  double cssPx, QColor base) const;
+    /// color), then one per visible paint layer.
+    std::vector<Fill> fills(const jiltv::Doc &doc, QColor base) const;
+    /// A fill over the name's box, its opacity applied.
+    QImage renderFill(const Fill &fill, const jiltv::Doc &doc, QSize px,
+                      double cssPx) const;
     QImage renderLayer(const jiltv::Layer &l, const jiltv::Doc &doc, QSize px,
                        double cssPx) const;
 
@@ -151,12 +159,12 @@ private:
     /// Baked shader loops by layer id.
     std::unordered_map<QString, ImagePtr> loops_;
     bool hasTracks_ = false;
-
-    struct Frame {
-        qint64 step;
-        QPixmap pixmap;
-    };
-    mutable QCache<QString, Frame> frames_{256};
+    /// Ids of the layers whose picture changes during the loop: animated by
+    /// a track or a shader.
+    std::unordered_set<QString> movingLayers_;
+    /// Tells this paint's pictures apart from those of other paints (and of
+    /// an earlier paint with the same id) in the shared cache.
+    QString cacheId_;
 };
 
 }  // namespace chatterino
