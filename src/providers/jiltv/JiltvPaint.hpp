@@ -120,7 +120,7 @@ class JiltvPaint final : public Paint
 {
 public:
     JiltvPaint(QString id, QString name, const QJsonObject &data,
-               const QString &cdn);
+               const QString &cdn, const QJsonObject &texture = {});
 
     QPixmap getPixmap(const QString &text, const QFont &font, QColor userColor,
                       QSizeF size, float scale, float dpr,
@@ -156,6 +156,11 @@ private:
                        double cssPx) const;
 
     jiltv::Doc doc_;
+    /// Only local effects need timeline evaluation when the CDN texture is used.
+    jiltv::Doc effectsDoc_;
+    ImagePtr texture_;
+    ImagePtr stillTexture_;
+    bool textureTiles_ = false;
     /// Baked shader loops by layer id.
     std::unordered_map<QString, ImagePtr> loops_;
     bool hasTracks_ = false;

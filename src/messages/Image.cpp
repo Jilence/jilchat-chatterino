@@ -38,7 +38,7 @@
 
 const auto IMAGE_POOL_CLEANUP_INTERVAL = std::chrono::minutes(1);
 
-const auto IMAGE_POOL_IMAGE_LIFETIME = std::chrono::minutes(10);
+const auto IMAGE_POOL_IMAGE_LIFETIME = std::chrono::minutes(2);
 
 namespace {
 
@@ -59,8 +59,8 @@ std::pair<QSize, bool> limitedAutoScaleSize(
         return {original, false};
     }
     return {
-        original.scaled({maxAutoScale, maxAutoScale},
-                        Qt::KeepAspectRatioByExpanding),
+        original.scaled({maxAutoScale, maxAutoScale}, Qt::KeepAspectRatio)
+            .expandedTo({1, 1}),
         true,
     };
 }
@@ -713,8 +713,9 @@ void Image::actuallyLoad()
             reader.setScaledSize(shared->expectedSize_);
         }
 
-        auto [limitedSize, needsLimit] =
-            limitedAutoScaleSize(size, shared->autoScale_);
+        auto [limitedSize, needsLimit] = limitedAutoScaleSize(
+            reader.scaledSize().isValid() ? reader.scaledSize() : size,
+            shared->autoScale_);
 
         // use "double" to prevent int overflows
         if (double(limitedSize.width()) * double(limitedSize.height()) *

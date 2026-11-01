@@ -226,8 +226,9 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         {
             name += QStringLiteral(" (") + r + QStringLiteral(")");
         }
-        paints[id] = std::make_shared<JiltvPaint>(
-            id, name, p.value("data").toObject(), cdn);
+        paints[id] =
+            std::make_shared<JiltvPaint>(id, name, p.value("data").toObject(),
+                                         cdn, p.value("texture").toObject());
     }
 
     std::unordered_map<QString, EmotePtr> badges;

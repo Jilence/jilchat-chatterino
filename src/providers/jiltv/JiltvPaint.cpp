@@ -666,6 +666,19 @@ void blurAlpha(QImage &img, double sigma, const QColor &color)
     {
         return;
     }
+    // Broad glows contain no fine detail. Blur at quarter resolution instead
+    // of running six full-size passes for every transparent animation frame.
+    if (sigma >= 4 && img.width() >= 8 && img.height() >= 8)
+    {
+        const auto size = img.size();
+        auto small =
+            img.scaled(QSize((size.width() + 3) / 4, (size.height() + 3) / 4),
+                       Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        blurAlpha(small, sigma / 4, color);
+        img =
+            small.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        return;
+    }
     const int w = img.width();
     const int h = img.height();
     // Box sizes for three passes (W3C's approximation).
@@ -740,7 +753,8 @@ void blurAlpha(QImage &img, double sigma, const QColor &color)
 }
 
 /// CSS hue-rotate, saturate and brightness on a premultiplied image.
-void applyFilters(QImage &img, double hue, double saturate, double brightness)
+void applyFilters(QImage &img, double hue, double saturate, double brightness,
+                  QRect bounds)
 {
     if (hue == 0 && saturate == 1 && brightness == 1)
     {
@@ -774,10 +788,11 @@ void applyFilters(QImage &img, double hue, double saturate, double brightness)
             m[(r * 3) + col] *= brightness;
         }
     }
-    for (int y = 0; y < img.height(); y++)
+    bounds = bounds.intersected(img.rect());
+    for (int y = bounds.top(); y <= bounds.bottom(); y++)
     {
         auto *line = reinterpret_cast<QRgb *>(img.scanLine(y));
-        for (int x = 0; x < img.width(); x++)
+        for (int x = bounds.left(); x <= bounds.right(); x++)
         {
             const QRgb px = line[x];
             const int a = qAlpha(px);
@@ -959,13 +974,50 @@ Doc Doc::frameAt(double t) const
 using namespace jiltv;
 
 JiltvPaint::JiltvPaint(QString id, QString name, const QJsonObject &data,
-                       const QString &cdn)
+                       const QString &cdn, const QJsonObject &texture)
     : Paint(std::move(id), std::move(name))
     , doc_(Doc::parse(data))
     , hasTracks_(!this->doc_.tracks.empty())
 {
     static quint64 instances = 0;
     this->cacheId_ = QString::number(++instances) + u':' + this->id;
+
+    auto textureUrl = texture.value("url").toString();
+    auto stillUrl = texture.value("still").toString();
+    const auto hash = data.value("texture").toString();
+    if (textureUrl.isEmpty() && !hash.isEmpty() && !cdn.isEmpty())
+    {
+        textureUrl = cdn + u"/paints/"_s + hash + u".webp"_s;
+        stillUrl = cdn + u"/paints/"_s + hash + u"-0.webp"_s;
+    }
+    if (!textureUrl.isEmpty())
+    {
+        this->texture_ = Image::fromAutoscaledUrl(Url{textureUrl}, 128);
+        this->texture_->setFrameCacheLifetime(std::chrono::seconds(30));
+        if (!stillUrl.isEmpty())
+        {
+            this->stillTexture_ = Image::fromAutoscaledUrl(Url{stillUrl}, 128);
+            this->stillTexture_->setFrameCacheLifetime(
+                std::chrono::seconds(30));
+        }
+        this->textureTiles_ =
+            texture.value("tile").toBool(this->doc_.tileWidth > 0);
+    }
+    this->effectsDoc_.duration = this->doc_.duration;
+    this->effectsDoc_.shadows = this->doc_.shadows;
+    this->effectsDoc_.stroke = this->doc_.stroke;
+    this->effectsDoc_.hue = this->doc_.hue;
+    this->effectsDoc_.saturate = this->doc_.saturate;
+    this->effectsDoc_.brightness = this->doc_.brightness;
+    for (const auto &track : this->doc_.tracks)
+    {
+        if (track.target.startsWith(u"shadow:") ||
+            track.target.startsWith(u"stroke:") ||
+            track.target.startsWith(u"filter:"))
+        {
+            this->effectsDoc_.tracks.push_back(track);
+        }
+    }
 
     bool rotating = false;
     for (const auto &track : this->doc_.tracks)
@@ -989,8 +1041,12 @@ JiltvPaint::JiltvPaint(QString id, QString name, const QJsonObject &data,
         }
         if (l.kind == u"shader" && !l.asset.isEmpty() && !cdn.isEmpty())
         {
-            this->loops_[l.id] =
-                Image::fromUrl(Url{cdn + u"/paints/"_s + l.asset + u".webp"_s});
+            // Shader loops are backgrounds for a single line of text. Keep
+            // their decoded frames at chat resolution, preserving aspect ratio.
+            auto loop = Image::fromAutoscaledUrl(
+                Url{cdn + u"/paints/"_s + l.asset + u".webp"_s}, 128);
+            loop->setFrameCacheLifetime(std::chrono::seconds(30));
+            this->loops_[l.id] = std::move(loop);
         }
     }
 }
@@ -1193,6 +1249,7 @@ namespace {
 struct ShadowCache {
     /// The alpha of the name they were cast from.
     QByteArray alpha;
+    qint64 mask = 0;
     /// Offset, blur and opacity of each shadow, in order.
     std::vector<std::array<double, 4>> shapes;
     /// Each shadow's blurred alpha, as it lies under the name.
@@ -1222,13 +1279,14 @@ struct NameState {
     ShadowCache shadows;
 
     qint64 step = -2;
+    qint64 textureFrame = 0;
     QPixmap pixmap;
 };
 
 /// Shared by all paints, in KiB.
 QCache<QString, NameState> &nameStates()
 {
-    static QCache<QString, NameState> cache(64 * 1024);
+    static QCache<QString, NameState> cache(32 * 1024);
     return cache;
 }
 
@@ -1328,8 +1386,8 @@ QImage JiltvPaint::renderFill(const Fill &fill, const Doc &doc, QSize px,
                          (l.pattern == u"dots" || l.pattern == u"checker");
     if (tile > 0 && !ownSize)
     {
-        fillTiled(p, this->renderLayer(l, doc, {tile, px.height()}, cssPx),
-                  box, {0, 0});
+        fillTiled(p, this->renderLayer(l, doc, {tile, px.height()}, cssPx), box,
+                  {0, 0});
     }
     else
     {
@@ -1346,11 +1404,24 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
 {
     const bool animate = getSettings()->jiltvAnimatedPaints;
     const bool effects = this->shadowsEnabled();
+    std::optional<QPixmap> textureFrame;
+    if (this->texture_)
+    {
+        const auto &source =
+            animate && this->animated() ? this->texture_ : this->stillTexture_;
+        if (source)
+        {
+            textureFrame = source->pixmapOrLoad();
+        }
+    }
+    const bool baked = textureFrame && !textureFrame->isNull();
+    const qint64 textureKey = baked ? textureFrame->cacheKey() : 0;
     const auto durationMs =
         static_cast<qint64>(std::lround(this->doc_.duration * 1000));
     // A new picture 30 times a second; all names move in lockstep.
     const qint64 step =
-        animate && this->animated()
+        animate && this->animated() &&
+                (!baked || (effects && !this->effectsDoc_.tracks.empty()))
             ? (QDateTime::currentMSecsSinceEpoch() % durationMs) * 30 / 1000
             : -1;
 
@@ -1374,14 +1445,16 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     // in their current colors.
     auto &states = nameStates();
     NameState *state = states.object(key);
-    if (state != nullptr && state->step == step && !state->pixmap.isNull())
+    if (state != nullptr && state->step == step &&
+        state->textureFrame == textureKey && !state->pixmap.isNull())
     {
         return state->pixmap;
     }
 
     const double t =
         step < 0 ? 0 : static_cast<double>(step) * 1000 / 30 / durationMs;
-    const Doc doc = this->doc_.frameAt(std::clamp(t, 0.0, 1.0));
+    const Doc doc = (baked ? this->effectsDoc_ : this->doc_)
+                        .frameAt(std::clamp(t, 0.0, 1.0));
 
     auto nametag = text;
     const bool colon = nametag.endsWith(u':');
@@ -1410,18 +1483,25 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
 
     // Below the layers lies the user's own color, which shows where the
     // paint is (partly) transparent, as on the website.
-    const auto fills = this->fills(
-        doc, userColor.isValid() ? userColor : this->fallbackColor());
+    const auto base = userColor.isValid() ? userColor : this->fallbackColor();
+    const auto fills = baked ? std::vector<Fill>{} : this->fills(doc, base);
 
     if (state == nullptr)
     {
-        // A rough size of what is kept: the images of the fills, the
-        // shadows and the frame, mostly as large as the frame.
+        // Fills and masks only cover the name, not the much larger glow
+        // margin. Overcharging every fill at frame size evicts visible names
+        // and makes their shadows get rebuilt on every animation tick.
         const qint64 frameBytes =
             static_cast<qint64>(devSize.width()) * devSize.height() * 4;
+        const qint64 fillBytes =
+            static_cast<qint64>(fillSize.width()) * fillSize.height() * 4;
         const auto cost = static_cast<qsizetype>(
-            (frameBytes * static_cast<qint64>(fills.size() + 4) +
-             (frameBytes / 4 * static_cast<qint64>(doc.shadows.size() + 1))) /
+            (frameBytes * (effects ? 2 : 1) +
+             fillBytes * static_cast<qint64>(fills.size() + 2) +
+             (effects
+                  ? frameBytes / 4 * static_cast<qint64>(doc.shadows.size() + 1)
+                  : 0) +
+             1023) /
             1024);
         if (states.insert(key, new NameState, std::max<qsizetype>(1, cost)))
         {
@@ -1483,7 +1563,7 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         clipTo(img, s.mask);
         return img;
     };
-    if (!s.fillsValid)
+    if (!baked && !s.fillsValid)
     {
         // The fills below the first moving one always blend to the same.
         s.stillCount = 0;
@@ -1511,10 +1591,44 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         s.fillsValid = true;
     }
 
-    QImage img = blank(devSize);
+    // A moving texture over an opaque base leaves the glyph shape unchanged.
+    // Start with the cached glow and draw only the small name over it, avoiding
+    // a second full-size transparent surface and a second composition pass.
+    const bool reuseShadowUnder =
+        baked && effects && base.alpha() == 255 && !stroked &&
+        this->effectsDoc_.tracks.empty() && s.textureFrame != 0 &&
+        s.shadows.mask == s.mask.cacheKey() && !s.shadows.under.isNull();
+    QImage img = reuseShadowUnder ? s.shadows.under.copy() : blank(devSize);
     {
         QPainter p(&img);
-        if (s.stillCount == fills.size())
+        if (baked)
+        {
+            // The texture already contains all blends, filters and animation.
+            // Composite over the user's color, then clip once to the glyphs.
+            QImage painted = blank(fillSize);
+            {
+                QPainter pp(&painted);
+                pp.fillRect(painted.rect(), base);
+                pp.setRenderHint(QPainter::SmoothPixmapTransform);
+                if (this->textureTiles_)
+                {
+                    const auto tileWidth = std::max(
+                        1, qRound(static_cast<double>(textureFrame->width()) *
+                                  fillSize.height() / textureFrame->height()));
+                    const auto tile = textureFrame->scaled(
+                        tileWidth, fillSize.height(), Qt::IgnoreAspectRatio,
+                        Qt::SmoothTransformation);
+                    pp.fillRect(painted.rect(), QBrush(tile));
+                }
+                else
+                {
+                    pp.drawPixmap(painted.rect(), *textureFrame);
+                }
+            }
+            clipTo(painted, s.mask);
+            p.drawImage(origin, painted);
+        }
+        else if (s.stillCount == fills.size())
         {
             p.drawImage(origin, s.stillBase);
         }
@@ -1526,9 +1640,9 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                 for (size_t i = s.stillCount; i < fills.size(); i++)
                 {
                     pp.setCompositionMode(fills[i].mode);
-                    pp.drawImage(0, 0,
-                                 fills[i].moving ? clippedFill(fills[i])
-                                                 : s.clipped[i]);
+                    pp.drawImage(
+                        0, 0,
+                        fills[i].moving ? clippedFill(fills[i]) : s.clipped[i]);
                 }
             }
             p.drawImage(origin, painted);
@@ -1541,13 +1655,32 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         {
             p.setRenderHint(QPainter::Antialiasing);
             p.scale(dpr, dpr);
-            p.fillPath(s.strokeOutline, toQColor(doc.stroke->color));
+            auto color = toQColor(doc.stroke->color);
+            if (baked)
+            {
+                QImage swatch = blank({1, 1});
+                swatch.fill(color);
+                applyFilters(swatch, doc.hue, doc.saturate, doc.brightness,
+                             swatch.rect());
+                color = swatch.pixelColor(0, 0);
+            }
+            p.fillPath(s.strokeOutline, color);
         }
     }
-    applyFilters(img, doc.hue, doc.saturate, doc.brightness);
+    // Filters precede drop shadows. Only the letters and stroke have pixels
+    // here; scanning the large transparent glow margin wastes most of the work.
+    const int filterMargin =
+        stroked ? static_cast<int>(std::ceil(doc.stroke->x * cssPx)) + 2 : 0;
+    if (!baked)
+    {
+        applyFilters(img, doc.hue, doc.saturate, doc.brightness,
+                     QRect(origin, fillSize)
+                         .adjusted(-filterMargin, -filterMargin, filterMargin,
+                                   filterMargin));
+    }
 
     std::vector<const Shadow *> shadows;
-    if (effects)
+    if (effects && !reuseShadowUnder)
     {
         for (const auto &shadow : doc.shadows)
         {
@@ -1574,7 +1707,15 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                               toQColor(shadow->color).alphaF()});
             colors.push_back(toQColor(shadow->color).rgba());
         }
-        auto alpha = alphaOf(img);
+        // With an opaque name color and no stroke, a baked texture cannot
+        // change the glyph alpha. Reuse it without reading the entire glow
+        // surface on every frame. Translucent colors/strokes still compare
+        // the actual pixels so animated opacity remains correct.
+        auto alpha =
+            baked && s.textureFrame != 0 && cache.mask == s.mask.cacheKey() &&
+                    base.alpha() == 255 && !stroked && !cache.alpha.isEmpty()
+                ? cache.alpha
+                : alphaOf(img);
         if (alpha != cache.alpha || shapes != cache.shapes)
         {
             cache.spread.clear();
@@ -1603,6 +1744,7 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                 cast.swap(layer);
             }
             cache.alpha = std::move(alpha);
+            cache.mask = s.mask.cacheKey();
             cache.shapes = std::move(shapes);
         }
         if (colors != cache.colors)
@@ -1612,7 +1754,8 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             QPainter up(&cache.under);
             for (size_t i = cache.spread.size(); i-- > 0;)
             {
-                up.drawImage(0, 0, colored(cache.spread[i], devSize, colors[i]));
+                up.drawImage(0, 0,
+                             colored(cache.spread[i], devSize, colors[i]));
             }
             cache.colors = std::move(colors);
         }
@@ -1636,6 +1779,7 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     auto pixmap = QPixmap::fromImage(std::move(img));
     pixmap.setDevicePixelRatio(dpr);
     s.step = step;
+    s.textureFrame = textureKey;
     s.pixmap = pixmap;
     return pixmap;
 }
@@ -1655,7 +1799,7 @@ const std::vector<PaintDropShadow> &JiltvPaint::getDropShadows() const
 
 bool JiltvPaint::animated() const
 {
-    if (this->hasTracks_)
+    if (this->hasTracks_ || (this->texture_ && !this->loops_.empty()))
     {
         return true;
     }
