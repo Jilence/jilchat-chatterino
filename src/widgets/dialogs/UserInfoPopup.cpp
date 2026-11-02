@@ -74,8 +74,8 @@
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
-#include "widgets/TooltipWidget.hpp"
 #include "widgets/splits/SplitInput.hpp"
+#include "widgets/TooltipWidget.hpp"
 #include "widgets/Window.hpp"
 
 #include <IrcMessage>

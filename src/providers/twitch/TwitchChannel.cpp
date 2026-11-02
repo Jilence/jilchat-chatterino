@@ -3566,8 +3566,7 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
             // The oldest shown message changed; keep paging from the cursor.
             for (const auto &message : messages)
             {
-                if (message->timestamp.isValid() &&
-                    !message->id.isEmpty())
+                if (message->timestamp.isValid() && !message->id.isEmpty())
                 {
                     state.anchorId = message->id;
                     break;

@@ -1053,8 +1053,7 @@ void AutoModReviewController::captureContext(Entry &entry)
         {
             continue;
         }
-        if (entry.item.receivedAt.isValid() &&
-            message->timestamp.isValid() &&
+        if (entry.item.receivedAt.isValid() && message->timestamp.isValid() &&
             message->timestamp >= entry.item.receivedAt)
         {
             continue;

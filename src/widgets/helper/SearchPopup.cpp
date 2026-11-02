@@ -129,8 +129,7 @@ ChannelPtr SearchPopup::filter(const QString &text, const QString &channelName,
         {
             if (message->timestamp.isValid())
             {
-                const auto day =
-                    message->timestamp.toLocalTime().date();
+                const auto day = message->timestamp.toLocalTime().date();
                 // The first result gets its date too, so every time shown
                 // belongs to a date.
                 if (!previousDay.isValid() || day != previousDay)
