@@ -47,6 +47,7 @@
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
+#include "providers/streamnook/StreamNookBadges.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/ChannelPointReward.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -1536,6 +1537,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         MessageElementFlag::BadgeHomiesSupporter,
         MessageElementFlag::BadgeHomiesCustom,
         MessageElementFlag::BadgeFolhinha,
+        MessageElementFlag::BadgeStreamNook,
         MessageElementFlag::BadgeJilChat,
         MessageElementFlag::BadgeBadgeHQ,
         MessageElementFlag::BadgeLimerino,
@@ -1557,6 +1559,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendFolhinhaBadges(message.userID);
     builder.appendBadgeHQBadges(message.userID);
     builder.appendLimerinoBadges(message.userID);
+    builder.appendStreamNookBadges(message.userID);
     builder.appendJilChatBadges(message.userID);
     builder.appendJiltvBadges(message.loginName);
 
@@ -2383,6 +2386,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendFolhinhaBadges(userID);
         builder.appendBadgeHQBadges(userID);
         builder.appendLimerinoBadges(userID);
+        builder.appendStreamNookBadges(userID);
         builder.appendJilChatBadges(userID);
         builder.appendJiltvBadges(builder->loginName);
         if (senderIsCurrentUser)
@@ -4036,6 +4040,16 @@ void MessageBuilder::appendDankChatBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendStreamNookBadges(const QString &userID)
+{
+    if (auto badge = getApp()->getStreamNookBadges()->getBadge(userID))
+    {
+        this->emplace<BadgeElement>(*badge,
+                                    MessageElementFlag::BadgeStreamNook);
+        this->message().externalBadges.emplace_back((*badge)->name.string);
+    }
+}
+
 void MessageBuilder::appendChatsenBadges(const QString &userID)
 {
     if (auto badge = getApp()->getChatsenBadges()->getBadge(userID))
@@ -4414,6 +4428,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendFolhinhaBadges(userId);
     builder.appendBadgeHQBadges(userId);
     builder.appendLimerinoBadges(userId);
+    builder.appendStreamNookBadges(userId);
     builder.appendJilChatBadges(userId);
     builder.appendJiltvBadges(loginName);
 

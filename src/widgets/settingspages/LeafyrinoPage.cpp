@@ -39,6 +39,11 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"dankchat", "dank"})
         ->setTooltip("Dev/contributor, QA, and supporter badges.")
         ->addTo(layout);
+    SettingWidget::checkbox("StreamNook", s.showBadgesStreamNook)
+        ->addKeywords({"streamnook", "nook"})
+        ->setTooltip("The badge a StreamNook member wears: member, supporter, "
+                     "subscriber and event badges.")
+        ->addTo(layout);
     SettingWidget::checkbox("Chatsen", s.showBadgesChatsen)
         ->addKeywords({"chatsen"})
         ->setTooltip("Developer, supporter, artist, and Patreon badges.")

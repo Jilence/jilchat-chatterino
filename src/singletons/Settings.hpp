@@ -541,6 +541,7 @@ public:
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
     BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
     BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
+    BoolSetting showBadgesStreamNook = {"/appearance/badges/streamnook", true};
     BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
     BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
     BoolSetting showBadgesLimerino = {"/appearance/badges/limerino", true};
