@@ -29,6 +29,7 @@
 #include "util/IncognitoBrowser.hpp"
 #include "util/MultiChannel.hpp"
 #include "util/ReloadBadges.hpp"
+#include "util/QMagicEnumTagged.hpp"
 #include "util/StreamLink.hpp"
 #include "widgets/ChatterListWidget.hpp"
 #include "widgets/dialogs/RewardQueueDialog.hpp"
@@ -2903,7 +2904,8 @@ SplitDescriptor Split::buildDescriptor() const
     descriptor.spellCheckOverride = this->checkSpellingOverride();
 
     auto chan = this->getIndirectChannel();
-    descriptor.type_ = qmagicenum::enumNameString(chan.getType());
+    descriptor.type_ =
+        qmagicenum::SerializedName::enumNameString(chan.getType());
     switch (chan.getType())
     {
         case Channel::Type::Twitch:

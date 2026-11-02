@@ -324,7 +324,7 @@ EventSubMessageBuilder::EventSubMessageBuilder(TwitchChannel *channel,
 {
     this->emplace<TimestampElement>(time.time());
     this->message().flags.set(MessageFlag::System, MessageFlag::EventSub);
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 }
 
 EventSubMessageBuilder::EventSubMessageBuilder(TwitchChannel *channel)
@@ -368,6 +368,7 @@ void makeModerateMessage(EventSubMessageBuilder &builder,
                          const lib::payload::channel_moderate::v2::Event &event,
                          const lib::payload::channel_moderate::v2::Vip &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -383,6 +384,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Unvip &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -397,6 +399,7 @@ void makeModerateMessage(EventSubMessageBuilder &builder,
                          const lib::payload::channel_moderate::v2::Event &event,
                          const lib::payload::channel_moderate::v2::Warn &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     builder->flags.set(MessageFlag::ModerationAction);
     QString text;
 
@@ -681,6 +684,7 @@ void makeModerateMessage(EventSubMessageBuilder &builder,
                          const lib::payload::channel_moderate::v2::Event &event,
                          const lib::payload::channel_moderate::v2::Mod &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -696,6 +700,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Unmod &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -738,6 +743,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::UnbanRequest &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     builder->flags.set(MessageFlag::ModerationAction);
 
     QString text;
@@ -822,7 +828,7 @@ MessagePtr makeAutoModReviewMessage(TwitchChannel *channel,
                                     AutoModReviewPresentation presentation)
 {
     EventSubMessageBuilder builder(channel);
-    builder->serverReceivedTime = item.receivedAt;
+    builder->timestamp = item.receivedAt;
     builder->id = u"automod_" % item.messageID;
     builder->loginName = item.userLogin;
     builder->displayName = item.userName;
@@ -1186,7 +1192,7 @@ std::pair<MessagePtr, HighlightAlert> makeSuspiciousUserMessage(
 
     // Builder for low trust user message with explanation
     builder->channelName = event.broadcasterUserLogin.qt();
-    builder->serverReceivedTime = time;
+    builder->timestamp = time;
     builder->loginName = event.userLogin.qt();
     builder->flags.set(MessageFlag::PubSub, MessageFlag::LowTrustUsers);
 
@@ -1326,7 +1332,7 @@ MessagePtr makeUserMessageHeldMessage(
     QString text("AutoMod: Hey! Your message is being checked by mods and has "
                  "not been sent.");
     EventSubMessageBuilder builder(channel);
-    builder->serverReceivedTime = time;
+    builder->timestamp = time;
     builder->id = u"automod_" % event.messageID.qt();
     builder->loginName = u"automod"_s;
     builder->channelName = event.broadcasterUserLogin.qt();
@@ -1355,7 +1361,7 @@ MessagePtr makeUserMessageUpdateMessage(
 
     QString text("AutoMod: ");
     EventSubMessageBuilder builder(channel);
-    builder->serverReceivedTime = time;
+    builder->timestamp = time;
     builder->id = u"automod_" % event.messageID.qt();
     builder->loginName = u"automod"_s;
     builder->channelName = event.broadcasterUserLogin.qt();

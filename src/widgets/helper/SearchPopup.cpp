@@ -103,9 +103,9 @@ ChannelPtr SearchPopup::filter(const QString &text, const QString &channelName,
         {
             continue;
         }
-        if (message->serverReceivedTime.isValid() &&
-            ((since.isValid() && message->serverReceivedTime < since) ||
-             (until.isValid() && message->serverReceivedTime > until)))
+        if (message->timestamp.isValid() &&
+            ((since.isValid() && message->timestamp < since) ||
+             (until.isValid() && message->timestamp > until)))
         {
             continue;
         }
@@ -127,10 +127,10 @@ ChannelPtr SearchPopup::filter(const QString &text, const QString &channelName,
 
         if (accept)
         {
-            if (message->serverReceivedTime.isValid())
+            if (message->timestamp.isValid())
             {
                 const auto day =
-                    message->serverReceivedTime.toLocalTime().date();
+                    message->timestamp.toLocalTime().date();
                 // The first result gets its date too, so every time shown
                 // belongs to a date.
                 if (!previousDay.isValid() || day != previousDay)
@@ -493,7 +493,7 @@ void SearchPopup::search()
         withLogs.insert(withLogs.end(), this->snapshot_.begin(),
                         this->snapshot_.end());
         std::ranges::stable_sort(withLogs, [](const auto &a, const auto &b) {
-            return a->serverReceivedTime < b->serverReceivedTime;
+            return a->timestamp < b->timestamp;
         });
         source = &withLogs;
     }
@@ -506,8 +506,8 @@ void SearchPopup::search()
         byDayAndChannel = *source;
         std::ranges::stable_sort(
             byDayAndChannel, [](const auto &a, const auto &b) {
-                const auto dayA = a->serverReceivedTime.toLocalTime().date();
-                const auto dayB = b->serverReceivedTime.toLocalTime().date();
+                const auto dayA = a->timestamp.toLocalTime().date();
+                const auto dayB = b->timestamp.toLocalTime().date();
                 if (dayA != dayB)
                 {
                     return dayA < dayB;
@@ -1106,7 +1106,7 @@ std::vector<MessagePtr> SearchPopup::buildSnapshot()
 
     std::sort(combinedSnapshot.begin(), combinedSnapshot.end(),
               [](MessagePtr &a, MessagePtr &b) {
-                  return a->serverReceivedTime < b->serverReceivedTime;
+                  return a->timestamp < b->timestamp;
               });
 
     return combinedSnapshot;

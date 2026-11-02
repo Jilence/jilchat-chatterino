@@ -125,7 +125,7 @@ MessagePtr makeQuoteMessage(const QString &quote, const QString &leadIn)
         MessageColor::System);
     builder->messageText = plainText;
     builder->searchText = plainText;
-    builder->serverReceivedTime = QDateTime::currentDateTime();
+    builder->timestamp = QDateTime::currentDateTime();
     return builder.release();
 }
 
