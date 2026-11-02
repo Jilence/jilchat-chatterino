@@ -22,6 +22,7 @@
 #include <boost/functional/hash.hpp>
 #include <pajlada/signals/scoped-connection.hpp>
 #include <QBuffer>
+#include <QCoreApplication>
 #include <QFile>
 #include <QImageReader>
 #include <QNetworkAccessManager>
@@ -814,9 +815,13 @@ ImageExpirationPool::ImageExpirationPool()
         }
     });
 
-    this->freeTimer_->start(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
+    // The pool is created wherever an image first needs it, which can be a
+    // worker thread without an event loop, where the timer would never fire
+    this->freeTimer_->moveToThread(QCoreApplication::instance()->thread());
+    QMetaObject::invokeMethod(this->freeTimer_, [timer = this->freeTimer_] {
+        timer->start(std::chrono::duration_cast<std::chrono::milliseconds>(
             IMAGE_POOL_CLEANUP_INTERVAL));
+    });
 }
 
 ImageExpirationPool &ImageExpirationPool::instance()
