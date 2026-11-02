@@ -3655,6 +3655,13 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
         {
             this->messagesOnScreen_.erase(it);
         }
+
+        // Messages below the screen keep their place in the set, so their
+        // buffers are freed after scrolling up as well
+        if (messagesSnapshot[i].get() == end)
+        {
+            break;
+        }
     }
 
     // delete the message buffers that aren't on screen
