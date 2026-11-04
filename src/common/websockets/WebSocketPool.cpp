@@ -95,6 +95,11 @@ WebSocketHandle::~WebSocketHandle()
     this->close();
 }
 
+bool WebSocketHandle::isValid() const
+{
+    return !this->conn.expired();
+}
+
 void WebSocketHandle::close()
 {
     auto strong = this->conn.lock();

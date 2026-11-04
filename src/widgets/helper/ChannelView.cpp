@@ -5304,6 +5304,14 @@ void ChannelView::showUserInfoPopup(const QString &userName,
         return;
     }
 
+    if (platform == MessagePlatform::TikTok)
+    {
+        // There is no TikTok usercard yet: the profile on TikTok instead
+        QDesktopServices::openUrl(
+            QUrl(QStringLiteral("https://www.tiktok.com/@") + userName));
+        return;
+    }
+
     auto *userPopup =
         new UserInfoPopup(getSettings()->autoCloseUserPopup, this->split_);
 
@@ -5578,6 +5586,11 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
             {
                 searchName = searchName.sliced(sizeof(":kick:") - 1);
             }
+            bool searchTikTokChannel = link.value.startsWith(u":tiktok:");
+            if (searchTikTokChannel)
+            {
+                searchName = searchName.sliced(sizeof(":tiktok:") - 1);
+            }
 
             for (auto *page : openPages)
             {
@@ -5586,10 +5599,13 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
                 // Search for channel matching link in page/split container
                 // TODO(zneix): Consider opening a channel if it's closed (?)
                 auto it = std::ranges::find_if(
-                    splits, [searchName, searchKickChannel](Split *split) {
+                    splits, [searchName, searchKickChannel,
+                             searchTikTokChannel](Split *split) {
                         return split->getChannel()->getName() == searchName &&
                                split->getChannel()->isKickChannel() ==
-                                   searchKickChannel;
+                                   searchKickChannel &&
+                               split->getChannel()->isTikTokChannel() ==
+                                   searchTikTokChannel;
                     });
 
                 if (it != splits.end())

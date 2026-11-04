@@ -287,6 +287,8 @@ public:
     ///
     /// Returns the result from the save, or Skipped if disableSave has been called
     pajlada::Settings::SettingManager::SaveResult requestSave() const;
+    /// False when saving was turned off, e.g. by --safe-mode
+    bool isSaveEnabled() const;
 
     void saveSnapshot();
     void restoreSnapshot();

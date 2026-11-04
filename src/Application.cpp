@@ -25,6 +25,7 @@
 #include "providers/pronouns/Pronouns.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/twitch/eventsub/Controller.hpp"
 #include "providers/twitch/TwitchBadges.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
@@ -253,6 +254,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , spellChecker(new SpellChecker)
     , kickChatServer(new KickChatServer)
     , youTubeChatServer(new YouTubeChatServer)
+    , tikTokChatServer(new TikTokChatServer)
     , potatCommands(new PotatCommands)
     , supibotCommands(new SupibotCommands)
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -315,6 +317,7 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->twitch->initialize();
     this->kickChatServer->initialize();
     this->youTubeChatServer->initialize();
+    this->tikTokChatServer->initialize();
 
     this->notifications->initialize();
 
@@ -866,6 +869,14 @@ YouTubeChatServer *Application::getYouTubeChatServer()
     return this->youTubeChatServer.get();
 }
 
+TikTokChatServer *Application::getTikTokChatServer()
+{
+    assertInGuiThread();
+    assert(this->tikTokChatServer);
+
+    return this->tikTokChatServer.get();
+}
+
 PotatCommands *Application::getPotatCommands()
 {
     assert(this->potatCommands);
@@ -936,6 +947,7 @@ void Application::stop()
     this->chatAutomations.reset();
     this->commands.reset();
     this->potatCommands.reset();
+    this->tikTokChatServer.reset();
     this->supibotCommands.reset();
     this->crashHandler.reset();
     this->seventvAPI.reset();

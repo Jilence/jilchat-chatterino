@@ -123,6 +123,22 @@ QSizeF textElementSize(const QString &text, const QFontMetricsF &metrics,
     };
 }
 
+EmotePtr getTikTokBadge()
+{
+    static EmotePtr ptr = std::make_shared<const Emote>(Emote{
+        .name = {u"TikTok"_s},
+        .images =
+            ImageSet{
+                Image::fromUrl({u":/badges/platform-tiktok-18.webp"_s}, 1.0,
+                               {18, 18}),
+                Image::fromUrl({u":/badges/platform-tiktok-36.webp"_s}, .5,
+                               {36, 36}),
+            },
+        .tooltip = Tooltip{},
+    });
+    return ptr;
+}
+
 EmotePtr getKickBadge()
 {
     static EmotePtr ptr = std::make_shared<const Emote>(Emote{
@@ -1269,6 +1285,9 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
                     break;
                 case MessagePlatform::YouTube:
                     emote = getYouTubeBadge();
+                    break;
+                case MessagePlatform::TikTok:
+                    emote = getTikTokBadge();
                     break;
             }
         }

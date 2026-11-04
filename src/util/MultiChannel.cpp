@@ -420,6 +420,8 @@ bool platformMatches(MessagePlatform lhs, MultiChannel::Platform rhs) noexcept
             return rhs == MultiChannel::Platform::Kick;
         case MessagePlatform::YouTube:
             return rhs == MultiChannel::Platform::YouTube;
+        case MessagePlatform::TikTok:
+            return false;
     }
     return false;
 }

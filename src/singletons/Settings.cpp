@@ -1886,6 +1886,11 @@ Settings::~Settings()
     Settings::instance_ = this->prevInstance_;
 }
 
+bool Settings::isSaveEnabled() const
+{
+    return !this->disableSaving;
+}
+
 pajlada::Settings::SettingManager::SaveResult Settings::requestSave() const
 {
     if (this->disableSaving)

@@ -33,6 +33,8 @@ public:
     void sendText(const QByteArray &data);
     void sendBinary(const QByteArray &data);
     void close();
+    /// Whether this still belongs to a connection
+    [[nodiscard]] bool isValid() const;
 
 private:
     std::weak_ptr<ws::detail::WebSocketConnection> conn;
@@ -53,6 +55,8 @@ struct WebSocketListener {
 struct WebSocketOptions {
     QUrl url;
     std::vector<std::pair<std::string, std::string>> headers;
+    /// The largest message to accept, 0 for Beast's default
+    std::size_t maxMessageBytes = 0;
 };
 
 class WebSocketPool

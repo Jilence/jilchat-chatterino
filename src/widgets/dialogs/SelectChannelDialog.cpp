@@ -7,6 +7,7 @@
 #include "Application.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
@@ -351,6 +352,26 @@ SelectChannelDialog::SelectChannelDialog(QWidget *parent)
 
         ui.notebook->addPage(ui.youtubePage, "YouTube");
     }
+    // TikTok
+    {
+        ui.tiktokPage = new QWidget;
+        auto *layout = new QVBoxLayout(ui.tiktokPage);
+
+        auto *tiktokLabel = new QLabel(
+            "Join a TikTok LIVE by the streamer's handle (e.g. "
+            "<b>@tiktok</b>).<br>Shows the chat while they are live. "
+            "This is <b>read-only</b> and <b>experimental</b>.");
+        tiktokLabel->setWordWrap(true);
+        layout->addWidget(tiktokLabel);
+
+        ui.tiktokName = new QLineEdit();
+        ui.tiktokName->setPlaceholderText("Handle or URL (e.g. @tiktok)");
+        layout->addWidget(ui.tiktokName);
+
+        layout->addStretch(1);
+
+        ui.notebook->addPage(ui.tiktokPage, "TikTok");
+    }
     // Multi
     {
         ui.multiPage = new QWidget;
@@ -542,6 +563,13 @@ void SelectChannelDialog::setSelectedChannel(
             this->ui_.notebook->select(this->ui_.youtubePage);
         }
         break;
+        case Channel::Type::TikTok: {
+            this->ui_.channelAnonymous->setChecked(false);
+            this->ui_.tiktokName->setText(channel->getName());
+            this->ui_.tiktokName->selectAll();
+            this->ui_.notebook->select(this->ui_.tiktokPage);
+        }
+        break;
         case Channel::Type::Multi: {
             this->ui_.channelAnonymous->setChecked(false);
             const auto *mc = dynamic_cast<const MultiChannel *>(channel.get());
@@ -593,6 +621,12 @@ IndirectChannel SelectChannelDialog::getSelectedChannel() const
     {
         return getApp()->getYouTubeChatServer()->getOrCreate(
             this->ui_.youtubeName->text().trimmed());
+    }
+
+    if (this->ui_.notebook->isSelected(this->ui_.tiktokPage))
+    {
+        return getApp()->getTikTokChatServer()->getOrCreate(
+            this->ui_.tiktokName->text().trimmed());
     }
 
     if (this->ui_.notebook->isSelected(this->ui_.multiPage))

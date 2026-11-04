@@ -3070,6 +3070,9 @@ void UserInfoPopup::openUserChannelAction(const QString &userName,
         case MessagePlatform::Kick:
             url = u"https://kick.com/" % KickApi::slugify(userName);
             break;
+        case MessagePlatform::TikTok:
+            url = u"https://www.tiktok.com/@" % userName;
+            break;
         case MessagePlatform::AnyOrTwitch:
             if (channelName.isEmpty())
             {

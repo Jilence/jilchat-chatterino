@@ -8,6 +8,7 @@
 #include "common/QLogging.hpp"
 #include "debug/AssertInGuiThread.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "util/Backup.hpp"
@@ -287,6 +288,9 @@ IndirectChannel SplitDescriptor::decodeChannel() const
                                     });
         case Channel::Type::YouTube:
             return getApp()->getYouTubeChatServer()->getOrCreate(
+                this->channelName_);
+        case Channel::Type::TikTok:
+            return getApp()->getTikTokChatServer()->getOrCreate(
                 this->channelName_);
         case Channel::Type::Multi: {
             QVarLengthArray<MultiChannel::Spec, 4> specs;
