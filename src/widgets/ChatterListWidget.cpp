@@ -1289,7 +1289,9 @@ public:
             {
                 if (!child.channel ||
                     child.platform == MultiChannel::Platform::YouTube ||
-                    child.channel->isYouTubeChannel())
+                    child.platform == MultiChannel::Platform::TikTok ||
+                    child.channel->isYouTubeChannel() ||
+                    child.channel->isTikTokChannel())
                 {
                     continue;
                 }

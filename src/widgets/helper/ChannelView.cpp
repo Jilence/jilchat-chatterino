@@ -4489,6 +4489,10 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
                         {
                             platform = MessagePlatform::Kick;
                         }
+                        else if (source->isTikTokChannel())
+                        {
+                            platform = MessagePlatform::TikTok;
+                        }
                         UserInfoPopup::openUserChannelAction(
                             userName, platform, source->getName(), channelId);
                         break;

@@ -4,6 +4,7 @@
 #include "common/WindowDescriptors.hpp"
 #include "messages/Message.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "util/QCompareTransparent.hpp"
@@ -80,6 +81,8 @@ ChannelPtr resolveChannel(const MultiChannel::Spec &spec)
             return getApp()->getKickChatServer()->getOrCreate(spec.name);
         case MultiChannel::Platform::YouTube:
             return getApp()->getYouTubeChatServer()->getOrCreate(spec.name);
+        case MultiChannel::Platform::TikTok:
+            return getApp()->getTikTokChatServer()->getOrCreate(spec.name);
     }
     return Channel::getEmpty();
 }
@@ -421,7 +424,7 @@ bool platformMatches(MessagePlatform lhs, MultiChannel::Platform rhs) noexcept
         case MessagePlatform::YouTube:
             return rhs == MultiChannel::Platform::YouTube;
         case MessagePlatform::TikTok:
-            return false;
+            return rhs == MultiChannel::Platform::TikTok;
     }
     return false;
 }

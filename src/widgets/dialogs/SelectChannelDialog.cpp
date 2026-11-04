@@ -62,6 +62,8 @@ public:
             "Kick", QVariant::fromValue(MultiChannel::Platform::Kick));
         this->platform->addItem(
             "YouTube", QVariant::fromValue(MultiChannel::Platform::YouTube));
+        this->platform->addItem(
+            "TikTok", QVariant::fromValue(MultiChannel::Platform::TikTok));
         layout->addWidget(this->platform);
 
         this->name->setPlaceholderText("Name");
@@ -136,6 +138,9 @@ QListWidgetItem *makeMultiChannelItem(const MultiChannel::Spec &spec)
             break;
         case MultiChannel::Platform::YouTube:
             name += u"[Y] ";
+            break;
+        case MultiChannel::Platform::TikTok:
+            name += u"[TT] ";
             break;
     }
     name += spec.name;
@@ -447,7 +452,8 @@ SelectChannelDialog::SelectChannelDialog(QWidget *parent)
 
         ui.multiTintByPlatform->setToolTip(
             "Give each message a faint background tint in its platform's color "
-            "(Twitch purple, YouTube red, Kick green) so the chats are easy to "
+            "(Twitch purple, YouTube red, Kick green, TikTok pink) so the "
+            "chats are easy to "
             "tell apart.");
         layout->addWidget(ui.multiTintByPlatform);
 

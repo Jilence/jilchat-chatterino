@@ -515,6 +515,8 @@ QString multiTooltipPlatformLabel(MultiChannel::Platform platform)
             return u"Kick"_s;
         case MultiChannel::Platform::YouTube:
             return u"YouTube"_s;
+        case MultiChannel::Platform::TikTok:
+            return u"TikTok"_s;
     }
     return {};
 }
@@ -1874,6 +1876,8 @@ QString multiPlatformName(MultiChannel::Platform platform)
             return u"Kick"_s;
         case MultiChannel::Platform::YouTube:
             return u"YouTube"_s;
+        case MultiChannel::Platform::TikTok:
+            return u"TikTok"_s;
     }
     return {};
 }
