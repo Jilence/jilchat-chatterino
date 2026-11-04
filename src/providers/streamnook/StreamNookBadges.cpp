@@ -61,7 +61,7 @@ StreamNookBadges::StreamNookBadges()
 
     // Nothing is requested while the badges are turned off
     getSettings()->showBadgesStreamNook.connect(
-        [this](bool enabled, auto) {
+        [this](bool enabled, const auto &) {
             if (enabled)
             {
                 QTimer::singleShot(3500, this, [this] {
@@ -93,7 +93,8 @@ void StreamNookBadges::load(const std::function<void(bool)> &onDone)
             const auto root = result.parseJson();
 
             std::unordered_map<QString, EmotePtr> bySlug;
-            for (const auto &value : root[u"badges"_s].toArray())
+            const auto badges = root[u"badges"_s].toArray();
+            for (const auto &value : badges)
             {
                 const auto badge = value.toObject();
                 const auto slug = badge[u"slug"_s].toString();

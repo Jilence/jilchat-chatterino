@@ -1302,7 +1302,7 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
         if (this->split_->getIndirectChannel().getType() ==
             Channel::Type::TwitchWatching)
         {
-            menu->addAction("Reset /watching", this->split_, [] {
+            menu->addAction("Reset /&watching", this->split_, [] {
                 if (!getApp()
                          ->getTwitch()
                          ->getWatchingChannel()
@@ -1317,6 +1317,18 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
 
         menu->addSeparator();
     }
+
+    menu->addAction(
+        "&Followed channels",
+        h->getDisplaySequence(HotkeyCategory::Window, "openFollowedChannels"),
+        this, [this] {
+            auto *window = dynamic_cast<Window *>(this->window());
+            if (window != nullptr)
+            {
+                window->showFollowedChannels();
+            }
+        });
+    menu->addSeparator();
 
     if (this->split_->getSelectedChannel()->getType() ==
         Channel::Type::TwitchWhispers)

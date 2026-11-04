@@ -619,9 +619,9 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
     builder.message().displayName = QStringLiteral("JilChat Chatterino");
     builder.message().localizedName = QStringLiteral("JilChat Chatterino");
     builder.message().usernameColor = QColor("#FFA500");
-    builder.message().serverReceivedTime =
-        warning.createdAt.isValid() ? warning.createdAt
-                                    : QDateTime::currentDateTimeUtc();
+    builder.message().timestamp = warning.createdAt.isValid()
+                                      ? warning.createdAt
+                                      : QDateTime::currentDateTimeUtc();
     builder.message().messageText = text;
     builder.message().searchText = text;
     builder.message().flags.set(MessageFlag::System);
@@ -3164,8 +3164,8 @@ bool TwitchChannel::tryReplaceLastLiveUpdateAddOrRemove(
         return false;
     }
     auto last = this->lastLiveUpdateMessage_.lock();
-    if (!last || !last->flags.has(op) ||
-        last->serverReceivedTime < now.addSecs(-5) || last->loginName != actor)
+    if (!last || !last->flags.has(op) || last->timestamp < now.addSecs(-5) ||
+        last->loginName != actor)
     {
         return false;
     }
@@ -3351,7 +3351,7 @@ bool TwitchChannel::loadOlderMessagesFromLogs()
     MessagePtr oldestShown;
     for (const auto &message : this->getMessageSnapshot())
     {
-        if (message->serverReceivedTime.isValid() && !message->id.isEmpty())
+        if (message->timestamp.isValid() && !message->id.isEmpty())
         {
             oldestShown = message;
             break;
@@ -3361,7 +3361,7 @@ bool TwitchChannel::loadOlderMessagesFromLogs()
     if (anchorId != state.anchorId || !state.cursor.isValid())
     {
         state.anchorId = anchorId;
-        state.cursor = oldestShown ? oldestShown->serverReceivedTime.toUTC()
+        state.cursor = oldestShown ? oldestShown->timestamp.toUTC()
                                    : QDateTime::currentDateTimeUtc();
         state.doneFrom = {};
         state.exhausted = false;
@@ -3506,8 +3506,8 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
 
             // Day separators between days, like the recent messages have...
             const auto localDay = [](const MessagePtr &message) {
-                return message->serverReceivedTime.isValid()
-                           ? message->serverReceivedTime.toLocalTime().date()
+                return message->timestamp.isValid()
+                           ? message->timestamp.toLocalTime().date()
                            : QDate();
             };
             std::vector<MessagePtr> messages;
@@ -3545,7 +3545,7 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
                 }
                 const bool startsWithSeparator =
                     first->flags.has(MessageFlag::System) &&
-                    !first->serverReceivedTime.isValid();
+                    !first->timestamp.isValid();
                 if (shownDay.isValid() && shownDay != previousDay &&
                     !startsWithSeparator)
                 {
@@ -3566,8 +3566,7 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
             // The oldest shown message changed; keep paging from the cursor.
             for (const auto &message : messages)
             {
-                if (message->serverReceivedTime.isValid() &&
-                    !message->id.isEmpty())
+                if (message->timestamp.isValid() && !message->id.isEmpty())
                 {
                     state.anchorId = message->id;
                     break;

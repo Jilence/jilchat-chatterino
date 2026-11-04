@@ -211,9 +211,10 @@ constexpr QStringView ANONYMOUS_GIFTER_ID = u"274598607";
 
 /// MessageFlag::Subscription message types
 const QSet<QString> SUB_MESSAGE_TYPES{
-    "sub",      //
-    "subgift",  //
-    "resub",    // resub messages
+    "sub",             //
+    "subgift",         //
+    "resub",           // resub messages
+    "submysterygift",  //
 };
 
 bool hasBadge(const QString &badges, const QString &badgeName)
@@ -1241,7 +1242,7 @@ MessageBuilder::MessageBuilder(TimeoutMessageTag, const QString &timeoutUser,
 
     this->message().messageText = messageText;
     this->message().searchText = messageText;
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 }
 
 MessageBuilder::MessageBuilder(TimeoutMessageTag, const QString &username,
@@ -1291,7 +1292,7 @@ MessageBuilder::MessageBuilder(TimeoutMessageTag, const QString &username,
     this->emplaceSystemTextAndUpdate(text, fullText);
     this->message().messageText = fullText;
     this->message().searchText = fullText;
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 }
 
 MessageBuilder::MessageBuilder(LiveUpdatesAddEmoteMessageTag /*unused*/,
@@ -1325,7 +1326,7 @@ MessageBuilder::MessageBuilder(LiveUpdatesAddEmoteMessageTag /*unused*/,
     this->message().loginName = actor;
     this->message().messageText = finalText;
     this->message().searchText = finalText;
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 
     this->message().flags.set(MessageFlag::System);
     this->message().flags.set(MessageFlag::LiveUpdatesAdd);
@@ -1363,7 +1364,7 @@ MessageBuilder::MessageBuilder(LiveUpdatesRemoveEmoteMessageTag /*unused*/,
     this->message().loginName = actor;
     this->message().messageText = finalText;
     this->message().searchText = finalText;
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 
     this->message().flags.set(MessageFlag::System);
     this->message().flags.set(MessageFlag::LiveUpdatesRemove);
@@ -1857,6 +1858,7 @@ std::pair<MessagePtr, HighlightAlert>
         Channel *channel)
 {
     MessageBuilder builder;
+    builder->channelName = channel->getName();
 
     builder.appendChannelPointRewardMessage(reward, isMod, isBroadcaster);
 
@@ -1864,7 +1866,7 @@ std::pair<MessagePtr, HighlightAlert>
     Communi::TagsRef tags(tagsMap);
     auto highlights = builder.parseHighlights(tags, "", {}, channel);
 
-    return {builder.release(), HighlightAlert{}};
+    return {builder.release(), highlights};
 }
 
 MessagePtr MessageBuilder::makeLiveMessage(const HelixMinimalUser &channel,
@@ -2165,7 +2167,7 @@ MessagePtrMut MessageBuilder::makeClearChatMessage(const QDateTime &now,
     builder.emplace<TimestampElement>(now.time());
     builder->channelName = channelName;
     builder->count = count;
-    builder->serverReceivedTime = now;
+    builder->timestamp = now;
     builder.message().flags.set(
         MessageFlag::System, MessageFlag::DoNotTriggerNotification,
         MessageFlag::ClearChat, MessageFlag::ModerationAction);
@@ -2227,7 +2229,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
 
     MessageBuilder builder;
     // calculate timestamp
-    builder->serverReceivedTime = calculateMessageTime(ircMessage);
+    builder->timestamp = calculateMessageTime(ircMessage);
 
     builder.parseUsernameColor(tags, userID);
     builder->userID = userID;
@@ -2270,7 +2272,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
     }
 
     builder.appendChannelName(channel);
-    builder->serverReceivedTime = calculateMessageTime(ircMessage);
+    builder->timestamp = calculateMessageTime(ircMessage);
 
     if (tags.has("client-nonce") && getSettings()->nonceFuckeryEnabled)
     {
@@ -2281,8 +2283,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         {
             auto link = linkparser::parse(nonceString);
 
-            builder.emplace<TimestampElement>(
-                builder->serverReceivedTime.time());
+            builder.emplace<TimestampElement>(builder->timestamp.time());
             builder.emplace<TextElement>(
                 "Abnormal nonce:", MessageElementFlag::ChannelPointReward,
                 MessageColor::System);
@@ -2333,7 +2334,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.parseThread(content, tags, channel, thread, parent);
 
         // add timestamp
-        builder.emplace<TimestampElement>(builder->serverReceivedTime.time());
+        builder.emplace<TimestampElement>(builder->timestamp.time());
 
         const bool senderIsModerator =
             tags.getOrEmpty("user-type") == u"mod"_s ||
@@ -2739,10 +2740,11 @@ void MessageBuilder::addTwitchGif(const QString &id, QStringView originalText)
                 0.5),
         };
         this->emplace<LinebreakElement>(MessageElementFlag::TwitchGif);
+        // leafyrino scales Twitch GIFs in ScalingImageElement
         this->emplace<ScalingImageElement>(set, MessageElementFlag::TwitchGif,
                                            original)
             ->setLink(Link{Link::Url, link})
-            ->setTooltip(original.toHtmlEscaped());
+            ->setTooltip(u"<span>" % original.toHtmlEscaped() % u"</span>");
     }
     else
     {
@@ -2973,8 +2975,7 @@ void MessageBuilder::parseMessageTags(Communi::TagsRef tags,
                         };
 
                     this->emplace<TimestampElement>(
-                            this->message().serverReceivedTime.time(),
-                            timestampFlags)
+                            this->message().timestamp.time(), timestampFlags)
                         ->exhaustiveFlags = true;
 
                     auto displayName = tags.getOrEmpty("display-name");
@@ -3020,7 +3021,7 @@ void MessageBuilder::parseMessageTags(Communi::TagsRef tags,
             }
 
             this->emplace<TimestampElement>(
-                    this->message().serverReceivedTime.time(),
+                    this->message().timestamp.time(),
                     MessageElementFlags{
                         MessageElementFlag::HeaderTimestamp,
                         MessageElementFlag::AnnouncementHeader,
@@ -3067,8 +3068,8 @@ void MessageBuilder::parseMessageTags(Communi::TagsRef tags,
                             MessageElementFlag::Mention,
                         };
 
-            this->emplace<TimestampElement>(
-                    this->message().serverReceivedTime.time(), timestampFlags)
+            this->emplace<TimestampElement>(this->message().timestamp.time(),
+                                            timestampFlags)
                 ->exhaustiveFlags = true;
 
             const auto messageText =
