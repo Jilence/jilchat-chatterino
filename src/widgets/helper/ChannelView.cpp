@@ -35,6 +35,8 @@
 #include "providers/links/LinkResolver.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/tiktok/TikTokChannel.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/translation/Translator.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
@@ -5308,14 +5310,6 @@ void ChannelView::showUserInfoPopup(const QString &userName,
         return;
     }
 
-    if (platform == MessagePlatform::TikTok)
-    {
-        // There is no TikTok usercard yet: the profile on TikTok instead
-        QDesktopServices::openUrl(
-            QUrl(QStringLiteral("https://www.tiktok.com/@") + userName));
-        return;
-    }
-
     auto *userPopup =
         new UserInfoPopup(getSettings()->autoCloseUserPopup, this->split_);
 
@@ -5326,6 +5320,20 @@ void ChannelView::showUserInfoPopup(const QString &userName,
         userPopup->setYouTubeContext();
         contextChannel = getApp()->getYouTubeChatServer()->findByName(
             alternativePopoutChannel);
+        if (!contextChannel)
+        {
+            contextChannel = Channel::getEmpty();
+        }
+    }
+    else if (platform == MessagePlatform::TikTok)
+    {
+        contextChannel = getApp()->getTikTokChatServer()->findByHandle(
+            alternativePopoutChannel);
+        if (!contextChannel && openingChannel &&
+            openingChannel->isTikTokChannel())
+        {
+            contextChannel = openingChannel;
+        }
         if (!contextChannel)
         {
             contextChannel = Channel::getEmpty();

@@ -190,6 +190,8 @@ private:
     void updateAvatarUrl();
 
     void updateKickUserData();
+    void updateTikTokUserData();
+    void updateTikTokLatestMessages();
     void updateYouTubeUserData();
     void updateYouTubeLatestMessages();
     void loadYouTubeAvatar(const QString &url);
@@ -386,6 +388,9 @@ private:
     bool isKick_ = false;
     bool isYouTube_ = false;
     bool forceYouTube_ = false;
+    bool isTikTok_ = false;
+    QString tiktokHandle_;
+    QString tiktokUserId_;
     QString youtubeChannelId_;
     uint64_t kickUserID_ = 0;
     bool isUserLive_ = false;

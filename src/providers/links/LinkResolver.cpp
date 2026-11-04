@@ -72,7 +72,8 @@ void failTikTokPreview(LinkInfo *info, const QString &reason)
                                       QUrl::RemoveFragment);
     qCDebug(chatterinoHTTP)
         << "TikTok link preview failed for" << logUrl << reason;
-    info->setTooltip(tiktok::makeUnavailableTooltip(info->originalUrl()));
+    info->setTooltip(tiktok::makeUnavailableTooltip(info->originalUrl()) %
+                     u" (" % reason.toHtmlEscaped() % u')');
     info->setState(LinkInfo::State::Errored);
 }
 
@@ -89,11 +90,21 @@ void requestTikTokOEmbed(LinkInfo *info, const tiktok::LinkTarget &target,
         .header("Accept", "application/json")
         .onSuccess([info, target, aliasCacheKey = std::move(aliasCacheKey)](
                        const NetworkResult &result) {
-            const auto preview = tiktok::parseOEmbed(result.parseJson());
+            auto preview = tiktok::parseOEmbed(result.parseJson());
             if (!preview)
             {
                 failTikTokPreview(info, QStringLiteral("invalid response"));
                 return;
+            }
+            if (preview->author.isEmpty())
+            {
+                // "/@name/video/123" or "/@name"
+                const auto path = target.url.path();
+                const auto end = path.indexOf(u'/', 1);
+                if (path.startsWith(u"/@"))
+                {
+                    preview->author = path.mid(1, end < 0 ? -1 : end - 1);
+                }
             }
 
             const CachedTikTokPreview cached{

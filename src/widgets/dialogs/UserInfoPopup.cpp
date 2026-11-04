@@ -34,6 +34,7 @@
 #include "providers/pronouns/Pronouns.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/tiktok/TikTokChannel.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/TwitchGql.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -1332,6 +1333,15 @@ void unregisterActiveUsercard(UserInfoPopup *popup)
 
 namespace chatterino {
 
+namespace {
+
+QUrl tiktokProfileUrl(const QString &handle)
+{
+    return QUrl(QStringLiteral("https://www.tiktok.com/@") + handle);
+}
+
+}  // namespace
+
 using namespace literals;
 
 UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
@@ -1496,6 +1506,16 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 if (this->isKick_)
                 {
                     this->onKickProfilePictureClick(button);
+                    return;
+                }
+
+                if (this->isTikTok_)
+                {
+                    if (button == Qt::LeftButton)
+                    {
+                        QDesktopServices::openUrl(
+                            tiktokProfileUrl(this->tiktokHandle_));
+                    }
                     return;
                 }
 
@@ -1875,7 +1895,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
 
         auto openWhisper = [this] {
             if (this->userName_.isEmpty() || this->split_ == nullptr ||
-                this->isYouTube_ || this->isKick_)
+                this->isYouTube_ || this->isTikTok_ || this->isKick_)
             {
                 return;
             }
@@ -1891,15 +1911,16 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
 
         auto openUsercard = [this] {
             MessagePlatform platform =
-                this->isYouTube_ ? MessagePlatform::YouTube
-                : this->isKick_  ? MessagePlatform::Kick
-                                 : MessagePlatform::AnyOrTwitch;
+                this->isYouTube_  ? MessagePlatform::YouTube
+                : this->isTikTok_ ? MessagePlatform::TikTok
+                : this->isKick_   ? MessagePlatform::Kick
+                                  : MessagePlatform::AnyOrTwitch;
             QString channelName = this->underlyingChannel_
                                       ? this->underlyingChannel_->getName()
                                       : QString();
-            UserInfoPopup::openUserChannelAction(this->userName_, platform,
-                                                 channelName,
-                                                 this->youtubeChannelId_);
+            UserInfoPopup::openUserChannelAction(
+                this->isTikTok_ ? this->tiktokHandle_ : this->userName_,
+                platform, channelName, this->youtubeChannelId_);
         };
         QObject::connect(usercard.getElement(), &Button::leftClicked,
                          openUsercard);
@@ -2423,7 +2444,7 @@ void UserInfoPopup::installEvents()
     QObject::connect(
         this->ui_.block, &QCheckBox::stateChanged,
         [this](int newState) mutable {
-            if (this->isKick_ || this->isYouTube_)
+            if (this->isKick_ || this->isYouTube_ || this->isTikTok_)
             {
                 return;
             }
@@ -2786,7 +2807,7 @@ bool UserInfoPopup::updateTargetModerationStatusFromMessage(
 
 bool UserInfoPopup::shouldShowModerationActions() const
 {
-    if (this->isYouTube_)
+    if (this->isYouTube_ || this->isTikTok_)
     {
         return false;
     }
@@ -2841,8 +2862,9 @@ bool UserInfoPopup::crossActionAvailable() const
 {
     const auto *twitchChannel =
         dynamic_cast<TwitchChannel *>(this->underlyingChannel_.get());
-    if (this->isKick_ || this->isYouTube_ || this->userName_.isEmpty() ||
-        twitchChannel == nullptr || twitchChannel->roomId().isEmpty())
+    if (this->isKick_ || this->isYouTube_ || this->isTikTok_ ||
+        this->userName_.isEmpty() || twitchChannel == nullptr ||
+        twitchChannel->roomId().isEmpty())
     {
         return false;
     }
@@ -2949,6 +2971,8 @@ void UserInfoPopup::setData(const QString &name,
     this->isYouTube_ =
         this->forceYouTube_ ||
         this->underlyingChannel_->getType() == Channel::Type::YouTube;
+    this->isTikTok_ =
+        this->underlyingChannel_->getType() == Channel::Type::TikTok;
     this->forceYouTube_ = false;
     if (this->isKick_)
     {
@@ -2990,6 +3014,10 @@ void UserInfoPopup::setData(const QString &name,
             this->ui_.pronounsLabel->hide();
         }
     }
+    else if (this->isTikTok_)
+    {
+        this->updateTikTokUserData();
+    }
     else if (this->isYouTube_)
     {
         this->updateYouTubeUserData();
@@ -3005,7 +3033,11 @@ void UserInfoPopup::setData(const QString &name,
 
     this->userStateChanged_.invoke();
 
-    if (this->isYouTube_)
+    if (this->isTikTok_)
+    {
+        this->updateTikTokLatestMessages();
+    }
+    else if (this->isYouTube_)
     {
         this->updateYouTubeLatestMessages();
     }
@@ -3016,7 +3048,15 @@ void UserInfoPopup::setData(const QString &name,
     // If we're opening by ID, this will be called as soon as we get the information from twitch
 
     auto type = this->channel_->getType();
-    if (this->isYouTube_)
+    if (this->isTikTok_)
+    {
+        this->ui_.usercardLabel->setText("Open profile on &TikTok");
+        this->ui_.usercardLabel->setVisible(!this->tiktokHandle_.isEmpty());
+        this->ui_.whisperLabel->hide();
+        this->ui_.userlogsLabel->hide();
+        this->ui_.rolesViewLabel->hide();
+    }
+    else if (this->isYouTube_)
     {
         this->ui_.usercardLabel->setText("Open channel on &YouTube");
         this->ui_.usercardLabel->setVisible(!this->youtubeChannelId_.isEmpty());
@@ -3095,6 +3135,131 @@ void UserInfoPopup::openUserChannelAction(const QString &userName,
     else
     {
         QDesktopServices::openUrl(QUrl(url));
+    }
+}
+
+void UserInfoPopup::updateTikTokUserData()
+{
+    // userName_ is the handle, or "id:<user id>" for someone without one
+    auto *channel =
+        dynamic_cast<TikTokChannel *>(this->underlyingChannel_.get());
+    QStringView key = this->userName_;
+    if (key.startsWith(u"id:"))
+    {
+        key = key.sliced(3);
+    }
+    const auto author = channel ? channel->author(key).value_or(TikTokAuthor{})
+                                : TikTokAuthor{};
+
+    this->tiktokHandle_ = author.handle;
+    if (this->tiktokHandle_.isEmpty() && !this->userName_.startsWith(u"id:"))
+    {
+        this->tiktokHandle_ = this->userName_;
+    }
+    this->tiktokUserId_ = author.id;
+    if (this->tiktokUserId_.isEmpty() && this->userName_.startsWith(u"id:"))
+    {
+        this->tiktokUserId_ = this->userName_.sliced(3);
+    }
+
+    QString name = author.displayName;
+    if (name.isEmpty())
+    {
+        name = this->tiktokHandle_;
+    }
+    if (!this->tiktokHandle_.isEmpty() &&
+        name.compare(this->tiktokHandle_, Qt::CaseInsensitive) != 0)
+    {
+        name += u" (@" % this->tiktokHandle_ % u')';
+    }
+    this->ui_.nameLabel->setText(name);
+
+    if (this->tiktokUserId_.isEmpty())
+    {
+        this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
+        this->ui_.userIDLabel->setProperty("copy-text",
+                                           TEXT_UNAVAILABLE.toString());
+    }
+    else
+    {
+        this->ui_.userIDLabel->setText(TEXT_USER_ID % this->tiktokUserId_);
+        this->ui_.userIDLabel->setProperty("copy-text", this->tiktokUserId_);
+    }
+
+    if (this->ui_.pronounsLabel)
+    {
+        this->ui_.pronounsLabel->hide();
+    }
+    this->ui_.followerCountLabel->hide();
+    this->ui_.createdDateLabel->hide();
+    this->ui_.followageRow->hide();
+    this->ui_.subageRow->hide();
+    this->hideUsercardSubGiftRow();
+    this->ui_.chatterCountLabel->hide();
+    this->ui_.lastLiveLabel->hide();
+    this->ui_.sevenTVUserLabel->hide();
+    this->ui_.rolesLabel->hide();
+    this->ui_.notesAdd->hide();
+    this->ui_.notesPreview->setVisible(false);
+    this->ui_.block->hide();
+    if (this->ui_.followButton)
+    {
+        this->ui_.followButton->hide();
+    }
+
+    this->loadYouTubeAvatar(author.avatarUrl);
+}
+
+void UserInfoPopup::updateTikTokLatestMessages()
+{
+    auto matches = [this](const MessagePtr &message) {
+        if (message->platform != MessagePlatform::TikTok)
+        {
+            return false;
+        }
+        if (!this->tiktokUserId_.isEmpty() &&
+            message->userID == this->tiktokUserId_)
+        {
+            return true;
+        }
+        return !this->tiktokHandle_.isEmpty() &&
+               message->loginName.compare(this->tiktokHandle_,
+                                          Qt::CaseInsensitive) == 0;
+    };
+
+    auto channelPtr = std::make_shared<Channel>(
+        this->underlyingChannel_ ? this->underlyingChannel_->getName()
+                                 : QString(),
+        Channel::Type::None);
+    if (this->underlyingChannel_)
+    {
+        for (const auto &message :
+             this->underlyingChannel_->getMessageSnapshot())
+        {
+            if (matches(message))
+            {
+                channelPtr->addMessage(message, MessageContext::Repost);
+            }
+        }
+    }
+    this->usercardMessagesChannel_ = channelPtr;
+    this->ui_.latestMessages->setChannel(channelPtr);
+    this->ui_.latestMessages->setSourceChannel(this->underlyingChannel_);
+    this->updateUsercardMessagesVisibility();
+
+    if (this->underlyingChannel_)
+    {
+        this->refreshConnection_ =
+            std::make_unique<pajlada::Signals::ScopedConnection>(
+                this->underlyingChannel_->messageAppended.connect(
+                    [this, matches](auto message, auto) {
+                        if (matches(message) && this->usercardMessagesChannel_)
+                        {
+                            this->usercardMessagesChannel_->addMessage(
+                                message, MessageContext::Repost);
+                            this->updateUsercardMessagesVisibility();
+                        }
+                    }));
     }
 }
 
@@ -5099,7 +5264,7 @@ QString UserInfoPopup::showProfilePictureContextMenu()
 bool UserInfoPopup::canShowRoleManagementMenu() const
 {
     if (!getSettings()->showUsercardRoleManagementMenu || this->isKick_ ||
-        this->isYouTube_ || this->userName_.isEmpty() ||
+        this->isYouTube_ || this->isTikTok_ || this->userName_.isEmpty() ||
         !this->underlyingChannel_)
     {
         return false;
@@ -5325,7 +5490,8 @@ void UserInfoPopup::hideUsercardSubGiftRow()
 void UserInfoPopup::resetUsercardInfoRows()
 {
     auto *settings = getSettings();
-    const bool showTwitchProfileRows = !this->isKick_ && !this->isYouTube_;
+    const bool showTwitchProfileRows =
+        !this->isKick_ && !this->isYouTube_ && !this->isTikTok_;
 
     this->ui_.followerCountLabel->setText(TEXT_FOLLOWERS.arg(""));
     this->ui_.followerCountLabel->setVisible(
@@ -5502,7 +5668,7 @@ void UserInfoPopup::resetNameHistory()
 bool UserInfoPopup::applyCachedNameHistory()
 {
     if (this->userName_.isEmpty() || this->userId_.isEmpty() || this->isKick_ ||
-        this->isYouTube_)
+        this->isYouTube_ || this->isTikTok_)
     {
         return false;
     }
@@ -5535,7 +5701,7 @@ void UserInfoPopup::updateNameHistoryButton()
 
     const bool canShow = getSettings()->showUsercardNameHistoryButton &&
                          !this->isKick_ && !this->isYouTube_ &&
-                         !this->userName_.isEmpty();
+                         !this->isTikTok_ && !this->userName_.isEmpty();
     this->ui_.nameHistoryButton->setVisible(canShow);
     this->ui_.nameHistoryButton->setEnabled(canShow &&
                                             !this->userId_.isEmpty());
@@ -5743,7 +5909,7 @@ void UserInfoPopup::updateBadgesButton()
         return;
     }
 
-    bool canShow = !this->isKick_ && !this->isYouTube_ &&
+    bool canShow = !this->isKick_ && !this->isYouTube_ && !this->isTikTok_ &&
                    !this->userName_.isEmpty() && this->underlyingChannel_ &&
                    !this->underlyingChannel_->getName().isEmpty();
 
@@ -5771,8 +5937,8 @@ void UserInfoPopup::updateBadgesButton()
 
 void UserInfoPopup::openBadgesDialog()
 {
-    if (this->isKick_ || this->isYouTube_ || this->userName_.isEmpty() ||
-        !this->underlyingChannel_)
+    if (this->isKick_ || this->isYouTube_ || this->isTikTok_ ||
+        this->userName_.isEmpty() || !this->underlyingChannel_)
     {
         return;
     }
@@ -5795,7 +5961,8 @@ void UserInfoPopup::openBadgesDialog()
 void UserInfoPopup::showNameHistoryMenu()
 {
     if (this->ui_.nameHistoryButton == nullptr || this->userName_.isEmpty() ||
-        this->userId_.isEmpty() || this->isKick_ || this->isYouTube_)
+        this->userId_.isEmpty() || this->isKick_ || this->isYouTube_ ||
+        this->isTikTok_)
     {
         return;
     }
@@ -5876,7 +6043,7 @@ void UserInfoPopup::openNameHistoryMenu(const QString &statusText)
 void UserInfoPopup::requestNameHistory()
 {
     if (this->userName_.isEmpty() || this->userId_.isEmpty() || this->isKick_ ||
-        this->isYouTube_)
+        this->isYouTube_ || this->isTikTok_)
     {
         return;
     }
@@ -6293,8 +6460,10 @@ void UserInfoPopup::refreshSeventvPaint()
         return;
     }
 
-    auto paint = usernamePaint(this->userName_.toLower(), this->isKick_);
-    if (!paint)
+    auto paint = this->isTikTok_
+                     ? nullptr
+                     : usernamePaint(this->userName_.toLower(), this->isKick_);
+    if (!paint && !this->isTikTok_)
     {
         // A hidden 7TV paint, so it can be unhidden from here
         paint = getApp()->getSeventvPaints()->getPaint(

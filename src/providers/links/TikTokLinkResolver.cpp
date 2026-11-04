@@ -150,10 +150,8 @@ std::optional<Preview> parseOEmbed(const QJsonObject &root)
                            MAX_TITLE_LENGTH),
     };
 
-    if (preview.author.isEmpty() && preview.title.isEmpty())
-    {
-        return std::nullopt;
-    }
+    // TikTok's oEmbed often leaves out the author, title and thumbnail now;
+    // the author then comes from the link (see LinkResolver)
 
     const QUrl thumbnail(
         root.value(QStringLiteral("thumbnail_url")).toString());
