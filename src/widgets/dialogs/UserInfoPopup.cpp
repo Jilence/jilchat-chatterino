@@ -410,7 +410,8 @@ void createUsercardStatusRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
 }
 
 void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
-                            QLabel **pixmapOut, Button **paintNameButtonOut)
+                            QLabel **pixmapOut, Button **paintNameButtonOut,
+                            LabelButton **hideButtonOut)
 {
     auto *row = new QWidget;
     auto *layout = new QHBoxLayout(row);
@@ -424,6 +425,10 @@ void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
 
     auto *paintNameButton = new ClickablePaintName;
     layout->addWidget(paintNameButton, 0, Qt::AlignVCenter);
+
+    auto *hideButton = new LabelButton("Hide", nullptr, QSize{6, 0});
+    layout->addSpacing(4);
+    layout->addWidget(hideButton, 0, Qt::AlignVCenter);
     layout->addStretch(1);
 
     row->setVisible(false);
@@ -432,6 +437,7 @@ void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
     *rowOut = row;
     *pixmapOut = paintNameButton->pixmapLabel();
     *paintNameButtonOut = paintNameButton;
+    *hideButtonOut = hideButton;
 }
 
 void createUsercardColorRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
@@ -1726,7 +1732,28 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             Button *seventvPaintNameButton = nullptr;
             createUsercardPaintRow(vbox, &this->ui_.seventvPaintRow,
                                    &this->ui_.seventvPaintPixmapLabel,
-                                   &seventvPaintNameButton);
+                                   &seventvPaintNameButton,
+                                   &this->ui_.seventvPaintHideButton);
+            QObject::connect(
+                this->ui_.seventvPaintHideButton, &Button::leftClicked, this,
+                [this] {
+                    if (!this->seventvPaint_ ||
+                        this->seventvPaint_->id.isEmpty())
+                    {
+                        return;
+                    }
+
+                    auto *paints = getApp()->getSeventvPaints();
+                    if (paints->isPaintHidden(this->seventvPaint_->id))
+                    {
+                        paints->unhidePaint(this->seventvPaint_->id);
+                    }
+                    else
+                    {
+                        paints->hidePaint(this->seventvPaint_->id,
+                                          this->seventvPaint_->name);
+                    }
+                });
             if (seventvPaintNameButton)
             {
                 QObject::connect(
@@ -2616,6 +2643,10 @@ void UserInfoPopup::installEvents()
             this->updateUsercardBadges();
         },
         this->signalHolder_, false);
+    this->signalHolder_.managedConnect(
+        getSettings()->hiddenSevenTVPaints.delayedItemsChanged, [this] {
+            this->refreshSeventvPaint();
+        });
     getSettings()->showSevenTVUsercardButton.connect(
         [this](bool enabled) {
             if (enabled && this->seventvUserID_.isEmpty() &&
@@ -6259,7 +6290,13 @@ void UserInfoPopup::refreshSeventvPaint()
         return;
     }
 
-    const auto paint = usernamePaint(this->userName_.toLower(), this->isKick_);
+    auto paint = usernamePaint(this->userName_.toLower(), this->isKick_);
+    if (!paint)
+    {
+        // A hidden 7TV paint, so it can be unhidden from here
+        paint = getApp()->getSeventvPaints()->getPaint(
+            this->userName_.toLower(), this->isKick_, true);
+    }
     this->seventvPaint_ = paint;
 
     if (!paint)
@@ -6274,6 +6311,17 @@ void UserInfoPopup::refreshSeventvPaint()
     {
         prefixLabel->setText(TEXT_PAINT.arg(paint->sourceName()));
     }
+
+    // Only 7TV paints can be hidden
+    const bool seventv =
+        getApp()->getSeventvPaints()->getPaintById(paint->id) == paint;
+    this->ui_.seventvPaintHideButton->setVisible(seventv);
+    const bool hidden = getApp()->getSeventvPaints()->isPaintHidden(paint->id);
+    this->ui_.seventvPaintHideButton->setText(hidden ? "Unhide" : "Hide");
+    this->ui_.seventvPaintHideButton->setToolTip(
+        hidden ? "Render this paint in chat again"
+               : "Stop rendering this paint in chat");
+
     this->ui_.seventvPaintRow->show();
     this->updateSeventvPaintPixmap();
 }
@@ -6321,6 +6369,20 @@ void UserInfoPopup::updateSeventvPaintPixmap()
         paint->getPixmap(paintName, font, userColor, size, this->scale(),
                          static_cast<float>(dpr), true, padding);
 
+    const bool hidden = getApp()->getSeventvPaints()->isPaintHidden(paint->id);
+    if (hidden)
+    {
+        // Dim hidden paints so their state is visible at a glance.
+        QPixmap dimmed(pixmap.size());
+        dimmed.setDevicePixelRatio(pixmap.devicePixelRatio());
+        dimmed.fill(Qt::transparent);
+        QPainter painter(&dimmed);
+        painter.setOpacity(0.4);
+        painter.drawPixmap(0, 0, pixmap);
+        painter.end();
+        pixmap = std::move(dimmed);
+    }
+
     // The room on the left would move the name away from "7TV Paint:". And
     // only a band around the text is shown: some paints have shadows reaching
     // far below, which would push the rows apart and the name off the middle.
@@ -6340,7 +6402,8 @@ void UserInfoPopup::updateSeventvPaintPixmap()
     this->ui_.seventvPaintPixmapLabel->setFixedSize(
         pixmap.deviceIndependentSize().toSize());
     this->ui_.seventvPaintPixmapLabel->setPixmap(pixmap);
-    this->ui_.seventvPaintPixmapLabel->setToolTip(paintName);
+    this->ui_.seventvPaintPixmapLabel->setToolTip(
+        hidden ? paintName + " (hidden)" : paintName);
 }
 
 UserInfoPopup::~UserInfoPopup()

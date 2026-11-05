@@ -370,6 +370,7 @@ private:
         QLabel *seventvPaintPixmapLabel = nullptr;
         QWidget *seventvPaintRow = nullptr;
         QWidget *badgeStrip = nullptr;
+        LabelButton *seventvPaintHideButton = nullptr;
         LabelButton *rolesLabel = nullptr;
         LabelButton *switchAvatars = nullptr;
 
