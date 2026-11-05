@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+//
+// SPDX-License-Identifier: MIT
+
 #include "providers/tiktok/TikTokProtocol.hpp"
 
 #include <boost/beast/zlib/inflate_stream.hpp>

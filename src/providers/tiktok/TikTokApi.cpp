@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Contributors to Chatterino <https://chatterino.com>
+//
+// SPDX-License-Identifier: MIT
+
 #include "providers/tiktok/TikTokApi.hpp"
 
 #include "providers/tiktok/TikTokRequestSigning.hpp"
