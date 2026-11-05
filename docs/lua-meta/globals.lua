@@ -55,6 +55,7 @@ c2.ChannelType = {
     TwitchEnd = {}, ---@type c2.ChannelType.TwitchEnd
     Kick = {}, ---@type c2.ChannelType.Kick
     YouTube = {}, ---@type c2.ChannelType.YouTube
+    TikTok = {}, ---@type c2.ChannelType.TikTok
     Misc = {}, ---@type c2.ChannelType.Misc
     Multi = {}, ---@type c2.ChannelType.Multi
 }
@@ -884,6 +885,7 @@ c2.MessageElementFlag = {
     BadgeLimerino = 0,
     BadgeJiltv = 0,
     BadgeStreamNook = 0,
+    NoUsernamePaint = 0,
     Badges = 0,
     ChannelName = 0,
     BitsAmount = 0,
