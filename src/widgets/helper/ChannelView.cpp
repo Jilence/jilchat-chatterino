@@ -2794,6 +2794,13 @@ void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
                     this->liveStatusChanged.invoke();
                 });
         }
+        else if (auto *tiktokChannel = dynamic_cast<TikTokChannel *>(chan))
+        {
+            this->channelConnections_.managedConnect(
+                tiktokChannel->liveStatusChanged, [this] {
+                    this->liveStatusChanged.invoke();
+                });
+        }
     };
 
     if (mc)
