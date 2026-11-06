@@ -1030,6 +1030,10 @@ public:
     /// The same for "Search in all open channels".
     BoolSetting searchPublicLogsAllChannels = {
         "/misc/publicLogs/searchPopupAllChannels", false};
+    BoolSetting showStreamChangeMessages = {
+        "/leafyrino/showStreamChangeMessages",
+        true,
+    };
 
     /// UI
 
