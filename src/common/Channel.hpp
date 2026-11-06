@@ -60,6 +60,7 @@ public:
         TwitchEnd,
         Kick,
         YouTube,
+        TikTok,
         /// Misc
         Misc,
         Multi,
@@ -93,6 +94,7 @@ public:
     bool isWatching() const;
     bool isKickChannel() const;
     bool isYouTubeChannel() const;
+    bool isTikTokChannel() const;
     bool isTwitchOrKickChannel() const;
     virtual bool isEmpty() const;
 
@@ -266,6 +268,8 @@ constexpr std::optional<std::string_view> qmagicenumSerializedName(
             return "kick";
         case Type::YouTube:
             return "youtube";
+        case Type::TikTok:
+            return "tiktok";
         case Type::Multi:
             return "multi";
 

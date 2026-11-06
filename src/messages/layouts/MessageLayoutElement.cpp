@@ -1654,8 +1654,10 @@ void TextLayoutElement::paint(QPainter &painter,
 
     bool isNametag = this->getLink().type == chatterino::Link::UserInfo ||
                      this->getLink().type == chatterino::Link::UserWhisper;
-    bool drawPaint = isNametag && this->messageColor_ != MessageColor::System &&
-                     usernamePaintsEnabled();
+    bool drawPaint =
+        isNametag && this->messageColor_ != MessageColor::System &&
+        usernamePaintsEnabled() &&
+        !this->getCreator().getFlags().has(MessageElementFlag::NoUsernamePaint);
     if (drawPaint)
     {
         auto paint = usernamePaint(this->getLink().value.toLower(),
@@ -1804,7 +1806,9 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     const bool isNametag =
         this->getLink().type == chatterino::Link::UserInfo ||
         this->getLink().type == chatterino::Link::UserWhisper;
-    const bool drawPaint = isNametag && usernamePaintsEnabled();
+    const bool drawPaint =
+        isNametag && usernamePaintsEnabled() &&
+        !this->getCreator().getFlags().has(MessageElementFlag::NoUsernamePaint);
     if (!drawPaint)
     {
         return {};

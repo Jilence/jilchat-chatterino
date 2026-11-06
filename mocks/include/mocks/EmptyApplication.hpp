@@ -399,6 +399,13 @@ public:
         return nullptr;
     }
 
+    TikTokChatServer *getTikTokChatServer() override
+    {
+        assert(false && "EmptyApplication::getTikTokChatServer was called "
+                        "without being initialized");
+        return nullptr;
+    }
+
     YouTubeChatServer *getYouTubeChatServer() override
     {
         assert(false &&

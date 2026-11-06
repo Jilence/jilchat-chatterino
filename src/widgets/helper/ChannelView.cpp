@@ -35,6 +35,8 @@
 #include "providers/links/LinkResolver.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/tiktok/TikTokChannel.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/translation/Translator.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
@@ -2792,6 +2794,13 @@ void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
                     this->liveStatusChanged.invoke();
                 });
         }
+        else if (auto *tiktokChannel = dynamic_cast<TikTokChannel *>(chan))
+        {
+            this->channelConnections_.managedConnect(
+                tiktokChannel->liveStatusChanged, [this] {
+                    this->liveStatusChanged.invoke();
+                });
+        }
     };
 
     if (mc)
@@ -4489,6 +4498,10 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
                         {
                             platform = MessagePlatform::Kick;
                         }
+                        else if (source->isTikTokChannel())
+                        {
+                            platform = MessagePlatform::TikTok;
+                        }
                         UserInfoPopup::openUserChannelAction(
                             userName, platform, source->getName(), channelId);
                         break;
@@ -5319,6 +5332,20 @@ void ChannelView::showUserInfoPopup(const QString &userName,
             contextChannel = Channel::getEmpty();
         }
     }
+    else if (platform == MessagePlatform::TikTok)
+    {
+        contextChannel = getApp()->getTikTokChatServer()->findByHandle(
+            alternativePopoutChannel);
+        if (!contextChannel && openingChannel &&
+            openingChannel->isTikTokChannel())
+        {
+            contextChannel = openingChannel;
+        }
+        if (!contextChannel)
+        {
+            contextChannel = Channel::getEmpty();
+        }
+    }
     else if (openingChannel && platform == MessagePlatform::Kick)
     {
         contextChannel =
@@ -5578,6 +5605,11 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
             {
                 searchName = searchName.sliced(sizeof(":kick:") - 1);
             }
+            bool searchTikTokChannel = link.value.startsWith(u":tiktok:");
+            if (searchTikTokChannel)
+            {
+                searchName = searchName.sliced(sizeof(":tiktok:") - 1);
+            }
 
             for (auto *page : openPages)
             {
@@ -5586,10 +5618,13 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
                 // Search for channel matching link in page/split container
                 // TODO(zneix): Consider opening a channel if it's closed (?)
                 auto it = std::ranges::find_if(
-                    splits, [searchName, searchKickChannel](Split *split) {
+                    splits, [searchName, searchKickChannel,
+                             searchTikTokChannel](Split *split) {
                         return split->getChannel()->getName() == searchName &&
                                split->getChannel()->isKickChannel() ==
-                                   searchKickChannel;
+                                   searchKickChannel &&
+                               split->getChannel()->isTikTokChannel() ==
+                                   searchTikTokChannel;
                     });
 
                 if (it != splits.end())

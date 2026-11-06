@@ -70,6 +70,10 @@ Channel::Channel(const QString &name, Type type, bool watching)
     {
         this->messagePlatform_ = MessagePlatform::YouTube;
     }
+    else if (this->isTikTokChannel())
+    {
+        this->messagePlatform_ = MessagePlatform::TikTok;
+    }
     else
     {
         this->messagePlatform_ = MessagePlatform::AnyOrTwitch;
@@ -123,6 +127,11 @@ bool Channel::isKickChannel() const
 bool Channel::isYouTubeChannel() const
 {
     return this->type_ == Type::YouTube;
+}
+
+bool Channel::isTikTokChannel() const
+{
+    return this->type_ == Type::TikTok;
 }
 
 bool Channel::isTwitchOrKickChannel() const

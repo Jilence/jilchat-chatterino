@@ -26,6 +26,8 @@ set(SOURCE_FILES
         common/ChatterinoSetting.hpp
         common/ChatterSet.cpp
         common/ChatterSet.hpp
+        common/AccountCredentials.cpp
+        common/AccountCredentials.hpp
         common/Credentials.cpp
         common/Credentials.hpp
         common/Env.cpp
@@ -578,6 +580,32 @@ set(SOURCE_FILES
         providers/youtube/YouTubeBadges.hpp
         providers/youtube/YouTubeChannel.cpp
         providers/youtube/YouTubeChannel.hpp
+        providers/tiktok/TikTokAccount.cpp
+        providers/tiktok/TikTokAccount.hpp
+        providers/tiktok/TikTokAccountManager.cpp
+        providers/tiktok/TikTokAccountManager.hpp
+        providers/tiktok/TikTokApi.cpp
+        providers/tiktok/TikTokApi.hpp
+        providers/tiktok/TikTokBadge.cpp
+        providers/tiktok/TikTokBadge.hpp
+        providers/tiktok/TikTokChannel.cpp
+        providers/tiktok/TikTokChannel.hpp
+        providers/tiktok/TikTokChatServer.cpp
+        providers/tiktok/TikTokChatServer.hpp
+        providers/tiktok/TikTokEmotes.cpp
+        providers/tiktok/TikTokEmotes.hpp
+        providers/tiktok/TikTokMessageBuilder.cpp
+        providers/tiktok/TikTokMessageBuilder.hpp
+        providers/tiktok/TikTokProtocol.cpp
+        providers/tiktok/TikTokProtocol.hpp
+        providers/tiktok/TikTokRequestSigning.cpp
+        providers/tiktok/TikTokRequestSigning.hpp
+        providers/tiktok/TikTokSession.cpp
+        providers/tiktok/TikTokSession.hpp
+        providers/tiktok/TikTokText.cpp
+        providers/tiktok/TikTokText.hpp
+        providers/tiktok/TikTokTypes.cpp
+        providers/tiktok/TikTokTypes.hpp
         providers/youtube/YouTubeChatServer.cpp
         providers/youtube/YouTubeChatServer.hpp
         providers/youtube/YouTubeMessageBuilder.cpp
@@ -590,6 +618,8 @@ set(SOURCE_FILES
         providers/links/LinkInfo.cpp
         providers/links/LinkInfo.hpp
         providers/links/LinkResolver.cpp
+        providers/links/TikTokLinkResolver.cpp
+        providers/links/TikTokLinkResolver.hpp
         providers/links/LinkResolver.hpp
 
         providers/moltorino/MoltorinoAuth.cpp
@@ -650,6 +680,9 @@ set(SOURCE_FILES
         providers/seventv/SeventvEmotes.hpp
         providers/seventv/SeventvEventAPI.cpp
         providers/seventv/SeventvEventAPI.hpp
+        providers/seventv/SeventvHiddenPaint.hpp
+        providers/seventv/SeventvHiddenPaintModel.cpp
+        providers/seventv/SeventvHiddenPaintModel.hpp
         providers/seventv/SeventvPaints.cpp
         providers/seventv/SeventvPaints.hpp
         providers/seventv/SeventvPersonalEmotes.cpp
@@ -1005,6 +1038,8 @@ set(SOURCE_FILES
 
         widgets/dialogs/KickLoginPage.cpp
         widgets/dialogs/KickLoginPage.hpp
+        widgets/dialogs/HiddenSeventvPaintsDialog.cpp
+        widgets/dialogs/HiddenSeventvPaintsDialog.hpp
         widgets/dialogs/LastRunCrashDialog.cpp
         widgets/dialogs/LastRunCrashDialog.hpp
         widgets/dialogs/LoginDialog.cpp

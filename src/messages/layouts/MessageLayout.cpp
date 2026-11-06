@@ -76,6 +76,8 @@ QColor platformTint(MessagePlatform platform)
             return {255, 0, 0, a};
         case MessagePlatform::Kick:
             return {83, 252, 24, a};
+        case MessagePlatform::TikTok:
+            return {254, 44, 85, a};
     }
     return Qt::transparent;
 }

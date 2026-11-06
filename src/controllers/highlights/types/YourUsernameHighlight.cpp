@@ -79,8 +79,10 @@ HighlightCheck YourUsernameHighlight::buildCheck() const
                     }
                 }
                 break;
-                // no youtube account, match either twitch or kick name
-                case MessagePlatform::YouTube: {
+                // no youtube or tiktok account, match either twitch or kick
+                // name
+                case MessagePlatform::YouTube:
+                case MessagePlatform::TikTok: {
                     bool matched =
                         (twitchRe &&
                          twitchRe->match(p.originalMessage).hasMatch()) ||

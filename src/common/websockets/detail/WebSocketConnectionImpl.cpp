@@ -50,6 +50,10 @@ void WebSocketConnectionHelper<Derived, Inner>::post(auto &&fn)
 template <typename Derived, typename Inner>
 void WebSocketConnectionHelper<Derived, Inner>::run()
 {
+    if (this->options.maxMessageBytes != 0)
+    {
+        this->stream.read_message_max(this->options.maxMessageBytes);
+    }
     auto host = this->options.url.host(QUrl::FullyEncoded).toStdString();
     if constexpr (requires { this->derived()->setupStream(host); })
     {

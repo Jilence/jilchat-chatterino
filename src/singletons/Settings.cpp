@@ -1746,6 +1746,8 @@ Settings::Settings(const Modes &modes, const Args &args,
                            this->moderationActions);
     initializeSignalVector(this->signalHolder, this->loggedChannelsSetting,
                            this->loggedChannels);
+    initializeSignalVector(this->signalHolder, this->hiddenSevenTVPaintsSetting,
+                           this->hiddenSevenTVPaints);
 
     instance_ = this;
 
@@ -1882,6 +1884,11 @@ Settings::Settings(const Modes &modes, const Args &args,
 Settings::~Settings()
 {
     Settings::instance_ = this->prevInstance_;
+}
+
+bool Settings::isSaveEnabled() const
+{
+    return !this->disableSaving;
 }
 
 pajlada::Settings::SettingManager::SaveResult Settings::requestSave() const

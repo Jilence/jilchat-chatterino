@@ -20,7 +20,7 @@ public:
     using NetworkError = QNetworkReply::NetworkError;
 
     NetworkResult(NetworkError error, const QVariant &httpStatusCode,
-                  QByteArray data, QByteArray etag = {});
+                  QByteArray data, QByteArray etag = {}, QUrl url = {});
 
     QJsonObject parseJson() const;
 
@@ -31,6 +31,8 @@ public:
     rapidjson::Document parseRapidJson() const;
     const QByteArray &getData() const;
     const QByteArray &etag() const;
+    /// Where the answer came from, after any redirects
+    const QUrl &url() const;
 
     NetworkError error() const
     {
@@ -47,6 +49,7 @@ public:
 private:
     QByteArray data_;
     QByteArray etag_;
+    QUrl url_;
 
     NetworkError error_;
     std::optional<int> status_;

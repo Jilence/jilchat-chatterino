@@ -22,6 +22,7 @@
 #include "controllers/nicknames/Nickname.hpp"
 #include "controllers/sound/ISoundController.hpp"
 #include "providers/emoji/EmojiStyle.hpp"
+#include "providers/seventv/SeventvHiddenPaint.hpp"
 #include "singletons/Toasts.hpp"
 #include "util/RapidJsonSerializeQString.hpp"  // IWYU pragma: keep
 #include "util/serialize/List.hpp"             // IWYU pragma: keep
@@ -286,6 +287,8 @@ public:
     ///
     /// Returns the result from the save, or Skipped if disableSave has been called
     pajlada::Settings::SettingManager::SaveResult requestSave() const;
+    /// False when saving was turned off, e.g. by --safe-mode
+    bool isSaveEnabled() const;
 
     void saveSnapshot();
     void restoreSnapshot();
@@ -1027,6 +1030,10 @@ public:
     /// The same for "Search in all open channels".
     BoolSetting searchPublicLogsAllChannels = {
         "/misc/publicLogs/searchPopupAllChannels", false};
+    BoolSetting showStreamChangeMessages = {
+        "/leafyrino/showStreamChangeMessages",
+        true,
+    };
 
     /// UI
 
@@ -1428,6 +1435,8 @@ private:
         {"/moderation/actions"};
     ChatterinoSetting<std::vector<ChannelLog>> loggedChannelsSetting = {
         "/logging/channels"};
+    ChatterinoSetting<std::vector<SeventvHiddenPaint>>
+        hiddenSevenTVPaintsSetting = {"/seventv/hiddenPaints"};
     SignalVector<QString> mutedChannels;
     SignalVector<QString> autoTranslateChannels;
 
@@ -1471,6 +1480,7 @@ public:
     SignalVector<Nickname> nicknames;
     SignalVector<ModerationAction> moderationActions;
     SignalVector<ChannelLog> loggedChannels;
+    SignalVector<SeventvHiddenPaint> hiddenSevenTVPaints;
 
     bool isEmoteModifierEnabled(const QString &name) const;
     bool isBlacklistedUser(const QString &username);
