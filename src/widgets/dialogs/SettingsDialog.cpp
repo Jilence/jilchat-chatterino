@@ -34,7 +34,6 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDialogButtonBox>
-#include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 
@@ -152,16 +151,7 @@ void SettingsDialog::initUi()
     outerBox->addSpacing(12);
 
     // BOTTOM
-    auto bottomRow = outerBox.emplace<QHBoxLayout>().withoutMargin();
-    {
-        auto credit = bottomRow.emplace<QLabel>(
-            R"(<a href="https://solrino.solrino-badge-server.workers.dev/">)"
-            "Features inspired by Solrino</a>");
-        credit->setTextFormat(Qt::RichText);
-        credit->setOpenExternalLinks(true);
-        credit->setContentsMargins(8, 0, 0, 0);
-    }
-    auto buttons = bottomRow.emplace<QDialogButtonBox>(Qt::Horizontal);
+    auto buttons = outerBox.emplace<QDialogButtonBox>(Qt::Horizontal);
     {
         this->ui_.okButton =
             buttons->addButton("Ok", QDialogButtonBox::YesRole);
