@@ -28,6 +28,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <optional>
 #include <vector>
@@ -91,6 +92,7 @@ MessageLayout::MessageLayout(MessagePtr message)
 
 MessageLayout::~MessageLayout()
 {
+    this->deleteBuffer();
     DebugCount::decrease(DebugObject::MessageLayout);
 }
 
@@ -106,28 +108,27 @@ const MessagePtr &MessageLayout::getMessagePtr() const
 
 int MessageLayout::getHeight() const
 {
-    return static_cast<int>(this->container_.getHeight());
+    return static_cast<int>(this->height_);
 }
 
 int MessageLayout::getFirstLineHeight() const
 {
-    return this->container_.getFirstLineHeight();
+    return this->firstLineHeight_;
 }
 
 int MessageLayout::getWidth() const
 {
-    return static_cast<int>(this->container_.getWidth());
+    return this->width_;
 }
 
 int MessageLayout::getLayoutContentWidth() const
 {
-    return static_cast<int>(
-        std::ceil(this->container_.getLayoutContentWidth()));
+    return this->layoutContentWidth_;
 }
 
 size_t MessageLayout::getLineCount() const
 {
-    return this->container_.getLineCount();
+    return this->lineCount_;
 }
 
 void MessageLayout::setAutoModReviewSelected(bool selected)
@@ -145,7 +146,21 @@ void MessageLayout::setAutoModReviewSelected(bool selected)
 bool MessageLayout::layout(const MessageLayoutContext &ctx,
                            bool shouldInvalidateBuffer)
 {
-    bool layoutRequired = false;
+    return this->layoutImpl(ctx, shouldInvalidateBuffer, true);
+}
+
+bool MessageLayout::layoutForMeasurement(const MessageLayoutContext &ctx)
+{
+    return this->layoutImpl(ctx, false, false);
+}
+
+bool MessageLayout::layoutImpl(const MessageLayoutContext &ctx,
+                               bool shouldInvalidateBuffer,
+                               bool retainContainer)
+{
+    const bool hadContainer = this->container_ != nullptr;
+    // the elements were freed by deleteCache(), they have to be recreated
+    bool layoutRequired = retainContainer && !hadContainer;
 
     bool widthChanged = ctx.width != this->currentLayoutWidth_;
     layoutRequired |= widthChanged;
@@ -187,13 +202,18 @@ bool MessageLayout::layout(const MessageLayoutContext &ctx,
         return false;
     }
 
-    qreal oldHeight = this->container_.getHeight();
+    qreal oldHeight = this->height_;
     this->actuallyLayout(ctx);
-    if (widthChanged || this->container_.getHeight() != oldHeight)
+    if (widthChanged || this->height_ != oldHeight)
     {
         this->resetBuffer();
     }
     this->invalidateBuffer();
+
+    if (!retainContainer && !hadContainer)
+    {
+        this->container_.reset();
+    }
 
     return true;
 }
@@ -203,6 +223,12 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
 #ifdef FOURTF
     this->layoutCount_++;
 #endif
+
+    if (!this->container_)
+    {
+        this->container_ = std::make_unique<MessageLayoutContainer>();
+    }
+    auto &container = *this->container_;
 
     auto messageFlags = this->message_->flags;
 
@@ -223,9 +249,9 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
     const bool hideGigantifyReward =
         this->message_->usesTwitchGigantifyPresentation();
 
-    this->container_.beginLayout(ctx.width, this->scale_, this->imageScale_,
-                                 this->emoteScale_, this->badgeScale_,
-                                 this->centerBadges_, messageFlags);
+    container.beginLayout(ctx.width, this->scale_, this->imageScale_,
+                          this->emoteScale_, this->badgeScale_,
+                          this->centerBadges_, messageFlags);
 
     ctx.resetMessageTextCursor();
     for (const auto &element : this->message_->elements)
@@ -281,19 +307,27 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
             continue;
         }
 
-        element->addToContainer(this->container_, ctx);
+        element->addToContainer(container, ctx);
     }
 
-    if (this->height_ != this->container_.getHeight())
+    if (this->height_ != container.getHeight())
     {
         this->resetBuffer();
     }
 
-    this->container_.endLayout();
-    this->height_ = this->container_.getHeight();
+    container.endLayout();
+    this->height_ = container.getHeight();
+    this->firstLineHeight_ = container.getFirstLineHeight();
+    this->width_ = static_cast<int>(container.getWidth());
+    this->layoutContentWidth_ =
+        static_cast<int>(std::ceil(container.getLayoutContentWidth()));
+    this->lineCount_ = container.getLineCount();
+    this->firstMessageCharacterIndex_ =
+        container.getFirstMessageCharacterIndex();
+    this->lastCharacterIndex_ = container.getLastCharacterIndex();
 
     this->flags.unset(MessageLayoutFlag::Collapsed);
-    if (this->container_.isCollapsed())
+    if (container.isCollapsed())
     {
         this->flags.set(MessageLayoutFlag::Collapsed);
     }
@@ -302,6 +336,11 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
 MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
 {
     MessagePaintResult result;
+    if (!this->container_)
+    {
+        return result;
+    }
+    auto &container = *this->container_;
 
     QPixmap *pixmap = this->ensureBuffer(ctx.painter, ctx.canvasWidth,
                                          ctx.messageColors.hasTransparency);
@@ -320,7 +359,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
     // The buffer is in device pixels. On a scaled screen its height is more
     // than the message takes up, and what is drawn below the message shows
     // through the next one when message backgrounds are transparent.
-    const auto messageHeight = static_cast<int>(this->container_.getHeight());
+    const auto messageHeight = static_cast<int>(this->container_->getHeight());
 
     // Animated emotes aren't part of the buffer, so they get their shadow
     // here, frame by frame.
@@ -333,7 +372,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
                       static_cast<qreal>(this->scale_),
         .emotes = ctx.messageShadowEmotes,
     };
-    result.animatedRegion = this->container_.paintAnimatedElements(
+    result.animatedRegion = this->container_->paintAnimatedElements(
         ctx.painter, ctx.y, ctx.isCollapsed,
         ctx.paintMessageShadow && ctx.messageShadowOpacity > 0 ? &animatedShadow
                                                                : nullptr);
@@ -366,8 +405,8 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
     // draw selection
     if (!ctx.selection.isEmpty())
     {
-        this->container_.paintSelection(ctx.painter, ctx.messageIndex,
-                                        ctx.selection, ctx.y);
+        container.paintSelection(ctx.painter, ctx.messageIndex, ctx.selection,
+                                 ctx.y);
     }
 
     if (ctx.preferences.separateMessages)
@@ -401,7 +440,7 @@ MessagePaintResult MessageLayout::paint(const MessagePaintContext &ctx)
         ctx.painter.fillRect(
             QRectF{
                 0,
-                ctx.y + this->container_.getHeight() - 1,
+                ctx.y + this->height_ - 1,
                 static_cast<qreal>(pixmap->width()),
                 1,
             },
@@ -422,7 +461,7 @@ QPixmap *MessageLayout::ensureBuffer(QPainter &painter, qreal width, bool clear)
 
     this->buffer_ = std::make_unique<QPixmap>(
         static_cast<int>(width * painter.device()->devicePixelRatioF()),
-        static_cast<int>(this->container_.getHeight() *
+        static_cast<int>(this->height_ *
                          painter.device()->devicePixelRatioF()));
     this->buffer_->setDevicePixelRatio(painter.device()->devicePixelRatioF());
 
@@ -439,7 +478,7 @@ QPixmap *MessageLayout::ensureBuffer(QPainter &painter, qreal width, bool clear)
 void MessageLayout::updateBuffer(QPixmap *buffer,
                                  const MessagePaintContext &ctx)
 {
-    if (buffer->isNull())
+    if (buffer->isNull() || !this->container_)
     {
         return;
     }
@@ -581,7 +620,7 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             color.setAlpha(255);
             painter.fillRect(
                 QRectF(static_cast<qreal>(i) * (bandWidth + bandGap), 0,
-                       bandWidth, this->container_.getHeight()),
+                       bandWidth, this->container_->getHeight()),
                 color);
         }
     }
@@ -613,10 +652,10 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
             static_cast<qreal>(this->scale_);
         const auto dpr = buffer->devicePixelRatio();
         const auto shadowWidth = std::max(
-            1,
-            std::min(buffer->width(),
-                     static_cast<int>(std::ceil(
-                         (this->container_.getContentRight() + reach) * dpr))));
+            1, std::min(
+                   buffer->width(),
+                   static_cast<int>(std::ceil(
+                       (this->container_->getContentRight() + reach) * dpr))));
         const auto pixelRadius =
             qRound(blurRadius * static_cast<qreal>(this->scale_) * dpr);
 
@@ -632,8 +671,8 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
         {
             QPainter sourcePainter(&source);
             sourcePainter.setRenderHint(QPainter::SmoothPixmapTransform);
-            this->container_.paintElements(sourcePainter, ctx,
-                                           ctx.messageShadowEmotes);
+            this->container_->paintElements(sourcePainter, ctx,
+                                            ctx.messageShadowEmotes);
         }
         if (ctx.messageShadowEmotes)
         {
@@ -692,7 +731,7 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
 
     if (contentLayer.isNull())
     {
-        this->container_.paintElements(painter, ctx);
+        this->container_->paintElements(painter, ctx);
     }
     else
     {
@@ -708,7 +747,7 @@ void MessageLayout::updateBuffer(QPixmap *buffer,
     QTextOption option;
     option.setAlignment(Qt::AlignRight | Qt::AlignTop);
 
-    painter.drawText(QRectF(1, 1, this->container_.getWidth() - 3, 1000),
+    painter.drawText(QRectF(1, 1, this->width_ - 3, 1000),
                      QString::number(this->layoutCount_) + ", " +
                          QString::number(++this->bufferUpdatedCount_),
                      option);
@@ -739,23 +778,31 @@ void MessageLayout::resetBuffer()
 void MessageLayout::deleteCache()
 {
     this->deleteBuffer();
+    this->container_.reset();
+}
 
-#ifdef XD
-    this->container_.clear();
-#endif
+bool MessageLayout::hasCache() const
+{
+    return this->container_ != nullptr;
 }
 
 const MessageLayoutElement *MessageLayout::getElementAt(QPointF point) const
 {
-    return this->container_.getElementAt(point);
+    if (!this->container_)
+    {
+        return nullptr;
+    }
+    return this->container_->getElementAt(point);
 }
 
 std::pair<int, int> MessageLayout::getWordBounds(
     const MessageLayoutElement *hoveredElement, QPointF relativePos) const
 {
-    if (hoveredElement->getWordId() != -1)
+    // hoveredElement comes from getElementAt(), so the elements are still there
+    assert(this->container_);
+    if (hoveredElement->getWordId() != -1 && this->container_)
     {
-        return this->container_.getWordBounds(hoveredElement);
+        return this->container_->getWordBounds(hoveredElement);
     }
 
     const auto wordStart = this->getSelectionIndex(relativePos) -
@@ -769,23 +816,31 @@ std::pair<int, int> MessageLayout::getWordBounds(
 
 size_t MessageLayout::getLastCharacterIndex() const
 {
-    return this->container_.getLastCharacterIndex();
+    return this->lastCharacterIndex_;
 }
 
 size_t MessageLayout::getFirstMessageCharacterIndex() const
 {
-    return this->container_.getFirstMessageCharacterIndex();
+    return this->firstMessageCharacterIndex_;
 }
 
 size_t MessageLayout::getSelectionIndex(QPointF position) const
 {
-    return this->container_.getSelectionIndex(position);
+    if (!this->container_)
+    {
+        return 0;
+    }
+    return this->container_->getSelectionIndex(position);
 }
 
 void MessageLayout::addSelectionText(QString &str, uint32_t from, uint32_t to,
                                      CopyMode copymode)
 {
-    this->container_.addSelectionText(str, from, to, copymode);
+    if (!this->container_)
+    {
+        return;
+    }
+    this->container_->addSelectionText(str, from, to, copymode);
 }
 
 }  // namespace chatterino

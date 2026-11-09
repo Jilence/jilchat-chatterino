@@ -28,6 +28,7 @@
 #include "widgets/dialogs/WelcomeDialog.hpp"
 #include "widgets/FollowedChannelsWindow.hpp"
 #include "widgets/helper/NotebookTab.hpp"
+#include "widgets/helper/TwitchChatDock.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/splits/ClosedSplits.hpp"
 #include "widgets/splits/Split.hpp"
@@ -63,6 +64,11 @@ Window::Window(WindowType type, QWidget *parent)
     this->addCustomTitlebarButtons();
     this->addShortcuts();
     this->addLayout();
+
+    if (this->type_ == WindowType::Main)
+    {
+        this->chatDock_ = new TwitchChatDock(*this);
+    }
 
 #ifdef Q_OS_MACOS
     this->addMenuBar();
@@ -193,6 +199,11 @@ void Window::closeEvent(QCloseEvent *event)
 
     if (this->type_ == WindowType::Main)
     {
+        if (this->chatDock_ != nullptr)
+        {
+            // So the size saved is the window's own, not the docked one
+            this->chatDock_->undock(true);
+        }
         app->getWindows()->save();
         app->getWindows()->closeAll();
     }

@@ -25,6 +25,7 @@
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/solrino/SolrinoBadges.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/TwitchGql.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -85,6 +86,7 @@
 #include <QtGlobal>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -172,6 +174,10 @@ constexpr auto SEVENTV_SET_PAINT_MUTATION =
   users { user(id: $id) { activePaint(paintId: $paintId) { id } } }
 })";
 constexpr auto MOLTORINO_PROFILE_URL = "https://api.moltorino.com/v2/badges/me";
+constexpr auto SOLRINO_BADGES_URL =
+    "https://solrino-badges.solrino-badge-server.workers.dev/v2/badges";
+constexpr auto SOLRINO_PROFILE_URL =
+    "https://solrino-badges.solrino-badge-server.workers.dev/v2/badges/me";
 
 int scaledSeparatorHeight(float scale)
 {
@@ -2090,6 +2096,7 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
         makeTab(otherTabRow, "BTTV Paint", View::BttvEffects);
     this->bttvTabButton_ = makeTab(otherTabRow, "BTTV Badge", View::Bttv);
     otherTabRow->addWidget(this->moltorinoTabButton_, 1);
+    this->solrinoTabButton_ = makeTab(otherTabRow, "Solrino", View::Solrino);
     auto *paintTabRow = new QHBoxLayout();
     paintTabRow->setSpacing(tabSpacing);
     this->bluzyrinoTabButton_ =
@@ -2354,8 +2361,9 @@ void TwitchBadgePickerDialog::rebuildContent()
 
     if (this->badgesLoading_ && this->view_ != View::Color &&
         this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
-        this->view_ != View::Moltorino && this->view_ != View::JilChat &&
-        this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
+        this->view_ != View::Moltorino && this->view_ != View::Solrino &&
+        this->view_ != View::JilChat && this->view_ != View::Bluzyrino &&
+        this->view_ != View::SevenTvBadges &&
         this->view_ != View::SevenTvPaints && this->view_ != View::Order &&
         this->view_ != View::JiltvPaints && this->view_ != View::JiltvBadges &&
         this->view_ != View::JiltvFrames)
@@ -2380,6 +2388,10 @@ void TwitchBadgePickerDialog::rebuildContent()
     else if (this->view_ == View::Moltorino)
     {
         this->rebuildMoltorinoBadges();
+    }
+    else if (this->view_ == View::Solrino)
+    {
+        this->rebuildSolrinoBadges();
     }
     else if (this->view_ == View::JilChat)
     {
@@ -2896,6 +2908,7 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->bttvTabButton_->setChecked(view == View::Bttv);
     this->bttvEffectTabButton_->setChecked(view == View::BttvEffects);
     this->moltorinoTabButton_->setChecked(view == View::Moltorino);
+    this->solrinoTabButton_->setChecked(view == View::Solrino);
     this->jilChatTabButton_->setChecked(view == View::JilChat);
     this->bluzyrinoTabButton_->setChecked(view == View::Bluzyrino);
     this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
@@ -2912,6 +2925,10 @@ void TwitchBadgePickerDialog::switchView(View view)
     else if (view == View::Moltorino)
     {
         this->loadMoltorinoBadges(false);
+    }
+    else if (view == View::Solrino)
+    {
+        this->loadSolrinoBadges(false);
     }
     else if (view == View::JilChat)
     {
@@ -4135,6 +4152,275 @@ void TwitchBadgePickerDialog::rebuildMoltorinoBadges()
     }
 
     this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::rebuildSolrinoBadges()
+{
+    if (this->solrinoLoading_ || !this->solrinoLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+    auto *label = new QLabel("Solrino badge", this->contentWidget_);
+    label->setObjectName("TwitchBadgePickerSectionLabel");
+    this->contentLayout_->addWidget(label);
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setEnabled(!this->actionInFlight_);
+        noBadgeTile->setSelected(this->solrinoSelected_.isEmpty());
+        QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+            this->selectSolrino({});
+        });
+        grid->addWidget(noBadgeTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &option : std::as_const(this->solrinoBadges_))
+    {
+        if (!badgeMatchesSearch(option.badge, needle))
+        {
+            continue;
+        }
+
+        auto *tile = new BadgeTileButton(option.badge, gridWidget);
+        tile->setSelected(option.badge.id == this->solrinoSelected_);
+        if (option.owned)
+        {
+            tile->setEnabled(!this->actionInFlight_);
+            QObject::connect(tile, &QPushButton::clicked, this,
+                             [this, id = option.badge.id] {
+                                 this->selectSolrino(id);
+                             });
+        }
+        else
+        {
+            // Not unlocked: shown dimmed for a preview, like in Solrino.
+            tile->setEnabled(false);
+            tile->setToolTip(option.badge.title + QStringLiteral(" (locked)"));
+            auto *dim = new QGraphicsOpacityEffect(tile);
+            dim->setOpacity(0.35);
+            tile->setGraphicsEffect(dim);
+        }
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0 && !needle.isEmpty())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("No matching badges."), this->contentWidget_));
+        return;
+    }
+
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::loadSolrinoBadges(bool force)
+{
+    if (this->solrinoLoading_ || (this->solrinoLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        this->setStatus(QStringLiteral("Log in with Twitch to pick a Solrino "
+                                       "badge."),
+                        true);
+        this->rebuildContent();
+        return;
+    }
+
+    this->solrinoLoading_ = true;
+    this->setStatus("Loading Solrino badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto fail = [self](const NetworkResult &result) {
+        if (!self)
+        {
+            return;
+        }
+        self->solrinoLoading_ = false;
+        self->setStatus(QStringLiteral("Could not load Solrino badges: %1")
+                            .arg(result.formatError()),
+                        true);
+        self->rebuildContent();
+    };
+
+    QUrl profileUrl(QString::fromLatin1(SOLRINO_PROFILE_URL));
+    profileUrl.setQuery(QUrlQuery{{"userId", account->getUserId()}});
+
+    // All badges first, then which ones the user owns and picked.
+    NetworkRequest(QString::fromLatin1(SOLRINO_BADGES_URL))
+        .timeout(15000)
+        .onSuccess([self, profileUrl, fail](const NetworkResult &list) {
+            if (!self)
+            {
+                return;
+            }
+            const auto badges = list.parseJson().value("badges").toArray();
+
+            NetworkRequest(profileUrl)
+                .header("Accept", "application/json")
+                .timeout(15000)
+                .onSuccess([self, badges](const NetworkResult &result) {
+                    if (!self)
+                    {
+                        return;
+                    }
+                    const auto root = result.parseJson();
+                    const auto profile = root.value("profile").toObject();
+
+                    QSet<QString> owned;
+                    const auto assigned =
+                        root.value("assignedBadges").toArray();
+                    for (const auto &value : assigned)
+                    {
+                        owned.insert(
+                            value.isObject()
+                                ? value.toObject().value("id").toString()
+                                : value.toString());
+                    }
+
+                    self->solrinoBadges_.clear();
+                    for (const auto &value : badges)
+                    {
+                        const auto badge = value.toObject();
+                        const auto id = badge.value("id").toString();
+                        const auto images = badge.value("images").toObject();
+                        if (id.isEmpty())
+                        {
+                            continue;
+                        }
+                        const bool isOwned = owned.contains(id);
+                        // Unlisted badges only show up for people who own them.
+                        if (!isOwned && !badge.value("listed").toBool(true))
+                        {
+                            continue;
+                        }
+                        self->solrinoBadges_.push_back({
+                            .badge =
+                                {
+                                    .id = id,
+                                    .setID = id,
+                                    .title =
+                                        badge.value("tooltip").toString(id),
+                                    .description =
+                                        badge.value("description").toString(),
+                                    .image1x = images.value("1x").toString(),
+                                    .image2x = images.value("2x").toString(),
+                                    .image4x = images.value("3x").toString(),
+                                },
+                            .owned = isOwned,
+                        });
+                    }
+                    std::ranges::stable_partition(self->solrinoBadges_,
+                                                  [](const auto &option) {
+                                                      return option.owned;
+                                                  });
+
+                    self->solrinoProfile_ = profile;
+                    self->solrinoSelected_ =
+                        profile.value("selectedBadge").toString();
+                    self->solrinoLoading_ = false;
+                    self->solrinoLoaded_ = true;
+                    self->setStatus({});
+                    self->rebuildContent();
+                })
+                .onError(fail)
+                .execute();
+        })
+        .onError(fail)
+        .execute();
+}
+
+void TwitchBadgePickerDialog::selectSolrino(const QString &badgeId)
+{
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        return;
+    }
+
+    // Keep the order and hidden badges, only change the selection. Twitch
+    // confirms who this is, so nobody can change someone else's badges.
+    const auto &profile = this->solrinoProfile_;
+    QJsonObject body{
+        {"userId", account->getUserId()},
+        {"revision", profile.value("revision")},
+        {"layoutSchemaVersion", profile.value("layoutSchemaVersion").toInt(1)},
+        {"order", profile.value("order").toArray()},
+        {"hidden", profile.value("hidden").toArray()},
+        {"selectedBadge", badgeId.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                            : QJsonValue(badgeId)},
+        {"badgeSelectionExplicit", true},
+    };
+
+    const auto previous = this->solrinoSelected_;
+    this->solrinoSelected_ = badgeId;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QString::fromLatin1(SOLRINO_PROFILE_URL),
+                   NetworkRequestType::Put)
+        .header("Authorization", "OAuth " + account->getOAuthToken().toUtf8())
+        .header("Accept", "application/json")
+        .json(body)
+        .timeout(15000)
+        .onSuccess([self, badgeId](const NetworkResult &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->channel_->addSystemMessage(
+                badgeId.isEmpty()
+                    ? QStringLiteral("Solrino badge cleared.")
+                    : QStringLiteral("Solrino badge set to: %1").arg(badgeId));
+            // New revision for the next change; badges for the chat.
+            self->loadSolrinoBadges(true);
+            getApp()->getSolrinoBadges()->load();
+        })
+        .onError([self, previous](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->solrinoSelected_ = previous;
+            self->setStatus(
+                QStringLiteral("Could not change the Solrino badge: %1")
+                    .arg(result.formatError()),
+                true);
+            // The profile may have changed elsewhere; load it again.
+            self->solrinoLoaded_ = false;
+            self->loadSolrinoBadges(true);
+        })
+        .execute();
 }
 
 void TwitchBadgePickerDialog::loadJilChatBadges(bool force)

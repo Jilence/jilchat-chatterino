@@ -34,6 +34,8 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -196,7 +198,21 @@ public:
         return getSettings()->displayBttvUsernameEffectOutlines;
     }
 
-    qreal overflow() const override
+    QMarginsF overflowMargins(float scale) const override
+    {
+        const auto room = this->overflow(scale);
+        return {room, room, room, room};
+    }
+
+    QPixmap getNametagPixmap(const QString &text, const QFont &font,
+                             QColor userColor, QSizeF textSize, float scale,
+                             float dpr, QMarginsF margins) const override
+    {
+        return this->croppedNametagPixmap(text, font, userColor, textSize,
+                                          scale, dpr, margins);
+    }
+
+    qreal overflow(float /*scale*/) const override
     {
         // The outline is around the name.
         return this->shadowsEnabled() ? 3 : 0;
@@ -369,9 +385,35 @@ void BttvUsernameEffects::refresh()
                     const auto styleText = QString::fromUtf8(css.getData());
                     NetworkRequest(QUrl(site + script))
                         .timeout(30000)
-                        .onSuccess([this, styleText](const NetworkResult &js) {
-                            this->applySite(styleText,
-                                            QString::fromUtf8(js.getData()));
+                        .onSuccess([this, site,
+                                    styleText](const NetworkResult &js) {
+                            const auto scriptText =
+                                QString::fromUtf8(js.getData());
+                            // The names of the effects are in the script of
+                            // the dashboard, loaded by the main one
+                            static const QRegularExpression dashboardRegex(
+                                R"re(assets/Dashboard-[\w-]+\.js)re");
+                            const auto dashboard =
+                                dashboardRegex.match(scriptText).captured(0);
+                            if (dashboard.isEmpty())
+                            {
+                                this->applySite(styleText, scriptText);
+                                return;
+                            }
+                            NetworkRequest(QUrl(site + u'/' + dashboard))
+                                .timeout(30000)
+                                .onSuccess([this, styleText, scriptText](
+                                               const NetworkResult &chunk) {
+                                    this->applySite(
+                                        styleText,
+                                        scriptText + u'\n' +
+                                            QString::fromUtf8(chunk.getData()));
+                                })
+                                .onError([this, styleText,
+                                          scriptText](const NetworkResult &) {
+                                    this->applySite(styleText, scriptText);
+                                })
+                                .execute();
                         })
                         .execute();
                 })
@@ -404,6 +446,21 @@ void BttvUsernameEffects::applySite(const QString &style, const QString &script)
         outlines.insert(match.captured(1), match.captured(2));
         outlineOrder.push_back(match.captured(1));
     }
+    if (outlines.isEmpty())
+    {
+        // Now a map like {glacier:`#166258`,midas:`#674911`,...}
+        static const QRegularExpression colorMapRegex(
+            R"re(\{([a-z]+:`#[0-9a-fA-F]{3,8}`(?:,[a-z]+:`#[0-9a-fA-F]{3,8}`)+)\})re");
+        static const QRegularExpression colorRegex(
+            R"re(([a-z]+):`(#[0-9a-fA-F]{3,8})`)re");
+        const auto map = colorMapRegex.match(script).captured(1);
+        for (auto it = colorRegex.globalMatch(map); it.hasNext();)
+        {
+            const auto match = it.next();
+            outlines.insert(match.captured(1), match.captured(2));
+            outlineOrder.push_back(match.captured(1));
+        }
+    }
 
     QVector<BttvUsernameEffect> updated;
     QSet<QString> listed;
@@ -423,6 +480,59 @@ void BttvUsernameEffects::applySite(const QString &style, const QString &script)
             .outline = {},
         });
         listed.insert(id);
+    }
+    if (updated.isEmpty())
+    {
+        // Now two maps of messages by effect, {flare:{id:`..`,
+        // defaultMessage:[{type:0,value:`Flare`}]},...}: first the names,
+        // then what it takes to get them
+        static const QRegularExpression messageMapRegex(
+            R"re(\(\{((?:[a-z]+:\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`[^`]*`\}\]\},?)+)\}\))re");
+        static const QRegularExpression messageRegex(
+            R"re(([a-z]+):\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`([^`]*)`\}\]\})re");
+        std::vector<std::vector<std::pair<QString, QString>>> maps;
+        for (auto it = messageMapRegex.globalMatch(script); it.hasNext();)
+        {
+            const auto body = it.next().captured(1);
+            std::vector<std::pair<QString, QString>> entries;
+            bool hasFlare = false;
+            for (auto m = messageRegex.globalMatch(body); m.hasNext();)
+            {
+                const auto match = m.next();
+                hasFlare = hasFlare || match.captured(1) == u"flare";
+                entries.emplace_back(match.captured(1), match.captured(2));
+            }
+            if (hasFlare)
+            {
+                maps.push_back(std::move(entries));
+            }
+        }
+        if (!maps.empty())
+        {
+            QHash<QString, QString> requirements;
+            if (maps.size() > 1)
+            {
+                for (const auto &[id, text] : maps[1])
+                {
+                    requirements.insert(id, text);
+                }
+            }
+            for (const auto &[id, label] : maps[0])
+            {
+                if (listed.contains(id))
+                {
+                    continue;
+                }
+                updated.push_back({
+                    .id = id,
+                    .label = label,
+                    .requirement = requirements.value(id),
+                    .texture = {},
+                    .outline = {},
+                });
+                listed.insert(id);
+            }
+        }
     }
     // An effect with an image the page describes in a way not known here.
     for (const auto &id : std::as_const(outlineOrder))

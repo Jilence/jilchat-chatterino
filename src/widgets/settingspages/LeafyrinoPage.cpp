@@ -39,6 +39,14 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"dankchat", "dank"})
         ->setTooltip("Dev/contributor, QA, and supporter badges.")
         ->addTo(layout);
+    SettingWidget::checkbox("Solrino", s.showBadgesSolrino)
+        ->addKeywords({"solrino"})
+        ->setTooltip("The badge a Solrino user picked to wear.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Wydios", s.showBadgesWydios)
+        ->addKeywords({"wydios"})
+        ->setTooltip("The badge of a Wydios user, looked up per chatter.")
+        ->addTo(layout);
     SettingWidget::checkbox("StreamNook", s.showBadgesStreamNook)
         ->addKeywords({"streamnook", "nook"})
         ->setTooltip("The badge a StreamNook member wears: member, supporter, "
@@ -117,6 +125,19 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
     }
 
     layout.addTitle("Client");
+    SettingWidget::checkbox("Dock onto Twitch chat in a browser",
+                            s.dockOverTwitchChat)
+        ->addKeywords({"dock", "browser", "twitch", "overlay"})
+        ->setTooltip("Drag the main window onto Twitch chat in a browser to "
+                     "put it over that chat. It follows the browser and shows "
+                     "the same channel. Drag it away to undock. Windows only.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Smooth animations", s.smoothAnimations)
+        ->addKeywords({"animation", "transition", "fade", "glide"})
+        ->setTooltip("Glide between tabs and settings pages, fade windows as "
+                     "they open and close, and animate splits and menus. Turn "
+                     "this off if you prefer everything to switch instantly.")
+        ->addTo(layout);
     SettingWidget::checkbox("Show select badge button", s.showSelectBadgeButton)
         ->addKeywords({"badge", "select", "button", "client", "picker"})
         ->setTooltip("Show the badge picker button in the chat input bar.")

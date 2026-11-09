@@ -13,6 +13,7 @@
 #include "util/LayoutCreator.hpp"
 #include "widgets/BaseWindow.hpp"
 #include "widgets/helper/SettingsDialogTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/settingspages/AboutPage.hpp"
 #include "widgets/settingspages/AccountsPage.hpp"
 #include "widgets/settingspages/CommandPage.hpp"
@@ -33,6 +34,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDialogButtonBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 
@@ -150,7 +152,16 @@ void SettingsDialog::initUi()
     outerBox->addSpacing(12);
 
     // BOTTOM
-    auto buttons = outerBox.emplace<QDialogButtonBox>(Qt::Horizontal);
+    auto bottomRow = outerBox.emplace<QHBoxLayout>().withoutMargin();
+    {
+        auto credit = bottomRow.emplace<QLabel>(
+            R"(<a href="https://solrino.solrino-badge-server.workers.dev/">)"
+            "Features inspired by Solrino</a>");
+        credit->setTextFormat(Qt::RichText);
+        credit->setOpenExternalLinks(true);
+        credit->setContentsMargins(8, 0, 0, 0);
+    }
+    auto buttons = bottomRow.emplace<QDialogButtonBox>(Qt::Horizontal);
     {
         this->ui_.okButton =
             buttons->addButton("Ok", QDialogButtonBox::YesRole);
@@ -297,6 +308,19 @@ void SettingsDialog::selectTab(SettingsDialogTab *tab, bool byUser)
 
         this->ui_.pageStack->addWidget(tab->page());
     }();
+
+    if (byUser && this->selectedTab_ != nullptr && this->selectedTab_ != tab)
+    {
+        const auto position = [this](SettingsDialogTab *t) {
+            return std::ranges::find(this->tabs_, t) - this->tabs_.begin();
+        };
+        transitions::slidePages(this->ui_.pageStack->currentWidget(),
+                                tab->page(),
+                                position(tab) > position(this->selectedTab_)
+                                    ? transitions::PageDirection::Forward
+                                    : transitions::PageDirection::Backward,
+                                true);
+    }
 
     this->ui_.pageStack->setCurrentWidget(tab->page());
 

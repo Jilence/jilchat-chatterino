@@ -10,6 +10,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "messages/MessageElement.hpp"
 #include "messages/MessageSimilarity.hpp"
+#include "providers/wrapped/WrappedStats.hpp"
 #include "singletons/Logging.hpp"
 #include "singletons/Settings.hpp"
 #include "util/ChannelHelpers.hpp"
@@ -215,6 +216,15 @@ void Channel::addMessage(MessagePtr message, MessageContext context,
     if (this->messages_.pushBack(message, deleted))
     {
         this->messageRemovedFromStart(deleted);
+    }
+
+    // Live chat messages count toward Wrapped; history and system messages
+    // don't
+    if (context == MessageContext::Original &&
+        this->getType() == Type::Twitch &&
+        !message->flags.hasAny(MessageFlag::System, MessageFlag::RecentMessage))
+    {
+        wrapped::WrappedStats::instance().recordMessage(this->name_, message);
     }
 
     this->messageAppended.invoke(message, overridingFlags);

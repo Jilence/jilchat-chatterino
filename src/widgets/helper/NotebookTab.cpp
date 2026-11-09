@@ -17,6 +17,7 @@
 #include "util/Helpers.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
 #include "widgets/dialogs/SettingsDialog.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/splits/DraggedSplit.hpp"
 #include "widgets/splits/Split.hpp"
@@ -927,6 +928,10 @@ void NotebookTab::copyHighlightStateAndSourcesFrom(const NotebookTab *sourceTab)
 
 void NotebookTab::setSelected(bool value)
 {
+    if (this->selected_ != value)
+    {
+        transitions::fadeChange(this, true);
+    }
     this->selected_ = value;
 
     if (value)
@@ -1186,7 +1191,10 @@ void NotebookTab::moveAnimated(QPoint targetPos, bool animated)
     }
 
     this->positionChangedAnimation_.stop();
-    this->positionChangedAnimation_.setDuration(75);
+    const bool glide = transitions::smoothAnimationsEnabled();
+    this->positionChangedAnimation_.setEasingCurve(
+        glide ? QEasingCurve::OutCubic : QEasingCurve::InCubic);
+    this->positionChangedAnimation_.setDuration(glide ? 190 : 75);
     this->positionChangedAnimation_.setStartValue(this->pos());
     this->positionChangedAnimation_.setEndValue(targetPos);
     this->positionChangedAnimation_.start();

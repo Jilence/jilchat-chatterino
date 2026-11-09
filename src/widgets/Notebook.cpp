@@ -22,6 +22,7 @@
 #include "widgets/dialogs/SettingsDialog.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/NotebookTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/splits/SplitContainer.hpp"
 #include "widgets/Window.hpp"
@@ -151,6 +152,10 @@ NotebookTab *Notebook::addPageAt(QWidget *page, int position, QString title,
 
     this->performLayout();
     tab->setVisible(this->shouldShowTab(tab));
+    if (this->isVisible() && tab->isVisible())
+    {
+        transitions::fadeInWidget(tab);
+    }
     this->afterPageAdded();
     return tab;
 }
@@ -324,6 +329,17 @@ void Notebook::select(QWidget *page, bool focusPage, bool recordInHistory)
     if (recordInHistory && this->selectedPage_ != nullptr && page != nullptr)
     {
         this->tabHistory_.recordNavigation(this->selectedPage_, page);
+    }
+
+    if (page && this->selectedPage_)
+    {
+        transitions::slidePages(
+            this->selectedPage_, page,
+            this->indexOf(page) > this->indexOf(this->selectedPage_)
+                ? transitions::PageDirection::Forward
+                : transitions::PageDirection::Backward,
+            this->tabLocation_ == NotebookTabLocation::Left ||
+                this->tabLocation_ == NotebookTabLocation::Right);
     }
 
     if (page)

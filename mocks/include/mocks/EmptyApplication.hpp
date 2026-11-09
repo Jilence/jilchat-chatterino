@@ -206,6 +206,18 @@ public:
         return nullptr;
     }
 
+    WydiosBadges *getWydiosBadges() override
+    {
+        assert(!"getWydiosBadges was called without being initialized");
+        return nullptr;
+    }
+
+    SolrinoBadges *getSolrinoBadges() override
+    {
+        assert(!"getSolrinoBadges was called without being initialized");
+        return nullptr;
+    }
+
     StreamNookBadges *getStreamNookBadges() override
     {
         assert(!"getStreamNookBadges was called without being initialized");

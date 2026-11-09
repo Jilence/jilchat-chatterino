@@ -29,6 +29,7 @@
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
+#include "widgets/dialogs/WrappedDialog.hpp"
 
 #include <QAbstractItemView>
 #include <QCheckBox>
@@ -153,6 +154,35 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
     this->settingsView_ = view;
 
     auto &s = *getSettings();
+
+    view->addTitle("JilChat Wrapped");
+    view->addDescription(
+        "Your month or year in chat: messages, top channels, time with chat "
+        "open, favorite emotes and more. Counted only on this computer; a new "
+        "one is ready on the 1st of every month. Also with /wrapped.");
+    {
+        auto *wrappedRow = new QWidget(view);
+        auto *wrappedLayout = new QHBoxLayout(wrappedRow);
+        wrappedLayout->setContentsMargins(0, 4, 0, 4);
+        wrappedLayout->setSpacing(8);
+        const std::pair<const char *, WrappedDialog::Period> choices[] = {
+            {"View last month", WrappedDialog::Period::LastMonth},
+            {"View this month", WrappedDialog::Period::ThisMonth},
+            {"View this year", WrappedDialog::Period::ThisYear},
+        };
+        for (const auto &[label, period] : choices)
+        {
+            auto *button = new QPushButton(label, wrappedRow);
+            QObject::connect(button, &QPushButton::clicked, wrappedRow,
+                             [period] {
+                                 WrappedDialog::showDialog(period);
+                             });
+            wrappedLayout->addWidget(button);
+        }
+        wrappedLayout->addStretch(1);
+        view->addWidget(wrappedRow,
+                        {"wrapped", "recap", "stats", "year", "month"});
+    }
 
     view->addTitle("Authentication");
     view->addDescription(
@@ -662,6 +692,14 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
 
     SettingWidget::checkbox("Show points balance", s.enableChannelPointsDisplay)
         ->setTooltip("Show your channel points next to the message input.")
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Claim bonus points automatically",
+                            s.autoClaimPointsBonus)
+        ->setTooltip(
+            "When a channel offers a \"Claim bonus\" chest, JilChat Chatterino "
+            "claims it for you. Twitch only offers the bonus while you're "
+            "watching the stream.")
         ->addTo(*view);
 
     SettingWidget::checkbox("Open rewards menu from points balance",

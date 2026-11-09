@@ -1671,14 +1671,12 @@ void TextLayoutElement::paint(QPainter &painter,
             }
 
             // Some paints reach beyond the name, e.g. with an outline.
-            const auto overflow = paint->overflow();
-            auto paintPixmap = paint->getPixmap(
+            const auto margins = paint->overflowMargins(this->scale_);
+            const auto target = this->getRect() + margins;
+            const auto paintPixmap = paint->getNametagPixmap(
                 this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_, false, overflow);
-
-            painter.drawPixmap(
-                this->getRect().topLeft() - QPointF(overflow, overflow),
-                paintPixmap);
+                this->scale_, this->dpr_, margins);
+            painter.drawPixmap(target.topLeft(), paintPixmap);
             return;
         }
     }
@@ -1821,14 +1819,14 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         return {};
     }
 
-    const auto overflow = paint->overflow();
-    const auto paintPixmap = paint->getPixmap(
+    const auto margins = paint->overflowMargins(this->scale_);
+    const auto paintPixmap = paint->getNametagPixmap(
         this->getText(), font, this->color_, this->getRect().size(),
-        this->scale_, this->dpr_, false, overflow);
+        this->scale_, this->dpr_, margins);
 
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
-    rect.adjust(-overflow, -overflow, overflow, overflow);
+    rect += margins;
     QRegion paintedRegion;
     if (shadow != nullptr && shadow->opacity > 0)
     {
@@ -1839,9 +1837,9 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         const AnimatedShadowLayer layer{
             .pixmap = &paintPixmap,
             .target = QRectF(rect),
-            .cacheIdentity = paint->getPixmapCacheKey(
+            .cacheIdentity = paint->getNametagPixmapCacheKey(
                 this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_, false, overflow),
+                this->scale_, this->dpr_, margins),
         };
         paintedRegion +=
             paintAnimatedShadow(painter, std::span(&layer, 1), shadow);

@@ -47,6 +47,7 @@
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
+#include "providers/solrino/SolrinoBadges.hpp"
 #include "providers/streamnook/StreamNookBadges.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/ChannelPointReward.hpp"
@@ -58,6 +59,7 @@
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/twitch/TwitchUsers.hpp"
 #include "providers/twitch/UserColor.hpp"
+#include "providers/wydios/WydiosBadges.hpp"
 #include "singletons/Resources.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/StreamerMode.hpp"
@@ -1532,6 +1534,8 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         MessageElementFlag::BadgeBttv,
         MessageElementFlag::BadgeMoltorino,
         MessageElementFlag::BadgeBluzyrino,
+        MessageElementFlag::BadgeSolrino,
+        MessageElementFlag::BadgeWydios,
         MessageElementFlag::BadgeSevenTV,
         MessageElementFlag::BadgeDankChat,
         MessageElementFlag::BadgeChatsen,
@@ -1553,6 +1557,8 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendBttvBadges(message.userID);
     builder.appendMoltorinoBadges(message.userID);
     builder.appendBluzyrinoBadges(message.userID);
+    builder.appendSolrinoBadges(message.userID);
+    builder.appendWydiosBadges(message.userID);
     builder.appendSeventvBadges(message.userID);
     builder.appendDankChatBadges(message.userID);
     builder.appendChatsenBadges(message.userID);
@@ -2468,6 +2474,8 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendBttvBadges(userID);
         builder.appendMoltorinoBadges(userID);
         builder.appendBluzyrinoBadges(userID);
+        builder.appendSolrinoBadges(userID);
+        builder.appendWydiosBadges(userID);
         builder.appendSeventvBadges(userID);
         builder.appendDankChatBadges(userID);
         builder.appendChatsenBadges(userID);
@@ -4129,6 +4137,29 @@ void MessageBuilder::appendDankChatBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendWydiosBadges(const QString &userID)
+{
+    // Wydios is asked per user, so not at all while its badges are off
+    if (!getSettings()->showBadgesWydios)
+    {
+        return;
+    }
+    for (const auto &badge : getApp()->getWydiosBadges()->getBadges({userID}))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeWydios);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
+void MessageBuilder::appendSolrinoBadges(const QString &userID)
+{
+    if (auto badge = getApp()->getSolrinoBadges()->getBadge(userID))
+    {
+        this->emplace<BadgeElement>(*badge, MessageElementFlag::BadgeSolrino);
+        this->message().externalBadges.emplace_back((*badge)->name.string);
+    }
+}
+
 void MessageBuilder::appendStreamNookBadges(const QString &userID)
 {
     if (auto badge = getApp()->getStreamNookBadges()->getBadge(userID))
@@ -4510,6 +4541,8 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendBttvBadges(userId);
     builder.appendMoltorinoBadges(userId);
     builder.appendBluzyrinoBadges(userId);
+    builder.appendSolrinoBadges(userId);
+    builder.appendWydiosBadges(userId);
     builder.appendSeventvBadges(userId);
     builder.appendDankChatBadges(userId);
     builder.appendChatsenBadges(userId);

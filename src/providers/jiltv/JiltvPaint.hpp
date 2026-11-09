@@ -130,7 +130,19 @@ public:
     const std::vector<PaintDropShadow> &getDropShadows() const override;
     bool animated() const override;
     bool shadowsEnabled() const override;
-    qreal overflow() const override;
+    qreal overflow(float scale) const override;
+    QMarginsF overflowMargins(float scale) const override
+    {
+        const auto room = this->overflow(scale);
+        return {room, room, room, room};
+    }
+    QPixmap getNametagPixmap(const QString &text, const QFont &font,
+                             QColor userColor, QSizeF textSize, float scale,
+                             float dpr, QMarginsF margins) const override
+    {
+        return this->croppedNametagPixmap(text, font, userColor, textSize,
+                                          scale, dpr, margins);
+    }
     QString sourceName() const override;
 
     /// The paint's plain color, for places that can only show one.
