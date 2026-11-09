@@ -335,7 +335,8 @@ QString Paint::getNametagPixmapCacheKey(const QString &text, const QFont &font,
 {
     return this->getPixmapCacheKey(text, font, userColor, textSize, scale,
                                    dpr) +
-           u"/m" + QString::number(qRound64(margins.left() * dpr)) + u',' +
+           QStringLiteral("/m") +
+           QString::number(qRound64(margins.left() * dpr)) + u',' +
            QString::number(qRound64(margins.top() * dpr)) + u',' +
            QString::number(qRound64(margins.right() * dpr)) + u',' +
            QString::number(qRound64(margins.bottom() * dpr));
