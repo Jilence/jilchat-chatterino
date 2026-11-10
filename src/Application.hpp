@@ -85,6 +85,7 @@ class SpellChecker;
 class KickChatServer;
 
 class YouTubeChatServer;
+class TikTokChatServer;
 
 class PotatCommands;
 
@@ -166,6 +167,7 @@ public:
     virtual SpellChecker *getSpellChecker() = 0;
     virtual KickChatServer *getKickChatServer() = 0;
     virtual YouTubeChatServer *getYouTubeChatServer() = 0;
+    virtual TikTokChatServer *getTikTokChatServer() = 0;
     virtual PotatCommands *getPotatCommands() = 0;
     virtual SupibotCommands *getSupibotCommands() = 0;
 
@@ -260,6 +262,7 @@ private:
     std::unique_ptr<SpellChecker> spellChecker;
     std::unique_ptr<KickChatServer> kickChatServer;
     std::unique_ptr<YouTubeChatServer> youTubeChatServer;
+    std::unique_ptr<TikTokChatServer> tikTokChatServer;
     std::unique_ptr<PotatCommands> potatCommands;
     std::unique_ptr<SupibotCommands> supibotCommands;
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -339,6 +342,7 @@ public:
     SpellChecker *getSpellChecker() override;
     KickChatServer *getKickChatServer() override;
     YouTubeChatServer *getYouTubeChatServer() override;
+    TikTokChatServer *getTikTokChatServer() override;
     PotatCommands *getPotatCommands() override;
     SupibotCommands *getSupibotCommands() override;
 

@@ -265,6 +265,7 @@ QString platformName(MessagePlatform platform)
         case MessagePlatform::Kick:
             return QStringLiteral("Kick");
         case MessagePlatform::YouTube:
+        case MessagePlatform::TikTok:
             return {};
         case MessagePlatform::AnyOrTwitch:
             return QStringLiteral("Twitch");
@@ -1288,7 +1289,9 @@ public:
             {
                 if (!child.channel ||
                     child.platform == MultiChannel::Platform::YouTube ||
-                    child.channel->isYouTubeChannel())
+                    child.platform == MultiChannel::Platform::TikTok ||
+                    child.channel->isYouTubeChannel() ||
+                    child.channel->isTikTokChannel())
                 {
                     continue;
                 }

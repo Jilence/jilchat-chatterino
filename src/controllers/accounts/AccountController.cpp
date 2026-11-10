@@ -48,6 +48,23 @@ AccountController::AccountController()
         });
 
     std::ignore =
+        this->tiktok.accounts.itemInserted.connect([this](const auto &args) {
+            this->accounts_.insert(args.item);
+        });
+
+    std::ignore =
+        this->tiktok.accounts.itemRemoved.connect([this](const auto &args) {
+            if (args.caller != this)
+            {
+                this->accounts_.removeFirstMatching(
+                    [&](const auto &item) {
+                        return item == args.item;
+                    },
+                    this);
+            }
+        });
+
+    std::ignore =
         this->kick.accounts.itemRemoved.connect([this](const auto &args) {
             if (args.caller != this)
             {
@@ -84,6 +101,17 @@ AccountController::AccountController()
                 }
             }
             break;
+            case ProviderId::TikTok: {
+                if (args.caller != this)
+                {
+                    this->tiktok.accounts.removeFirstMatching(
+                        [&](const auto &item) {
+                            return item == args.item;
+                        },
+                        this);
+                }
+            }
+            break;
         }
     });
 }
@@ -94,6 +122,7 @@ void AccountController::load()
 {
     this->twitch.load();
     this->kick.load();
+    this->tiktok.load();
     this->desktopPresence_->start();
 }
 

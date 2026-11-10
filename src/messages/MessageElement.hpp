@@ -107,6 +107,10 @@ enum class MessageElementFlag : int64_t {
     BadgeJiltv = (1LL << 49),
     BadgeStreamNook = (1LL << 53),
 
+    /// A name that must not get a 7TV, BetterTTV or JilTV paint: those
+    /// are looked up by name, and TikTok names are not Twitch names
+    NoUsernamePaint = (1LL << 54),
+
     Badges = BadgeGlobalAuthority | BadgePredictions | BadgeChannelAuthority |
              BadgeSubscription | BadgeVanity | BadgeChatterino | BadgeSevenTV |
              BadgeFfz | BadgeSharedChannel | BadgeBttv | BadgeHomiesSupporter |

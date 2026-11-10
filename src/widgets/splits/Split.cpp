@@ -2911,6 +2911,7 @@ SplitDescriptor Split::buildDescriptor() const
         case Channel::Type::Twitch:
         case Channel::Type::Misc:
         case Channel::Type::YouTube:
+        case Channel::Type::TikTok:
             descriptor.channelName_ = chan.get()->getName();
             break;
 

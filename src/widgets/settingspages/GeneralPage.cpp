@@ -22,6 +22,7 @@
 #include "util/Helpers.hpp"
 #include "util/IncognitoBrowser.hpp"
 #include "widgets/BaseWindow.hpp"
+#include "widgets/dialogs/HiddenSeventvPaintsDialog.hpp"
 #include "widgets/helper/FontSettingWidget.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
@@ -1567,6 +1568,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
     SettingWidget::checkbox("Display BetterTTV username effect outlines",
                             s.displayBttvUsernameEffectOutlines)
         ->addTo(layout);
+    layout.addButton("Manage hidden 7TV paints...", [this] {
+        auto *dialog = new HiddenSeventvPaintsDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
     {
         auto cb = [] {
             getApp()->getWindows()->invalidateChannelViewBuffers();
