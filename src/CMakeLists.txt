@@ -1024,6 +1024,8 @@ set(SOURCE_FILES
         widgets/dialogs/EditUserNotesDialog.hpp
         widgets/dialogs/EmotePopup.cpp
         widgets/dialogs/EmotePopup.hpp
+        widgets/dialogs/GameSelectorDialog.cpp
+        widgets/dialogs/GameSelectorDialog.hpp
         widgets/dialogs/GifPickerDialog.cpp
         widgets/dialogs/GifPickerDialog.hpp
         widgets/dialogs/HighlightChannelScopeDialog.cpp
@@ -1255,6 +1257,8 @@ set(SOURCE_FILES
         widgets/splits/InputCompletionPopup.hpp
         widgets/splits/InputHighlighter.cpp
         widgets/splits/InputHighlighter.hpp
+        widgets/splits/QuickGameBar.cpp
+        widgets/splits/QuickGameBar.hpp
         widgets/splits/Split.cpp
         widgets/splits/Split.hpp
         widgets/splits/SplitCommon.hpp
