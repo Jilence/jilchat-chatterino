@@ -46,6 +46,7 @@
 #include "widgets/helper/PredictionBanner.hpp"
 #include "widgets/helper/ResizingTextEdit.hpp"
 #include "widgets/helper/SearchPopup.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/OverlayWindow.hpp"
 #include "widgets/Scrollbar.hpp"
@@ -2015,6 +2016,8 @@ void Split::wireTwitchBanners(TwitchChannel *tc)
 
 void Split::setChannel(IndirectChannel newChannel)
 {
+    transitions::fadeChange(this->view_);
+
     this->editorAccessProbedChannels_.clear();
     this->channelSignalHolder_.clear();
     this->input_->setSendWaitStatus("");

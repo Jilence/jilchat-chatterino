@@ -505,7 +505,13 @@ set(SOURCE_FILES
 
         providers/dankchat/DankChatBadges.cpp
         providers/dankchat/DankChatBadges.hpp
+        providers/solrino/SolrinoBadges.cpp
+        providers/solrino/SolrinoBadges.hpp
         providers/streamnook/StreamNookBadges.cpp
+        providers/wrapped/WrappedStats.cpp
+        providers/wrapped/WrappedStats.hpp
+        providers/wydios/WydiosBadges.cpp
+        providers/wydios/WydiosBadges.hpp
         providers/streamnook/StreamNookBadges.hpp
 
         providers/chatsen/ChatsenBadges.cpp
@@ -873,6 +879,8 @@ set(SOURCE_FILES
         util/LayoutHelper.hpp
         util/LoadPixmap.cpp
         util/LoadPixmap.hpp
+        util/MemoryReclaimer.cpp
+        util/MemoryReclaimer.hpp
         util/MultiChannel.cpp
         util/MultiChannel.hpp
         util/OnceFlag.cpp
@@ -893,6 +901,8 @@ set(SOURCE_FILES
         util/SelfCheck.cpp
         util/SelfCheck.hpp
         util/SharedPtrElementLess.hpp
+        util/ShareWatchStreak.cpp
+        util/ShareWatchStreak.hpp
         util/SignalListener.hpp
         util/StreamLink.cpp
         util/StreamLink.hpp
@@ -1162,6 +1172,12 @@ set(SOURCE_FILES
         widgets/helper/SvgWidget.hpp
         widgets/helper/TableStyles.cpp
         widgets/helper/TableStyles.hpp
+        widgets/dialogs/WrappedDialog.cpp
+        widgets/dialogs/WrappedDialog.hpp
+        widgets/helper/Transitions.cpp
+        widgets/helper/Transitions.hpp
+        widgets/helper/TwitchChatDock.cpp
+        widgets/helper/TwitchChatDock.hpp
         widgets/helper/TrimRegExpValidator.cpp
         widgets/helper/TrimRegExpValidator.hpp
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QMarginsF>
 
 class QPixmapDropShadowFilter;
 
@@ -20,6 +21,9 @@ public:
 
     /// Approximate space needed below the painted text for the shadow.
     float extentBelow() const;
+
+    /// How far the shadow reaches past the text on each side, at `scale`
+    QMarginsF margins(float scale) const;
 
 private:
     const float xOffset_;

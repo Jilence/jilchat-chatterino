@@ -74,6 +74,12 @@ constexpr std::array PROVIDERS{
     Provider{.flag = MessageElementFlag::BadgeBluzyrino,
              .key = u"bl",
              .name = u"Bluzyrino"},
+    Provider{.flag = MessageElementFlag::BadgeSolrino,
+             .key = u"so",
+             .name = u"Solrino"},
+    Provider{.flag = MessageElementFlag::BadgeWydios,
+             .key = u"wy",
+             .name = u"Wydios"},
     Provider{
         .flag = MessageElementFlag::BadgeSevenTV, .key = u"7", .name = u"7TV"},
     Provider{.flag = MessageElementFlag::BadgeDankChat,

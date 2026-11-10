@@ -70,6 +70,7 @@ private:
         Bttv,
         BttvEffects,
         Moltorino,
+        Solrino,
         JilChat,
         Bluzyrino,
         SevenTvBadges,
@@ -102,6 +103,10 @@ private:
     void loadMoltorinoBadges(bool force = false);
     void rebuildMoltorinoBadges();
     void selectMoltorino(const QString &badgeId);
+    void loadSolrinoBadges(bool force = false);
+    void rebuildSolrinoBadges();
+    /// Makes the Solrino badge `badgeId` the one worn; none if empty.
+    void selectSolrino(const QString &badgeId);
     void loadJilChatBadges(bool force = false);
     void rebuildJilChatBadges();
     /// Makes the badge with `slug` the one shown in chat; none if empty.
@@ -181,6 +186,7 @@ private:
     QPushButton *bttvTabButton_{};
     QPushButton *bttvEffectTabButton_{};
     QPushButton *moltorinoTabButton_{};
+    QPushButton *solrinoTabButton_{};
     QPushButton *jilChatTabButton_{};
     QPushButton *bluzyrinoTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
@@ -224,6 +230,14 @@ private:
     QString moltorinoSelected_;
     bool moltorinoLoading_ = false;
     bool moltorinoLoaded_ = false;
+
+    /// The same for Solrino, whose server works like Moltorino's but takes
+    /// the Twitch login
+    QVector<MoltorinoBadgeOption> solrinoBadges_;
+    QJsonObject solrinoProfile_;
+    QString solrinoSelected_;
+    bool solrinoLoading_ = false;
+    bool solrinoLoaded_ = false;
 
     /// A JilChat badge and whether the user owns it. `badge.id` is its slug.
     struct JilChatBadgeOption {

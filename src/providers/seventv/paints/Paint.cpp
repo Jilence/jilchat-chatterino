@@ -31,9 +31,32 @@ bool Paint::shadowsEnabled() const
     return getSettings()->displaySevenTVPaintShadows;
 }
 
-qreal Paint::overflow() const
+qreal Paint::overflow(float scale) const
 {
-    return 0;
+    const auto margins = this->overflowMargins(scale);
+    return std::max(
+        {margins.left(), margins.top(), margins.right(), margins.bottom()});
+}
+
+QMarginsF Paint::overflowMargins(float scale) const
+{
+    if (!this->shadowsEnabled())
+    {
+        return {};
+    }
+    QMarginsF shadow;
+    for (const auto &dropShadow : this->getDropShadows())
+    {
+        shadow += dropShadow.margins(scale);
+    }
+    const auto horizontal = 8.0 * scale;
+    const auto vertical = 4.0 * scale;
+    return {
+        std::clamp<qreal>(shadow.left(), 0, horizontal),
+        std::clamp<qreal>(shadow.top(), 0, vertical),
+        std::clamp<qreal>(shadow.right(), 0, horizontal),
+        std::clamp<qreal>(shadow.bottom(), 0, vertical),
+    };
 }
 
 QString Paint::sourceName() const
@@ -190,6 +213,151 @@ QPixmap Paint::getPixmap(const QString &text, const QFont &font,
         pixmapPainter.end();
     }
 
+    return pixmap;
+}
+
+QPixmap Paint::getNametagPixmap(const QString &text, const QFont &font,
+                                QColor userColor, QSizeF textSize, float scale,
+                                float dpr, QMarginsF margins) const
+{
+    margins = {
+        std::max<qreal>(0, margins.left()),
+        std::max<qreal>(0, margins.top()),
+        std::max<qreal>(0, margins.right()),
+        std::max<qreal>(0, margins.bottom()),
+    };
+    const QSizeF size(textSize.width() + margins.left() + margins.right(),
+                      textSize.height() + margins.top() + margins.bottom());
+    if (textSize.width() <= 0 || textSize.height() <= 0)
+    {
+        margins = {};
+        textSize = size;
+    }
+
+    QPixmap pixmap((size * dpr).toSize());
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+
+    const bool hasMargins = margins.left() > 0 || margins.top() > 0 ||
+                            margins.right() > 0 || margins.bottom() > 0;
+    QPixmap contentPixmap;
+    auto *contentTarget = &pixmap;
+    if (hasMargins)
+    {
+        contentPixmap = QPixmap((textSize * dpr).toSize());
+        contentPixmap.setDevicePixelRatio(dpr);
+        contentPixmap.fill(Qt::transparent);
+        contentTarget = &contentPixmap;
+    }
+
+    QPainter contentPainter(contentTarget);
+    contentPainter.setRenderHint(QPainter::SmoothPixmapTransform);
+    contentPainter.setFont(font);
+
+    const QRectF contentRect(QPointF{}, textSize);
+
+    // The colon is drawn on its own, so the paint doesn't run onto it
+    bool drawColon = false;
+    QRectF nametagBoundingRect = contentRect;
+    QString nametagText = text;
+    if (nametagText.endsWith(':'))
+    {
+        drawColon = true;
+        nametagText = nametagText.chopped(1);
+        const auto textBounds = contentPainter.boundingRect(
+            QRectF(0, 0, 10000, 10000), nametagText,
+            QTextOption(Qt::AlignLeft | Qt::AlignTop));
+        nametagBoundingRect.setWidth(
+            std::min(textBounds.width(), contentRect.width()));
+    }
+
+    QPen pen;
+    pen.setBrush(this->asBrush(userColor, nametagBoundingRect));
+    contentPainter.setPen(pen);
+
+    const auto baseline = textBaseline(font, nametagBoundingRect);
+    contentPainter.drawText(QPointF(nametagBoundingRect.left(), baseline),
+                            nametagText);
+    contentPainter.end();
+
+    if (hasMargins)
+    {
+        QPainter pixmapPainter(&pixmap);
+        pixmapPainter.drawPixmap(QPointF(margins.left(), margins.top()),
+                                 contentPixmap);
+    }
+
+    if (!this->getDropShadows().empty() && this->shadowsEnabled())
+    {
+        QPixmap outMap((size * dpr).toSize());
+        outMap.setDevicePixelRatio(dpr);
+        for (const auto &shadow : this->getDropShadows())
+        {
+            if (!shadow.isValid())
+            {
+                continue;
+            }
+            outMap.fill(Qt::transparent);
+
+            {
+                QPainter outPainter(&outMap);
+                auto scaled = shadow.scaled(
+                    scale / static_cast<float>(outMap.devicePixelRatio()));
+
+                QPixmapDropShadowFilter filter;
+                scaled.apply(filter);
+                filter.draw(&outPainter, {0, 0}, pixmap);
+            }
+            outMap.swap(pixmap);
+        }
+    }
+
+    if (drawColon)
+    {
+        auto colonColor = getApp()->getThemes()->messages.textColors.regular;
+
+        QPainter pixmapPainter(&pixmap);
+        pixmapPainter.setPen(QPen(colonColor));
+        pixmapPainter.setFont(font);
+        pixmapPainter.drawText(
+            QPointF(margins.left() + nametagBoundingRect.right(),
+                    margins.top() + baseline),
+            u":"_s);
+    }
+
+    return pixmap;
+}
+
+QString Paint::getNametagPixmapCacheKey(const QString &text, const QFont &font,
+                                        QColor userColor, QSizeF textSize,
+                                        float scale, float dpr,
+                                        QMarginsF margins) const
+{
+    return this->getPixmapCacheKey(text, font, userColor, textSize, scale,
+                                   dpr) +
+           QStringLiteral("/m") +
+           QString::number(qRound64(margins.left() * dpr)) + u',' +
+           QString::number(qRound64(margins.top() * dpr)) + u',' +
+           QString::number(qRound64(margins.right() * dpr)) + u',' +
+           QString::number(qRound64(margins.bottom() * dpr));
+}
+
+QPixmap Paint::croppedNametagPixmap(const QString &text, const QFont &font,
+                                    QColor userColor, QSizeF textSize,
+                                    float scale, float dpr,
+                                    QMarginsF margins) const
+{
+    const auto padding = this->overflow(scale);
+    const auto full = this->getPixmap(text, font, userColor, textSize, scale,
+                                      dpr, false, padding);
+    const QRectF part(padding - margins.left(), padding - margins.top(),
+                      textSize.width() + margins.left() + margins.right(),
+                      textSize.height() + margins.top() + margins.bottom());
+    QPixmap pixmap((part.size() * dpr).toSize());
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.drawPixmap(QPointF(-part.left(), -part.top()), full);
     return pixmap;
 }
 

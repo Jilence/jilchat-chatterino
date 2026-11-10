@@ -25,6 +25,8 @@ class Channel;
  */
 enum class WindowType { Main, Popup, Attached };
 
+class TwitchChatDock;
+
 class Window : public BaseWindow
 {
     Q_OBJECT
@@ -60,6 +62,8 @@ private:
 
     SplitNotebook *notebook_;
     LabelButton *userLabel_ = nullptr;
+    /// Puts the main window over Twitch chat in a browser when dragged there
+    TwitchChatDock *chatDock_ = nullptr;
     std::shared_ptr<UpdateDialog> updateDialogHandle_;
 
     pajlada::Signals::SignalHolder signalHolder_;

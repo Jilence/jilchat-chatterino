@@ -336,6 +336,9 @@ public:
     void refreshChannelPoints();
     void refreshChatters();
     void refreshChannelPointsIfStale(bool force = false);
+    /// Claims a waiting "Claim bonus" chest, if there is one
+    void checkForPointsBonus();
+    void claimPointsBonus(const QString &claimId);
     void handlePinnedChatUpdate(const QJsonObject &data);
     void tryEmitPinnedChatPinSystemMessage(const QJsonObject &innerData);
 
@@ -763,6 +766,10 @@ private:
     QDateTime lastChannelPointsRefreshAt_;
     QDateTime lastChannelPointsUpdateAt_;
     QString lastChannelPointsError_;
+    QString pointsBonusClaimInFlight_;
+    QString lastClaimedPointsBonus_;
+    bool pointsBonusCheckInFlight_{false};
+    QTimer pointsBonusTimer_;
     bool disconnected_{};
     std::optional<std::chrono::time_point<std::chrono::system_clock>>
         lastConnectedAt_{};

@@ -544,6 +544,15 @@ public:
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
     BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
     BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
+    BoolSetting showBadgesSolrino = {"/appearance/badges/solrino", true};
+    /// Glide and fade tabs, pages, windows, splits and menus
+    BoolSetting smoothAnimations{"/appearance/smoothAnimations", true};
+    /// Dragging the main window onto Twitch chat in a browser docks it there
+    BoolSetting dockOverTwitchChat{"/appearance/dockOverTwitchChat", true};
+    /// The month ("yyyy-MM") whose Wrapped announcement was last shown
+    QStringSetting wrappedAnnouncedMonth = {"/jilchat/wrapped/announcedMonth",
+                                            ""};
+    BoolSetting showBadgesWydios = {"/appearance/badges/wydios", true};
     BoolSetting showBadgesStreamNook = {"/appearance/badges/streamnook", true};
     BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
     BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
@@ -1196,6 +1205,9 @@ public:
     BoolSetting showPollButton{"/moltorino/polls/showButton", true};
 
     /// Channel Points and Rewards
+    /// Claim the "Claim bonus" chest of channel points while watching
+    BoolSetting autoClaimPointsBonus{"/moltorino/channelPoints/autoClaimBonus",
+                                     true};
     BoolSetting enableChannelPointsDisplay{
         "/moltorino/predictions/showChannelPoints", true};
     BoolSetting openRewardsWithChannelPointsClick{

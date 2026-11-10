@@ -63,6 +63,7 @@
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
+#include "providers/solrino/SolrinoBadges.hpp"
 #include "providers/streamnook/StreamNookBadges.hpp"
 #include "providers/supibot/SupibotCommands.hpp"
 #include "providers/twitch/ChannelPointReward.hpp"
@@ -71,6 +72,8 @@
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/twitch/TwitchUsers.hpp"
+#include "providers/wrapped/WrappedStats.hpp"
+#include "providers/wydios/WydiosBadges.hpp"
 #include "singletons/CrashHandler.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/helper/LoggingChannel.hpp"
@@ -87,7 +90,9 @@
 #include "singletons/Updates.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Helpers.hpp"
+#include "util/MemoryReclaimer.hpp"
 #include "util/PostToThread.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/Window.hpp"
@@ -107,6 +112,9 @@ using namespace chatterino;
 
 const QString BTTV_LIVE_UPDATES_URL = "wss://sockets.betterttv.net/ws";
 const QString SEVENTV_EVENTAPI_URL = "wss://events.7tv.io/v3";
+
+// startup parses a lot of emote sets and message history that are freed again
+constexpr auto STARTUP_MEMORY_RELIEF_DELAY = std::chrono::seconds{30};
 
 std::atomic<bool> STOPPED{false};
 
@@ -226,6 +234,8 @@ Application::Application(Settings &_settings, const Paths &paths,
     , folhinhaBadges(new FolhinhaBadges)
     , ffzApBadges(new FfzApBadges)
     , dankChatBadges(new DankChatBadges)
+    , solrinoBadges(new SolrinoBadges)
+    , wydiosBadges(new WydiosBadges)
     , streamNookBadges(new StreamNookBadges)
     , chatsenBadges(new ChatsenBadges)
     , limerinoBadges(new LimerinoBadges)
@@ -305,6 +315,7 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->bttvBadges->load();
     this->limerinoBadges->initialize();
     this->badgeHQBadges->initialize();
+    this->wydiosBadges->initialize();
     this->moltorinoSupporterBadges->initialize();
 
     this->bttvEmotes->loadEmotes();
@@ -447,6 +458,8 @@ void Application::connect()
 
 int Application::run()
 {
+    transitions::initializeAnimationEffects();
+    wrapped::WrappedStats::instance().start();
     this->connect();
 
     if (!this->args_.isFramelessEmbed)
@@ -455,6 +468,10 @@ int Application::run()
     }
 
     MoltorinoAuth::scheduleStartupRefresh();
+
+    QTimer::singleShot(STARTUP_MEMORY_RELIEF_DELAY, qApp, [] {
+        requestMemoryPressureRelief();
+    });
 
     return QApplication::exec();
 }
@@ -596,6 +613,18 @@ DankChatBadges *Application::getDankChatBadges()
 {
     assert(this->dankChatBadges);
     return this->dankChatBadges.get();
+}
+
+WydiosBadges *Application::getWydiosBadges()
+{
+    assert(this->wydiosBadges);
+    return this->wydiosBadges.get();
+}
+
+SolrinoBadges *Application::getSolrinoBadges()
+{
+    assert(this->solrinoBadges);
+    return this->solrinoBadges.get();
 }
 
 StreamNookBadges *Application::getStreamNookBadges()
@@ -893,6 +922,7 @@ SupibotCommands *Application::getSupibotCommands()
 
 void Application::aboutToQuit()
 {
+    wrapped::WrappedStats::instance().save();
     ABOUT_TO_QUIT.store(true);
 
     this->accounts->desktopPresence().shutdown();
@@ -936,6 +966,8 @@ void Application::stop()
     this->homiesBadges.reset();
     this->ffzApBadges.reset();
     this->dankChatBadges.reset();
+    this->solrinoBadges.reset();
+    this->wydiosBadges.reset();
     this->streamNookBadges.reset();
     this->chatsenBadges.reset();
     this->limerinoBadges.reset();

@@ -37,6 +37,8 @@ class Notebook : public BaseWidget
 {
     Q_OBJECT
 
+    friend class TwitchChatDock;
+
 public:
     explicit Notebook(QWidget *parent);
     ~Notebook() override = default;
@@ -269,6 +271,9 @@ private:
 
 class SplitNotebook : public Notebook
 {
+    /// Hides the tabs while docked over Twitch chat
+    friend class TwitchChatDock;
+
 public:
     SplitNotebook(Window *parent);
 

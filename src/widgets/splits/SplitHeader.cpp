@@ -38,6 +38,7 @@
 #include "util/Helpers.hpp"
 #include "util/LayoutHelper.hpp"
 #include "util/MultiChannel.hpp"
+#include "util/ShareWatchStreak.hpp"
 #include "widgets/buttons/DrawnButton.hpp"
 #include "widgets/buttons/FollowButton.hpp"
 #include "widgets/buttons/LabelButton.hpp"
@@ -1490,6 +1491,11 @@ std::unique_ptr<QMenu> SplitHeader::createMainMenu()
 
     if (twitchChannel)
     {
+        moreMenu->addAction("Share watch &streak...", this->split_, [this] {
+            askAndShareWatchStreak(this->split_,
+                                   this->split_->getSelectedChannel());
+        });
+
         moreMenu->addAction("&Subscribe",
                             h->getDisplaySequence(HotkeyCategory::Split,
                                                   "openSubscriptionPage"),

@@ -15,6 +15,7 @@
 #include "widgets/buttons/LabelButton.hpp"
 #include "widgets/buttons/TitlebarButton.hpp"
 #include "widgets/buttons/TitlebarButtons.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/Window.hpp"
 
@@ -807,11 +808,22 @@ void BaseWindow::moveEvent(QMoveEvent *event)
 
 void BaseWindow::closeEvent(QCloseEvent *)
 {
+    if (this->flags_.has(DisableLayoutSave) && !this->flags_.has(DontFocus))
+    {
+        transitions::fadeOutWindow(this);
+    }
     this->closing.invoke();
 }
 
-void BaseWindow::showEvent(QShowEvent *)
+void BaseWindow::showEvent(QShowEvent *event)
 {
+    if (!event->spontaneous() && !this->flags_.has(DontFocus))
+    {
+        // Main windows remember their position, so only others glide
+        transitions::fadeInWindow(this,
+                                  this->flags_.has(DisableLayoutSave) ? 14 : 0);
+    }
+
 #ifdef Q_OS_MACOS
     this->setMacOSWindowManagedIfTopMost(this->isTopMost());
 #endif

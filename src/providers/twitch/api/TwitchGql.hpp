@@ -449,6 +449,22 @@ void voteInPoll(const QString &pollId, const QString &choiceId,
                 std::optional<int> pointsPerVote, const QString &oauthToken,
                 std::function<void()> successCallback,
                 std::function<void(const QString &)> failureCallback);
+/// Shares the user's watch streak in the channel, with an optional message.
+enum class WatchStreakShare { Shared, NoStreak, AlreadyShared };
+void shareWatchStreak(const QString &channelId, const QString &message,
+                      const QString &oauthToken,
+                      std::function<void(WatchStreakShare)> successCallback,
+                      std::function<void(const QString &)> failureCallback);
+/// The id of the bonus chest waiting for the user in the channel, empty if
+/// there is none
+void getAvailablePointsBonus(
+    const QString &channelLogin, const QString &oauthToken,
+    std::function<void(const QString &claimId)> successCallback,
+    std::function<void(const QString &)> failureCallback);
+void claimPointsBonus(const QString &channelId, const QString &claimId,
+                      const QString &oauthToken,
+                      std::function<void(qint64 pointsEarned)> successCallback,
+                      std::function<void(const QString &)> failureCallback);
 void getChannelPoints(const QString &channelLogin, const QString &oauthToken,
                       std::function<void(qint64)> successCallback,
                       std::function<void(const QString &)> failureCallback);

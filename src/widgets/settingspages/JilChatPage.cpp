@@ -89,8 +89,11 @@ JilChatPage::JilChatPage()
     auto *credits = new QLabel(
         u"Some features are inspired by "
         u"<a href=\"https://moltorino.com\">Moltorino</a>, "
-        u"<a href=\"https://leafyrino.leafyzito.dev/\">Leafyrino</a> and "
-        u"<a href=\"https://github.com/2547techno/technorino\">Technorino</a>."_s);
+        u"<a href=\"https://leafyrino.leafyzito.dev/\">Leafyrino</a>, "
+        u"<a href=\"https://github.com/2547techno/technorino\">Technorino</a> "
+        u"and "
+        u"<a href=\"https://solrino.solrino-badge-server.workers.dev/\">"
+        u"Solrino</a>."_s);
     credits->setOpenExternalLinks(true);
     credits->setTextInteractionFlags(Qt::TextBrowserInteraction);
     credits->setWordWrap(true);

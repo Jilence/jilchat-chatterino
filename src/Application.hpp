@@ -61,6 +61,8 @@ class HomiesBadges;
 class FolhinhaBadges;
 class FfzApBadges;
 class DankChatBadges;
+class SolrinoBadges;
+class WydiosBadges;
 class StreamNookBadges;
 class ChatsenBadges;
 class ChatAutomationController;
@@ -129,6 +131,8 @@ public:
     virtual FolhinhaBadges *getFolhinhaBadges() = 0;
     virtual FfzApBadges *getFfzApBadges() = 0;
     virtual DankChatBadges *getDankChatBadges() = 0;
+    virtual SolrinoBadges *getSolrinoBadges() = 0;
+    virtual WydiosBadges *getWydiosBadges() = 0;
     virtual StreamNookBadges *getStreamNookBadges() = 0;
     virtual ChatsenBadges *getChatsenBadges() = 0;
     /// The self bot rules. nullptr in tests and while shutting down.
@@ -234,6 +238,8 @@ private:
     std::unique_ptr<FolhinhaBadges> folhinhaBadges;
     std::unique_ptr<FfzApBadges> ffzApBadges;
     std::unique_ptr<DankChatBadges> dankChatBadges;
+    std::unique_ptr<SolrinoBadges> solrinoBadges;
+    std::unique_ptr<WydiosBadges> wydiosBadges;
     std::unique_ptr<StreamNookBadges> streamNookBadges;
     std::unique_ptr<ChatsenBadges> chatsenBadges;
     std::unique_ptr<LimerinoBadges> limerinoBadges;
@@ -303,6 +309,8 @@ public:
     FolhinhaBadges *getFolhinhaBadges() override;
     FfzApBadges *getFfzApBadges() override;
     DankChatBadges *getDankChatBadges() override;
+    SolrinoBadges *getSolrinoBadges() override;
+    WydiosBadges *getWydiosBadges() override;
     StreamNookBadges *getStreamNookBadges() override;
     ChatsenBadges *getChatsenBadges() override;
     ChatAutomationController *getChatAutomations() override;

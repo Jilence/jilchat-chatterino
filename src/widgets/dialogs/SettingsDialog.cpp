@@ -13,6 +13,7 @@
 #include "util/LayoutCreator.hpp"
 #include "widgets/BaseWindow.hpp"
 #include "widgets/helper/SettingsDialogTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/settingspages/AboutPage.hpp"
 #include "widgets/settingspages/AccountsPage.hpp"
 #include "widgets/settingspages/CommandPage.hpp"
@@ -297,6 +298,19 @@ void SettingsDialog::selectTab(SettingsDialogTab *tab, bool byUser)
 
         this->ui_.pageStack->addWidget(tab->page());
     }();
+
+    if (byUser && this->selectedTab_ != nullptr && this->selectedTab_ != tab)
+    {
+        const auto position = [this](SettingsDialogTab *t) {
+            return std::ranges::find(this->tabs_, t) - this->tabs_.begin();
+        };
+        transitions::slidePages(this->ui_.pageStack->currentWidget(),
+                                tab->page(),
+                                position(tab) > position(this->selectedTab_)
+                                    ? transitions::PageDirection::Forward
+                                    : transitions::PageDirection::Backward,
+                                true);
+    }
 
     this->ui_.pageStack->setCurrentWidget(tab->page());
 

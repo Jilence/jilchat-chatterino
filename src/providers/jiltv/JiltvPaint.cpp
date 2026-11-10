@@ -1813,7 +1813,7 @@ bool JiltvPaint::shadowsEnabled() const
     return getSettings()->jiltvPaintShadows;
 }
 
-qreal JiltvPaint::overflow() const
+qreal JiltvPaint::overflow(float /*scale*/) const
 {
     if (!this->shadowsEnabled())
     {

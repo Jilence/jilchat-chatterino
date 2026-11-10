@@ -16,6 +16,7 @@
 #include "util/QMagicEnum.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/NotebookTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/splits/ClosedSplits.hpp"
 #include "widgets/splits/DraggedSplit.hpp"
@@ -142,6 +143,8 @@ Split *SplitContainer::appendNewSplit(bool openChannelNameDialog)
 
 void SplitContainer::insertSplit(Split *split, InsertOptions &&options)
 {
+    transitions::fadeChange(this);
+
     // Queue up save because: Split added
     getApp()->getWindows()->queueSave();
 
@@ -369,6 +372,8 @@ SplitContainer::Position SplitContainer::deleteSplit(Split *split)
 
     assertInGuiThread();
     assert(split != nullptr);
+
+    transitions::fadeChange(this);
 
     split->deleteLater();
     return this->releaseSplit(split);
