@@ -31,6 +31,7 @@
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "singletons/ImageUploader.hpp"
 #include "singletons/NativeMessaging.hpp"
+#include "singletons/UrlShortener.hpp"
 #include "util/MemoryReclaimer.hpp"
 #ifdef CHATTERINO_HAVE_PLUGINS
 #    include "controllers/plugins/PluginController.hpp"
@@ -219,6 +220,7 @@ Application::Application(Settings &_settings, const Paths &paths,
                                 *this->fonts))
     , toasts(new Toasts)
     , imageUploader(new ImageUploader)
+    , urlShortener(new UrlShortener)
     , seventvAPI(new SeventvAPI)
     , crashHandler(new CrashHandler(paths))
 
@@ -726,6 +728,14 @@ IChatterinoBadges *Application::getChatterinoBadges()
     assert(this->chatterinoBadges);
 
     return this->chatterinoBadges.get();
+}
+
+UrlShortener *Application::getUrlShortener()
+{
+    assertInGuiThread();
+    assert(this->urlShortener);
+
+    return this->urlShortener.get();
 }
 
 ImageUploader *Application::getImageUploader()

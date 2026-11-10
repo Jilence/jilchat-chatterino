@@ -365,6 +365,7 @@ protected:
 
 private:
     void handleImagePaste(const QMimeData *source);
+    void handleUrlPaste(const QString &url, QTextCursor cursor);
 
     void startHistorySearch(bool backwards, bool loop);
     void stopHistorySearchIfNecessary();
