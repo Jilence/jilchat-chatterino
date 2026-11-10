@@ -872,6 +872,20 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
     view->addTitle("Moderation");
     view->addDescription("Moderation tools and chat safety options.");
 
+    SettingWidget::checkbox("Shout out raiders automatically",
+                            s.autoShoutoutRaids)
+        ->setTooltip("When someone raids a channel you moderate, sends the "
+                     "command below a few seconds later. If another mod "
+                     "already shouted them out, it isn't sent twice.")
+        ->addTo(*view);
+    SettingWidget::lineEdit("Shoutout command", s.raidShoutoutCommand,
+                            "!so @{user}")
+        ->setTooltip("{user} becomes the raider's name. Use the command your "
+                     "channel's bot listens to, or /shoutout {user} for "
+                     "Twitch's own shoutout.")
+        ->conditionallyEnabledBy(s.autoShoutoutRaids)
+        ->addTo(*view);
+
     SettingWidget::checkbox("Show repeated-message counters",
                             s.enableRepeatedMessageDetector)
         ->setTooltip("Show repeated or very similar messages with an inline "

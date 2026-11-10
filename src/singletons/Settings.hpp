@@ -1206,6 +1206,11 @@ public:
 
     /// Channel Points and Rewards
     /// Claim the "Claim bonus" chest of channel points while watching
+    /// Sends a shoutout command when someone raids a channel you moderate
+    BoolSetting autoShoutoutRaids{"/jilchat/raids/autoShoutout", false};
+    /// {user} becomes the raider's login
+    QStringSetting raidShoutoutCommand{"/jilchat/raids/shoutoutCommand",
+                                       "!so @{user}"};
     BoolSetting autoClaimPointsBonus{"/moltorino/channelPoints/autoClaimBonus",
                                      true};
     BoolSetting enableChannelPointsDisplay{
