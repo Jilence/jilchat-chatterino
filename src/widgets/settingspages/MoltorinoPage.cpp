@@ -1589,6 +1589,17 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
         ->addTo(*view);
     view->addDescription("Spam, pyramid, and playful chat command options.");
 
+    view->addTitle("Domain highlights");
+    SettingWidget::checkbox("Block domain highlights", s.blockDomainHighlights)
+        ->setTooltip("Prevent your own domain from triggering username mention "
+                     "highlights. Links remain clickable.")
+        ->addTo(*view);
+    SettingWidget::lineEdit("Your domain", s.yourDomain, "e.g. example.com")
+        ->setTooltip("Your domain, without https:// or a path. Subdomains are "
+                     "included automatically.")
+        ->conditionallyEnabledBy(s.blockDomainHighlights)
+        ->addTo(*view);
+
     view->addTitle("Miscellaneous");
     auto *miscDesc = new SignalLabel(this);
     miscDesc->setText(

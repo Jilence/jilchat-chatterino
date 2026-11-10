@@ -10,8 +10,76 @@
 #include "controllers/highlights/HighlightResult.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/twitch/TwitchAccount.hpp"  // IWYU pragma: keep
+#include "singletons/Settings.hpp"
+
+#include <QRegularExpression>
+
+#include <algorithm>
 
 namespace chatterino::highlights {
+
+namespace {
+
+/// Whether `match` lies inside a mention of `domain` (or a subdomain of it) in
+/// `message`
+bool isMatchInsideDomain(const QRegularExpressionMatch &match,
+                         const QString &message, const QString &domain)
+{
+    auto host = domain.trimmed().toLower();
+    static const QRegularExpression scheme(R"(^https?://)");
+    host.remove(scheme);
+    host =
+        host.section('/', 0, 0).section('?', 0, 0).section('#', 0, 0).section(
+            ':', 0, 0);
+
+    if (host.isEmpty())
+    {
+        return false;
+    }
+
+    const auto domainRegex = QRegularExpression(
+        QStringLiteral(
+            R"((?i)(?<![A-Z0-9.-])(?:[A-Z0-9-]+\.)*%1(?![A-Z0-9.-]))")
+            .arg(QRegularExpression::escape(host)));
+
+    auto it = domainRegex.globalMatch(message);
+    while (it.hasNext())
+    {
+        const auto domainMatch = it.next();
+        const auto domainStart = domainMatch.capturedStart();
+        const auto domainEnd = domainStart + domainMatch.capturedLength();
+
+        if (match.capturedStart() >= domainStart &&
+            match.capturedStart() + match.capturedLength() <= domainEnd)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether `re` matches `message` somewhere outside `domain`; with an empty
+/// domain, whether it matches at all
+bool matchesOutsideDomain(const QRegularExpression &re, const QString &message,
+                          const QString &domain)
+{
+    auto it = re.globalMatch(message);
+    if (domain.trimmed().isEmpty())
+    {
+        return it.hasNext();
+    }
+    while (it.hasNext())
+    {
+        if (!isMatchInsideDomain(it.next(), message, domain))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
 
 HighlightCheck YourUsernameHighlight::buildCheck() const
 {
@@ -54,9 +122,14 @@ HighlightCheck YourUsernameHighlight::buildCheck() const
         return {};
     }
 
+    // Read once here; the checks are rebuilt when these change
+    const auto domain = getSettings()->blockDomainHighlights
+                            ? getSettings()->yourDomain.getValue()
+                            : QString{};
+
     return {
-        [highlight = *this, twitchRe,
-         kickRe](const Params &p) -> std::optional<HighlightResult> {
+        [highlight = *this, twitchRe, kickRe,
+         domain](const Params &p) -> std::optional<HighlightResult> {
             if (p.self)
             {
                 return std::nullopt;
@@ -65,8 +138,8 @@ HighlightCheck YourUsernameHighlight::buildCheck() const
             switch (p.platform)
             {
                 case MessagePlatform::AnyOrTwitch: {
-                    if (!twitchRe ||
-                        !twitchRe->match(p.originalMessage).hasMatch())
+                    if (!twitchRe || !matchesOutsideDomain(
+                                         *twitchRe, p.originalMessage, domain))
                     {
                         return std::nullopt;
                     }

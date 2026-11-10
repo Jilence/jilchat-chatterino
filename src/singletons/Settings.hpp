@@ -479,6 +479,11 @@ public:
                                             true};
     BoolSetting boldUsernames = {"/appearance/messages/boldUsernames", true};
     BoolSetting colorUsernames = {"/appearance/messages/colorUsernames", true};
+    /// Mentions of your name inside your own domain (e.g. a link to it)
+    /// don't highlight
+    BoolSetting blockDomainHighlights = {"/client/blockDomainHighlights",
+                                         false};
+    QStringSetting yourDomain = {"/client/yourDomain", ""};
     BoolSetting findAllUsernames = {"/appearance/messages/findAllUsernames",
                                     false};
     // BoolSetting customizable splitheader
