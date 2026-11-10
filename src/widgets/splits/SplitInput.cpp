@@ -950,12 +950,12 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
     this->quickGames_->hide();
     this->placeQuickGames();
     getSettings()->quickGameBarPosition.connect(
-        [this](const auto &, auto) {
+        [this](const auto &, const auto &) {
             this->placeQuickGames();
         },
         this->managedConnections_);
     getSettings()->showGameButton.connect(
-        [this](const auto &, auto) {
+        [this](const auto &, const auto &) {
             this->bindChannelPoints(dynamic_cast<TwitchChannel *>(
                 this->split_->getSelectedChannel().get()));
         },
@@ -1532,7 +1532,7 @@ void SplitInput::initLayout()
         }
         PollDialog::showDialog(channel, this->split_);
     });
-    QObject::connect(this->ui_.gameButton, &Button::leftClicked, [this] {
+    QObject::connect(this->ui_.gameButton, &Button::leftClicked, this, [this] {
         const auto channel = std::dynamic_pointer_cast<TwitchChannel>(
             this->split_->getSelectedChannel());
         if (channel == nullptr)

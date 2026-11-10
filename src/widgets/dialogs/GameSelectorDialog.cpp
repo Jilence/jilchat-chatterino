@@ -33,6 +33,8 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <chrono>
+#include <tuple>
 #include <utility>
 
 namespace chatterino {
@@ -118,7 +120,7 @@ GameSelectorDialog::GameSelectorDialog(std::shared_ptr<TwitchChannel> channel,
         // The pin button flips the pin itself
         this->pinned_ = !this->pinned_;
         getSettings()->gameSelectorPinned = this->pinned_;
-        getSettings()->requestSave();
+        std::ignore = getSettings()->requestSave();
     });
     header->addWidget(this->pinButton_, 0, Qt::AlignTop);
 
@@ -213,7 +215,7 @@ GameSelectorDialog::GameSelectorDialog(std::shared_ptr<TwitchChannel> channel,
 
     // When pinned, the popup stays open while you move between channels
     auto *follow = new QTimer(this);
-    follow->setInterval(400);
+    follow->setInterval(std::chrono::milliseconds(400));
     QObject::connect(follow, &QTimer::timeout, this, [this] {
         this->followCurrentTab();
     });
@@ -310,8 +312,8 @@ void GameSelectorDialog::resizeEvent(QResizeEvent *event)
         return;
     }
     const auto scale = std::max(0.1F, this->scale());
-    getSettings()->gameSelectorPopupSize =
-        QSize(int(this->width() / scale), int(this->height() / scale));
+    getSettings()->gameSelectorPopupSize = QSize(
+        int(float(this->width()) / scale), int(float(this->height()) / scale));
 }
 
 void GameSelectorDialog::keyPressEvent(QKeyEvent *event)
@@ -456,9 +458,8 @@ void GameSelectorDialog::rebuildList()
     }
 
     // Bots and channels may use names Twitch doesn't, so typed text is allowed
-    const bool inResults = std::any_of(
-        this->searchResults_.cbegin(), this->searchResults_.cend(),
-        [&query](const auto &category) {
+    const bool inResults = std::ranges::any_of(
+        this->searchResults_, [&query](const auto &category) {
             return labelFor(category).compare(query, Qt::CaseInsensitive) == 0;
         });
     if (!inResults && !this->isSaved(query))
@@ -550,7 +551,7 @@ void GameSelectorDialog::addGame(const QString &name)
 
     this->savedGames_.append(cleaned);
     getSettings()->gameSelectorGames = this->savedGames_;
-    getSettings()->requestSave();
+    std::ignore = getSettings()->requestSave();
 
     this->searchInput_->clear();
     this->searchInput_->setFocus();
@@ -561,7 +562,7 @@ void GameSelectorDialog::removeGame(const QString &name)
 {
     this->savedGames_.removeAll(name);
     getSettings()->gameSelectorGames = this->savedGames_;
-    getSettings()->requestSave();
+    std::ignore = getSettings()->requestSave();
 
     this->onSearchTextChanged();
     if (!this->savedGames_.isEmpty())

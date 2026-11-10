@@ -18,6 +18,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <tuple>
+#include <utility>
 
 namespace chatterino {
 
@@ -26,7 +28,7 @@ namespace {
 constexpr int SENT_MS = 900;
 constexpr int MAX_BOX_WIDTH = 150;
 const QChar USAGE_SEPARATOR('\t');
-const char *GAME_NAME_PROPERTY = "quickGameName";
+constexpr const char *GAME_NAME_PROPERTY = "quickGameName";
 
 QHash<QString, int> readUsage()
 {
@@ -99,7 +101,7 @@ void setGameCommand(const QString &channel, const QString &command)
         entries.append(start + cleaned);
     }
     getSettings()->gameCommands = entries;
-    getSettings()->requestSave();
+    std::ignore = getSettings()->requestSave();
 }
 
 QString gameCommandMessage(const QString &gameName, const QString &command)
@@ -118,12 +120,12 @@ QString gameCommandMessage(const QString &gameName, const QString &command)
 QuickGameBar::QuickGameBar(Split *split, QWidget *parent)
     : BaseWidget(parent)
     , split_(split)
+    , layout_(new QHBoxLayout(this))
 {
-    this->layout_ = new QHBoxLayout(this);
     this->layout_->setContentsMargins(0, 0, 0, 0);
 
     auto *settings = getSettings();
-    const auto rebuild = [this](const auto &, auto) {
+    const auto rebuild = [this](const auto &, const auto &) {
         this->rebuild();
     };
     settings->gameSelectorGames.connect(rebuild, this->connections_, false);
@@ -133,7 +135,7 @@ QuickGameBar::QuickGameBar(Split *split, QWidget *parent)
     settings->quickGameBarAlign.connect(rebuild, this->connections_, false);
     settings->quickGameBarSize.connect(rebuild, this->connections_, false);
     settings->gameCommands.connect(
-        [this](const auto &, auto) {
+        [this](const auto &, const auto &) {
             this->updateTooltips();
         },
         this->connections_, false);
@@ -174,8 +176,8 @@ QString QuickGameBar::boxStyle(bool sent) const
     const auto text = this->theme != nullptr ? this->theme->window.text.name()
                                              : QStringLiteral("#f8f1ef");
     const bool small = getSettings()->quickGameBarSize.getValue() != "normal";
-    const int fontSize = int((small ? 11 : 13) * this->scale());
-    const int padding = int((small ? 7 : 10) * this->scale());
+    const int fontSize = int((small ? 11.F : 13.F) * this->scale());
+    const int padding = int((small ? 7.F : 10.F) * this->scale());
     const int radius = int(5 * this->scale());
     return QStringLiteral(
                "QPushButton { background: %1; color: %2; border: 1px solid %3;"
@@ -209,7 +211,7 @@ void QuickGameBar::rebuild()
     auto *settings = getSettings();
     const float scale = this->scale();
     const bool small = settings->quickGameBarSize.getValue() != "normal";
-    const int height = int((small ? 20 : 26) * scale);
+    const int height = int((small ? 20.F : 26.F) * scale);
     const int limit =
         std::clamp(settings->quickGameBarCount.getValue().toInt(), 1, 12);
     const auto align = settings->quickGameBarAlign.getValue();
@@ -226,7 +228,7 @@ void QuickGameBar::rebuild()
     const auto games = quickgames::mostUsedGames();
     for (const auto &name : games)
     {
-        if (int(this->boxes_.size()) >= limit)
+        if (std::cmp_greater_equal(this->boxes_.size(), limit))
         {
             break;
         }
