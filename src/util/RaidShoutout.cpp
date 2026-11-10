@@ -42,7 +42,7 @@ void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
     static QHash<QString, QDateTime> recent;
     const auto key = channel->getName().toLower() + u'/' + login;
     const auto now = QDateTime::currentDateTimeUtc();
-    if (recent.contains(key) && recent.value(key).secsTo(now) < 10 * 60)
+    if (recent.contains(key) && recent.value(key).secsTo(now) < qint64{10 * 60})
     {
         return;
     }
@@ -50,7 +50,7 @@ void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
 
     // Several mods may have this on in the same chat. Each waits a different
     // moment, and whoever goes first is the only one who sends it.
-    const int waitMs = 2000 + int(QRandomGenerator::global()->bounded(3000));
+    const int waitMs = 2000 + QRandomGenerator::global()->bounded(3000);
     std::weak_ptr<Channel> weak = channel;
     QTimer::singleShot(waitMs, qApp, [weak, login] {
         auto channel = weak.lock();
