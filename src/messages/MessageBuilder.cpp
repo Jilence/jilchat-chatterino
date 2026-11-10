@@ -1504,7 +1504,7 @@ MessageBuilder::MessageBuilder(UrlShortenerResultTag /*unused*/,
     this->emplace<TimestampElement>();
 
     using MEF = MessageElementFlag;
-    auto addText = [this](QString text,
+    auto addText = [this](const QString &text,
                           MessageColor color = MessageColor::System) {
         this->message().searchText += text;
         this->message().messageText += text;

@@ -893,8 +893,8 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
             this->handleImagePaste(source);
         });
     std::ignore = this->ui_.textEdit->urlPasted.connect(
-        [this](const QString &url, QTextCursor cursor) {
-            this->handleUrlPaste(url, std::move(cursor));
+        [this](const QString &url, const QTextCursor &cursor) {
+            this->handleUrlPaste(url, cursor);
         });
 
     // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)

@@ -21,19 +21,23 @@ using ChannelPtr = std::shared_ptr<Channel>;
 class UrlShortener final
 {
 public:
-    void shorten(const QString &url, ChannelPtr channel,
-                 QPointer<ResizingTextEdit> textEdit, QTextCursor cursor);
+    void shorten(const QString &url, const ChannelPtr &channel,
+                 const QPointer<ResizingTextEdit> &textEdit,
+                 const QTextCursor &cursor);
 
 private:
-    void sendShortenRequest(const QString &url, ChannelPtr channel,
-                            QPointer<ResizingTextEdit> textEdit,
-                            QTextCursor cursor);
+    static void sendShortenRequest(const QString &url,
+                                   const ChannelPtr &channel,
+                                   const QPointer<ResizingTextEdit> &textEdit,
+                                   const QTextCursor &cursor);
 
-    void handleSuccessfulShorten(const NetworkResult &result,
-                                 ChannelPtr channel,
-                                 QPointer<ResizingTextEdit> textEdit,
-                                 QTextCursor cursor, const QString &url);
+    /// `cursor` selects the pasted link, which is replaced by the short one
+    static void handleSuccessfulShorten(
+        const NetworkResult &result, const ChannelPtr &channel,
+        const QPointer<ResizingTextEdit> &textEdit, QTextCursor cursor,
+        const QString &url);
 
-    void handleFailedShorten(const NetworkResult &result, ChannelPtr channel);
+    static void handleFailedShorten(const NetworkResult &result,
+                                    const ChannelPtr &channel);
 };
 }  // namespace chatterino

@@ -10,6 +10,8 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 
+#include <utility>
+
 namespace chatterino::urlshortener::detail {
 
 namespace {
@@ -92,7 +94,7 @@ QJsonObject exportSettings(const Settings &s)
         QJsonObject headersObj;
         QStringList headerLines = headers.split(';', Qt::SkipEmptyParts);
 
-        for (const QString &line : headerLines)
+        for (const QString &line : std::as_const(headerLines))
         {
             QStringList parts = line.split(':', Qt::SkipEmptyParts);
 

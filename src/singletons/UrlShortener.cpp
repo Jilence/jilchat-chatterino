@@ -23,8 +23,8 @@ namespace {
 
 QString getResponseValue(const NetworkResult &result, QString pattern)
 {
-    QRegularExpression regExp("{(.+)}",
-                              QRegularExpression::InvertedGreedinessOption);
+    static const QRegularExpression regExp(
+        "{(.+)}", QRegularExpression::InvertedGreedinessOption);
 
     auto match = regExp.match(pattern);
     auto jsonRoot = result.parseJsonValue();
@@ -67,17 +67,16 @@ QString getResponseValue(const NetworkResult &result, QString pattern)
 
 }  // namespace
 
-void UrlShortener::shorten(const QString &url, ChannelPtr channel,
-                           QPointer<ResizingTextEdit> textEdit,
-                           QTextCursor cursor)
+void UrlShortener::shorten(const QString &url, const ChannelPtr &channel,
+                           const QPointer<ResizingTextEdit> &textEdit,
+                           const QTextCursor &cursor)
 {
-    this->sendShortenRequest(url, std::move(channel), std::move(textEdit),
-                             cursor);
+    UrlShortener::sendShortenRequest(url, channel, textEdit, cursor);
 }
 
-void UrlShortener::sendShortenRequest(const QString &url, ChannelPtr channel,
-                                      QPointer<ResizingTextEdit> textEdit,
-                                      QTextCursor cursor)
+void UrlShortener::sendShortenRequest(
+    const QString &url, const ChannelPtr &channel,
+    const QPointer<ResizingTextEdit> &textEdit, const QTextCursor &cursor)
 {
     QUrl requestUrl(getSettings()->urlShortenerUrl.getValue());
 
@@ -96,22 +95,21 @@ void UrlShortener::sendShortenRequest(const QString &url, ChannelPtr channel,
             parseHeaderList(getSettings()->urlShortenerHeaders.getValue()))
         .json(body)
         .onSuccess(
-            [this, channel, textEdit, cursor, url](NetworkResult result) {
-                this->handleSuccessfulShorten(result, channel, textEdit, cursor,
-                                              url);
+            [channel, textEdit, cursor, url](const NetworkResult &result) {
+                UrlShortener::handleSuccessfulShorten(result, channel, textEdit,
+                                                      cursor, url);
             })
-        .onError([this, channel](NetworkResult result) -> bool {
-            this->handleFailedShorten(result, channel);
+        .onError([channel](const NetworkResult &result) -> bool {
+            UrlShortener::handleFailedShorten(result, channel);
             return true;
         })
         .execute();
 }
 
-void UrlShortener::handleSuccessfulShorten(const NetworkResult &result,
-                                           ChannelPtr channel,
-                                           QPointer<ResizingTextEdit> textEdit,
-                                           QTextCursor cursor,
-                                           const QString &url)
+void UrlShortener::handleSuccessfulShorten(
+    const NetworkResult &result, const ChannelPtr &channel,
+    const QPointer<ResizingTextEdit> &textEdit, QTextCursor cursor,
+    const QString &url)
 {
     if (textEdit == nullptr)
     {
@@ -151,7 +149,7 @@ void UrlShortener::handleSuccessfulShorten(const NetworkResult &result,
 }
 
 void UrlShortener::handleFailedShorten(const NetworkResult &result,
-                                       ChannelPtr channel)
+                                       const ChannelPtr &channel)
 {
     channel->addSystemMessage(
         QString("An error happened while shortening your URL: %1")
