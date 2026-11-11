@@ -544,6 +544,7 @@ public:
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
     BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
     BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
+    BoolSetting showBadgesChatlee = {"/appearance/badges/chatlee", true};
     BoolSetting showBadgesSolrino = {"/appearance/badges/solrino", true};
     /// Glide and fade tabs, pages, windows, splits and menus
     BoolSetting smoothAnimations{"/appearance/smoothAnimations", true};

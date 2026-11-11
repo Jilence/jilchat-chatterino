@@ -28,6 +28,7 @@
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/bttv/BttvPersonalEmotes.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/colors/ColorProvider.hpp"
@@ -1538,6 +1539,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         MessageElementFlag::BadgeWydios,
         MessageElementFlag::BadgeSevenTV,
         MessageElementFlag::BadgeDankChat,
+        MessageElementFlag::BadgeChatlee,
         MessageElementFlag::BadgeChatsen,
         MessageElementFlag::BadgeHomiesSupporter,
         MessageElementFlag::BadgeHomiesCustom,
@@ -1561,6 +1563,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendWydiosBadges(message.userID);
     builder.appendSeventvBadges(message.userID);
     builder.appendDankChatBadges(message.userID);
+    builder.appendChatleeBadges(message.userID);
     builder.appendChatsenBadges(message.userID);
     builder.appendHomiesBadges(message.userID);
     builder.appendFolhinhaBadges(message.userID);
@@ -2478,6 +2481,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendWydiosBadges(userID);
         builder.appendSeventvBadges(userID);
         builder.appendDankChatBadges(userID);
+        builder.appendChatleeBadges(userID);
         builder.appendChatsenBadges(userID);
         builder.appendHomiesBadges(userID);
         builder.appendFolhinhaBadges(userID);
@@ -4151,6 +4155,14 @@ void MessageBuilder::appendWydiosBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendChatleeBadges(const QString &userID)
+{
+    if (auto badge = getApp()->getChatleeBadges()->getBadge(userID))
+    {
+        this->emplace<BadgeElement>(*badge, MessageElementFlag::BadgeChatlee);
+    }
+}
+
 void MessageBuilder::appendSolrinoBadges(const QString &userID)
 {
     if (auto badge = getApp()->getSolrinoBadges()->getBadge(userID))
@@ -4545,6 +4557,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendWydiosBadges(userId);
     builder.appendSeventvBadges(userId);
     builder.appendDankChatBadges(userId);
+    builder.appendChatleeBadges(userId);
     builder.appendChatsenBadges(userId);
     builder.appendHomiesBadges(userId);
     builder.appendFolhinhaBadges(userId);

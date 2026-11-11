@@ -491,6 +491,8 @@ set(SOURCE_FILES
         providers/bttv/liveupdates/BttvLiveUpdateSubscription.cpp
         providers/bttv/liveupdates/BttvLiveUpdateSubscription.hpp
 
+        providers/chatlee/ChatleeBadges.cpp
+        providers/chatlee/ChatleeBadges.hpp
         providers/chatterino/ChatterinoBadges.cpp
         providers/chatterino/ChatterinoBadges.hpp
 

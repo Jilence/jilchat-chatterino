@@ -39,6 +39,12 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"dankchat", "dank"})
         ->setTooltip("Dev/contributor, QA, and supporter badges.")
         ->addTo(layout);
+    SettingWidget::checkbox("Chatlee", s.showBadgesChatlee)
+        ->addKeywords({"chatlee"})
+        ->setTooltip("The badge a Chatlee user picked to wear. Badges by "
+                     "Chatlee (chatlee.lol). Nothing is requested from "
+                     "Chatlee while this is off.")
+        ->addTo(layout);
     SettingWidget::checkbox("Solrino", s.showBadgesSolrino)
         ->addKeywords({"solrino"})
         ->setTooltip("The badge a Solrino user picked to wear.")

@@ -46,6 +46,7 @@
 #include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvLiveUpdates.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
@@ -236,6 +237,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , dankChatBadges(new DankChatBadges)
     , solrinoBadges(new SolrinoBadges)
     , wydiosBadges(new WydiosBadges)
+    , chatleeBadges(new ChatleeBadges)
     , streamNookBadges(new StreamNookBadges)
     , chatsenBadges(new ChatsenBadges)
     , limerinoBadges(new LimerinoBadges)
@@ -613,6 +615,12 @@ DankChatBadges *Application::getDankChatBadges()
 {
     assert(this->dankChatBadges);
     return this->dankChatBadges.get();
+}
+
+ChatleeBadges *Application::getChatleeBadges()
+{
+    assert(this->chatleeBadges);
+    return this->chatleeBadges.get();
 }
 
 WydiosBadges *Application::getWydiosBadges()
