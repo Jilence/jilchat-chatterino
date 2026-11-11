@@ -11,6 +11,7 @@
 #include "messages/Message.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -19,12 +20,30 @@
 #include <QRegularExpression>
 #include <QTimer>
 
+#include <algorithm>
+
 namespace chatterino {
+
+namespace {
+
+/// True when the chat is in the selected tab of a window, not just open in
+/// some other tab
+bool isChatOnScreen(const Channel &channel)
+{
+    const auto visible = getApp()->getWindows()->getVisibleChannelNames();
+    return std::ranges::any_of(visible, [&channel](const QString &name) {
+        return name.compare(channel.getName(), Qt::CaseInsensitive) == 0;
+    });
+}
+
+}  // namespace
 
 void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
 {
+    // Only for a chat you're looking at, so it never speaks in a chat you
+    // just have open in the background
     if (!getSettings()->autoShoutoutRaids || channel == nullptr ||
-        !channel->hasModRights())
+        !channel->hasModRights() || !isChatOnScreen(*channel))
     {
         return;
     }
@@ -55,7 +74,7 @@ void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
     QTimer::singleShot(waitMs, qApp, [weak, login] {
         auto channel = weak.lock();
         if (channel == nullptr || !channel->hasModRights() ||
-            !getSettings()->autoShoutoutRaids)
+            !getSettings()->autoShoutoutRaids || !isChatOnScreen(*channel))
         {
             return;
         }
