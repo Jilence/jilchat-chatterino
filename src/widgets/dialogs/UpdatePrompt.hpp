@@ -48,7 +48,7 @@ private:
     enum Control { UpdateNow, RemindLater, Close, ControlCount };
 
     void layOut();
-    int controlAt(const QPointF &position) const;
+    int controlAt(QPointF position) const;
     void tick();
     void statusChanged();
     /// Places the sections and changes, returning the height they need

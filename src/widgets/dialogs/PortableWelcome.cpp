@@ -20,6 +20,7 @@
 #include <QScreen>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace chatterino {
@@ -65,16 +66,16 @@ PortableWelcome::PortableWelcome()
     this->setWindowTitle(QStringLiteral("Welcome to JilChat Chatterino"));
     this->setWindowIcon(QIcon(QStringLiteral(":/icon.ico")));
 
-    this->setFixedSize(CARD_WIDTH + SHADOW * 2, CARD_HEIGHT + SHADOW * 2);
+    this->setFixedSize(CARD_WIDTH + (SHADOW * 2), CARD_HEIGHT + (SHADOW * 2));
     this->card_ = QRectF(SHADOW, SHADOW, CARD_WIDTH, CARD_HEIGHT);
     this->controls_[GetStarted] = QRectF(
-        this->card_.center().x() - BUTTON_WIDTH / 2.0,
+        this->card_.center().x() - (BUTTON_WIDTH / 2.0),
         this->card_.bottom() - 30 - BUTTON_HEIGHT, BUTTON_WIDTH, BUTTON_HEIGHT);
     this->controls_[Close] =
         QRectF(this->card_.right() - 38, this->card_.top() + 10, 28, 28);
 
     this->timer_.setTimerType(Qt::PreciseTimer);
-    this->timer_.setInterval(16);
+    this->timer_.setInterval(std::chrono::milliseconds(16));
     QObject::connect(&this->timer_, &QTimer::timeout, this, [this] {
         for (int i = 0; i < ControlCount; ++i)
         {
@@ -109,7 +110,7 @@ void PortableWelcome::paintEvent(QPaintEvent * /*event*/)
     const double rise = eased(now / 0.8);
     const double logoSide = 92;
     drawLogo(p,
-             QRectF(cx - logoSide / 2, card.top() + 28 + (1 - rise) * 50,
+             QRectF(cx - (logoSide / 2), card.top() + 28 + ((1 - rise) * 50),
                     logoSide, logoSide),
              now, rise);
 
@@ -150,7 +151,7 @@ void PortableWelcome::paintEvent(QPaintEvent * /*event*/)
     drawClose(p, this->controls_[Close], this->hover_[Close]);
 }
 
-int PortableWelcome::controlAt(const QPointF &position) const
+int PortableWelcome::controlAt(QPointF position) const
 {
     for (int i = 0; i < ControlCount; ++i)
     {

@@ -34,7 +34,7 @@ private:
 
     enum Control { GetStarted, Close, ControlCount };
 
-    int controlAt(const QPointF &position) const;
+    int controlAt(QPointF position) const;
 
     QRectF card_;
     std::array<QRectF, ControlCount> controls_;

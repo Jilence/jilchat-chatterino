@@ -34,6 +34,7 @@
 #include <Qt>
 #include <QtConcurrent>
 
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <tuple>
@@ -395,7 +396,7 @@ void runGui(QApplication &a, const Modes &modes, const Paths &paths,
             }
         });
         // Once the main window is there
-        QTimer::singleShot(1200, [] {
+        QTimer::singleShot(std::chrono::milliseconds(1200), qApp, [] {
             PortableWelcome::showIfFirstStart();
         });
     }

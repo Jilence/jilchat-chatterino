@@ -18,6 +18,7 @@
 #include <QWheelEvent>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace chatterino {
@@ -36,9 +37,17 @@ constexpr int CHANGES_MAX_HEIGHT = 380;
 constexpr int BULLET_INDENT = 16;
 
 /// The open window, so there's only ever one
-QPointer<UpdatePrompt> openPrompt;
+QPointer<UpdatePrompt> &openPrompt()
+{
+    static QPointer<UpdatePrompt> prompt;
+    return prompt;
+}
 /// The version whose window was already shown or put off
-QString handledVersion;
+QString &handledVersion()
+{
+    static QString version;
+    return version;
+}
 
 /// The sections, in the order they're shown, in shades of grey
 struct Section {
@@ -93,13 +102,14 @@ double seconds(const QElapsedTimer &clock)
 
 void UpdatePrompt::showPrompt()
 {
-    if (openPrompt == nullptr)
+    auto &prompt = openPrompt();
+    if (prompt == nullptr)
     {
-        openPrompt = new UpdatePrompt();
+        prompt = new UpdatePrompt();
     }
-    handledVersion = getApp()->getUpdates().getOnlineVersion();
-    openPrompt->show();
-    openPrompt->raise();
+    handledVersion() = getApp()->getUpdates().getOnlineVersion();
+    prompt->show();
+    prompt->raise();
 }
 
 void UpdatePrompt::showIfNew()
@@ -107,7 +117,7 @@ void UpdatePrompt::showIfNew()
     const auto &updates = getApp()->getUpdates();
     if (updates.getStatus() != Updates::UpdateAvailable ||
         updates.getOnlineVersion().isEmpty() ||
-        updates.getOnlineVersion() == handledVersion)
+        updates.getOnlineVersion() == handledVersion())
     {
         return;
     }
@@ -130,7 +140,7 @@ UpdatePrompt::UpdatePrompt()
     this->layOut();
 
     this->timer_.setTimerType(Qt::PreciseTimer);
-    this->timer_.setInterval(16);
+    this->timer_.setInterval(std::chrono::milliseconds(16));
     QObject::connect(&this->timer_, &QTimer::timeout, this, [this] {
         this->tick();
     });
@@ -190,7 +200,7 @@ void UpdatePrompt::layOut()
         header + 16 + noteHeight + 8 + 18 + 18 + BUTTON_HEIGHT + PAD;
 
     const auto oldSize = this->size();
-    this->setFixedSize(CARD_WIDTH + SHADOW * 2, cardHeight + SHADOW * 2);
+    this->setFixedSize(CARD_WIDTH + (SHADOW * 2), cardHeight + (SHADOW * 2));
     if (this->isVisible() && oldSize.height() != this->height())
     {
         // Grows and shrinks around its middle
@@ -463,7 +473,7 @@ void UpdatePrompt::tick()
     this->update();
 }
 
-int UpdatePrompt::controlAt(const QPointF &position) const
+int UpdatePrompt::controlAt(QPointF position) const
 {
     for (int i = 0; i < ControlCount; ++i)
     {

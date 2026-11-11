@@ -829,7 +829,8 @@ std::vector<Updates::Change> Updates::parseChanges(const QString &notes)
 
     std::vector<Change> fromNotes;
     std::vector<Change> fromCommits;
-    for (const auto &line : notes.split(u'\n'))
+    const auto lines = notes.split(u'\n');
+    for (const auto &line : lines)
     {
         const auto item = bullet.match(line.trimmed());
         if (!item.hasMatch())
