@@ -1,3 +1,6 @@
+# Packs the staging folder into a single self-contained setup
+# (installer/JilChatSetup.cs). Uses only the C# compiler that ships with
+# Windows, so it needs no extra tools.
 if (Test-Path -PathType Container JilChatChatterino) {
     $stagingDirName = "JilChatChatterino"
 }
@@ -16,7 +19,6 @@ git describe --exact-match --match 'v*' *> $null;
 $isTagged = $?;
 $ErrorActionPreference = $OldErrorActionPref;
 
-$defines = $null;
 if ($isTagged) {
     # This is a release.
     # Make sure, any existing `modes` file is overwritten for the user,
@@ -26,14 +28,12 @@ if ($isTagged) {
 }
 else {
     Write-Output nightly | Out-File "$stagingDirName/modes" -Encoding ASCII;
-    $defines = "/DIS_NIGHTLY=1";
     $installerBaseName = "JilChatChatterino.Nightly.Installer";
 }
 
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower()
 if ($architecture -eq 'arm64') {
     $installerBaseName = "Experimental-ARM64-$installerBaseName"
-    $defines = "$defines /DIS_ARM=1".Trim()
 }
 
 if ($Env:GITHUB_OUTPUT) {
@@ -41,25 +41,53 @@ if ($Env:GITHUB_OUTPUT) {
     "C2_INSTALLER_BASE_NAME=$installerBaseName" >> "$Env:GITHUB_OUTPUT"
 }
 
-# Copy vc_redist.x64.exe
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path "$PSScriptRoot\..").Path
+$sources = Join-Path $PSScriptRoot 'installer'
+$work = Join-Path $pwd.Path 'installer-work'
+$output = Join-Path $pwd.Path "$installerBaseName.exe"
+
+$csc = Join-Path $Env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if (-not (Test-Path $csc)) { $csc = Join-Path $Env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
+if (-not (Test-Path $csc)) { Write-Error "The C# compiler of Windows wasn't found."; exit 1 }
+
+if (Test-Path $work) { Remove-Item $work -Recurse -Force -Confirm:$false }
+New-Item -ItemType Directory -Path $work | Out-Null
+
+# The Visual C++ runtime, installed by the setup when Windows has an older one
 if ($null -eq $Env:VCToolsRedistDir) {
     Write-Error "VCToolsRedistDir is not set. Forgot to set Visual Studio environment variables?";
     exit 1
 }
-Copy-Item "$Env:VCToolsRedistDir\vc_redist.$architecture.exe" .;
+$vcRedist = Join-Path $Env:VCToolsRedistDir "vc_redist.$architecture.exe"
+$vcrtInfo = Join-Path $work 'vcrt.txt'
+"$architecture $((Get-Item $vcRedist).VersionInfo.FileMinorPart)" | Out-File $vcrtInfo -Encoding ASCII -NoNewline
 
-$VCRTVersion = (Get-Item "$Env:VCToolsRedistDir\vc_redist.$architecture.exe").VersionInfo;
-$setupIconFile = (Resolve-Path "$PSScriptRoot\..\resources\icon.ico").Path;
+# The folder's contents, not the folder itself
+$zip = Join-Path $work 'app.zip'
+7z a -tzip -mx=7 $zip ".\$stagingDirName\*" | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Error "Packing $stagingDirName failed."; exit 1 }
 
-# Build the installer
-ISCC `
-    /DWORKING_DIR="$($pwd.Path)\" `
-    /DSTAGING_DIR_NAME="$stagingDirName" `
-    /DINSTALLER_BASE_NAME="$installerBaseName" `
-    /DSETUP_ICON_FILE="$setupIconFile" `
-    /DSHIPPED_VCRT_MINOR="$($VCRTVersion.FileMinorPart)" `
-    /DSHIPPED_VCRT_VERSION="$($VCRTVersion.FileDescription)" `
-    /DVCRT_ARCH="$architecture" `
-    $defines `
-    /O. `
-    "$PSScriptRoot\chatterino-installer.iss";
+if (Test-Path $output) { Remove-Item $output -Force -Confirm:$false }
+$arguments = @(
+    '/nologo', '/optimize+', '/target:winexe', '/platform:anycpu',
+    "/out:$output",
+    "/win32icon:$(Join-Path $root 'resources\icon.ico')",
+    "/win32manifest:$(Join-Path $sources 'setup.manifest')",
+    "/resource:$zip,app.zip",
+    "/resource:$(Join-Path $root 'resources\icon.png'),logo.png",
+    "/resource:$(Join-Path $sources 'uninstall.ps1'),uninstall.ps1",
+    "/resource:$vcRedist,vc_redist.exe",
+    "/resource:$vcrtInfo,vcrt.txt",
+    '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
+    '/r:System.IO.Compression.dll', '/r:Microsoft.CSharp.dll',
+    (Join-Path $sources 'JilChatSetup.cs')
+)
+$result = & $csc @arguments 2>&1
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $output)) {
+    $result | ForEach-Object { "$_" } | Select-Object -First 30
+    Write-Error 'Compiling the setup failed.'
+    exit 1
+}
+Remove-Item $work -Recurse -Force -Confirm:$false
+"Created $output ($([int]((Get-Item $output).Length / 1MB)) MB)"

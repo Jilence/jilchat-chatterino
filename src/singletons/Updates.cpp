@@ -329,11 +329,12 @@ void Updates::installUpdates()
     this->downloadVerified(
         this->updateExe_, this->updateExeName_, u"Update.exe"_s,
         [this](const QString &path) {
-            // Without a window; the installer closes this instance and
-            // starts the new version when it is done.
+            // The setup waits for this instance to close, installs into the
+            // folder this runs from and starts the new version when it's done
             if (!QProcess::startDetached(
-                    path, {"/SILENT", "/SP-", "/SUPPRESSMSGBOXES",
-                           "/CLOSEAPPLICATIONS"}))
+                    path, {u"--update"_s, u"--dest"_s,
+                           QDir::toNativeSeparators(
+                               QCoreApplication::applicationDirPath())}))
             {
                 this->setStatus_(RunUpdaterFailed);
                 return;
@@ -629,12 +630,13 @@ void Updates::checkForUpdates()
     }
 
 #    ifdef Q_OS_WIN
-    // What the installer put there (it leaves its uninstaller next to the
-    // program) and portable packages update themselves. Plain zips are
-    // updated by hand.
+    // What the setup put there (it leaves uninstall.ps1 next to the program,
+    // the Inno Setup installer of older versions its unins000.exe) and
+    // portable packages update themselves. Plain zips are updated by hand.
+    const auto appDir = QCoreApplication::applicationDirPath();
     if (!this->modes.isPortable &&
-        !QFile::exists(combinePath(QCoreApplication::applicationDirPath(),
-                                   u"unins000.exe"_s)))
+        !QFile::exists(combinePath(appDir, u"uninstall.ps1"_s)) &&
+        !QFile::exists(combinePath(appDir, u"unins000.exe"_s)))
     {
         qCDebug(chatterinoUpdate)
             << "Update checking skipped: not installed by the installer";

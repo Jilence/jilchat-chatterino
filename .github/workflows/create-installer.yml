@@ -87,12 +87,6 @@ jobs:
         run: 7z e -spf chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.zip
         working-directory: build
 
-      - name: Install InnoSetup
-        run: choco install innosetup
-
-      - name: Add InnoSetup to path
-        run: echo "C:\Program Files (x86)\Inno Setup 6\" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
       - name: Enable Developer Command Prompt
         uses: Chatterino/msvc-dev-cmd@24444121cb2805a7adbd23d0f4455d0916af896b # v2.0.7
 
