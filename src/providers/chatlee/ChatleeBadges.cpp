@@ -29,8 +29,8 @@ namespace {
 using namespace std::chrono_literals;
 
 constexpr auto API = "https://api.chatlee.lol/api/chatlee/badges";
-constexpr auto IMAGE_HOST = "api.chatlee.lol";
-constexpr qsizetype MAX_PAYLOAD_SIZE = 8 * 1024 * 1024;
+constexpr auto IMAGE_HOST = u"api.chatlee.lol";
+constexpr qsizetype MAX_PAYLOAD_SIZE = qsizetype{8} * 1024 * 1024;
 /// What Chatlee's documentation asks for
 constexpr auto CATALOG_INTERVAL = 30min;
 constexpr auto WORN_INTERVAL = 60s;
@@ -40,17 +40,16 @@ bool validImageUrl(const QString &value)
     const QUrl url(value, QUrl::StrictMode);
     return value.size() <= 2048 && url.isValid() &&
            url.scheme() == QStringLiteral("https") &&
-           url.host() == QLatin1String(IMAGE_HOST) &&
-           url.userInfo().isEmpty() && url.port(-1) == -1 &&
-           !url.hasFragment() &&
+           url.host() == QStringView(IMAGE_HOST) && url.userInfo().isEmpty() &&
+           url.port(-1) == -1 && !url.hasFragment() &&
            url.path().startsWith(QStringLiteral("/api/files/"));
 }
 
 bool validUserId(const QString &id)
 {
-    return !id.isEmpty() && id.size() <= 20 && id.front() != QLatin1Char('0') &&
+    return !id.isEmpty() && id.size() <= 20 && id.front() != u'0' &&
            std::ranges::all_of(id, [](QChar c) {
-               return c >= QLatin1Char('0') && c <= QLatin1Char('9');
+               return c >= u'0' && c <= u'9';
            });
 }
 
