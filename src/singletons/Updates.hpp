@@ -56,6 +56,9 @@ public:
     static QString portableUpdaterPath(const Paths &paths);
 
     bool shouldShowUpdateButton() const;
+    /// Whether there's an update to install, also again after an install
+    /// failed
+    bool canInstall() const;
     bool isError() const;
     bool isDowngrade() const;
 
@@ -73,6 +76,11 @@ private:
     /// The installer (Windows) or disk image (macOS) of the release
     QString updateExe_;
     QString updateExeName_;
+    /// The release's portable zip (Windows), for portable installs
+    QString portableZip_;
+    QString portableZipName_;
+    /// Set once a release with an update was found
+    bool hasRelease_ = false;
     /// The release's page, for what isn't installed automatically
     QString updateGuideLink_;
     /// The release's sha256-checksums.txt

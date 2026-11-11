@@ -50,6 +50,35 @@ QString appImagePath()
 }
 #endif
 
+#ifdef Q_OS_WIN
+/// Starts the portable updater on `zipPath`. It waits for this instance to
+/// exit, but can only restart "chatterino.exe", so cmd runs it and starts this
+/// program again once it succeeded.
+bool startPortableUpdater(const QString &updaterPath, const QString &zipPath)
+{
+    const auto command = uR"(/d /s /c ""%1" "%2" && start "" "%3"")"_s.arg(
+        QDir::toNativeSeparators(updaterPath),
+        QDir::toNativeSeparators(zipPath),
+        QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
+
+    auto cmd = qEnvironmentVariable("ComSpec");
+    if (cmd.isEmpty())
+    {
+        cmd = u"cmd.exe"_s;
+    }
+
+    QProcess process;
+    process.setProgram(cmd);
+    process.setNativeArguments(command);
+    process.setWorkingDirectory(QCoreApplication::applicationDirPath());
+    process.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) {
+            args->flags |= 0x08000000;  // CREATE_NO_WINDOW
+        });
+    return process.startDetached();
+}
+#endif
+
 #ifdef Q_OS_MACOS
 /// Replaces the app bundle with the one in the disk image once this
 /// instance has quit, then starts it again.
@@ -198,13 +227,42 @@ const QString &Updates::getOnlineVersion() const
 
 void Updates::installUpdates()
 {
-    if (this->status_ != UpdateAvailable)
+    if (!this->canInstall())
     {
         assert(false);
         return;
     }
 
 #ifdef Q_OS_WIN
+    if (this->modes.isPortable)
+    {
+        if (this->portableZip_.isEmpty())
+        {
+            // The release has no zip for this architecture
+            QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+            return;
+        }
+        const auto updater = Updates::portableUpdaterPath(this->paths);
+        if (!QFile::exists(updater))
+        {
+            this->setStatus_(MissingPortableUpdater);
+            return;
+        }
+
+        this->setStatus_(Downloading);
+        this->downloadVerified(this->portableZip_, this->portableZipName_,
+                               u"update.zip"_s,
+                               [this, updater](const QString &path) {
+                                   if (!startPortableUpdater(updater, path))
+                                   {
+                                       this->setStatus_(RunUpdaterFailed);
+                                       return;
+                                   }
+                                   QApplication::exit(0);
+                               });
+        return;
+    }
+
     if (this->updateExe_.isEmpty())
     {
         // The release has no installer for this architecture
@@ -423,10 +481,10 @@ void Updates::checkForUpdates()
     }
 
 #    ifdef Q_OS_WIN
-    // Only what the installer put there updates itself: it leaves its
-    // uninstaller next to the program. Portable packages and plain zips are
+    // What the installer put there (it leaves its uninstaller next to the
+    // program) and portable packages update themselves. Plain zips are
     // updated by hand.
-    if (this->modes.isPortable ||
+    if (!this->modes.isPortable &&
         !QFile::exists(combinePath(QCoreApplication::applicationDirPath(),
                                    u"unins000.exe"_s)))
     {
@@ -529,7 +587,10 @@ void Updates::takeRelease(const QJsonObject &release)
     this->updateGuideLink_ = release["html_url"_L1].toString();
     this->updateExe_.clear();
     this->updateExeName_.clear();
+    this->portableZip_.clear();
+    this->portableZipName_.clear();
     this->checksumsUrl_.clear();
+    this->hasRelease_ = true;
 
     const auto assets = release.value("assets"_L1).toArray();
     for (const auto &value : assets)
@@ -557,6 +618,17 @@ void Updates::takeRelease(const QJsonObject &release)
         {
             this->updateExe_ = url;
             this->updateExeName_ = assetName;
+        }
+
+        // The portable package, with the "modes" file and the portable
+        // updater: JilChatChatterino.Nightly.Portable.zip, with the
+        // "Experimental-ARM64-" prefix for ARM like the installer. The plain
+        // chatterino-windows-*.zip have neither, so they aren't used.
+        if (!otherArchitecture &&
+            assetName.endsWith(u".Portable.zip"_s, Qt::CaseInsensitive))
+        {
+            this->portableZip_ = url;
+            this->portableZipName_ = assetName;
         }
 #elif defined(Q_OS_MACOS)
         // one universal disk image for Intel and Apple silicon
@@ -597,11 +669,19 @@ bool Updates::shouldShowUpdateButton() const
         case DownloadFailed:
         case WriteFileFailed:
         case VerifyFailed:
+        case MissingPortableUpdater:
+        case RunUpdaterFailed:
             return true;
 
         default:
             return false;
     }
+}
+
+bool Updates::canInstall() const
+{
+    return this->hasRelease_ && this->status_ != Downloading &&
+           this->status_ != Searching;
 }
 
 bool Updates::isError() const
@@ -628,7 +708,12 @@ bool Updates::isDowngrade() const
 
 QString Updates::buildUpdateAvailableText() const
 {
-#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+#if defined(Q_OS_WIN)
+    const bool installs =
+        !this->modes.isPortable ||
+        (!this->portableZip_.isEmpty() &&
+         QFile::exists(Updates::portableUpdaterPath(this->paths)));
+#elif defined(Q_OS_MACOS)
     const bool installs = true;
 #elif defined(Q_OS_LINUX)
     const bool installs = !appImagePath().isEmpty();

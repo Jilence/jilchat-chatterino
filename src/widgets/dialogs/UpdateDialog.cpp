@@ -65,7 +65,8 @@ UpdateDialog::UpdateDialog()
 
 void UpdateDialog::updateStatusChanged(Updates::Status status)
 {
-    this->ui_.installButton->setVisible(status == Updates::UpdateAvailable);
+    // also offered again after an install failed
+    this->ui_.installButton->setVisible(getApp()->getUpdates().canInstall());
 
     switch (status)
     {
