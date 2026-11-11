@@ -84,8 +84,9 @@ EmotePtr ChatleeBadges::makeBadge(const QString &id, const QString &title,
     }
 
     // One image of 96 pixels for all three sizes: each is read in at its
-    // size (18, 36 and 72 pixels) and shown at 18, so the badge in chat and
-    // the bigger one on hover have real pixels
+    // size (18, 36 and the full 96 pixels) and shown at 18 in chat. The hover
+    // shows the biggest at its size, so it's as big as other 96-pixel badges
+    // (like Homies')
     const Url url{imageUrl};
     return std::make_shared<const Emote>(Emote{
         .name = EmoteName{QStringLiteral("chatlee:") + id},
@@ -93,7 +94,7 @@ EmotePtr ChatleeBadges::makeBadge(const QString &id, const QString &title,
             ImageSet{
                 Image::fromUrl(url, 1.0, QSize(18, 18)),
                 Image::fromUrl(url, 0.5, QSize(36, 36)),
-                Image::fromUrl(url, 0.25, QSize(72, 72)),
+                Image::fromUrl(url, 18.0 / 96.0, QSize(96, 96)),
             },
         .tooltip = Tooltip{title.toHtmlEscaped()},
         .homePage = Url{QStringLiteral("https://chatlee.lol")},
