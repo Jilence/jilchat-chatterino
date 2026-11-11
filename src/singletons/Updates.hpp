@@ -41,6 +41,8 @@ public:
         RunUpdaterFailed,
         /// The download didn't match the checksum its release lists
         VerifyFailed,
+        /// Installing the Flatpak bundle didn't change the installed version
+        FlatpakNotUpdated,
     };
 
     static bool isDowngradeOf(const QString &online, const QString &current);
@@ -76,9 +78,16 @@ private:
     /// The installer (Windows) or disk image (macOS) of the release
     QString updateExe_;
     QString updateExeName_;
+    /// Installs the downloaded Flatpak bundle `bundlePath` on the host, then
+    /// restarts into it
+    void installFlatpakBundle(const QString &bundlePath);
+
     /// The release's portable zip (Windows), for portable installs
     QString portableZip_;
     QString portableZipName_;
+    /// The release's Flatpak bundle (Linux), for Flatpak installs
+    QString flatpakBundle_;
+    QString flatpakBundleName_;
     /// Set once a release with an update was found
     bool hasRelease_ = false;
     /// The release's page, for what isn't installed automatically

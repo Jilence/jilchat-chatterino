@@ -117,6 +117,13 @@ void UpdateDialog::updateStatusChanged(Updates::Status status)
         }
         break;
 
+        case Updates::FlatpakNotUpdated: {
+            this->ui_.label->setText(
+                "Flatpak installed the update, but the same version is still "
+                "installed. Try again in a few minutes.");
+        }
+        break;
+
         default: {
             this->ui_.label->setText("You shouldn't be seeing this dialog.");
         }
