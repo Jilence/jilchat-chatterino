@@ -21,7 +21,8 @@ namespace {
 double hashed(int index, int salt)
 {
     const auto value =
-        std::sin(double(index) * 12.9898 + double(salt) * 78.233) * 43758.5453;
+        std::sin((double(index) * 12.9898) + (double(salt) * 78.233)) *
+        43758.5453;
     return value - std::floor(value);
 }
 

@@ -63,7 +63,7 @@ private:
     QRectF scrollThumb() const;
     void scrollTo(double offset, bool instant = false);
     QString message() const;
-    bool busy() const;
+    static bool busy();
 
     /// One thing to draw in the changes list, placed relative to notesArea_
     struct Piece {

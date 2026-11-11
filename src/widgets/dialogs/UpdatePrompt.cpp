@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <utility>
 
 namespace chatterino {
 
@@ -61,14 +62,26 @@ struct Section {
 const std::array<Section, 4> &sections()
 {
     static const std::array<Section, 4> list{{
-        {"new", "NEW", QColor(20, 20, 22), QColor(240, 240, 242),
-         QColor(255, 255, 255)},
-        {"fixed", "FIXED", QColor(236, 236, 240), QColor(255, 255, 255, 34),
-         QColor(255, 255, 255, 120)},
-        {"changed", "CHANGED", QColor(200, 200, 206), QColor(255, 255, 255, 14),
-         QColor(255, 255, 255, 70)},
-        {"removed", "REMOVED", MUTED, QColor(255, 255, 255, 8),
-         QColor(255, 255, 255, 40)},
+        {.kind = "new",
+         .label = "NEW",
+         .text = QColor(20, 20, 22),
+         .fill = QColor(240, 240, 242),
+         .border = QColor(255, 255, 255)},
+        {.kind = "fixed",
+         .label = "FIXED",
+         .text = QColor(236, 236, 240),
+         .fill = QColor(255, 255, 255, 34),
+         .border = QColor(255, 255, 255, 120)},
+        {.kind = "changed",
+         .label = "CHANGED",
+         .text = QColor(200, 200, 206),
+         .fill = QColor(255, 255, 255, 14),
+         .border = QColor(255, 255, 255, 70)},
+        {.kind = "removed",
+         .label = "REMOVED",
+         .text = MUTED,
+         .fill = QColor(255, 255, 255, 8),
+         .border = QColor(255, 255, 255, 40)},
     }};
     return list;
 }
@@ -93,7 +106,7 @@ double wrappedHeight(const QFont &font, int width, const QString &text)
             .height());
 }
 
-double seconds(const QElapsedTimer &clock)
+double seconds(QElapsedTimer clock)
 {
     return double(clock.elapsed()) / 1000.0;
 }
@@ -127,6 +140,7 @@ void UpdatePrompt::showIfNew()
 UpdatePrompt::UpdatePrompt()
     : QWidget(nullptr,
               Qt::Window | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
+    , changes_(getApp()->getUpdates().getChanges())
 {
     this->setAttribute(Qt::WA_TranslucentBackground);
     this->setAttribute(Qt::WA_DeleteOnClose);
@@ -136,7 +150,6 @@ UpdatePrompt::UpdatePrompt()
     this->setWindowTitle(QStringLiteral("JilChat Chatterino update"));
     this->setWindowIcon(QIcon(QStringLiteral(":/icon.ico")));
 
-    this->changes_ = getApp()->getUpdates().getChanges();
     this->layOut();
 
     this->timer_.setTimerType(Qt::PreciseTimer);
@@ -175,7 +188,7 @@ QString UpdatePrompt::message() const
     return {};
 }
 
-bool UpdatePrompt::busy() const
+bool UpdatePrompt::busy()
 {
     const auto status = getApp()->getUpdates().getStatus();
     return status == Updates::Downloading || status == Updates::Searching;
@@ -183,7 +196,7 @@ bool UpdatePrompt::busy() const
 
 void UpdatePrompt::layOut()
 {
-    const int textWidth = CARD_WIDTH - PAD * 2;
+    const int textWidth = CARD_WIDTH - (PAD * 2);
     const auto text = this->message();
     this->showingMessage_ = !text.isEmpty();
     this->pieces_.clear();
@@ -267,22 +280,25 @@ int UpdatePrompt::layoutChanges(int width)
 
         const double tagWidth =
             QFontMetricsF(tagFont).horizontalAdvance(section.label) + 18;
-        this->pieces_.push_back({Piece::Kind::Tag, QRectF(0, y, tagWidth, 19),
-                                 section.label, section.kind});
+        this->pieces_.push_back({.kind = Piece::Kind::Tag,
+                                 .rect = QRectF(0, y, tagWidth, 19),
+                                 .text = section.label,
+                                 .changeKind = section.kind});
         y += 19 + 8;
 
         for (const auto *change : inSection)
         {
             const double titleHeight =
                 wrappedHeight(titleFont, textWidth, change->title);
-            this->pieces_.push_back({Piece::Kind::Bullet,
-                                     QRectF(3, y + 6, 6, 6),
-                                     {},
-                                     section.kind});
+            this->pieces_.push_back({.kind = Piece::Kind::Bullet,
+                                     .rect = QRectF(3, y + 6, 6, 6),
+                                     .text = {},
+                                     .changeKind = section.kind});
             this->pieces_.push_back(
-                {Piece::Kind::Title,
-                 QRectF(BULLET_INDENT, y, textWidth, titleHeight),
-                 change->title, section.kind});
+                {.kind = Piece::Kind::Title,
+                 .rect = QRectF(BULLET_INDENT, y, textWidth, titleHeight),
+                 .text = change->title,
+                 .changeKind = section.kind});
             y += titleHeight;
 
             if (!change->detail.isEmpty())
@@ -291,9 +307,10 @@ int UpdatePrompt::layoutChanges(int width)
                     wrappedHeight(detailFont, textWidth, change->detail);
                 y += 1;
                 this->pieces_.push_back(
-                    {Piece::Kind::Detail,
-                     QRectF(BULLET_INDENT, y, textWidth, detailHeight),
-                     change->detail, section.kind});
+                    {.kind = Piece::Kind::Detail,
+                     .rect = QRectF(BULLET_INDENT, y, textWidth, detailHeight),
+                     .text = change->detail,
+                     .changeKind = section.kind});
                 y += detailHeight;
             }
             y += 9;
@@ -306,7 +323,7 @@ int UpdatePrompt::layoutChanges(int width)
 void UpdatePrompt::drawChanges(QPainter &p)
 {
     const auto origin = this->notesArea_.topLeft();
-    for (const auto &piece : this->pieces_)
+    for (const auto &piece : std::as_const(this->pieces_))
     {
         const auto &section = sectionFor(piece.changeKind);
         const auto rect = piece.rect.translated(origin);
@@ -495,17 +512,23 @@ void UpdatePrompt::paintEvent(QPaintEvent * /*event*/)
     const auto &updates = getApp()->getUpdates();
     const auto &card = this->card_;
     const double now = seconds(this->clock_);
-    const QPointF logoCenter(card.left() + PAD + LOGO / 2.0,
-                             card.top() + PAD + LOGO / 2.0);
+    const QPointF logoCenter(card.left() + PAD + (LOGO / 2.0),
+                             card.top() + PAD + (LOGO / 2.0));
     drawCard(p, card, now, logoCenter, 190);
 
     drawLogo(p, QRectF(card.left() + PAD, card.top() + PAD, LOGO, LOGO), now);
 
     // "NEW UPDATE" pill
     const double textLeft = card.left() + PAD + LOGO + 16;
-    const QString pillText = updates.isError() ? QStringLiteral("UPDATE PAUSED")
-                             : this->busy()    ? QStringLiteral("DOWNLOADING")
-                                               : QStringLiteral("NEW UPDATE");
+    QString pillText = QStringLiteral("NEW UPDATE");
+    if (updates.isError())
+    {
+        pillText = QStringLiteral("UPDATE PAUSED");
+    }
+    else if (UpdatePrompt::busy())
+    {
+        pillText = QStringLiteral("DOWNLOADING");
+    }
     const QRectF pill(
         textLeft, card.top() + PAD + 2,
         QFontMetricsF(jilchatcard::font(10, true)).horizontalAdvance(pillText) +
@@ -546,7 +569,7 @@ void UpdatePrompt::paintEvent(QPaintEvent * /*event*/)
         footer = QStringLiteral("Opens the download, to install it yourself.");
     }
     p.drawText(QRectF(card.left() + PAD, this->notesArea_.bottom() + 8,
-                      card.width() - PAD * 2, 18),
+                      card.width() - (PAD * 2), 18),
                Qt::AlignLeft | Qt::AlignVCenter, footer);
 
     drawButton(p, this->controls_[RemindLater],
