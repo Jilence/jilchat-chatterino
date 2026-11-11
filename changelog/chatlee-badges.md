@@ -1,0 +1,1 @@
+- New Chatlee badges. Shows the badge people picked on Chatlee, after the DankChat badges, and you can pick yours in the badge picker.
