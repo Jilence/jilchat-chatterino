@@ -553,7 +553,7 @@ void UpdatePrompt::paintEvent(QPaintEvent * /*event*/)
     p.setFont(jilchatcard::font(11, false));
     p.setPen(QColor(MUTED.red(), MUTED.green(), MUTED.blue(), 190));
     QString footer;
-    if (this->busy())
+    if (UpdatePrompt::busy())
     {
         footer = QStringLiteral(
             "Downloading now. JilChat Chatterino restarts by itself when it's "
@@ -576,7 +576,7 @@ void UpdatePrompt::paintEvent(QPaintEvent * /*event*/)
                QStringLiteral("Remind me later"), false,
                this->hover_[RemindLater], false, now);
     QString primary = QStringLiteral("Update now");
-    if (this->busy())
+    if (UpdatePrompt::busy())
     {
         primary = QStringLiteral("Downloading...");
     }
@@ -589,7 +589,8 @@ void UpdatePrompt::paintEvent(QPaintEvent * /*event*/)
         primary = QStringLiteral("Download");
     }
     drawButton(p, this->controls_[UpdateNow], primary, true,
-               this->busy() ? 0.0 : this->hover_[UpdateNow], this->busy(), now);
+               UpdatePrompt::busy() ? 0.0 : this->hover_[UpdateNow],
+               UpdatePrompt::busy(), now);
 
     drawClose(p, this->controls_[Close], this->hover_[Close]);
 }
@@ -679,7 +680,7 @@ void UpdatePrompt::mouseReleaseEvent(QMouseEvent *event)
     if (released == UpdateNow)
     {
         auto &updates = getApp()->getUpdates();
-        if (this->busy() || !updates.canInstall())
+        if (UpdatePrompt::busy() || !updates.canInstall())
         {
             return;
         }

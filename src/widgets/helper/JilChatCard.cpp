@@ -71,7 +71,7 @@ void drawCard(QPainter &p, const QRectF &card, double seconds,
     p.setClipPath(path);
 
     // A white glow, breathing slowly
-    const double breath = 0.5 + 0.5 * std::sin(seconds * 1.3);
+    const double breath = 0.5 + (0.5 * std::sin(seconds * 1.3));
     QRadialGradient glow(glowCenter, glowRadius);
     glow.setColorAt(0, QColor(255, 255, 255, 26 + int(16 * breath)));
     glow.setColorAt(1, QColor(255, 255, 255, 0));
@@ -80,20 +80,21 @@ void drawCard(QPainter &p, const QRectF &card, double seconds,
     // Sparks rising from the bottom
     for (int i = 0; i < 32; ++i)
     {
-        const double speed = 7 + hashed(i, 1) * 20;
-        const double size = 1 + hashed(i, 2) * 2.4;
-        const double drift = 5 + hashed(i, 3) * 12;
+        const double speed = 7 + (hashed(i, 1) * 20);
+        const double size = 1 + (hashed(i, 2) * 2.4);
+        const double drift = 5 + (hashed(i, 3) * 12);
         const double phase = hashed(i, 4) * 6.28;
         const double travel = card.height() + 12;
         const double y =
             card.bottom() + 6 -
-            std::fmod(seconds * speed + hashed(i, 5) * travel, travel);
-        const double x = card.left() + hashed(i, 6) * card.width() +
-                         std::sin(seconds * 0.8 + phase) * drift;
+            std::fmod((seconds * speed) + (hashed(i, 5) * travel), travel);
+        const double x = card.left() + (hashed(i, 6) * card.width()) +
+                         (std::sin((seconds * 0.8) + phase) * drift);
         const double life =
             std::clamp((y - card.top()) / card.height(), 0.0, 1.0);
-        const int alpha = int(
-            30 + 120 * life * (0.6 + 0.4 * std::sin(seconds * 2.2 + phase)));
+        const int alpha =
+            int(30 + (120 * life *
+                      (0.6 + (0.4 * std::sin((seconds * 2.2) + phase)))));
         p.setBrush(QColor(255, 255, 255, std::clamp(alpha, 0, 255)));
         p.drawEllipse(QRectF(x, y, size, size));
     }
@@ -133,19 +134,19 @@ void drawLogo(QPainter &p, const QRectF &area, double seconds, double opacity)
     // Darkens a moving diagonal band, only where the logo has pixels
     const double progress = std::fmod(seconds, 2.4) / 2.4;
     const int w = layer.width();
-    const double center = -0.6 * w + progress * 2.2 * w;
+    const double center = (-0.6 * w) + (progress * 2.2 * w);
     const double band = 0.42 * w;
     for (int y = 0; y < layer.height(); ++y)
     {
         auto *row = reinterpret_cast<QRgb *>(layer.scanLine(y));
         for (int x = 0; x < w; ++x)
         {
-            const double distance = std::abs((x + y * 0.4) - center) / band;
+            const double distance = std::abs((x + (y * 0.4)) - center) / band;
             if (distance >= 1)
             {
                 continue;
             }
-            const double keep = 1 - 0.55 * (1 - distance) * (1 - distance);
+            const double keep = 1 - (0.55 * (1 - distance) * (1 - distance));
             const QRgb c = row[x];
             row[x] = qRgba(int(qRed(c) * keep), int(qGreen(c) * keep),
                            int(qBlue(c) * keep), qAlpha(c));
@@ -177,11 +178,11 @@ void drawButton(QPainter &p, const QRectF &area, const QString &text,
         for (int i = 4; i > 0; --i)
         {
             QColor glow(255, 255, 255);
-            glow.setAlphaF(0.03 + 0.05 * hover);
+            glow.setAlphaF(float(0.03 + (0.05 * hover)));
             p.setBrush(glow);
             const auto outer =
-                area.adjusted(-i * 1.5, -i * 1.5 + 1, i * 1.5, i * 1.5 + 1);
-            p.drawRoundedRect(outer, 9 + i * 1.5, 9 + i * 1.5);
+                area.adjusted(-i * 1.5, (-i * 1.5) + 1, i * 1.5, (i * 1.5) + 1);
+            p.drawRoundedRect(outer, 9 + (i * 1.5), 9 + (i * 1.5));
         }
         QLinearGradient fill(area.topLeft(), area.bottomLeft());
         fill.setColorAt(0, QColor(236 + int(14 * hover), 236 + int(14 * hover),
@@ -202,7 +203,7 @@ void drawButton(QPainter &p, const QRectF &area, const QString &text,
     {
         // A light passing along the button, since it can take a little while
         const double phase = std::fmod(seconds / 1.1, 1.0);
-        const double x = area.left() - 50 + phase * (area.width() + 100);
+        const double x = area.left() - 50 + (phase * (area.width() + 100));
         QLinearGradient light(x, 0, x + 50, 0);
         light.setColorAt(0, QColor(255, 255, 255, 0));
         light.setColorAt(0.5, QColor(255, 255, 255, primary ? 160 : 60));
