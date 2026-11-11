@@ -255,7 +255,23 @@ jobs:
             awk -F"|" 'tolower($2) != "dependabot[bot]"' |
             sort -s -t"|" -k1,1nr |
             cut -d"|" -f3- > changes.txt
+          # What the pull requests wrote for users in changelog/, the files
+          # added since the last release. The update window shows these.
+          if [ -n "$previous" ]; then
+            notes_files="$(git diff --name-only --diff-filter=A "$previous" "$RELEASE_SHA" -- changelog/ | grep -v '/README\.md$' || true)"
+          else
+            notes_files="$(git ls-tree -r --name-only "$RELEASE_SHA" -- changelog/ | grep -v '/README\.md$' || true)"
+          fi
+          : > highlights.txt
+          for file in $notes_files; do
+            git show "$RELEASE_SHA:$file" | grep -E '^\s*[-*]\s+' >> highlights.txt || true
+          done
           {
+            if [ -s highlights.txt ]; then
+              printf "### Highlights\n\n"
+              cat highlights.txt
+              printf "\n"
+            fi
             printf "### What's Changed\n\n"
             if [ ! -s changes.txt ]; then
               echo "No changes since last release."

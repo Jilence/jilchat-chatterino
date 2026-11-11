@@ -47,6 +47,20 @@ public:
 
     static bool isDowngradeOf(const QString &online, const QString &current);
 
+    /// One line of what an update changes, for the update window
+    struct Change {
+        /// "new", "fixed", "removed" or "changed"
+        QString kind;
+        QString title;
+        QString detail;
+    };
+
+    /// The changes in a release's notes. Lines like "- New Title. Detail."
+    /// (from the changelog notes of the pull requests) are used when there
+    /// are any; otherwise the commits listed there, by their prefix (feat,
+    /// fix), leaving out ones users don't notice.
+    static std::vector<Change> parseChanges(const QString &notes);
+
     void deleteOldFiles();
 
     void checkForUpdates();
@@ -67,11 +81,20 @@ public:
     /// Generates the string that the update dialog will show.
     QString buildUpdateAvailableText() const;
 
+    /// What the update changes, from its release's notes
+    const std::vector<Change> &getChanges() const;
+    /// Whether installUpdates installs it here (otherwise it opens the
+    /// download)
+    bool installsItself() const;
+    /// What went wrong, for the error statuses
+    QString problemText() const;
+
     pajlada::Signals::Signal<Status> statusUpdated;
 
 private:
     QString currentVersion_;
     QString onlineVersion_;
+    std::vector<Change> changes_;
     Status status_ = None;
     bool isDowngrade_{};
 

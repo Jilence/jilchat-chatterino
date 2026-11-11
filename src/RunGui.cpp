@@ -19,6 +19,8 @@
 #include "util/SelfCheck.hpp"
 #include "util/UnixSignalHandler.hpp"
 #include "widgets/dialogs/LastRunCrashDialog.hpp"
+#include "widgets/dialogs/PortableWelcome.hpp"
+#include "widgets/dialogs/UpdatePrompt.hpp"
 
 #include <QApplication>
 #include <QCryptographicHash>
@@ -384,6 +386,18 @@ void runGui(QApplication &a, const Modes &modes, const Paths &paths,
     if (!args.isFramelessEmbed)
     {
         activationServer = createGuiActivationServer(paths);
+
+        // The update window comes up by itself when an update is found
+        std::ignore = updates.statusUpdated.connect([](auto status) {
+            if (status == Updates::UpdateAvailable)
+            {
+                UpdatePrompt::showIfNew();
+            }
+        });
+        // Once the main window is there
+        QTimer::singleShot(1200, [] {
+            PortableWelcome::showIfFirstStart();
+        });
     }
     app.run();
 
