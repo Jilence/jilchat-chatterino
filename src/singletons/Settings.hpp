@@ -1220,6 +1220,8 @@ public:
         "/moltorino/channelPoints/returnToListAfterRedeem", false};
     BoolSetting enableGigantifyEmotes{
         "/moltorino/channelPoints/enableGigantifyEmotes", true};
+    BoolSetting enableFfzGiantEmotes{
+        "/leafyrino/channelPoints/enableFfzGiantEmotes", true};
 
     /// Banner content text scales. These intentionally do not scale banner
     /// chrome, icons, timers, or progress bars.
