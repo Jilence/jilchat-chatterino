@@ -206,6 +206,12 @@ public:
         return nullptr;
     }
 
+    ChatleeBadges *getChatleeBadges() override
+    {
+        assert(!"getChatleeBadges was called without being initialized");
+        return nullptr;
+    }
+
     WydiosBadges *getWydiosBadges() override
     {
         assert(!"getWydiosBadges was called without being initialized");

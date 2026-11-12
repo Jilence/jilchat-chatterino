@@ -8,6 +8,7 @@
 #include "common/Channel.hpp"
 #include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
@@ -112,6 +113,10 @@ void reloadBadgeProviders(const ChannelPtr &channel)
     {
         app->getDankChatBadges()->load(
             reloadMessage(channel, "DankChat badges"));
+    }
+    if (settings->showBadgesChatlee)
+    {
+        app->getChatleeBadges()->load(reloadMessage(channel, "Chatlee badges"));
     }
     if (settings->showBadgesSolrino)
     {

@@ -71,6 +71,7 @@ private:
         BttvEffects,
         Moltorino,
         Solrino,
+        Chatlee,
         JilChat,
         Bluzyrino,
         SevenTvBadges,
@@ -107,6 +108,10 @@ private:
     void rebuildSolrinoBadges();
     /// Makes the Solrino badge `badgeId` the one worn; none if empty.
     void selectSolrino(const QString &badgeId);
+    void loadChatleeBadges(bool force = false);
+    void rebuildChatleeBadges();
+    /// Makes the Chatlee badge `slug` the one worn; none if empty.
+    void selectChatlee(const QString &slug);
     void loadJilChatBadges(bool force = false);
     void rebuildJilChatBadges();
     /// Makes the badge with `slug` the one shown in chat; none if empty.
@@ -187,6 +192,7 @@ private:
     QPushButton *bttvEffectTabButton_{};
     QPushButton *moltorinoTabButton_{};
     QPushButton *solrinoTabButton_{};
+    QPushButton *chatleeTabButton_{};
     QPushButton *jilChatTabButton_{};
     QPushButton *bluzyrinoTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
@@ -238,6 +244,12 @@ private:
     QString solrinoSelected_;
     bool solrinoLoading_ = false;
     bool solrinoLoaded_ = false;
+
+    /// The Chatlee badges the user owns. `badge.id` is the slug.
+    QVector<MoltorinoBadgeOption> chatleeBadges_;
+    QString chatleeSelected_;
+    bool chatleeLoading_ = false;
+    bool chatleeLoaded_ = false;
 
     /// A JilChat badge and whether the user owns it. `badge.id` is its slug.
     struct JilChatBadgeOption {

@@ -18,6 +18,7 @@
 #include "messages/MessageBuilder.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/jiltv/Jiltv.hpp"
 #include "providers/jiltv/JiltvAuth.hpp"
@@ -2097,6 +2098,7 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
     this->bttvTabButton_ = makeTab(otherTabRow, "BTTV Badge", View::Bttv);
     otherTabRow->addWidget(this->moltorinoTabButton_, 1);
     this->solrinoTabButton_ = makeTab(otherTabRow, "Solrino", View::Solrino);
+    this->chatleeTabButton_ = makeTab(otherTabRow, "Chatlee", View::Chatlee);
     auto *paintTabRow = new QHBoxLayout();
     paintTabRow->setSpacing(tabSpacing);
     this->bluzyrinoTabButton_ =
@@ -2362,8 +2364,8 @@ void TwitchBadgePickerDialog::rebuildContent()
     if (this->badgesLoading_ && this->view_ != View::Color &&
         this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
         this->view_ != View::Moltorino && this->view_ != View::Solrino &&
-        this->view_ != View::JilChat && this->view_ != View::Bluzyrino &&
-        this->view_ != View::SevenTvBadges &&
+        this->view_ != View::Chatlee && this->view_ != View::JilChat &&
+        this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
         this->view_ != View::SevenTvPaints && this->view_ != View::Order &&
         this->view_ != View::JiltvPaints && this->view_ != View::JiltvBadges &&
         this->view_ != View::JiltvFrames)
@@ -2392,6 +2394,10 @@ void TwitchBadgePickerDialog::rebuildContent()
     else if (this->view_ == View::Solrino)
     {
         this->rebuildSolrinoBadges();
+    }
+    else if (this->view_ == View::Chatlee)
+    {
+        this->rebuildChatleeBadges();
     }
     else if (this->view_ == View::JilChat)
     {
@@ -2909,6 +2915,7 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->bttvEffectTabButton_->setChecked(view == View::BttvEffects);
     this->moltorinoTabButton_->setChecked(view == View::Moltorino);
     this->solrinoTabButton_->setChecked(view == View::Solrino);
+    this->chatleeTabButton_->setChecked(view == View::Chatlee);
     this->jilChatTabButton_->setChecked(view == View::JilChat);
     this->bluzyrinoTabButton_->setChecked(view == View::Bluzyrino);
     this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
@@ -2929,6 +2936,10 @@ void TwitchBadgePickerDialog::switchView(View view)
     else if (view == View::Solrino)
     {
         this->loadSolrinoBadges(false);
+    }
+    else if (view == View::Chatlee)
+    {
+        this->loadChatleeBadges(false);
     }
     else if (view == View::JilChat)
     {
@@ -4354,6 +4365,224 @@ void TwitchBadgePickerDialog::loadSolrinoBadges(bool force)
                 .execute();
         })
         .onError(fail)
+        .execute();
+}
+
+void TwitchBadgePickerDialog::rebuildChatleeBadges()
+{
+    if (this->chatleeLoading_ || !this->chatleeLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+    auto *label = new QLabel("Chatlee badge", this->contentWidget_);
+    label->setObjectName("TwitchBadgePickerSectionLabel");
+    this->contentLayout_->addWidget(label);
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setEnabled(!this->actionInFlight_);
+        noBadgeTile->setSelected(this->chatleeSelected_.isEmpty());
+        QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+            this->selectChatlee({});
+        });
+        grid->addWidget(noBadgeTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &option : std::as_const(this->chatleeBadges_))
+    {
+        if (!badgeMatchesSearch(option.badge, needle))
+        {
+            continue;
+        }
+        auto *tile = new BadgeTileButton(option.badge, gridWidget);
+        tile->setSelected(option.badge.id == this->chatleeSelected_);
+        tile->setEnabled(!this->actionInFlight_);
+        QObject::connect(tile, &QPushButton::clicked, this,
+                         [this, id = option.badge.id] {
+                             this->selectChatlee(id);
+                         });
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0)
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            needle.isEmpty()
+                ? QStringLiteral("You don't have any Chatlee badges yet. Get "
+                                 "them on chatlee.lol.")
+                : QStringLiteral("No matching badges."),
+            this->contentWidget_));
+        if (!needle.isEmpty())
+        {
+            return;
+        }
+    }
+
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::loadChatleeBadges(bool force)
+{
+    if (this->chatleeLoading_ || (this->chatleeLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        this->setStatus(QStringLiteral("Log in with Twitch to pick a Chatlee "
+                                       "badge."),
+                        true);
+        this->rebuildContent();
+        return;
+    }
+
+    this->chatleeLoading_ = true;
+    this->setStatus("Loading Chatlee badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    // Every badge the account owns, and which one it wears
+    NetworkRequest(QStringLiteral("https://api.chatlee.lol/api/chatlee/badges/"
+                                  "user/") +
+                   account->getUserId())
+        .header("Accept", "application/json")
+        .header("User-Agent", ChatleeBadges::userAgent())
+        .timeout(15000)
+        .onSuccess([self](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->chatleeBadges_.clear();
+            self->chatleeSelected_.clear();
+            const auto badges = result.parseJsonArray();
+            for (const auto &value : badges)
+            {
+                const auto badge = value.toObject();
+                const auto slug = badge.value("badge_id").toString();
+                const auto image = badge.value("image_url").toString();
+                if (slug.isEmpty() || image.isEmpty())
+                {
+                    continue;
+                }
+                if (badge.value("active").toBool())
+                {
+                    self->chatleeSelected_ = slug;
+                }
+                self->chatleeBadges_.push_back({
+                    .badge =
+                        {
+                            .id = slug,
+                            .setID = slug,
+                            .title = badge.value("name").toString(slug),
+                            .description = {},
+                            .image1x = image,
+                            .image2x = image,
+                            .image4x = image,
+                        },
+                    .owned = true,
+                });
+            }
+            self->chatleeLoading_ = false;
+            self->chatleeLoaded_ = true;
+            self->setStatus({});
+            self->rebuildContent();
+        })
+        .onError([self](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->chatleeLoading_ = false;
+            self->setStatus(QStringLiteral("Could not load Chatlee badges: %1")
+                                .arg(result.formatError()),
+                            true);
+            self->rebuildContent();
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::selectChatlee(const QString &slug)
+{
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        return;
+    }
+
+    const auto previous = this->chatleeSelected_;
+    this->chatleeSelected_ = slug;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    // Chatlee asks Twitch who the token belongs to, so it can only change
+    // the user's own badge
+    const QJsonObject body =
+        slug.isEmpty() ? QJsonObject{{"type", "none"}}
+                       : QJsonObject{{"type", "custom"}, {"badge_id", slug}};
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QStringLiteral("https://api.chatlee.lol/api/chatlee/badges/"
+                                  "me/active"),
+                   NetworkRequestType::Put)
+        .header("Authorization", "Bearer " + account->getOAuthToken().toUtf8())
+        .header("Accept", "application/json")
+        .header("User-Agent", ChatleeBadges::userAgent())
+        .json(body)
+        .timeout(15000)
+        .onSuccess([self, slug](const NetworkResult &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->channel_->addSystemMessage(
+                slug.isEmpty()
+                    ? QStringLiteral("Chatlee badge cleared.")
+                    : QStringLiteral("Chatlee badge set to: %1").arg(slug));
+            self->rebuildContent();
+            // So the chat shows it right away, not with the next minute
+            getApp()->getChatleeBadges()->load();
+        })
+        .onError([self, previous](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->chatleeSelected_ = previous;
+            self->setStatus(
+                QStringLiteral("Could not change the Chatlee badge: %1")
+                    .arg(result.formatError()),
+                true);
+            self->chatleeLoaded_ = false;
+            self->loadChatleeBadges(true);
+        })
         .execute();
 }
 
