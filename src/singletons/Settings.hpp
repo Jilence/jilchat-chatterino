@@ -479,6 +479,11 @@ public:
                                             true};
     BoolSetting boldUsernames = {"/appearance/messages/boldUsernames", true};
     BoolSetting colorUsernames = {"/appearance/messages/colorUsernames", true};
+    /// Mentions of your name inside your own domain (e.g. a link to it)
+    /// don't highlight
+    BoolSetting blockDomainHighlights = {"/client/blockDomainHighlights",
+                                         false};
+    QStringSetting yourDomain = {"/client/yourDomain", ""};
     BoolSetting findAllUsernames = {"/appearance/messages/findAllUsernames",
                                     false};
     // BoolSetting customizable splitheader
@@ -896,6 +901,14 @@ public:
     QStringSetting imageUploaderDeletionLink = {
         "/external/imageUploader/deletionLink", ""};
 
+    /// URL Shortener
+    BoolSetting urlShortenerEnabled = {"/external/urlShortener/enabled", false};
+    QStringSetting urlShortenerUrl = {"/external/urlShortener/url", ""};
+    QStringSetting urlShortenerHeaders = {"/external/urlShortener/headers", ""};
+    QStringSetting urlShortenerLink = {"/external/urlShortener/link", ""};
+    QStringSetting urlShortenerDeletionLink = {
+        "/external/urlShortener/deletionLink", ""};
+
     /// Misc
     BoolSetting markdownParsing = {"/misc/markdownParsing", false};
     BoolSetting autoDetachLiveTab = {"/misc/autoDetachLiveTab", false};
@@ -961,6 +974,7 @@ public:
     BoolSetting attachExtensionToAnyProcess = {
         "/misc/attachExtensionToAnyProcess", false};
     BoolSetting askOnImageUpload = {"/misc/askOnImageUpload", true};
+    BoolSetting askOnUrlShorten = {"/misc/askOnUrlShorten", true};
     BoolSetting informOnTabVisibilityToggle = {"/misc/askOnTabVisibilityToggle",
                                                true};
     BoolSetting lockNotebookLayout = {"/misc/lockNotebookLayout", false};

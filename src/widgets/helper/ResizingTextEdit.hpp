@@ -31,6 +31,8 @@ public:
     pajlada::Signals::NoArgSignal focused;
     pajlada::Signals::NoArgSignal focusLost;
     pajlada::Signals::Signal<const QMimeData *> imagePasted;
+    /// A pasted link to shorten, with the cursor selecting it in the input
+    pajlada::Signals::Signal<const QString &, QTextCursor> urlPasted;
     pajlada::Signals::Signal<QMenu *, QPoint> contextMenuRequested;
     /// A tab completion was inserted: the model and the row that is selected
     pajlada::Signals::Signal<TabCompletionModel *, int> tabCompletionChanged;

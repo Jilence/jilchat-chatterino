@@ -165,6 +165,17 @@ HighlightController::HighlightController(Settings &settings,
             this->rebuildChecks(settings);
         });
 
+    settings.blockDomainHighlights.connect(
+        [this, &settings](const auto &, const auto &) {
+            this->rebuildChecks(settings);
+        },
+        this->signalHolder_, false);
+    settings.yourDomain.connect(
+        [this, &settings](const auto &, const auto &) {
+            this->rebuildChecks(settings);
+        },
+        this->signalHolder_, false);
+
     this->rebuildChecks(settings);
 }
 

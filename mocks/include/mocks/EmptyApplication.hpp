@@ -301,6 +301,13 @@ public:
         return nullptr;
     }
 
+    UrlShortener *getUrlShortener() override
+    {
+        assert(false && "EmptyApplication::getUrlShortener was called without "
+                        "being initialized");
+        return nullptr;
+    }
+
     ImageUploader *getImageUploader() override
     {
         assert(false && "EmptyApplication::getImageUploader was called without "

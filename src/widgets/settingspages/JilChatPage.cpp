@@ -66,6 +66,7 @@ JilChatPage::JilChatPage()
         "Public logs",
         "Badges",
         "Chat",
+        "Domain highlights",
         "Input Box",
         "Pinned Messages",
         "Poll and Prediction",
