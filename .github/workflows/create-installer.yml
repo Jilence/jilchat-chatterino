@@ -207,6 +207,23 @@ jobs:
 
           cd release-files
           shopt -s nullglob
+
+          # The plain Windows zips are portable installs too, so they update
+          # themselves: they're the portable package (with the "modes" file
+          # and the portable updater) under their usual name
+          for zip in chatterino-windows-*-Qt-*.zip; do
+            case "$zip" in
+              chatterino-windows-arm-*) portable=(Experimental-ARM64-JilChatChatterino*.Portable.zip) ;;
+              *) portable=(JilChatChatterino*.Portable.zip) ;;
+            esac
+            if [ "${#portable[@]}" -ne 1 ]; then
+              echo "Expected one portable package for $zip, found ${#portable[@]}"
+              exit 1
+            fi
+            echo "$zip is now a copy of ${portable[0]}"
+            cp -- "${portable[0]}" "$zip"
+          done
+
           files=(*)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No release files found"

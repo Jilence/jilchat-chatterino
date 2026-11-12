@@ -65,7 +65,8 @@ UpdateDialog::UpdateDialog()
 
 void UpdateDialog::updateStatusChanged(Updates::Status status)
 {
-    this->ui_.installButton->setVisible(status == Updates::UpdateAvailable);
+    // also offered again after an install failed
+    this->ui_.installButton->setVisible(getApp()->getUpdates().canInstall());
 
     switch (status)
     {
@@ -113,6 +114,13 @@ void UpdateDialog::updateStatusChanged(Updates::Status status)
             this->ui_.label->setText(
                 "The update could not be verified against the checksums of "
                 "its release, so it was not installed.");
+        }
+        break;
+
+        case Updates::FlatpakNotUpdated: {
+            this->ui_.label->setText(
+                "Flatpak installed the update, but the same version is still "
+                "installed. Try again in a few minutes.");
         }
         break;
 

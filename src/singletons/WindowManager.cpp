@@ -237,6 +237,7 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->forceLayoutChannelViewsListener.add(settings.collpseMessagesMinLines);
     this->forceLayoutChannelViewsListener.add(settings.multipleHighlightBands);
     this->forceLayoutChannelViewsListener.add(settings.enableGigantifyEmotes);
+    this->forceLayoutChannelViewsListener.add(settings.enableFfzGiantEmotes);
     this->forceLayoutChannelViewsListener.add(
         settings.showPinButtonOnModeratorsMode);
     this->forceLayoutChannelViewsListener.add(settings.showSelfDeleteButton);

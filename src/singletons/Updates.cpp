@@ -25,11 +25,13 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QtConcurrent>
 #include <QUrl>
 #include <semver/semver.hpp>
 
 #include <filesystem>
+#include <optional>
 #include <system_error>
 
 namespace {
@@ -47,6 +49,88 @@ constexpr int CHECK_INTERVAL_MS = 3 * 60 * 60 * 1000;
 QString appImagePath()
 {
     return qEnvironmentVariable("APPIMAGE");
+}
+
+/// The running Flatpak, as described by /.flatpak-info
+struct FlatpakInstance {
+    QString appId;
+    QString branch;
+    QString commit;
+    QString instanceId;
+    /// Whether it's installed for all users rather than only this one
+    bool system = false;
+};
+
+std::optional<FlatpakInstance> readFlatpakInstance()
+{
+    const QSettings info(u"/.flatpak-info"_s, QSettings::IniFormat);
+    FlatpakInstance instance{
+        .appId = info.value(u"Application/name"_s).toString(),
+        .branch = info.value(u"Instance/branch"_s).toString(),
+        .commit = info.value(u"Instance/app-commit"_s).toString(),
+        .instanceId = info.value(u"Instance/instance-id"_s).toString(),
+        .system = info.value(u"Instance/app-path"_s)
+                      .toString()
+                      .startsWith(u"/var/lib/flatpak/"_s),
+    };
+    if (instance.appId.isEmpty() || instance.branch.isEmpty() ||
+        instance.commit.isEmpty() || instance.instanceId.isEmpty())
+    {
+        return std::nullopt;
+    }
+    return instance;
+}
+
+// Runs on the host with the app id, branch, running commit, bundle and
+// installation (--user or --system). Exits with 3 if the installed version is
+// still the running one, so we don't restart into the same version.
+const QString FLATPAK_INSTALL_SCRIPT = uR"sh(
+flatpak install "$5" -y --noninteractive --reinstall --bundle "$4" || exit
+[ "$(flatpak info "$5" --show-commit "$1//$2")" != "$3" ] || exit 3
+)sh"_s;
+
+// Runs on the host with the app id, branch and instance id. Starts the new
+// version once this instance is gone. It runs in the background so
+// flatpak-spawn returns right away, which would otherwise keep this instance
+// alive.
+const QString FLATPAK_RESTART_SCRIPT = uR"sh(
+(
+    i=0
+    while [ "$i" -lt 30 ] && flatpak ps --columns=instance | grep -qxF "$3"; do
+        sleep 1
+        i=$((i + 1))
+    done
+    exec flatpak run --branch="$2" "$1"
+) </dev/null >/dev/null 2>&1 &
+)sh"_s;
+#endif
+
+#ifdef Q_OS_WIN
+/// Starts the portable updater on `zipPath`. It waits for this instance to
+/// exit, but can only restart "chatterino.exe", so cmd runs it and starts this
+/// program again once it succeeded.
+bool startPortableUpdater(const QString &updaterPath, const QString &zipPath)
+{
+    const auto command = uR"(/d /s /c ""%1" "%2" && start "" "%3"")"_s.arg(
+        QDir::toNativeSeparators(updaterPath),
+        QDir::toNativeSeparators(zipPath),
+        QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
+
+    auto cmd = qEnvironmentVariable("ComSpec");
+    if (cmd.isEmpty())
+    {
+        cmd = u"cmd.exe"_s;
+    }
+
+    QProcess process;
+    process.setProgram(cmd);
+    process.setNativeArguments(command);
+    process.setWorkingDirectory(QCoreApplication::applicationDirPath());
+    process.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) {
+            args->flags |= 0x08000000;  // CREATE_NO_WINDOW
+        });
+    return process.startDetached();
 }
 #endif
 
@@ -198,13 +282,42 @@ const QString &Updates::getOnlineVersion() const
 
 void Updates::installUpdates()
 {
-    if (this->status_ != UpdateAvailable)
+    if (!this->canInstall())
     {
         assert(false);
         return;
     }
 
 #ifdef Q_OS_WIN
+    if (this->modes.isPortable)
+    {
+        if (this->portableZip_.isEmpty())
+        {
+            // The release has no zip for this architecture
+            QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+            return;
+        }
+        const auto updater = Updates::portableUpdaterPath(this->paths);
+        if (!QFile::exists(updater))
+        {
+            this->setStatus_(MissingPortableUpdater);
+            return;
+        }
+
+        this->setStatus_(Downloading);
+        this->downloadVerified(this->portableZip_, this->portableZipName_,
+                               u"update.zip"_s,
+                               [this, updater](const QString &path) {
+                                   if (!startPortableUpdater(updater, path))
+                                   {
+                                       this->setStatus_(RunUpdaterFailed);
+                                       return;
+                                   }
+                                   QApplication::exit(0);
+                               });
+        return;
+    }
+
     if (this->updateExe_.isEmpty())
     {
         // The release has no installer for this architecture
@@ -271,6 +384,22 @@ void Updates::installUpdates()
             QApplication::exit(0);
         });
 #elif defined(Q_OS_LINUX)
+    if (Version::instance().isFlatpak())
+    {
+        if (this->flatpakBundle_.isEmpty())
+        {
+            QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+            return;
+        }
+        this->setStatus_(Downloading);
+        this->downloadVerified(this->flatpakBundle_, this->flatpakBundleName_,
+                               u"update.flatpak"_s,
+                               [this](const QString &path) {
+                                   this->installFlatpakBundle(path);
+                               });
+        return;
+    }
+
     // An AppImage is one file that can be swapped while it runs; other
     // installs (.deb) get the release page
     const auto appImage = appImagePath();
@@ -324,6 +453,83 @@ void Updates::installUpdates()
         });
 #else
     QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+#endif
+}
+
+void Updates::installFlatpakBundle(const QString &bundlePath)
+{
+#ifdef Q_OS_LINUX
+    const auto instance = readFlatpakInstance();
+    if (!instance)
+    {
+        qCWarning(chatterinoUpdate) << "Failed to read /.flatpak-info";
+        this->setStatus_(RunUpdaterFailed);
+        return;
+    }
+
+    qCDebug(chatterinoUpdate) << "Installing the Flatpak bundle" << bundlePath;
+
+    auto *process = new QProcess;
+    process->setProcessChannelMode(QProcess::MergedChannels);
+
+    QObject::connect(process, &QProcess::errorOccurred, process,
+                     [this, process](QProcess::ProcessError error) {
+                         if (error != QProcess::FailedToStart)
+                         {
+                             return;
+                         }
+                         qCWarning(chatterinoUpdate)
+                             << "Failed to start flatpak-spawn:"
+                             << process->errorString();
+                         this->setStatus_(RunUpdaterFailed);
+                         process->deleteLater();
+                     });
+
+    QObject::connect(
+        process, &QProcess::finished, process,
+        [this, process, bundlePath, instance = *instance](
+            int exitCode, QProcess::ExitStatus exitStatus) {
+            process->deleteLater();
+            QFile::remove(bundlePath);
+
+            if (exitStatus != QProcess::NormalExit || exitCode != 0)
+            {
+                qCWarning(chatterinoUpdate)
+                    << "Installing the Flatpak bundle failed with exit code"
+                    << exitCode << process->readAll();
+                this->setStatus_(exitStatus == QProcess::NormalExit &&
+                                         exitCode == 3
+                                     ? FlatpakNotUpdated
+                                     : RunUpdaterFailed);
+                return;
+            }
+
+            // only quit once the host has the restart, it's quick
+            QProcess restart;
+            restart.start(
+                u"flatpak-spawn"_s,
+                {u"--host"_s, u"sh"_s, u"-c"_s, FLATPAK_RESTART_SCRIPT, u"sh"_s,
+                 instance.appId, instance.branch, instance.instanceId});
+            if (!restart.waitForFinished(10000) || restart.exitCode() != 0)
+            {
+                qCWarning(chatterinoUpdate)
+                    << "Failed to restart after the update"
+                    << restart.errorString();
+            }
+
+            QApplication::exit(0);
+        });
+
+    // The bundle is in the app's data directory, which has the same path on
+    // the host
+    process->start(
+        u"flatpak-spawn"_s,
+        {u"--host"_s, u"sh"_s, u"-c"_s, FLATPAK_INSTALL_SCRIPT, u"sh"_s,
+         instance->appId, instance->branch, instance->commit, bundlePath,
+         instance->system ? u"--system"_s : u"--user"_s});
+#else
+    (void)bundlePath;
+    this->setStatus_(RunUpdaterFailed);
 #endif
 }
 
@@ -417,16 +623,16 @@ void Updates::checkForUpdates()
 #ifndef CHATTERINO_DISABLE_UPDATER
     const auto &version = Version::instance();
 
-    if (!version.isSupportedOS() || version.isFlatpak())
+    if (!version.isSupportedOS())
     {
         return;
     }
 
 #    ifdef Q_OS_WIN
-    // Only what the installer put there updates itself: it leaves its
-    // uninstaller next to the program. Portable packages and plain zips are
+    // What the installer put there (it leaves its uninstaller next to the
+    // program) and portable packages update themselves. Plain zips are
     // updated by hand.
-    if (this->modes.isPortable ||
+    if (!this->modes.isPortable &&
         !QFile::exists(combinePath(QCoreApplication::applicationDirPath(),
                                    u"unins000.exe"_s)))
     {
@@ -529,7 +735,12 @@ void Updates::takeRelease(const QJsonObject &release)
     this->updateGuideLink_ = release["html_url"_L1].toString();
     this->updateExe_.clear();
     this->updateExeName_.clear();
+    this->portableZip_.clear();
+    this->portableZipName_.clear();
+    this->flatpakBundle_.clear();
+    this->flatpakBundleName_.clear();
     this->checksumsUrl_.clear();
+    this->hasRelease_ = true;
 
     const auto assets = release.value("assets"_L1).toArray();
     for (const auto &value : assets)
@@ -558,6 +769,17 @@ void Updates::takeRelease(const QJsonObject &release)
             this->updateExe_ = url;
             this->updateExeName_ = assetName;
         }
+
+        // The portable package, with the "modes" file and the portable
+        // updater: JilChatChatterino.Nightly.Portable.zip, with the
+        // "Experimental-ARM64-" prefix for ARM like the installer. The plain
+        // chatterino-windows-*.zip have neither, so they aren't used.
+        if (!otherArchitecture &&
+            assetName.endsWith(u".Portable.zip"_s, Qt::CaseInsensitive))
+        {
+            this->portableZip_ = url;
+            this->portableZipName_ = assetName;
+        }
 #elif defined(Q_OS_MACOS)
         // one universal disk image for Intel and Apple silicon
         if (assetName.endsWith(u".dmg"_s, Qt::CaseInsensitive))
@@ -566,11 +788,16 @@ void Updates::takeRelease(const QJsonObject &release)
             this->updateExeName_ = assetName;
         }
 #elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_X86_64)
-        // AppImages are only built for x86_64
+        // AppImages and the Flatpak bundle are only built for x86_64
         if (assetName.endsWith(u"x86_64.AppImage"_s, Qt::CaseInsensitive))
         {
             this->updateExe_ = url;
             this->updateExeName_ = assetName;
+        }
+        if (assetName.endsWith(u".flatpak"_s, Qt::CaseInsensitive))
+        {
+            this->flatpakBundle_ = url;
+            this->flatpakBundleName_ = assetName;
         }
 #endif
     }
@@ -597,11 +824,20 @@ bool Updates::shouldShowUpdateButton() const
         case DownloadFailed:
         case WriteFileFailed:
         case VerifyFailed:
+        case MissingPortableUpdater:
+        case RunUpdaterFailed:
+        case FlatpakNotUpdated:
             return true;
 
         default:
             return false;
     }
+}
+
+bool Updates::canInstall() const
+{
+    return this->hasRelease_ && this->status_ != Downloading &&
+           this->status_ != Searching;
 }
 
 bool Updates::isError() const
@@ -614,6 +850,7 @@ bool Updates::isError() const
         case MissingPortableUpdater:
         case RunUpdaterFailed:
         case VerifyFailed:
+        case FlatpakNotUpdated:
             return true;
 
         default:
@@ -628,10 +865,17 @@ bool Updates::isDowngrade() const
 
 QString Updates::buildUpdateAvailableText() const
 {
-#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+#if defined(Q_OS_WIN)
+    const bool installs =
+        !this->modes.isPortable ||
+        (!this->portableZip_.isEmpty() &&
+         QFile::exists(Updates::portableUpdaterPath(this->paths)));
+#elif defined(Q_OS_MACOS)
     const bool installs = true;
 #elif defined(Q_OS_LINUX)
-    const bool installs = !appImagePath().isEmpty();
+    const bool installs =
+        !appImagePath().isEmpty() ||
+        (Version::instance().isFlatpak() && !this->flatpakBundle_.isEmpty());
 #else
     const bool installs = false;
 #endif
