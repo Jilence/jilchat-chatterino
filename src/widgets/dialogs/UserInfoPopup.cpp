@@ -1626,7 +1626,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 nameHistory->setToolTip("Show name history");
                 nameHistory->hide();
                 QObject::connect(nameHistory.getElement(), &Button::leftClicked,
-                                 [this] {
+                                 this, [this] {
                                      this->showNameHistoryMenu();
                                  });
                 auto vanity =
@@ -1636,7 +1636,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                     "View earned cosmetics from various services");
                 vanity->hide();
                 QObject::connect(vanity.getElement(), &Button::leftClicked,
-                                 [this] {
+                                 this, [this] {
                                      this->openVanityPage();
                                  });
                 box->addSpacing(5);
