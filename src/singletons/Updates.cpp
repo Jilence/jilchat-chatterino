@@ -630,11 +630,14 @@ void Updates::checkForUpdates()
     }
 
 #    ifdef Q_OS_WIN
-    // What the setup put there (it leaves uninstall.ps1 next to the program,
-    // the Inno Setup installer of older versions its unins000.exe) and
+    // What the setup put there (it leaves its uninstaller next to the
+    // program, earlier versions uninstall.ps1, the Inno Setup installer of
+    // older versions its unins000.exe) and
     // portable packages update themselves. Plain zips are updated by hand.
     const auto appDir = QCoreApplication::applicationDirPath();
     if (!this->modes.isPortable &&
+        !QFile::exists(
+            combinePath(appDir, u"Uninstall JilChat Chatterino.exe"_s)) &&
         !QFile::exists(combinePath(appDir, u"uninstall.ps1"_s)) &&
         !QFile::exists(combinePath(appDir, u"unins000.exe"_s)))
     {

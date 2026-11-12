@@ -51,6 +51,8 @@ namespace JilChatSetup
         public const string Exe = "JilChatChatterino.exe";
         public const string Process = "JilChatChatterino";
         public const string AppUserModelId = "Jilence.JilChatChatterino";
+        /// Next to the program, and what Installed apps runs to remove it
+        public const string Uninstaller = "Uninstall JilChat Chatterino.exe";
         /// Our entry in Installed apps
         public const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\JilChatChatterino";
         /// The entry the Inno Setup installer of older versions made
@@ -252,11 +254,14 @@ namespace JilChatSetup
             // The cache is rebuilt anyway, and an old one can confuse a new version
             TryDeleteFolder(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Chatterino2\Cache"));
 
-            using (var stream = assembly.GetManifestResourceStream("uninstall.ps1"))
-            using (var output = File.Create(Path.Combine(root, "uninstall.ps1")))
+            using (var stream = assembly.GetManifestResourceStream("uninstall.exe"))
+            using (var output = File.Create(Path.Combine(root, App.Uninstaller)))
             {
                 stream.CopyTo(output);
             }
+            // Earlier versions of this setup uninstalled through a PowerShell
+            // script, which antivirus apps find suspicious
+            TryDelete(Path.Combine(root, "uninstall.ps1"));
 
             if (options.Register)
             {
@@ -384,8 +389,7 @@ namespace JilChatSetup
                 key.SetValue("InstallLocation", root);
                 key.SetValue("NoModify", 1, RegistryValueKind.DWord);
                 key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
-                key.SetValue("UninstallString",
-                    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" + root + "\\uninstall.ps1\"");
+                key.SetValue("UninstallString", "\"" + Path.Combine(root, App.Uninstaller) + "\"");
             }
         }
 

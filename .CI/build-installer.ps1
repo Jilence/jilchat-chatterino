@@ -63,6 +63,42 @@ $vcRedist = Join-Path $Env:VCToolsRedistDir "vc_redist.$architecture.exe"
 $vcrtInfo = Join-Path $work 'vcrt.txt'
 "$architecture $((Get-Item $vcRedist).VersionInfo.FileMinorPart)" | Out-File $vcrtInfo -Encoding ASCII -NoNewline
 
+# The version in the file details Windows shows (Properties > Details).
+# Programs without them look more suspicious to antivirus apps.
+$cmakeLists = Get-Content (Join-Path $root 'CMakeLists.txt') -Raw
+if ($cmakeLists -notmatch 'project\(chatterino\s+VERSION\s+([0-9.]+)') { Write-Error 'The version in CMakeLists.txt was not found.'; exit 1 }
+$version = $Matches[1]
+function Write-FileDetails([string]$path, [string]$title) {
+    $year = (Get-Date).Year
+    Set-Content $path -Encoding UTF8 -Value @"
+using System.Reflection;
+[assembly: AssemblyTitle("$title")]
+[assembly: AssemblyDescription("$title")]
+[assembly: AssemblyCompany("Jilence")]
+[assembly: AssemblyProduct("JilChat Chatterino")]
+[assembly: AssemblyCopyright("JilChat Chatterino contributors $year")]
+[assembly: AssemblyVersion("$version.0")]
+[assembly: AssemblyFileVersion("$version.0")]
+[assembly: AssemblyInformationalVersion("$version")]
+"@
+}
+$setupDetails = Join-Path $work 'SetupDetails.cs'
+$uninstallDetails = Join-Path $work 'UninstallDetails.cs'
+Write-FileDetails $setupDetails 'JilChat Chatterino Setup'
+Write-FileDetails $uninstallDetails 'JilChat Chatterino Uninstall'
+
+# The uninstaller the setup puts next to the program
+$uninstaller = Join-Path $work 'uninstall.exe'
+$result = & $csc '/nologo' '/optimize+' '/target:winexe' '/platform:anycpu' "/out:$uninstaller" `
+    "/win32icon:$(Join-Path $root 'resources\icon.ico')" `
+    "/win32manifest:$(Join-Path $sources 'uninstall.manifest')" `
+    '/r:System.dll' '/r:System.Windows.Forms.dll' $uninstallDetails (Join-Path $sources 'JilChatUninstall.cs') 2>&1
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $uninstaller)) {
+    $result | ForEach-Object { "$_" } | Select-Object -First 30
+    Write-Error 'Compiling the uninstaller failed.'
+    exit 1
+}
+
 # The folder's contents, not the folder itself
 $zip = Join-Path $work 'app.zip'
 7z a -tzip -mx=7 $zip ".\$stagingDirName\*" | Out-Null
@@ -76,12 +112,12 @@ $arguments = @(
     "/win32manifest:$(Join-Path $sources 'setup.manifest')",
     "/resource:$zip,app.zip",
     "/resource:$(Join-Path $root 'resources\icon.png'),logo.png",
-    "/resource:$(Join-Path $sources 'uninstall.ps1'),uninstall.ps1",
+    "/resource:$uninstaller,uninstall.exe",
     "/resource:$vcRedist,vc_redist.exe",
     "/resource:$vcrtInfo,vcrt.txt",
     '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
-    '/r:System.IO.Compression.dll', '/r:Microsoft.CSharp.dll',
-    (Join-Path $sources 'JilChatSetup.cs')
+    '/r:System.IO.Compression.dll',
+    $setupDetails, (Join-Path $sources 'JilChatSetup.cs')
 )
 $result = & $csc @arguments 2>&1
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $output)) {
