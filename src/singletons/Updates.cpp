@@ -329,11 +329,12 @@ void Updates::installUpdates()
     this->downloadVerified(
         this->updateExe_, this->updateExeName_, u"Update.exe"_s,
         [this](const QString &path) {
-            // Without a window; the installer closes this instance and
-            // starts the new version when it is done.
+            // The setup waits for this instance to close, installs into the
+            // folder this runs from and starts the new version when it's done
             if (!QProcess::startDetached(
-                    path, {"/SILENT", "/SP-", "/SUPPRESSMSGBOXES",
-                           "/CLOSEAPPLICATIONS"}))
+                    path, {u"--update"_s, u"--dest"_s,
+                           QDir::toNativeSeparators(
+                               QCoreApplication::applicationDirPath())}))
             {
                 this->setStatus_(RunUpdaterFailed);
                 return;
@@ -629,12 +630,16 @@ void Updates::checkForUpdates()
     }
 
 #    ifdef Q_OS_WIN
-    // What the installer put there (it leaves its uninstaller next to the
-    // program) and portable packages update themselves. Plain zips are
-    // updated by hand.
+    // What the setup put there (it leaves its uninstaller next to the
+    // program, earlier versions uninstall.ps1, the Inno Setup installer of
+    // older versions its unins000.exe) and
+    // portable packages update themselves. Plain zips are updated by hand.
+    const auto appDir = QCoreApplication::applicationDirPath();
     if (!this->modes.isPortable &&
-        !QFile::exists(combinePath(QCoreApplication::applicationDirPath(),
-                                   u"unins000.exe"_s)))
+        !QFile::exists(
+            combinePath(appDir, u"Uninstall JilChat Chatterino.exe"_s)) &&
+        !QFile::exists(combinePath(appDir, u"uninstall.ps1"_s)) &&
+        !QFile::exists(combinePath(appDir, u"unins000.exe"_s)))
     {
         qCDebug(chatterinoUpdate)
             << "Update checking skipped: not installed by the installer";
@@ -733,6 +738,7 @@ void Updates::takeRelease(const QJsonObject &release)
         this->onlineVersion_ = name + u", "_s + tag;
     }
     this->updateGuideLink_ = release["html_url"_L1].toString();
+    this->changes_ = Updates::parseChanges(release["body"_L1].toString());
     this->updateExe_.clear();
     this->updateExeName_.clear();
     this->portableZip_.clear();
@@ -803,6 +809,140 @@ void Updates::takeRelease(const QJsonObject &release)
     }
 }
 
+std::vector<Updates::Change> Updates::parseChanges(const QString &notes)
+{
+    static const QRegularExpression bullet(u"^\\s*[-*]\\s+(.+)$"_s);
+    static const QRegularExpression written(
+        u"^(New|Added|Add|Fixed|Fix|Removed|Remove|Changed|Change)\\b\\s*:?\\s*(.+)$"_s,
+        QRegularExpression::CaseInsensitiveOption);
+    // "- [2026-11-10] feat(raids): ..." as the release workflow writes them
+    static const QRegularExpression commit(
+        u"^(?:\\[[^\\]]*\\]\\s*)?([a-z]+)(?:\\([^)]*\\))?(!)?:\\s*(.+)$"_s);
+    static const QRegularExpression sentenceEnd(u"(?<=[.!?])\\s+"_s);
+    constexpr size_t maxChanges = 12;
+
+    const auto capitalized = [](QString text) {
+        text = text.trimmed();
+        if (!text.isEmpty())
+        {
+            text[0] = text[0].toUpper();
+        }
+        return text;
+    };
+
+    std::vector<Change> fromNotes;
+    std::vector<Change> fromCommits;
+    const auto lines = notes.split(u'\n');
+    for (const auto &line : lines)
+    {
+        const auto item = bullet.match(line.trimmed());
+        if (!item.hasMatch())
+        {
+            continue;
+        }
+        const auto text = item.captured(1).trimmed();
+
+        if (const auto match = written.match(text); match.hasMatch())
+        {
+            const auto word = match.captured(1).toLower();
+            QString kind = u"changed"_s;
+            if (word.startsWith(u"add"_s) || word == u"new"_s)
+            {
+                kind = u"new"_s;
+            }
+            else if (word.startsWith(u"fix"_s))
+            {
+                kind = u"fixed"_s;
+            }
+            else if (word.startsWith(u"remove"_s))
+            {
+                kind = u"removed"_s;
+            }
+            const auto sentences =
+                match.captured(2).split(sentenceEnd, Qt::SkipEmptyParts);
+            auto title = capitalized(sentences.value(0));
+            if (title.endsWith(u'.') || title.endsWith(u'!'))
+            {
+                title.chop(1);
+            }
+            fromNotes.push_back({
+                .kind = kind,
+                .title = title,
+                .detail = sentences.mid(1).join(u' ').trimmed(),
+            });
+            continue;
+        }
+
+        if (const auto match = commit.match(text); match.hasMatch())
+        {
+            const auto type = match.captured(1);
+            QString kind;
+            if (type == u"feat"_s)
+            {
+                kind = u"new"_s;
+            }
+            else if (type == u"fix"_s)
+            {
+                kind = u"fixed"_s;
+            }
+            else if (type == u"perf"_s || type == u"revert"_s)
+            {
+                kind = u"changed"_s;
+            }
+            else
+            {
+                // ci, chore, docs, refactor, test, ...: nothing users notice
+                continue;
+            }
+            fromCommits.push_back({
+                .kind = kind,
+                .title = capitalized(match.captured(3)),
+                .detail = {},
+            });
+        }
+    }
+
+    auto &changes = fromNotes.empty() ? fromCommits : fromNotes;
+    if (changes.size() > maxChanges)
+    {
+        changes.resize(maxChanges);
+    }
+    return changes;
+}
+
+const std::vector<Updates::Change> &Updates::getChanges() const
+{
+    return this->changes_;
+}
+
+QString Updates::problemText() const
+{
+    switch (this->status_)
+    {
+        case SearchFailed:
+            return u"Failed to load version information."_s;
+        case DownloadFailed:
+            return u"Failed to download the update. Check your connection "
+                   "and try again."_s;
+        case WriteFileFailed:
+            return u"Failed to write the update to disk."_s;
+        case MissingPortableUpdater:
+            return u"The portable updater (expected in "_s +
+                   Updates::portableUpdaterPath(this->paths) +
+                   u") was not found."_s;
+        case RunUpdaterFailed:
+            return u"Failed to run the updater."_s;
+        case VerifyFailed:
+            return u"The update could not be verified against the checksums "
+                   "of its release, so it was not installed."_s;
+        case FlatpakNotUpdated:
+            return u"Flatpak installed the update, but the same version is "
+                   "still installed. Try again in a few minutes."_s;
+        default:
+            return {};
+    }
+}
+
 Updates::Status Updates::getStatus() const
 {
     return this->status_;
@@ -861,6 +1001,22 @@ bool Updates::isError() const
 bool Updates::isDowngrade() const
 {
     return this->isDowngrade_;
+}
+
+bool Updates::installsItself() const
+{
+#if defined(Q_OS_WIN)
+    return !this->modes.isPortable ||
+           (!this->portableZip_.isEmpty() &&
+            QFile::exists(Updates::portableUpdaterPath(this->paths)));
+#elif defined(Q_OS_MACOS)
+    return true;
+#elif defined(Q_OS_LINUX)
+    return !appImagePath().isEmpty() ||
+           (Version::instance().isFlatpak() && !this->flatpakBundle_.isEmpty());
+#else
+    return false;
+#endif
 }
 
 QString Updates::buildUpdateAvailableText() const

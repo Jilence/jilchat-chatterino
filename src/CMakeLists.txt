@@ -1088,6 +1088,10 @@ set(SOURCE_FILES
         widgets/dialogs/TranslationProviderDialog.hpp
         widgets/dialogs/UpdateDialog.cpp
         widgets/dialogs/UpdateDialog.hpp
+        widgets/dialogs/UpdatePrompt.cpp
+        widgets/dialogs/UpdatePrompt.hpp
+        widgets/dialogs/PortableWelcome.cpp
+        widgets/dialogs/PortableWelcome.hpp
         widgets/dialogs/UserInfoPopup.cpp
         widgets/dialogs/UserInfoPopup.hpp
         widgets/dialogs/WelcomeDialog.cpp
@@ -1144,6 +1148,8 @@ set(SOURCE_FILES
         widgets/helper/IconDelegate.hpp
         widgets/helper/InvisibleSizeGrip.cpp
         widgets/helper/InvisibleSizeGrip.hpp
+        widgets/helper/JilChatCard.cpp
+        widgets/helper/JilChatCard.hpp
         widgets/helper/KickAccountSwitchWidget.cpp
         widgets/helper/KickAccountSwitchWidget.hpp
         widgets/helper/LiveIndicator.cpp

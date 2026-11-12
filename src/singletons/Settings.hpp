@@ -931,6 +931,8 @@ public:
 #endif
 
     QStringSetting currentVersion = {"/misc/currentVersion", ""};
+    /// A portable copy shows its welcome once
+    BoolSetting portableWelcomeShown = {"/jilchat/portableWelcomeShown", false};
     IntSetting overlayKnowledgeLevel = {"/misc/overlayKnowledgeLevel", 0};
 
     BoolSetting loadTwitchMessageHistoryOnConnect = {

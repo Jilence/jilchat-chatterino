@@ -6,7 +6,7 @@
 
 #include "Application.hpp"
 #include "widgets/buttons/SvgButton.hpp"
-#include "widgets/dialogs/UpdateDialog.hpp"
+#include "widgets/dialogs/UpdatePrompt.hpp"
 
 namespace chatterino {
 
@@ -15,34 +15,9 @@ void initUpdateButton(SvgButton &button, const std::function<void()> &relayout,
 {
     button.hide();
 
-    // show update prompt when clicking the button
-    QObject::connect(&button, &Button::leftClicked, [&button, relayout] {
-        auto *dialog = new UpdateDialog();
-
-        auto globalPoint = button.mapToGlobal(
-            QPoint(int(-100 * button.scale()), button.height()));
-
-        // Make sure that update dialog will not go off left edge of screen
-        if (globalPoint.x() < 0)
-        {
-            globalPoint.setX(0);
-        }
-
-        dialog->moveTo(globalPoint, widgets::BoundsChecking::DesiredPosition);
-        dialog->show();
-        dialog->raise();
-
-        // We can safely ignore the signal connection because the dialog will always
-        // be destroyed before the button is destroyed, since it is destroyed on focus loss
-        //
-        // The button is either attached to a Notebook, or a Window frame
-        std::ignore = dialog->dismissed.connect([&button, relayout]() {
-            button.hide();
-            relayout();
-        });
-
-        //        handle.reset(dialog);
-        //        dialog->closing.connect([&handle] { handle.release(); });
+    // show the update window when clicking the button
+    QObject::connect(&button, &Button::leftClicked, [] {
+        UpdatePrompt::showPrompt();
     });
 
     // update image when state changes

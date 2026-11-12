@@ -72,29 +72,22 @@ void alignRectBottomCenter(QRectF &rect, const QRectF &reference)
 
 void drawPixmapWithOptionalSmoothing(
     QPainter &painter, const QRectF &target, const QPixmap &pixmap,
-    chatterino::FlagsEnum<chatterino::MessageElementFlag> flags)
+    chatterino::FlagsEnum<chatterino::MessageElementFlag> /*flags*/)
 {
-    const bool smooth =
-        flags.hasAny(chatterino::MessageElementFlag::BadgeMoltorino,
-                     chatterino::MessageElementFlag::BadgeBluzyrino,
-                     chatterino::MessageElementFlag::BadgeJilChat,
-                     chatterino::MessageElementFlag::BadgeJiltv,
-                     chatterino::MessageElementFlag::TwitchGif);
     const bool wasSmooth =
         painter.testRenderHint(QPainter::SmoothPixmapTransform);
 
-    if (smooth && !wasSmooth)
-    {
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    }
+    // Always smooth, like the message buffers draw: animated images are
+    // drawn straight onto the chat with whatever the painter was left with,
+    // and an image switching between the two looked sharper, then blurrier,
+    // and shifted by a pixel (e.g. when the mouse moved in or out of the
+    // window)
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     painter.drawPixmap(snapRectToDevicePixels(target, painter), pixmap,
                        QRectF());
 
-    if (smooth && !wasSmooth)
-    {
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
-    }
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, wasSmooth);
 }
 
 /// One pixmap of an animated element and where it is drawn.
