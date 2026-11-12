@@ -901,6 +901,8 @@ set(SOURCE_FILES
         util/SelfCheck.cpp
         util/SelfCheck.hpp
         util/SharedPtrElementLess.hpp
+        util/RaidShoutout.cpp
+        util/RaidShoutout.hpp
         util/ShareWatchStreak.cpp
         util/ShareWatchStreak.hpp
         util/SignalListener.hpp

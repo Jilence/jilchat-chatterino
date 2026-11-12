@@ -35,6 +35,7 @@
 #include "util/Helpers.hpp"
 #include "util/IrcHelpers.hpp"
 #include "util/OwnBadgeLayout.hpp"
+#include "util/RaidShoutout.hpp"
 
 #include <IrcConnection>
 #include <IrcMessage>
@@ -858,13 +859,20 @@ void IrcMessageHandler::handleUserNoticeMessage(Communi::IrcMessage *message,
                                                 ITwitchIrcServer &twitchServer)
 {
     auto target = message->parameter(0);
-    auto *channel = dynamic_cast<TwitchChannel *>(
-        twitchServer.getChannelOrEmpty(target).get());
+    auto shared = twitchServer.getChannelOrEmpty(target);
+    auto *channel = dynamic_cast<TwitchChannel *>(shared.get());
     if (!channel)
     {
         return;
     }
     parseUserNoticeMessageInto(message, *channel, channel);
+
+    // Only live raids, never ones in history loaded on join
+    if (message->tag(QStringLiteral("msg-id")).toString() == u"raid"_s)
+    {
+        shoutoutRaider(
+            shared, message->tag(QStringLiteral("msg-param-login")).toString());
+    }
 }
 
 void IrcMessageHandler::parseUserNoticeMessageInto(Communi::IrcMessage *message,
