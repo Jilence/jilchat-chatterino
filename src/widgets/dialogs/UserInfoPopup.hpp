@@ -152,10 +152,10 @@ private:
     void resetNameHistory();
     bool applyCachedNameHistory();
     void updateNameHistoryButton();
-    void updateBadgesButton();
+    void updateVanityButton();
     /// Shows the badges of the user's newest message below their name.
     void updateUsercardBadges();
-    void openBadgesDialog();
+    void openVanityPage();
     void showNameHistoryMenu();
     void openNameHistoryMenu(const QString &statusText = {});
     void requestNameHistory();
@@ -367,7 +367,7 @@ private:
         LabelButton *whisperLabel = nullptr;
         LabelButton *usercardLabel = nullptr;
         LabelButton *userlogsLabel = nullptr;
-        LabelButton *badgesLabel = nullptr;
+        LabelButton *vanityLabel = nullptr;
         LabelButton *sevenTVUserLabel = nullptr;
         QLabel *seventvPaintPixmapLabel = nullptr;
         QWidget *seventvPaintRow = nullptr;
