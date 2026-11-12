@@ -1218,8 +1218,32 @@ public:
     BoolSetting showPredictionButton{"/moltorino/predictions/showButton", true};
     BoolSetting showPollButton{"/moltorino/polls/showButton", true};
 
+    /// Changing game with a chat command (!game <name>)
+    BoolSetting showGameButton{"/jilchat/game/showButton", false};
+    BoolSetting gameSelectorPinned{"/jilchat/game/pinned", false};
+    /// The size the game popup was last given, unscaled; empty until resized
+    QSizeSetting gameSelectorPopupSize = {"/jilchat/game/popupSize", {}};
+    ChatterinoSetting<QStringList> gameSelectorGames = {
+        "/jilchat/game/savedGames", {}};
+    /// How often each game was sent, as "<game>\t<count>"
+    ChatterinoSetting<QStringList> gameUsage = {"/jilchat/game/usage", {}};
+    /// Each channel's own game command, as "<channel>\t<command>", for those
+    /// that don't use !game
+    ChatterinoSetting<QStringList> gameCommands = {"/jilchat/game/commands",
+                                                   {}};
+    BoolSetting quickGameBar{"/jilchat/gameBar/enabled", false};
+    QStringSetting quickGameBarPosition{"/jilchat/gameBar/position", "above"};
+    QStringSetting quickGameBarAlign{"/jilchat/gameBar/align", "left"};
+    QStringSetting quickGameBarSize{"/jilchat/gameBar/size", "small"};
+    QStringSetting quickGameBarCount{"/jilchat/gameBar/count", "5"};
+
     /// Channel Points and Rewards
     /// Claim the "Claim bonus" chest of channel points while watching
+    /// Sends a shoutout command when someone raids a channel you moderate
+    BoolSetting autoShoutoutRaids{"/jilchat/raids/autoShoutout", false};
+    /// {user} becomes the raider's login
+    QStringSetting raidShoutoutCommand{"/jilchat/raids/shoutoutCommand",
+                                       "!so @{user}"};
     BoolSetting autoClaimPointsBonus{"/moltorino/channelPoints/autoClaimBonus",
                                      true};
     BoolSetting enableChannelPointsDisplay{

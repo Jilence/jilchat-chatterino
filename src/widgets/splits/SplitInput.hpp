@@ -35,6 +35,7 @@ namespace chatterino {
 
 class Split;
 class EmotePopup;
+class QuickGameBar;
 class InputCompletionPopup;
 class EmoteTabCompletionCarousel;
 class InputHighlighter;
@@ -262,6 +263,7 @@ protected:
         QLabel *channelPointsLabel;
         SvgButton *predictionButton;
         SvgButton *pollButton;
+        SvgButton *gameButton;
         SvgButton *badgeButton;
         SvgButton *outgoingTranslateButton;
         SvgButton *emoteButton;
@@ -325,6 +327,9 @@ protected:
     qint64 lastManualChannelPointsRefreshMs_ = 0;
     bool predictionButtonWanted_ = false;
     bool pollButtonWanted_ = false;
+    bool gameButtonWanted_ = false;
+    QuickGameBar *quickGames_{};
+    void placeQuickGames();
     bool badgeButtonWanted_ = false;
 #if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
     bool channelPointRewardPromptRequiresText_ = false;

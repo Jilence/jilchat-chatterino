@@ -51,6 +51,7 @@
 #    include "widgets/dialogs/ChannelPointsDialog.hpp"
 #endif
 #include "singletons/UrlShortener.hpp"
+#include "widgets/dialogs/GameSelectorDialog.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/CmdDeleteKeyFilter.hpp"
 #include "widgets/helper/MessageView.hpp"
@@ -59,6 +60,7 @@
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/InputCompletionPopup.hpp"
 #include "widgets/splits/InputHighlighter.hpp"
+#include "widgets/splits/QuickGameBar.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/splits/SplitContainer.hpp"
 
@@ -949,6 +951,20 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
                 this->split_->getSelectedChannel().get()));
         },
         this->managedConnections_);
+    this->quickGames_ = new QuickGameBar(this->split_, this);
+    this->quickGames_->hide();
+    this->placeQuickGames();
+    getSettings()->quickGameBarPosition.connect(
+        [this](const auto &, const auto &) {
+            this->placeQuickGames();
+        },
+        this->managedConnections_);
+    getSettings()->showGameButton.connect(
+        [this](const auto &, const auto &) {
+            this->bindChannelPoints(dynamic_cast<TwitchChannel *>(
+                this->split_->getSelectedChannel().get()));
+        },
+        this->managedConnections_);
     getSettings()->showSelectBadgeButton.connect(
         [this](const auto &, auto) {
             this->bindChannelPoints(dynamic_cast<TwitchChannel *>(
@@ -1482,6 +1498,16 @@ void SplitInput::initLayout()
         this->ui_.pollButton->setToolTip("Open poll");
         this->ui_.pollButton->hide();
 
+        this->ui_.gameButton = new SvgButton(
+            {
+                .dark = ":/buttons/game-darkMode.svg",
+                .light = ":/buttons/game-lightMode.svg",
+            },
+            nullptr, QSize{3, 3});
+        this->ui_.gameButton->setToolTip("Change game");
+        this->ui_.gameButton->setAccessibleName("Change game");
+        this->ui_.gameButton->hide();
+
         this->ui_.badgeButton = new SvgButton(
             {
                 .dark = ":/buttons/badge-darkMode.svg",
@@ -1518,6 +1544,7 @@ void SplitInput::initLayout()
         buttonsRow->addWidget(this->ui_.channelPointsLabel, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.predictionButton, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.pollButton, 0, Qt::AlignBottom);
+        buttonsRow->addWidget(this->ui_.gameButton, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.badgeButton, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.outgoingTranslateButton, 0,
                               Qt::AlignBottom);
@@ -1567,6 +1594,15 @@ void SplitInput::initLayout()
             return;
         }
         PollDialog::showDialog(channel, this->split_);
+    });
+    QObject::connect(this->ui_.gameButton, &Button::leftClicked, this, [this] {
+        const auto channel = std::dynamic_pointer_cast<TwitchChannel>(
+            this->split_->getSelectedChannel());
+        if (channel == nullptr)
+        {
+            return;
+        }
+        GameSelectorDialog::showDialog(channel, this->split_);
     });
 
     QObject::connect(this->ui_.badgeButton, &Button::leftClicked, [this] {
@@ -1862,6 +1898,10 @@ void SplitInput::updateEmoteButton()
     {
         this->ui_.pollButton->setFixedSize(buttonSize, buttonSize);
     }
+    if (this->ui_.gameButton)
+    {
+        this->ui_.gameButton->setFixedSize(buttonSize, buttonSize);
+    }
     if (this->ui_.badgeButton)
     {
         this->ui_.badgeButton->setFixedSize(buttonSize, buttonSize);
@@ -1882,8 +1922,26 @@ void SplitInput::updateCancelReplyButton()
     this->ui_.cancelReplyButton->setFixedWidth(int(20 * scale));
 }
 
+void SplitInput::placeQuickGames()
+{
+    if (this->quickGames_ == nullptr)
+    {
+        return;
+    }
+    this->ui_.vbox->removeWidget(this->quickGames_);
+    const int input = this->ui_.vbox->indexOf(this->ui_.inputWrapper);
+    const bool below =
+        getSettings()->quickGameBarPosition.getValue() == "below";
+    this->ui_.vbox->insertWidget(below ? input + 1 : input, this->quickGames_);
+}
+
 void SplitInput::updateActionRowCompactness()
 {
+    if (this->quickGames_ != nullptr)
+    {
+        this->quickGames_->setAllowed(this->gameButtonWanted_);
+    }
+
     if (this->ui_.buttonsRow == nullptr || this->ui_.inputWrapper == nullptr)
     {
         return;
@@ -1962,6 +2020,8 @@ void SplitInput::updateActionRowCompactness()
         tryFit(this->ui_.predictionButton, this->predictionButtonWanted_);
     const bool showPollButton =
         tryFit(this->ui_.pollButton, this->pollButtonWanted_);
+    const bool showGameButton =
+        tryFit(this->ui_.gameButton, this->gameButtonWanted_);
     const bool showBadgeButton =
         tryFit(this->ui_.badgeButton, this->badgeButtonWanted_);
     const bool showSendWaitStatus =
@@ -1975,6 +2035,7 @@ void SplitInput::updateActionRowCompactness()
     changed |=
         setExplicitVisible(this->ui_.predictionButton, showPredictionButton);
     changed |= setExplicitVisible(this->ui_.pollButton, showPollButton);
+    changed |= setExplicitVisible(this->ui_.gameButton, showGameButton);
     changed |= setExplicitVisible(this->ui_.badgeButton, showBadgeButton);
     changed |= setExplicitVisible(this->ui_.textEditLength, showTextLength);
     changed |= setExplicitVisible(this->ui_.sendWaitStatus, showSendWaitStatus);
@@ -4887,6 +4948,7 @@ void SplitInput::bindChannelPoints(TwitchChannel *channel)
                                   (canModerate || hasActivePoll);
         this->ui_.pollButton->setToolTip(hasActivePoll ? "Open poll"
                                                        : "Create poll");
+        this->gameButtonWanted_ = getSettings()->showGameButton && canModerate;
         this->badgeButtonWanted_ =
             getSettings()->showSelectBadgeButton && channel != nullptr;
         this->updateActionRowCompactness();
@@ -4897,6 +4959,7 @@ void SplitInput::bindChannelPoints(TwitchChannel *channel)
         this->clearChannelPointsDisplay();
         this->predictionButtonWanted_ = false;
         this->pollButtonWanted_ = false;
+        this->gameButtonWanted_ = false;
         this->badgeButtonWanted_ = false;
         this->updateActionRowCompactness();
         return;

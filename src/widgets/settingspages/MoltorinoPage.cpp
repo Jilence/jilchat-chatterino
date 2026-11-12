@@ -786,6 +786,40 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
         ->setTooltip("Show the poll button next to the message input.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Show game button", s.showGameButton)
+        ->setTooltip("For moderators and the broadcaster: a button next to "
+                     "the message input with your saved games. Clicking one "
+                     "sends \"!game <category>\" to the channel, or the "
+                     "command set for that channel. A bot in the channel must "
+                     "support the command.")
+        ->addTo(*view);
+    SettingWidget::checkbox("Quick game bar", s.quickGameBar)
+        ->setTooltip("Small boxes by the chat box with your most used games, "
+                     "for moderators and the broadcaster. Clicking one sends "
+                     "\"!game <category>\" to the channel, or the command you "
+                     "set for that channel in the game popup. A bot in the "
+                     "channel must support the command.")
+        ->addTo(*view);
+    SettingWidget::dropdown(
+        "Quick game bar position", s.quickGameBarPosition,
+        {{"Above the chat box", "above"}, {"Below the chat box", "below"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+    SettingWidget::dropdown(
+        "Quick game bar alignment", s.quickGameBarAlign,
+        {{"Left", "left"}, {"Center", "center"}, {"Right", "right"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+    SettingWidget::dropdown("Quick game bar box size", s.quickGameBarSize,
+                            {{"Small", "small"}, {"Normal", "normal"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+    SettingWidget::dropdown(
+        "Quick game bar games shown", s.quickGameBarCount,
+        {{"3", "3"}, {"5", "5"}, {"8", "8"}, {"10", "10"}, {"12", "12"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+
     SettingWidget::checkbox("Hide emoji button", s.hideEmojiButton)
         ->setTooltip("Hide the emoji/emote picker button next to the message "
                      "input.")
@@ -871,6 +905,20 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
 
     view->addTitle("Moderation");
     view->addDescription("Moderation tools and chat safety options.");
+
+    SettingWidget::checkbox("Shout out raiders automatically",
+                            s.autoShoutoutRaids)
+        ->setTooltip("When someone raids a channel you moderate, sends the "
+                     "command below a few seconds later. If another mod "
+                     "already shouted them out, it isn't sent twice.")
+        ->addTo(*view);
+    SettingWidget::lineEdit("Shoutout command", s.raidShoutoutCommand,
+                            "!so @{user}")
+        ->setTooltip("{user} becomes the raider's name. Use the command your "
+                     "channel's bot listens to, or /shoutout {user} for "
+                     "Twitch's own shoutout.")
+        ->conditionallyEnabledBy(s.autoShoutoutRaids)
+        ->addTo(*view);
 
     SettingWidget::checkbox("Show repeated-message counters",
                             s.enableRepeatedMessageDetector)
