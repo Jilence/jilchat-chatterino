@@ -1,0 +1,3 @@
+- Fixed The app icon on macOS. It is JilChat's icon now instead of Leafyrino's.
+- Fixed The app icon on Linux. The icon installed for Flatpak and the .deb package has the size the system expects, so it shows up everywhere.
+- Fixed Scrolling up to load older messages with a trackpad. The chat stays where it is while the older messages come in, instead of jumping down.
