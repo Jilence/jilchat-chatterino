@@ -31,7 +31,7 @@ SettingsDialogTab::SettingsDialogTab(SettingsDialog *_dialog,
     this->setStyleSheet("color: #FFF");
 }
 
-void SettingsDialogTab::setSelected(bool _selected)
+void SettingsDialogTab::setSelected(bool _selected, bool animate)
 {
     if (this->selected_ == _selected)
     {
@@ -40,7 +40,10 @@ void SettingsDialogTab::setSelected(bool _selected)
 
     //    height: <checkbox-size>px;
 
-    transitions::fadeChange(this, true);
+    if (animate)
+    {
+        transitions::fadeChange(this, true);
+    }
     this->selected_ = _selected;
     this->selectedChanged(this->selected_);
 }
