@@ -39,7 +39,7 @@ public:
 
     /// @param animate Fade to the new look. Off for the search, which
     /// changes the selection while typing.
-    void setSelected(bool selected_, bool animate = true);
+    void setSelected(bool _selected, bool animate = true);
     SettingsPage *page();
     SettingsPage *createdPage() const;
     SettingsTabId id() const;
