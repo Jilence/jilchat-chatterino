@@ -497,18 +497,32 @@ void makeModerateMessage(
     builder->flags.set(MessageFlag::DoNotTriggerNotification,
                        MessageFlag::ModerationAction);
 
-    (void)event;
     builder->loginName.clear();
+    // Twitch names the moderator here, so the notice does too
+    const bool hasModerator = !event.moderatorUserLogin.isEmpty();
+    QString prefix;
     QString text;
-    builder.emplace<TextElement>("A message from", MessageElementFlag::Text,
-                                 MessageColor::System);
-    builder
-        .emplace<TextElement>(action.userName.qt(),
-                              MessageElementFlag::Username,
-                              MessageColor::System, FontStyle::ChatMediumBold)
-        ->setLink({Link::UserInfo, action.userLogin.qt()});
-    builder.emplace<TextElement>("was deleted:", MessageElementFlag::Text,
-                                 MessageColor::System);
+    if (hasModerator)
+    {
+        builder.appendUser(event.moderatorUserName, event.moderatorUserLogin,
+                           prefix);
+        builder.emplaceSystemTextAndUpdate("deleted a message from", prefix);
+        // the colon goes right behind the name
+        builder.appendUser(action.userName, action.userLogin, prefix, false);
+        builder.emplaceSystemTextAndUpdate(":", prefix);
+    }
+    else
+    {
+        builder.emplace<TextElement>("A message from", MessageElementFlag::Text,
+                                     MessageColor::System);
+        builder
+            .emplace<TextElement>(
+                action.userName.qt(), MessageElementFlag::Username,
+                MessageColor::System, FontStyle::ChatMediumBold)
+            ->setLink({Link::UserInfo, action.userLogin.qt()});
+        builder.emplace<TextElement>("was deleted:", MessageElementFlag::Text,
+                                     MessageColor::System);
+    }
 
     auto limit = getSettings()->deletedMessageLengthLimit.getValue();
     if (limit > 0 && action.messageBody.view().length() > limit)
@@ -530,8 +544,15 @@ void makeModerateMessage(
         text.append(action.messageBody.qt());
     }
 
-    text = QString("A message from %1 was deleted: %2")
-               .arg(action.userLogin.qt(), text);
+    if (hasModerator)
+    {
+        text = prefix + text;
+    }
+    else
+    {
+        text = QString("A message from %1 was deleted: %2")
+                   .arg(action.userLogin.qt(), text);
+    }
     builder.setMessageAndSearchText(text);
     builder->timeoutUser = action.userLogin.qt();
 }

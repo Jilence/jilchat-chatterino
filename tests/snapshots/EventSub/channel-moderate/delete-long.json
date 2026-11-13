@@ -72,8 +72,9 @@
                     "type": "TimestampElement"
                 },
                 {
-                    "color": "System",
-                    "flags": "Text",
+                    "color": "Text",
+                    "fallbackColor": "System",
+                    "flags": "Text|Mention",
                     "link": {
                         "type": "None",
                         "value": ""
@@ -81,24 +82,9 @@
                     "style": "ChatMedium",
                     "tooltip": "",
                     "trailingSpace": true,
-                    "type": "TextElement",
-                    "words": [
-                        "A",
-                        "message",
-                        "from"
-                    ]
-                },
-                {
-                    "color": "System",
-                    "flags": "Username",
-                    "link": {
-                        "type": "UserInfo",
-                        "value": "testaccount_420"
-                    },
-                    "style": "ChatMediumBold",
-                    "tooltip": "",
-                    "trailingSpace": true,
-                    "type": "TextElement",
+                    "type": "MentionElement",
+                    "userColor": "System",
+                    "userLoginName": "testaccount_420",
                     "words": [
                         "테스트계정420"
                     ]
@@ -115,8 +101,43 @@
                     "trailingSpace": true,
                     "type": "TextElement",
                     "words": [
-                        "was",
-                        "deleted:"
+                        "deleted",
+                        "a",
+                        "message",
+                        "from"
+                    ]
+                },
+                {
+                    "color": "Text",
+                    "fallbackColor": "System",
+                    "flags": "Text|Mention",
+                    "link": {
+                        "type": "None",
+                        "value": ""
+                    },
+                    "style": "ChatMedium",
+                    "tooltip": "",
+                    "trailingSpace": false,
+                    "type": "MentionElement",
+                    "userColor": "System",
+                    "userLoginName": "testaccount_420",
+                    "words": [
+                        "테스트계정420"
+                    ]
+                },
+                {
+                    "color": "System",
+                    "flags": "Text",
+                    "link": {
+                        "type": "None",
+                        "value": ""
+                    },
+                    "style": "ChatMedium",
+                    "tooltip": "",
+                    "trailingSpace": true,
+                    "type": "TextElement",
+                    "words": [
+                        ":"
                     ]
                 },
                 {
@@ -142,8 +163,8 @@
             "id": "",
             "localizedName": "",
             "loginName": "",
-            "messageText": "A message from testaccount_420 was deleted: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
-            "searchText": "A message from testaccount_420 was deleted: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
+            "messageText": "testaccount_420 deleted a message from testaccount_420: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
+            "searchText": "testaccount_420 deleted a message from testaccount_420: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
             "timestamp": "2024-05-14T12:31:47Z",
             "timeoutUser": "testaccount_420",
             "twitchBadgeInfos": {
