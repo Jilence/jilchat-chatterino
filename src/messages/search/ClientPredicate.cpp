@@ -48,7 +48,8 @@ std::optional<Status> parseClient(const QString &client)
 ClientPredicate::ClientPredicate(const QString &clients, bool negate)
     : MessagePredicate(negate)
 {
-    for (const auto &client : clients.split(',', Qt::SkipEmptyParts))
+    const auto names = clients.split(',', Qt::SkipEmptyParts);
+    for (const auto &client : names)
     {
         if (auto status = parseClient(client))
         {

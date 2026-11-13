@@ -102,7 +102,7 @@ ChatColorCycleDialog::ChatColorCycleDialog(QWidget *parent)
     customLayout->addLayout(customButtons);
 
     QObject::connect(addButton, &QPushButton::clicked, this, [this] {
-        auto *picker = new ColorPickerDialog(QColor("#9146FF"), this);
+        auto *picker = new ColorPickerDialog(QColor(0x9146FF), this);
         QObject::connect(picker, &ColorPickerDialog::colorConfirmed, this,
                          [this](const QColor &color) {
                              if (color.isValid())
@@ -140,6 +140,8 @@ void ChatColorCycleDialog::addCustomColor(const QColor &color)
 void ChatColorCycleDialog::save()
 {
     QStringList colors;
+    colors.reserve(static_cast<qsizetype>(this->twitchColors_.size()) +
+                   this->customColors_->count());
     for (const auto &[name, checkBox] : this->twitchColors_)
     {
         if (checkBox->isChecked())

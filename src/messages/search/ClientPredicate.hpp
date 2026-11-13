@@ -23,6 +23,8 @@ protected:
 
 private:
     std::vector<Message::ClientDetectionStatus> clients_;
+
+    Q_DISABLE_COPY(ClientPredicate)
 };
 
 }  // namespace chatterino
