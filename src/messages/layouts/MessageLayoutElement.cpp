@@ -1648,8 +1648,7 @@ void TextLayoutElement::paint(QPainter &painter,
     bool isNametag = this->getLink().type == chatterino::Link::UserInfo ||
                      this->getLink().type == chatterino::Link::UserWhisper;
     bool drawPaint =
-        isNametag && this->messageColor_ != MessageColor::System &&
-        usernamePaintsEnabled() &&
+        isNametag && usernamePaintsEnabled() &&
         !this->getCreator().getFlags().has(MessageElementFlag::NoUsernamePaint);
     if (drawPaint)
     {
@@ -1660,17 +1659,23 @@ void TextLayoutElement::paint(QPainter &painter,
         {
             if (paint->animated())
             {
+                // paintAnimated draws the name, also for names in the system
+                // color. Drawing the plain text here as well would put two
+                // names on top of each other.
                 return;
             }
 
-            // Some paints reach beyond the name, e.g. with an outline.
-            const auto margins = paint->overflowMargins(this->scale_);
-            const auto target = this->getRect() + margins;
-            const auto paintPixmap = paint->getNametagPixmap(
-                this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_, margins);
-            painter.drawPixmap(target.topLeft(), paintPixmap);
-            return;
+            if (this->messageColor_ != MessageColor::System)
+            {
+                // Some paints reach beyond the name, e.g. with an outline.
+                const auto margins = paint->overflowMargins(this->scale_);
+                const auto target = this->getRect() + margins;
+                const auto paintPixmap = paint->getNametagPixmap(
+                    this->getText(), font, this->color_, this->getRect().size(),
+                    this->scale_, this->dpr_, margins);
+                painter.drawPixmap(target.topLeft(), paintPixmap);
+                return;
+            }
         }
     }
 
@@ -1820,6 +1825,9 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
     rect += margins;
+    // On whole pixels, so the name doesn't shift when the painter's smoothing
+    // changes (e.g. when the mouse moves in or out of the window)
+    rect = snapRectToDevicePixels(QRectF(rect), painter);
     QRegion paintedRegion;
     if (shadow != nullptr && shadow->opacity > 0)
     {
@@ -1837,7 +1845,7 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         paintedRegion +=
             paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
     }
-    painter.drawPixmap(rect, paintPixmap, QRectF());
+    drawPixmapWithOptionalSmoothing(painter, QRectF(rect), paintPixmap, {});
     paintedRegion += rect.toAlignedRect();
     return paintedRegion;
 }
