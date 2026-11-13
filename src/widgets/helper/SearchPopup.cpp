@@ -16,6 +16,7 @@
 #include "messages/search/AuthorPredicate.hpp"
 #include "messages/search/BadgePredicate.hpp"
 #include "messages/search/ChannelPredicate.hpp"
+#include "messages/search/ClientPredicate.hpp"
 #include "messages/search/LinkPredicate.hpp"
 #include "messages/search/MessageFlagsPredicate.hpp"
 #include "messages/search/RegexPredicate.hpp"
@@ -1313,6 +1314,11 @@ std::vector<std::unique_ptr<MessagePredicate>> SearchPopup::parsePredicates(
         {
             predicates.push_back(
                 std::make_unique<SubtierPredicate>(value, isNegated));
+        }
+        else if (name == "client")
+        {
+            predicates.push_back(
+                std::make_unique<ClientPredicate>(value, isNegated));
         }
         else if (name == "has" && value == "link")
         {
