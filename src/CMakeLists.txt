@@ -452,6 +452,8 @@ set(SOURCE_FILES
         messages/search/BadgePredicate.hpp
         messages/search/ChannelPredicate.cpp
         messages/search/ChannelPredicate.hpp
+        messages/search/ClientPredicate.cpp
+        messages/search/ClientPredicate.hpp
         messages/search/LinkPredicate.cpp
         messages/search/LinkPredicate.hpp
         messages/search/MessageFlagsPredicate.cpp
@@ -718,6 +720,8 @@ set(SOURCE_FILES
 
         providers/twitch/ChannelPointReward.cpp
         providers/twitch/ChannelPointReward.hpp
+        providers/twitch/ChatColorCycler.cpp
+        providers/twitch/ChatColorCycler.hpp
         providers/twitch/IrcMessageHandler.cpp
         providers/twitch/IrcMessageHandler.hpp
         providers/twitch/ModerationActionLogs.cpp
@@ -1022,6 +1026,8 @@ set(SOURCE_FILES
         widgets/dialogs/ChannelPointsChartDialog.hpp
         widgets/dialogs/ChannelPointsChartView.cpp
         widgets/dialogs/ChannelPointsChartView.hpp
+        widgets/dialogs/ChatColorCycleDialog.cpp
+        widgets/dialogs/ChatColorCycleDialog.hpp
         widgets/dialogs/ColorPickerDialog.cpp
         widgets/dialogs/ColorPickerDialog.hpp
         widgets/dialogs/CrossBanDialog.cpp

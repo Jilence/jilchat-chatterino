@@ -144,6 +144,12 @@ enum class SplitMpsWindow : std::uint8_t {
     Seconds10,
 };
 
+enum class ChatColorCycleMode : std::uint8_t {
+    InOrder,
+    Random,
+    Rainbow,
+};
+
 enum class TwitchReadConnectionMode : uint8_t {
     Authenticated,
     Anonymous,
@@ -219,6 +225,21 @@ constexpr std::optional<std::string_view> qmagicenumDisplayName(
             return "lilb - rm.lilb.dev";
         case RecentMessagesApi::Zonian:
             return "Zonian - logs.zonian.dev";
+    }
+    return {};
+}
+
+constexpr std::optional<std::string_view> qmagicenumDisplayName(
+    ChatColorCycleMode value) noexcept
+{
+    switch (value)
+    {
+        case ChatColorCycleMode::InOrder:
+            return "In order";
+        case ChatColorCycleMode::Random:
+            return "Random";
+        case ChatColorCycleMode::Rainbow:
+            return "Rainbow (Turbo/Prime)";
     }
     return {};
 }
@@ -1379,6 +1400,17 @@ public:
                                        true};
     BoolSetting showSupibotCommandAliases{
         "/leafyrino/showSupibotCommandAliases", true};
+    BoolSetting cycleChatColor{"/leafyrino/chatColorCycle/enabled", false};
+    EnumStringSetting<ChatColorCycleMode> chatColorCycleMode{
+        "/leafyrino/chatColorCycle/mode", ChatColorCycleMode::InOrder};
+    // twitch color names and custom hex colors, in cycle order. the default
+    // is every twitch color sorted by hue, which the colors dialog relies on
+    ChatterinoSetting<QStringList> chatColorCycleColors{
+        "/leafyrino/chatColorCycle/colors",
+        {"firebrick", "red", "coral", "orange_red", "chocolate", "golden_rod",
+         "yellow_green", "green", "sea_green", "spring_green", "cadet_blue",
+         "dodger_blue", "blue", "blue_violet", "hot_pink"},
+    };
     BoolSetting hideUnavailableModCommands{
         "/moltorino/hideUnavailableModCommands", true};
     /// The order the user wants their own badges in, see OwnBadgeLayout:
