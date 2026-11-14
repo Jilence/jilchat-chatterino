@@ -314,13 +314,24 @@ void SettingsDialog::selectTab(SettingsDialogTab *tab, bool byUser)
 
     this->ui_.pageStack->setCurrentWidget(tab->page());
 
+    if (this->selectedTab_ == tab)
+    {
+        // Already selected (the search selects again on every key press):
+        // deselecting and selecting it would run its fade for no change
+        if (byUser)
+        {
+            this->lastSelectedByUser_ = tab;
+        }
+        return;
+    }
+
     if (this->selectedTab_ != nullptr)
     {
-        this->selectedTab_->setSelected(false);
+        this->selectedTab_->setSelected(false, byUser);
         this->selectedTab_->setStyleSheet("color: #FFF");
     }
 
-    tab->setSelected(true);
+    tab->setSelected(true, byUser);
     tab->setStyleSheet(
         "background: #222; color: #4FC3F7;"  // Should this be same as accent color?
         "/*border: 1px solid #555; border-right: none;*/");

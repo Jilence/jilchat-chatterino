@@ -1,0 +1,2 @@
+- Fixed Paint in the usercard with paints turned off. The usercard no longer shows a paint when username paints are off, or a 7TV paint when paints come from BetterTTV or JilTV.
+- Fixed Flickering in the settings while searching. The selected page on the left no longer fades on every key press.

@@ -2648,6 +2648,11 @@ void UserInfoPopup::installEvents()
             this->refreshSeventvPaint();
         },
         this->signalHolder_);
+    getSettings()->usernamePaintSource.connect(
+        [this](const auto &) {
+            this->refreshSeventvPaint();
+        },
+        this->signalHolder_, false);
     getSettings()->showUsercardRolesButton.connect(
         [this](bool enabled) {
             if (!enabled && this->usercardRolesShown_)
@@ -6421,7 +6426,8 @@ void UserInfoPopup::updateAvatarUrl()
 
 void UserInfoPopup::refreshSeventvPaint()
 {
-    if (!getSettings()->showUsercardSevenTVPaint)
+    // With paints turned off, the usercard doesn't show one either
+    if (!getSettings()->showUsercardSevenTVPaint || !usernamePaintsEnabled())
     {
         this->seventvPaint_ = nullptr;
         if (this->ui_.seventvPaintRow)
@@ -6434,7 +6440,10 @@ void UserInfoPopup::refreshSeventvPaint()
     auto paint = this->isTikTok_
                      ? nullptr
                      : usernamePaint(this->userName_.toLower(), this->isKick_);
-    if (!paint && !this->isTikTok_)
+    const auto source = getSettings()->usernamePaintSource.getEnum();
+    if (!paint && !this->isTikTok_ &&
+        (source == UsernamePaintSource::SevenTV ||
+         source == UsernamePaintSource::Automatic))
     {
         // A hidden 7TV paint, so it can be unhidden from here
         paint = getApp()->getSeventvPaints()->getPaint(
