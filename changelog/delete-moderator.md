@@ -1,0 +1,2 @@
+- New Moderator name on deleted messages. In channels you moderate, the notice says who deleted the message: "Mod deleted a message from User: text".
+- Fixed Names with an animated paint in moderation notices. They were drawn twice and moved slightly when the mouse entered or left the window.

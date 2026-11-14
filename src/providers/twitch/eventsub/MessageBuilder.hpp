@@ -82,7 +82,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Untimeout &action);
 
-/// A message from <USER> was deleted: <MESSAGE>
+/// <MODERATOR> deleted a message from <USER>: <MESSAGE>
 void makeModerateMessage(
     EventSubMessageBuilder &builder,
     const lib::payload::channel_moderate::v2::Event &event,
