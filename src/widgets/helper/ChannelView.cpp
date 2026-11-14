@@ -3006,7 +3006,9 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
         }
         else
         {
-            this->scrollBar_->offset(qreal(addedMessages.size()));
+            // Keep showing the same messages, also while scrolling with
+            // momentum (e.g. a trackpad) when older messages come in
+            this->scrollBar_->shiftPosition(qreal(addedMessages.size()));
         }
     }
 

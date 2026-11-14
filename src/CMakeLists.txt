@@ -1617,7 +1617,8 @@ if (BUILD_APP)
                 DESTINATION share/applications
                 )
 
-        install(FILES ${CMAKE_SOURCE_DIR}/resources/icon.png
+        # the folder says 256x256, so the icon must be that size exactly
+        install(FILES ${CMAKE_SOURCE_DIR}/resources/icon-256.png
                 RENAME com.jilence.jilchatchatterino.png
                 DESTINATION share/icons/hicolor/256x256/apps
                 )

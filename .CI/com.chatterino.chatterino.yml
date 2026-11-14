@@ -182,6 +182,6 @@ modules:
       - type: dir
         path: ..
     post-install:
-      - install -Dm755 ./resources/icon.png /app/share/icons/hicolor/256x256/apps/com.jilence.jilchatchatterino.png
+      - install -Dm644 ./resources/icon-256.png /app/share/icons/hicolor/256x256/apps/com.jilence.jilchatchatterino.png
       - install -Dm644 ./resources/licenses/ffmpeg-source.txt /app/bin/support/media/licenses/ffmpeg/ffmpeg-source.txt
       - install -Dm755 ./resources/com.chatterino.chatterino.appdata.xml /app/share/metainfo/com.jilence.jilchatchatterino.metainfo.xml
