@@ -14,6 +14,10 @@ public:
     QBrush asBrush(QColor userColor, QRectF drawingRect) const override;
     const std::vector<PaintDropShadow> &getDropShadows() const override;
     bool animated() const override;
+    bool animatesWithImages() const override
+    {
+        return this->animated();
+    }
     qint64 sourcePixmapCacheKey() const override;
 
 private:

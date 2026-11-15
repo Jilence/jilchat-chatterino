@@ -18,7 +18,9 @@
 #include "singletons/helper/GifTimer.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/ThemeCustomization.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/DebugCount.hpp"
+#include "util/PaintVisiblePixels.hpp"
 
 #include <QCache>
 #include <QCoreApplication>
@@ -59,6 +61,51 @@ QRectF snapRectToDevicePixels(const QRectF &rect, const QPainter &painter)
     return QRectF(snap(rect.x()), snap(rect.y()),
                   std::max(1.0 / dpr, snap(rect.width())),
                   std::max(1.0 / dpr, snap(rect.height())));
+}
+
+/// Draws `pixmap` over `target` pixel for pixel when it already has exactly
+/// the target's size on the screen: copied straight into device pixels
+/// instead of interpolating every pixel (with display scaling like 150% a
+/// scaled, smoothed draw costs several times as much). Returns false, and
+/// draws nothing, when the sizes don't match or the painter rotates.
+bool drawPixmapPixelExact(QPainter &painter, const QRectF &target,
+                          const QPixmap &pixmap, const QRect &part)
+{
+    // Where the target really lands: the painter's whole mapping, including
+    // the display scaling and the offset of the buffer it draws into
+    const auto toDevice = painter.deviceTransform();
+    if (toDevice.type() > QTransform::TxScale)
+    {
+        return false;
+    }
+    const auto device = toDevice.mapRect(target);
+    const QRect pixels(qRound(device.x()), qRound(device.y()),
+                       qRound(device.width()), qRound(device.height()));
+    if (pixels.size() != pixmap.size())
+    {
+        return false;
+    }
+    // The world transform that makes the painter's mapping the identity:
+    // deviceTransform = world * base, so world = base^-1
+    bool invertible = false;
+    const auto base = painter.worldTransform().inverted(&invertible) * toDevice;
+    if (!invertible)
+    {
+        return false;
+    }
+    const auto toPixels = base.inverted(&invertible);
+    if (!invertible)
+    {
+        return false;
+    }
+    painter.save();
+    painter.setWorldTransform(toPixels);
+    // An explicit target rect: drawing at a point would shrink the pixmap by
+    // its device pixel ratio
+    painter.drawPixmap(QRectF(part.translated(pixels.topLeft())), pixmap,
+                       QRectF(part));
+    painter.restore();
+    return true;
 }
 
 const QChar RTL_EMBED(0x202B);
@@ -1845,8 +1892,43 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         paintedRegion +=
             paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
     }
-    drawPixmapWithOptionalSmoothing(painter, QRectF(rect), paintPixmap, {});
+    {
+        // Only the part of the picture that shows: the glow room around the
+        // name is wide and mostly transparent
+        QRect part = paintPixmap.rect();
+        if (const auto it =
+                paintVisiblePixels().constFind(paintPixmap.cacheKey());
+            it != paintVisiblePixels().constEnd())
+        {
+            part = *it;
+        }
+        if (part.isEmpty())
+        {
+            // nothing shows
+        }
+        else if (!drawPixmapPixelExact(painter, QRectF(rect), paintPixmap,
+                                       part))
+        {
+            const auto scaleX = rect.width() / paintPixmap.width();
+            const auto scaleY = rect.height() / paintPixmap.height();
+            const QRectF target(rect.x() + (part.x() * scaleX),
+                                rect.y() + (part.y() * scaleY),
+                                part.width() * scaleX, part.height() * scaleY);
+            const bool wasSmooth =
+                painter.testRenderHint(QPainter::SmoothPixmapTransform);
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.drawPixmap(target, paintPixmap, QRectF(part));
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, wasSmooth);
+        }
+    }
     paintedRegion += rect.toAlignedRect();
+    // Paints made of images keep the GIF timer's pace; the others only
+    // change at the paints' own rate
+    if (auto *sink = animatedPaintRegionSink();
+        sink != nullptr && !paint->animatesWithImages())
+    {
+        *sink += paintedRegion;
+    }
     return paintedRegion;
 }
 

@@ -6,6 +6,7 @@
 
 #include <private/qpixmapfilter_p.h>
 #include <QFontMetricsF>
+#include <QHashFunctions>
 #include <QLabel>
 #include <QPainter>
 
@@ -74,30 +75,16 @@ QString Paint::getPixmapCacheKey(const QString &text, const QFont &font,
                                  float dpr, bool centerVertically,
                                  qreal padding) const
 {
-    QString key;
-    const auto fontKey = font.key();
-    key.reserve(this->id.size() + text.size() + fontKey.size() + 96);
-    // lengths first, so no part can run into the next
-    const auto appendString = [&key](QStringView value) {
-        key += QString::number(value.size());
-        key += u':';
-        key += value;
-        key += u'/';
-    };
-
-    appendString(this->id);
-    appendString(text);
-    appendString(fontKey);
-    key += QString::number(this->sourcePixmapCacheKey()) + u'/' +
-           QString::number(userColor.rgba()) + u'/' +
-           QString::number(qRound64(size.width() * dpr)) + u'x' +
-           QString::number(qRound64(size.height() * dpr)) + u'/' +
-           QString::number(qRound64(scale * 1000)) + u'/' +
-           QString::number(qRound64(dpr * 1000)) + u'/' +
-           QString::number(qRound64(std::max<qreal>(0, padding) * dpr)) + u'/' +
-           (centerVertically ? u'1' : u'0') + u'/' +
-           (this->shadowsEnabled() ? u'1' : u'0');
-    return key;
+    // A number made of everything that shapes the pixmap: asked for every
+    // animated name on every repaint, so it must be cheap (a long text with
+    // the font's whole description was a good part of the drawing time).
+    const auto hash = qHashMulti(
+        0, this->id, text, qHash(font), this->sourcePixmapCacheKey(),
+        userColor.rgba(), qRound64(size.width() * dpr),
+        qRound64(size.height() * dpr), qRound64(scale * 1000),
+        qRound64(dpr * 1000), qRound64(std::max<qreal>(0, padding) * dpr),
+        centerVertically, this->shadowsEnabled());
+    return QString::number(static_cast<quint64>(hash), 36);
 }
 
 QPixmap Paint::getPixmap(const QString &text, const QFont &font,

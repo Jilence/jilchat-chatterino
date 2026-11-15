@@ -16,6 +16,13 @@ public:
     virtual QBrush asBrush(QColor userColor, QRectF drawingRect) const = 0;
     virtual const std::vector<PaintDropShadow> &getDropShadows() const = 0;
     virtual bool animated() const = 0;
+    /// Whether the animation comes from (GIF) images, which step with the
+    /// GIF timer: such names are repainted on every GIF tick, not only at
+    /// the paints' own rate.
+    virtual bool animatesWithImages() const
+    {
+        return false;
+    }
     /// Whether the drop shadows are drawn; a setting of the paint's kind.
     virtual bool shadowsEnabled() const;
     /// How far the paint draws beyond the text on each side, for a paint

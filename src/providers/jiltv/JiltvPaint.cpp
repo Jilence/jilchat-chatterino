@@ -8,10 +8,13 @@
 #include "messages/Image.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
+#include "util/AnimatedPaintTick.hpp"
+#include "util/PaintVisiblePixels.hpp"
 
 #include <QConicalGradient>
 #include <QDateTime>
 #include <QFontMetricsF>
+#include <QHashFunctions>
 #include <QJsonArray>
 #include <QLinearGradient>
 #include <QPainter>
@@ -814,6 +817,49 @@ void applyFilters(QImage &img, double hue, double saturate, double brightness,
     }
 }
 
+/// The part of `img` with pixels that show (alpha above `threshold`); empty
+/// when nothing shows. The far tails of a blurred glow are left out.
+QRect visibleBounds(const QImage &img, int threshold = 2)
+{
+    int top = -1;
+    int bottom = -1;
+    int left = img.width();
+    int right = -1;
+    for (int y = 0; y < img.height(); y++)
+    {
+        const auto *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+        int first = -1;
+        int last = -1;
+        for (int x = 0; x < img.width(); x++)
+        {
+            if (qAlpha(line[x]) > threshold)
+            {
+                if (first < 0)
+                {
+                    first = x;
+                }
+                last = x;
+            }
+        }
+        if (first < 0)
+        {
+            continue;
+        }
+        if (top < 0)
+        {
+            top = y;
+        }
+        bottom = y;
+        left = std::min(left, first);
+        right = std::max(right, last);
+    }
+    if (top < 0)
+    {
+        return {};
+    }
+    return QRect(QPoint(left, top), QPoint(right, bottom));
+}
+
 QImage blank(QSize size)
 {
     QImage img(size.expandedTo({1, 1}), QImage::Format_ARGB32_Premultiplied);
@@ -1258,10 +1304,28 @@ struct ShadowCache {
     std::vector<QRgb> colors;
     /// All shadows over each other, to draw the name on.
     QImage under;
+    /// The part of the name's picture that shows with these shadows; found
+    /// again only when they are cast anew (it depends on the shapes, not on
+    /// the colors).
+    QRect visible;
+    bool visibleValid = false;
 };
 
 /// What the pictures of one name share from frame to frame.
 struct NameState {
+    NameState() = default;
+    NameState(const NameState &) = delete;
+    NameState &operator=(const NameState &) = delete;
+    NameState(NameState &&) = delete;
+    NameState &operator=(NameState &&) = delete;
+    ~NameState()
+    {
+        if (this->pixmap.cacheKey() != 0)
+        {
+            paintVisiblePixels().remove(this->pixmap.cacheKey());
+        }
+    }
+
     /// The stroke width the mask was made for; -1 without stroke.
     double maskStroke = -2;
     /// The letters (and stroke) in white: what the paint is clipped to.
@@ -1283,10 +1347,11 @@ struct NameState {
     QPixmap pixmap;
 };
 
-/// Shared by all paints, in KiB.
-QCache<QString, NameState> &nameStates()
+/// Shared by all paints, in KiB; keyed by a number made of what shapes the
+/// name's picture.
+QCache<quint64, NameState> &nameStates()
 {
-    static QCache<QString, NameState> cache(32 * 1024);
+    static QCache<quint64, NameState> cache(32 * 1024);
     return cache;
 }
 
@@ -1418,27 +1483,27 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     const qint64 textureKey = baked ? textureFrame->cacheKey() : 0;
     const auto durationMs =
         static_cast<qint64>(std::lround(this->doc_.duration * 1000));
-    // A new picture 30 times a second; all names move in lockstep.
+    // A new picture ANIMATED_PAINT_FPS times a second, on the same tick the
+    // chat repaints names with a paint; all names move in lockstep. Taken
+    // from the time on its own, the picture changed a little after the
+    // chat's tick and was shown one tick late, so the motion stuttered.
+    const qint64 framesPerLoop =
+        std::max<qint64>(1, (durationMs * ANIMATED_PAINT_FPS + 500) / 1000);
     const qint64 step =
         animate && this->animated() &&
                 (!baked || (effects && !this->effectsDoc_.tracks.empty()))
-            ? (QDateTime::currentMSecsSinceEpoch() % durationMs) * 30 / 1000
+            ? animatedPaintTick() % framesPerLoop
             : -1;
 
     // The chat gives the name `padding` (overflow()) on every side for the
     // glow and draws the pixmap over that larger rect, so the pixmap must
     // include it, centered or not; otherwise the name gets stretched.
     padding = std::max<qreal>(0, padding);
-    const auto key = QStringLiteral("%1|%2|%3|%4x%5|%6|%7|%8|%9|%10|%11")
-                         .arg(this->cacheId_, text, font.key())
-                         .arg(size.width())
-                         .arg(size.height())
-                         .arg(scale)
-                         .arg(dpr)
-                         .arg(centerVertically)
-                         .arg(padding)
-                         .arg(effects)
-                         .arg(userColor.rgba());
+    // A number, not a text: this runs for every animated name on every
+    // repaint
+    const auto key = static_cast<quint64>(qHashMulti(
+        0, this->cacheId_, text, qHash(font), size.width(), size.height(),
+        scale, dpr, centerVertically, padding, effects, userColor.rgba()));
 
     // Everything of the name that stays the same between frames is kept, so
     // a frame only draws what moves: the animated layers, and the shadows
@@ -1451,8 +1516,9 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         return state->pixmap;
     }
 
-    const double t =
-        step < 0 ? 0 : static_cast<double>(step) * 1000 / 30 / durationMs;
+    const double t = step < 0 ? 0
+                              : static_cast<double>(step) /
+                                    static_cast<double>(framesPerLoop);
     const Doc doc = (baked ? this->effectsDoc_ : this->doc_)
                         .frameAt(std::clamp(t, 0.0, 1.0));
 
@@ -1720,6 +1786,7 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         {
             cache.spread.clear();
             cache.colors.clear();
+            cache.visibleValid = false;
             QImage cast = img;
             for (const auto *shadow : shadows)
             {
@@ -1776,8 +1843,38 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         p.drawText(QPointF(nameBox.right(), baseline), QStringLiteral(":"));
     }
 
+    // Only the part that shows is drawn in the chat. Finding it means
+    // reading every pixel, so it is kept while the glow keeps its shape;
+    // without room for a glow the whole picture shows.
+    QRect visible;
+    const bool hasGlow = effects && !s.shadows.spread.empty();
+    if (hasGlow && s.shadows.visibleValid)
+    {
+        visible = s.shadows.visible;
+    }
+    else if (padding <= 0)
+    {
+        visible = QRect(QPoint(0, 0), img.size());
+    }
+    else
+    {
+        visible = visibleBounds(img);
+        if (hasGlow)
+        {
+            s.shadows.visible = visible;
+            s.shadows.visibleValid = true;
+        }
+    }
     auto pixmap = QPixmap::fromImage(std::move(img));
     pixmap.setDevicePixelRatio(dpr);
+    if (!s.pixmap.isNull())
+    {
+        paintVisiblePixels().remove(s.pixmap.cacheKey());
+    }
+    if (&s != &uncached)
+    {
+        paintVisiblePixels().insert(pixmap.cacheKey(), visible);
+    }
     s.step = step;
     s.textureFrame = textureKey;
     s.pixmap = pixmap;

@@ -129,6 +129,12 @@ public:
     QBrush asBrush(QColor userColor, QRectF drawingRect) const override;
     const std::vector<PaintDropShadow> &getDropShadows() const override;
     bool animated() const override;
+    /// A texture or baked shader loop: its pictures change with the GIF
+    /// timer.
+    bool animatesWithImages() const override
+    {
+        return this->texture_ != nullptr || !this->loops_.empty();
+    }
     bool shadowsEnabled() const override;
     qreal overflow(float scale) const override;
     QMarginsF overflowMargins(float scale) const override
@@ -140,6 +146,15 @@ public:
                              QColor userColor, QSizeF textSize, float scale,
                              float dpr, QMarginsF margins) const override
     {
+        // The chat asks for the whole glow room (overflowMargins), which is
+        // exactly the pixmap getPixmap makes: hand that out as it is instead
+        // of copying it into a new pixmap on every repaint.
+        const auto room = this->overflow(scale);
+        if (margins == QMarginsF(room, room, room, room))
+        {
+            return this->getPixmap(text, font, userColor, textSize, scale, dpr,
+                                   false, room);
+        }
         return this->croppedNametagPixmap(text, font, userColor, textSize,
                                           scale, dpr, margins);
     }

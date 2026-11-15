@@ -53,6 +53,7 @@
 #    include "singletons/ThemeVideoDecoder.hpp"
 #endif
 #include "singletons/WindowManager.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/Clipboard.hpp"
 #include "util/DistanceBetweenPoints.hpp"
 #include "util/Helpers.hpp"
@@ -99,6 +100,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QSet>
 #include <QSlider>
@@ -1468,7 +1470,20 @@ void ChannelView::initializeSignals()
                 return;
             }
 
-            this->update(this->animationRegion_);
+            // Names with an animated paint change only when the paints have
+            // a new picture; everything else animated (GIFs) on every tick.
+            QRegion dirty =
+                this->animationRegion_.subtracted(this->animationPaintRegion_);
+            const auto tick = animatedPaintTick();
+            if (tick != this->lastAnimatedPaintTick_)
+            {
+                this->lastAnimatedPaintTick_ = tick;
+                dirty += this->animationPaintRegion_;
+            }
+            if (!dirty.isEmpty())
+            {
+                this->update(dirty);
+            }
         });
 
     this->signalHolder_.managedConnect(
@@ -3519,6 +3534,7 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     if (start >= messagesSnapshot.size())
     {
         this->animationRegion_ = {};
+        this->animationPaintRegion_ = {};
         this->clearMessageCaches();
         return;
     }
@@ -3575,6 +3591,12 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     bool showLastMessageIndicator = getSettings()->showLastMessageIndicator;
 
     QRegion animationRegion;
+    // Names with an animated paint report themselves here while drawing
+    QRegion animationPaintRegion;
+    animatedPaintRegionSink() = &animationPaintRegion;
+    const auto stopCollecting = qScopeGuard([] {
+        animatedPaintRegionSink() = nullptr;
+    });
 
     for (; ctx.messageIndex < messagesSnapshot.size(); ++ctx.messageIndex)
     {
@@ -3650,6 +3672,9 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     // not freeze emotes that were not redrawn.
     this->animationRegion_ =
         (this->animationRegion_.subtracted(area) + animationRegion)
+            .intersected(this->rect());
+    this->animationPaintRegion_ =
+        (this->animationPaintRegion_.subtracted(area) + animationPaintRegion)
             .intersected(this->rect());
 #ifdef FOURTF
     if (!QRegion(this->rect()).subtracted(area).isEmpty())
