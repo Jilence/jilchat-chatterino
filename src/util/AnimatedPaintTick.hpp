@@ -31,6 +31,7 @@ inline qint64 animatedPaintTick()
 /// the paints' own rate instead of the GIFs'.
 inline QRegion *&animatedPaintRegionSink()
 {
+    // NOLINTNEXTLINE(misc-const-correctness): written through elsewhere
     static QRegion *sink = nullptr;
     return sink;
 }
@@ -40,6 +41,7 @@ inline QRegion *&animatedPaintRegionSink()
 /// on every tick even where an animated image lies close by.
 inline QRegion *&animatedImagePaintRegionSink()
 {
+    // NOLINTNEXTLINE(misc-const-correctness): written through elsewhere
     static QRegion *sink = nullptr;
     return sink;
 }
@@ -59,6 +61,7 @@ struct AnimatedImageSpot {
 /// (nullptr otherwise).
 inline std::vector<AnimatedImageSpot> *&animatedImageSpotSink()
 {
+    // NOLINTNEXTLINE(misc-const-correctness): written through elsewhere
     static std::vector<AnimatedImageSpot> *sink = nullptr;
     return sink;
 }

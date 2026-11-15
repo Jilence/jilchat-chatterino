@@ -69,7 +69,7 @@ QRectF snapRectToDevicePixels(const QRectF &rect, const QPainter &painter)
 /// scaled, smoothed draw costs several times as much). Returns false, and
 /// draws nothing, when the sizes don't match or the painter rotates.
 bool drawPixmapPixelExact(QPainter &painter, const QRectF &target,
-                          const QPixmap &pixmap, const QRect &part)
+                          const QPixmap &pixmap, QRect part)
 {
     // Where the target really lands: the painter's whole mapping, including
     // the display scaling and the offset of the buffer it draws into

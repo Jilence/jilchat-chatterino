@@ -825,14 +825,16 @@ QRect visibleBounds(const QImage &img, int threshold = 2)
     int bottom = -1;
     int left = img.width();
     int right = -1;
+    // The alpha of a premultiplied ARGB pixel is its most significant byte
+    constexpr int alphaByte = Q_BYTE_ORDER == Q_LITTLE_ENDIAN ? 3 : 0;
     for (int y = 0; y < img.height(); y++)
     {
-        const auto *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+        const uchar *line = img.constScanLine(y);
         int first = -1;
         int last = -1;
         for (int x = 0; x < img.width(); x++)
         {
-            if (qAlpha(line[x]) > threshold)
+            if (line[(x * 4) + alphaByte] > threshold)
             {
                 if (first < 0)
                 {
@@ -857,7 +859,7 @@ QRect visibleBounds(const QImage &img, int threshold = 2)
     {
         return {};
     }
-    return QRect(QPoint(left, top), QPoint(right, bottom));
+    return {QPoint(left, top), QPoint(right, bottom)};
 }
 
 QImage blank(QSize size)
@@ -1349,9 +1351,9 @@ struct NameState {
 
 /// Shared by all paints, in KiB; keyed by a number made of what shapes the
 /// name's picture.
-QCache<quint64, NameState> &nameStates()
+QCache<size_t, NameState> &nameStates()
 {
-    static QCache<quint64, NameState> cache(32 * 1024);
+    static QCache<size_t, NameState> cache(qsizetype{32} * 1024);
     return cache;
 }
 
@@ -1501,9 +1503,9 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     padding = std::max<qreal>(0, padding);
     // A number, not a text: this runs for every animated name on every
     // repaint
-    const auto key = static_cast<quint64>(qHashMulti(
+    const size_t key = qHashMulti(
         0, this->cacheId_, text, qHash(font), size.width(), size.height(),
-        scale, dpr, centerVertically, padding, effects, userColor.rgba()));
+        scale, dpr, centerVertically, padding, effects, userColor.rgba());
 
     // Everything of the name that stays the same between frames is kept, so
     // a frame only draws what moves: the animated layers, and the shadows

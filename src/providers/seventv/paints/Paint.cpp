@@ -79,7 +79,7 @@ QString Paint::getPixmapCacheKey(const QString &text, const QFont &font,
     // A number made of everything that shapes the pixmap: asked for every
     // animated name on every repaint, so it must be cheap (a long text with
     // the font's whole description was a good part of the drawing time).
-    const auto hash = qHashMulti(
+    const size_t hash = qHashMulti(
         0, this->id, text, qHash(font), this->sourcePixmapCacheKey(),
         userColor.rgba(), qRound64(size.width() * dpr),
         qRound64(size.height() * dpr), qRound64(scale * 1000),
@@ -213,7 +213,7 @@ QPixmap Paint::getNametagPixmap(const QString &text, const QFont &font,
     // painting the text with the paint's image and blurring its shadows.
     // The picture is kept by everything that shapes it, including the
     // paint's current frame, so a name is only drawn again when it changes.
-    static QCache<QString, QPixmap> pictures(16 * 1024);  // KiB
+    static QCache<QString, QPixmap> pictures(qsizetype{16} * 1024);  // KiB
     const auto colon = getApp()->getThemes()->messages.textColors.regular;
     const auto key = this->getNametagPixmapCacheKey(
                          text, font, userColor, textSize, scale, dpr, margins) +
