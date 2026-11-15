@@ -36,6 +36,8 @@
 #ifdef CHATTERINO_HAVE_PLUGINS
 #    include "controllers/plugins/PluginController.hpp"
 #endif
+#include "common/network/NetworkRequest.hpp"
+#include "common/network/NetworkResult.hpp"
 #include "controllers/emotes/EmoteController.hpp"
 #include "controllers/sound/MiniaudioBackend.hpp"
 #include "controllers/sound/NullBackend.hpp"
@@ -59,6 +61,7 @@
 #include "providers/jilchat/JilChatDailyQuote.hpp"
 #include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
+#include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/potat/PotatCommands.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
@@ -79,9 +82,6 @@
 #include "singletons/CrashHandler.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/helper/LoggingChannel.hpp"
-#include "common/network/NetworkRequest.hpp"
-#include "common/network/NetworkResult.hpp"
-#include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "singletons/Logging.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Settings.hpp"
