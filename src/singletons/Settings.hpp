@@ -938,6 +938,10 @@ public:
     BoolSetting useBotLimitsMessage = {"/misc/botLimitsMessage", false};
     BoolSetting useBotLimitsJoin = {"/misc/botLimitsJoin", false};
     BoolSetting betaUpdates = {"/misc/beta", false};
+    /// Show the update popup on start when a new version is out
+    BoolSetting showUpdatePrompt = {"/misc/showUpdatePrompt", true};
+    /// The version "Skip this version" was clicked for; no popup for it
+    QStringSetting skippedUpdateVersion = {"/misc/skippedUpdateVersion", ""};
     BoolSetting abnormalNonceDetection = {"/misc/abnormalNonceDetection",
                                           false};
     BoolSetting normalNonceDetection = {"/misc/normalNonceDetection", false};

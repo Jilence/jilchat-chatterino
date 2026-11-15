@@ -45,7 +45,7 @@ protected:
 private:
     UpdatePrompt();
 
-    enum Control { UpdateNow, RemindLater, Close, ControlCount };
+    enum Control { UpdateNow, RemindLater, SkipVersion, Close, ControlCount };
 
     void layOut();
     int controlAt(QPointF position) const;

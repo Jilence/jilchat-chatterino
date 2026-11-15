@@ -844,7 +844,6 @@ std::vector<Updates::Change> Updates::parseChanges(const QString &notes)
     static const QRegularExpression commit(
         u"^(?:\\[[^\\]]*\\]\\s*)?([a-z]+)(?:\\([^)]*\\))?(!)?:\\s*(.+)$"_s);
     static const QRegularExpression sentenceEnd(u"(?<=[.!?])\\s+"_s);
-    constexpr size_t maxChanges = 12;
 
     const auto capitalized = [](QString text) {
         text = text.trimmed();
@@ -927,12 +926,8 @@ std::vector<Updates::Change> Updates::parseChanges(const QString &notes)
         }
     }
 
-    auto &changes = fromNotes.empty() ? fromCommits : fromNotes;
-    if (changes.size() > maxChanges)
-    {
-        changes.resize(maxChanges);
-    }
-    return changes;
+    // Every change is shown; the popup's list scrolls
+    return fromNotes.empty() ? fromCommits : fromNotes;
 }
 
 const std::vector<Updates::Change> &Updates::getChanges() const
