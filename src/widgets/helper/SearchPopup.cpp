@@ -1492,7 +1492,6 @@ QScrollArea *SearchPopup::createFilterPanel()
         auto *bodyLayout = new QVBoxLayout(body);
         bodyLayout->setContentsMargins(12, 0, 0, 4);
         bodyLayout->setSpacing(2);
-        body->setVisible(expanded);
 
         QObject::connect(
             header, &QToolButton::toggled, body, [header, body](bool open) {
@@ -1502,6 +1501,9 @@ QScrollArea *SearchPopup::createFilterPanel()
 
         layout->addWidget(header);
         layout->addWidget(body);
+        // only once it's in the panel: shown on its own it would flash up
+        // as a window of its own
+        body->setVisible(expanded);
         this->filterSections_.push_back({header, body});
         return bodyLayout;
     };
@@ -1685,7 +1687,9 @@ void SearchPopup::updateChannelFilters()
     }
     names.removeDuplicates();
 
-    const bool show = names.size() > 1;
+    // The Channels button above the results already picks the channels, so
+    // the panel doesn't offer them a second time
+    const bool show = false;
     for (const auto &section : this->filterSections_)
     {
         if (section.body == this->channelSection_)
