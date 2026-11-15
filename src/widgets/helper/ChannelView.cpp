@@ -940,6 +940,8 @@ struct EditableEmoteSet {
     QString owner;
     /// BTTV: the BetterTTV user ID of the set's owner
     QString ownerId;
+    /// BTTV: the Twitch user ID of the set's owner
+    QString ownerTwitchId;
     /// The Twitch channel whose chat shows this set live, when it is the
     /// active one there; that chat announces changes itself
     QString liveIn;
@@ -1076,11 +1078,13 @@ void fetchBttvSets(
                                 QString id;
                                 QString login;
                                 QString name;
+                                QString twitchId;
                             };
                             std::vector<Owner> owners{{
                                 me.value("id").toString(),
                                 me.value("name").toString(),
                                 {},
+                                me.value("providerId").toString(),
                             }};
                             for (const auto &dashboard : value.toArray())
                             {
@@ -1095,6 +1099,7 @@ void fetchBttvSets(
                                     d.value("name").toString(),
                                     d.value("displayName")
                                         .toString(d.value("name").toString()),
+                                    d.value("providerId").toString(),
                                 });
                             }
                             // Their sets and which one is live in their chat
@@ -1129,6 +1134,8 @@ void fetchBttvSets(
                                                     QStringLiteral("Default"),
                                                 .owner = owners[i].name,
                                                 .ownerId = owners[i].id,
+                                                .ownerTwitchId =
+                                                    owners[i].twitchId,
                                                 .liveIn = {},
                                             });
                                     }
@@ -1188,6 +1195,7 @@ void fetchBttvSets(
                                                     o.value("name").toString(),
                                                 .owner = owner.name,
                                                 .ownerId = owner.id,
+                                                .ownerTwitchId = owner.twitchId,
                                                 .liveIn = {},
                                             });
                                         }
@@ -1471,7 +1479,7 @@ void loadEditableSets(SetProvider provider, std::function<void()> then)
 /// Says in `reportTo` how adding or removing `alias` went
 void reportSetEdit(SetProvider provider, const EditableEmoteSet &set,
                    const QString &alias, bool add, const QString &error,
-                   const ChannelPtr &reportTo)
+                   const ChannelPtr &reportTo, bool replaced = false)
 {
     const auto name = providerName(provider);
     if (!error.isEmpty())
@@ -1490,8 +1498,9 @@ void reportSetEdit(SetProvider provider, const EditableEmoteSet &set,
         return;
     }
     reportTo->addSystemMessage(
-        (add ? QStringLiteral("Added %1 to the %2 set %3.")
-             : QStringLiteral("Removed %1 from the %2 set %3."))
+        (replaced ? QStringLiteral("Replaced %1 in the %2 set %3.")
+         : add    ? QStringLiteral("Added %1 to the %2 set %3.")
+                  : QStringLiteral("Removed %1 from the %2 set %3."))
             .arg(alias, name, set.name));
 }
 
@@ -1499,7 +1508,7 @@ void reportSetEdit(SetProvider provider, const EditableEmoteSet &set,
 /// from its own name), or takes it out again
 void editBttvSet(const EditableEmoteSet &set, const QString &emoteId,
                  const QString &ownName, const QString &alias, bool add,
-                 const ChannelPtr &reportTo)
+                 const ChannelPtr &reportTo, bool replaced = false)
 {
     const auto me = editableSets(SetProvider::Bttv).bttvUserId;
     const auto path =
@@ -1515,20 +1524,20 @@ void editBttvSet(const EditableEmoteSet &set, const QString &emoteId,
         return;
     }
     bttvRequest(NetworkRequestType::Put, path, std::nullopt,
-                [set, path, ownName, alias, reportTo](const QJsonValue &,
-                                                      const QString &error) {
+                [set, path, ownName, alias, reportTo, replaced](
+                    const QJsonValue &, const QString &error) {
                     if (!error.isEmpty() || alias == ownName)
                     {
                         reportSetEdit(SetProvider::Bttv, set, alias, true,
-                                      error, reportTo);
+                                      error, reportTo, replaced);
                         return;
                     }
                     // Then give it the chosen name
                     bttvRequest(
                         NetworkRequestType::Put, path + QStringLiteral("/code"),
                         QJsonObject{{"code", alias}},
-                        [set, ownName, alias, reportTo](const QJsonValue &,
-                                                        const QString &error) {
+                        [set, ownName, alias, reportTo, replaced](
+                            const QJsonValue &, const QString &error) {
                             reportSetEdit(
                                 SetProvider::Bttv, set, alias, true,
                                 error.isEmpty()
@@ -1536,7 +1545,7 @@ void editBttvSet(const EditableEmoteSet &set, const QString &emoteId,
                                     : QStringLiteral("added as %1, but not "
                                                      "renamed (%2)")
                                           .arg(ownName, error),
-                                reportTo);
+                                reportTo, replaced);
                         });
                 });
 }
@@ -1545,7 +1554,7 @@ void editBttvSet(const EditableEmoteSet &set, const QString &emoteId,
 /// name it has there), and says how it went in `reportTo`
 void editEmoteSet(SetProvider provider, const EditableEmoteSet &set,
                   const QString &emoteId, const QString &alias, bool add,
-                  const ChannelPtr &reportTo)
+                  const ChannelPtr &reportTo, bool replaced = false)
 {
     static const auto SEVENTV_ADD = QStringLiteral(R"(
 mutation AddEmote($set: Id!, $emote: Id!, $alias: String) {
@@ -1573,10 +1582,197 @@ mutation RemoveEmote($set: ID!, $emote: ID!) {
                 add ? (sevenTv ? SEVENTV_ADD : JILTV_ADD)
                     : (sevenTv ? SEVENTV_REMOVE : JILTV_REMOVE),
                 variables,
-                [provider, set, alias, add, reportTo](const QJsonObject &,
-                                                      const QString &error) {
-                    reportSetEdit(provider, set, alias, add, error, reportTo);
+                [provider, set, alias, add, reportTo, replaced](
+                    const QJsonObject &, const QString &error) {
+                    reportSetEdit(provider, set, alias, add, error, reportTo,
+                                  replaced);
                 });
+}
+
+/// Looks in the set for an emote called `alias`; `done` gets its ID, or
+/// nothing when the name is free
+void findNameInSet(SetProvider provider, const EditableEmoteSet &set,
+                   const QString &alias, std::function<void(QString)> done)
+{
+    if (provider == SetProvider::SevenTv)
+    {
+        static const auto QUERY = QStringLiteral(R"(
+query NameInSet($set: Id!, $name: String!) {
+  emoteSets { emoteSet(id: $set) {
+    emotes(query: $name, perPage: 50) { items { id alias } }
+  } }
+})");
+        sevenTvGql(editableSets(provider).token, QUERY,
+                   {{"set", set.id}, {"name", alias}},
+                   [alias, done](const QJsonObject &data, const QString &) {
+                       for (const auto &value : data.value("emoteSets")
+                                                    .toObject()
+                                                    .value("emoteSet")
+                                                    .toObject()
+                                                    .value("emotes")
+                                                    .toObject()
+                                                    .value("items")
+                                                    .toArray())
+                       {
+                           const auto item = value.toObject();
+                           if (item.value("alias").toString() == alias)
+                           {
+                               done(item.value("id").toString());
+                               return;
+                           }
+                       }
+                       done({});
+                   });
+        return;
+    }
+    if (provider == SetProvider::Jiltv)
+    {
+        static const auto QUERY = QStringLiteral(R"(
+query NameInSet($set: ID!) { emoteSet(id: $set) { emotes { name emote { id } } } })");
+        setsRequest(provider, QUERY, {{"set", set.id}},
+                    [alias, done](const QJsonObject &data, const QString &) {
+                        for (const auto &value : data.value("emoteSet")
+                                                     .toObject()
+                                                     .value("emotes")
+                                                     .toArray())
+                        {
+                            const auto entry = value.toObject();
+                            if (entry.value("name").toString() == alias)
+                            {
+                                done(entry.value("emote")
+                                         .toObject()
+                                         .value("id")
+                                         .toString());
+                                return;
+                            }
+                        }
+                        done({});
+                    });
+        return;
+    }
+    // BTTV: the default set is the channel's emotes, the others are sets
+    const bool isDefault = set.id == set.ownerId;
+    if (isDefault && set.ownerTwitchId.isEmpty())
+    {
+        done({});
+        return;
+    }
+    bttvRequest(
+        NetworkRequestType::Get,
+        isDefault
+            ? QStringLiteral("cached/users/twitch/%1").arg(set.ownerTwitchId)
+            : QStringLiteral("emote_sets/%1").arg(set.id),
+        std::nullopt, [alias, done](const QJsonValue &value, const QString &) {
+            const auto object = value.toObject();
+            for (const auto *key : {"channelEmotes", "sharedEmotes", "emotes"})
+            {
+                for (const auto &item : object.value(key).toArray())
+                {
+                    const auto entry = item.toObject();
+                    // Either the emote itself or an entry holding it
+                    const auto emote = entry.value("emote").isObject()
+                                           ? entry.value("emote").toObject()
+                                           : entry;
+                    const auto code = entry.value("code").toString(
+                        emote.value("code").toString());
+                    if (code == alias)
+                    {
+                        done(emote.value("id").toString());
+                        return;
+                    }
+                }
+            }
+            done({});
+        });
+}
+
+/// Takes the emote `emoteId` out of the set without a message; `done` gets
+/// an error, or nothing when it worked
+void removeFromSetQuietly(SetProvider provider, const EditableEmoteSet &set,
+                          const QString &emoteId, const QString &alias,
+                          std::function<void(QString)> done)
+{
+    if (provider == SetProvider::Bttv)
+    {
+        bttvRequest(
+            NetworkRequestType::Delete,
+            QStringLiteral("emotes/%1/shared/%2/%3")
+                .arg(emoteId, editableSets(provider).bttvUserId, set.id),
+            std::nullopt, [done](const QJsonValue &, const QString &error) {
+                done(error);
+            });
+        return;
+    }
+    const bool sevenTv = provider == SetProvider::SevenTv;
+    QJsonObject variables{{"set", set.id}, {"emote", emoteId}};
+    if (sevenTv)
+    {
+        variables.insert("alias", alias);
+    }
+    setsRequest(provider,
+                sevenTv ? QStringLiteral(R"(
+mutation RemoveEmote($set: Id!, $emote: Id!, $alias: String) {
+  emoteSets { emoteSet(id: $set) { removeEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
+})")
+                        : QStringLiteral(R"(
+mutation RemoveEmote($set: ID!, $emote: ID!) {
+  removeEmoteFromSet(setId: $set, emoteId: $emote) { id }
+})"),
+                variables, [done](const QJsonObject &, const QString &error) {
+                    done(error);
+                });
+}
+
+/// Adds the emote as `alias`. When another emote already has that name in
+/// the set, asks whether to replace it, and if so takes that one out first.
+void addToSetOrReplace(SetProvider provider, const EditableEmoteSet &set,
+                       const QString &emoteId, const QString &ownName,
+                       const QString &alias, const ChannelPtr &reportTo)
+{
+    const auto add = [provider, set, emoteId, ownName, alias,
+                      reportTo](bool replaced) {
+        if (provider == SetProvider::Bttv)
+        {
+            editBttvSet(set, emoteId, ownName, alias, true, reportTo, replaced);
+        }
+        else
+        {
+            editEmoteSet(provider, set, emoteId, alias, true, reportTo,
+                         replaced);
+        }
+    };
+    findNameInSet(
+        provider, set, alias,
+        [provider, set, emoteId, alias, reportTo, add](const QString &other) {
+            if (other.isEmpty() || other == emoteId)
+            {
+                add(false);
+                return;
+            }
+            const auto answer = QMessageBox::question(
+                nullptr,
+                QStringLiteral("Add to %1 set").arg(providerName(provider)),
+                QStringLiteral("%1 already has an emote called %2.\n\n"
+                               "Replace it with this one?")
+                    .arg(set.name, alias),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (answer != QMessageBox::Yes)
+            {
+                return;
+            }
+            removeFromSetQuietly(
+                provider, set, other, alias,
+                [provider, alias, reportTo, add](const QString &error) {
+                    if (!error.isEmpty())
+                    {
+                        reportTo->addSystemMessage(
+                            QStringLiteral("%1 didn't remove the old %2: %3")
+                                .arg(providerName(provider), alias, error));
+                        return;
+                    }
+                    add(true);
+                });
+        });
 }
 
 struct EmoteSetMenuEntry {
@@ -1692,8 +1888,9 @@ void fillBttvSetsMenu(const QPointer<QMenu> &menu,
                                         SetProvider::Bttv, set, name, ok);
                                     if (ok && !alias.isEmpty())
                                     {
-                                        editBttvSet(set, emoteId, name, alias,
-                                                    true, reportTo);
+                                        addToSetOrReplace(SetProvider::Bttv,
+                                                          set, emoteId, name,
+                                                          alias, reportTo);
                                     }
                                 });
                             entry.action->setEnabled(true);
@@ -1892,8 +2089,8 @@ query EmoteInSets($id: Id!, $sets: [Id!]!) {
                                 .trimmed();
                         if (ok && !newName.isEmpty())
                         {
-                            editEmoteSet(provider, set, emoteId, newName, true,
-                                         reportTo);
+                            addToSetOrReplace(provider, set, emoteId, name,
+                                              newName, reportTo);
                         }
                     });
                 entry.action->setEnabled(true);
