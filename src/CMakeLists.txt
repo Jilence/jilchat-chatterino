@@ -1548,7 +1548,7 @@ if (BUILD_APP)
         endif()
         get_filename_component(QT_BIN_DIR ${QT_CORE_LOC} DIRECTORY)
 
-        # This assumes the installed CRT is up-to-date (see .CI/deploy-crt.ps1)
+        # This assumes the installed CRT is up-to-date (see the "Prepare build dir (windows)" step in .github/workflows/build.yml)
         set(WINDEPLOYQT_COMMAND_ARGV
             "${WINDEPLOYQT_PATH}"
             "$<TARGET_FILE:${EXECUTABLE_PROJECT}>"

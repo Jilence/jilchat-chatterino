@@ -15,7 +15,7 @@
 // exits. An install for all users (in Program Files) asks for administrator
 // rights first.
 //
-// Built by build-installer.ps1 with the C# compiler that ships with Windows,
+// Built by the "Build installer" step of .github/workflows/create-installer.yml with the C# compiler that ships with Windows,
 // so it's C# 5.
 
 using System;

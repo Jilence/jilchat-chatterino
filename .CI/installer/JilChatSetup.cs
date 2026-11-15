@@ -7,7 +7,7 @@
 // which is what allows the soft shadow, rounded corners and glow. The window
 // follows the installer of Solrino (MIT), in black and white.
 //
-// Built by build-installer.ps1 with the C# compiler that ships with Windows,
+// Built by the "Build installer" step of .github/workflows/create-installer.yml with the C# compiler that ships with Windows,
 // so it's C# 5: no string interpolation, no ?. and no expression bodies.
 //
 // Switches:
