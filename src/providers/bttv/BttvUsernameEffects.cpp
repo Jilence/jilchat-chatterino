@@ -81,10 +81,9 @@ public:
             double(QDateTime::currentMSecsSinceEpoch() % 16000) * 96.0 * 2.0 /
             16000.0);
         // A number, not a text: asked for every name on every repaint
-        const auto key =
-            qHashMulti(0, text, qHash(font), size.width(), size.height(), dpr,
-                       centerVertically, padding, outlined,
-                       texture ? QRgb{0} : userColor.rgba());
+        const auto key = qHashMulti(0, text, font, size.width(), size.height(),
+                                    dpr, centerVertically, padding, outlined,
+                                    texture ? QRgb{0} : userColor.rgba());
         const auto *kept = this->frames_.object(key);
         if (kept != nullptr && kept->step == step)
         {

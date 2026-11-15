@@ -26,6 +26,7 @@
 #include <cmath>
 #include <numbers>
 #include <ranges>
+#include <utility>
 
 // The paint format is defined by @jiltv/paint (jiltv-paint/src/types.ts);
 // this mirrors its CSS compiler (compile.ts), color math (color.ts) and
@@ -834,7 +835,7 @@ QRect visibleBounds(const QImage &img, int threshold = 2)
         int last = -1;
         for (int x = 0; x < img.width(); x++)
         {
-            if (line[(x * 4) + alphaByte] > threshold)
+            if (std::cmp_greater(line[(x * 4) + alphaByte], threshold))
             {
                 if (first < 0)
                 {
@@ -1503,9 +1504,9 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     padding = std::max<qreal>(0, padding);
     // A number, not a text: this runs for every animated name on every
     // repaint
-    const size_t key = qHashMulti(
-        0, this->cacheId_, text, qHash(font), size.width(), size.height(),
-        scale, dpr, centerVertically, padding, effects, userColor.rgba());
+    const size_t key = qHashMulti(0, this->cacheId_, text, font, size.width(),
+                                  size.height(), scale, dpr, centerVertically,
+                                  padding, effects, userColor.rgba());
 
     // Everything of the name that stays the same between frames is kept, so
     // a frame only draws what moves: the animated layers, and the shadows

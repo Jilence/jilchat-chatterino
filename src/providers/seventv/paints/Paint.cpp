@@ -80,11 +80,11 @@ QString Paint::getPixmapCacheKey(const QString &text, const QFont &font,
     // animated name on every repaint, so it must be cheap (a long text with
     // the font's whole description was a good part of the drawing time).
     const size_t hash = qHashMulti(
-        0, this->id, text, qHash(font), this->sourcePixmapCacheKey(),
-        userColor.rgba(), qRound64(size.width() * dpr),
-        qRound64(size.height() * dpr), qRound64(scale * 1000),
-        qRound64(dpr * 1000), qRound64(std::max<qreal>(0, padding) * dpr),
-        centerVertically, this->shadowsEnabled());
+        0, this->id, text, font, this->sourcePixmapCacheKey(), userColor.rgba(),
+        qRound64(size.width() * dpr), qRound64(size.height() * dpr),
+        qRound64(scale * 1000), qRound64(dpr * 1000),
+        qRound64(std::max<qreal>(0, padding) * dpr), centerVertically,
+        this->shadowsEnabled());
     return QString::number(static_cast<quint64>(hash), 36);
 }
 
