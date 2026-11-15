@@ -1472,8 +1472,20 @@ void ChannelView::initializeSignals()
 
             // Names with an animated paint change only when the paints have
             // a new picture; everything else animated (GIFs) on every tick.
+            // Animated images only once they show another picture;
+            // everything else animated on every tick
             QRegion dirty =
-                this->animationRegion_.subtracted(this->animationPaintRegion_);
+                this->animationRegion_.subtracted(this->animationPaintRegion_)
+                    .subtracted(this->animationImageRegion_) +
+                this->animationImagePaintRegion_;
+            for (const auto &spot : this->animationImageSpots_)
+            {
+                const auto picture = spot.image->pixmapOrLoad();
+                if (!picture || picture->cacheKey() != spot.shown)
+                {
+                    dirty += spot.rect;
+                }
+            }
             const auto tick = animatedPaintTick();
             if (tick != this->lastAnimatedPaintTick_)
             {
@@ -1482,6 +1494,32 @@ void ChannelView::initializeSignals()
             }
             if (!dirty.isEmpty())
             {
+                // Few wide rectangles instead of many small ones: Qt clips
+                // every draw against each rectangle of the region, so many
+                // small ones (one per changed badge) cost more than the
+                // little extra area of joining the ones of a line
+                std::vector<QRect> rects(dirty.begin(), dirty.end());
+                std::ranges::sort(rects, {}, &QRect::top);
+                QRegion joined;
+                QRect band;
+                for (const auto &rect : rects)
+                {
+                    if (!band.isNull() && rect.top() <= band.bottom())
+                    {
+                        band = band.united(rect);
+                        continue;
+                    }
+                    if (!band.isNull())
+                    {
+                        joined += band;
+                    }
+                    band = rect;
+                }
+                if (!band.isNull())
+                {
+                    joined += band;
+                }
+                dirty = joined;
                 this->update(dirty);
             }
         });
@@ -3535,6 +3573,9 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     {
         this->animationRegion_ = {};
         this->animationPaintRegion_ = {};
+        this->animationImageSpots_.clear();
+        this->animationImageRegion_ = {};
+        this->animationImagePaintRegion_ = {};
         this->clearMessageCaches();
         return;
     }
@@ -3594,8 +3635,15 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     // Names with an animated paint report themselves here while drawing
     QRegion animationPaintRegion;
     animatedPaintRegionSink() = &animationPaintRegion;
+    // ... and animated images, with the picture they show
+    std::vector<AnimatedImageSpot> animationImageSpots;
+    animatedImageSpotSink() = &animationImageSpots;
+    QRegion animationImagePaintRegion;
+    animatedImagePaintRegionSink() = &animationImagePaintRegion;
     const auto stopCollecting = qScopeGuard([] {
         animatedPaintRegionSink() = nullptr;
+        animatedImageSpotSink() = nullptr;
+        animatedImagePaintRegionSink() = nullptr;
     });
 
     for (; ctx.messageIndex < messagesSnapshot.size(); ++ctx.messageIndex)
@@ -3676,6 +3724,27 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     this->animationPaintRegion_ =
         (this->animationPaintRegion_.subtracted(area) + animationPaintRegion)
             .intersected(this->rect());
+    // Images drawn now replace those that were in the repainted area
+    std::erase_if(this->animationImageSpots_, [&](const auto &spot) {
+        return area.intersects(spot.rect) ||
+               !this->rect().intersects(spot.rect);
+    });
+    for (auto &spot : animationImageSpots)
+    {
+        if (this->rect().intersects(spot.rect))
+        {
+            this->animationImageSpots_.push_back(std::move(spot));
+        }
+    }
+    this->animationImagePaintRegion_ =
+        (this->animationImagePaintRegion_.subtracted(area) +
+         animationImagePaintRegion)
+            .intersected(this->rect());
+    this->animationImageRegion_ = {};
+    for (const auto &spot : this->animationImageSpots_)
+    {
+        this->animationImageRegion_ += spot.rect;
+    }
 #ifdef FOURTF
     if (!QRegion(this->rect()).subtracted(area).isEmpty())
     {

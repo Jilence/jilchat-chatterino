@@ -1066,10 +1066,20 @@ QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset,
                 paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
             drawPixmapWithOptionalSmoothing(painter, drawRect, *pixmap,
                                             this->getFlags());
-            return QRegion(rect.toAlignedRect()) |
-                   QRegion(snapRectToDevicePixels(drawRect, painter)
-                               .toAlignedRect()) |
-                   shadowRegion;
+            auto region =
+                QRegion(rect.toAlignedRect()) |
+                QRegion(
+                    snapRectToDevicePixels(drawRect, painter).toAlignedRect()) |
+                shadowRegion;
+            if (auto *spots = animatedImageSpotSink())
+            {
+                spots->push_back({
+                    .rect = region.boundingRect(),
+                    .image = this->image_,
+                    .shown = pixmap->cacheKey(),
+                });
+            }
+            return region;
         }
     }
     return {};
@@ -1924,8 +1934,10 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     paintedRegion += rect.toAlignedRect();
     // Paints made of images keep the GIF timer's pace; the others only
     // change at the paints' own rate
-    if (auto *sink = animatedPaintRegionSink();
-        sink != nullptr && !paint->animatesWithImages())
+    if (auto *sink = paint->animatesWithImages()
+                         ? animatedImagePaintRegionSink()
+                         : animatedPaintRegionSink();
+        sink != nullptr)
     {
         *sink += paintedRegion;
     }

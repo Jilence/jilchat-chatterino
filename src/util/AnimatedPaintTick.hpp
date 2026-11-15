@@ -5,9 +5,15 @@
 #pragma once
 
 #include <QDateTime>
+#include <QRect>
 #include <QRegion>
 
+#include <memory>
+#include <vector>
+
 namespace chatterino {
+
+class Image;
 
 /// Animated username paints get a new picture this many times a second (all
 /// in lockstep). The chat repaints its animated parts 50 times a second for
@@ -26,6 +32,34 @@ inline qint64 animatedPaintTick()
 inline QRegion *&animatedPaintRegionSink()
 {
     static QRegion *sink = nullptr;
+    return sink;
+}
+
+/// Names whose paint is made of images (they change with the GIF timer)
+/// report themselves here while a chat draws, so they are repainted whole
+/// on every tick even where an animated image lies close by.
+inline QRegion *&animatedImagePaintRegionSink()
+{
+    static QRegion *sink = nullptr;
+    return sink;
+}
+
+/// An animated image (GIF emote or badge) as the chat drew it: where, and
+/// which of its pictures it showed. The chat repaints the spot only once the
+/// image shows another picture; most GIFs change far less often than the
+/// chat's 50 repaints a second.
+struct AnimatedImageSpot {
+    QRect rect;
+    std::shared_ptr<Image> image;
+    /// QPixmap::cacheKey() of the picture that was drawn
+    qint64 shown = 0;
+};
+
+/// While a chat draws its messages, animated images report themselves here
+/// (nullptr otherwise).
+inline std::vector<AnimatedImageSpot> *&animatedImageSpotSink()
+{
+    static std::vector<AnimatedImageSpot> *sink = nullptr;
     return sink;
 }
 
