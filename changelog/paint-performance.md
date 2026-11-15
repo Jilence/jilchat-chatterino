@@ -1,0 +1,2 @@
+- Changed Less CPU for animated username paints. JilTV, 7TV and BTTV paints keep the pictures of names they already drew and only draw what changed; names with a paint that isn't made of images are repainted when the paint has a new picture, not 50 times a second.
+- Changed Animated emotes and badges are only repainted when they show another picture.
