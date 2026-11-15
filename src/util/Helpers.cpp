@@ -623,8 +623,7 @@ bool openWebUrl(const QUrl &url)
         (scheme.compare(u"https", Qt::CaseInsensitive) != 0 &&
          scheme.compare(u"http", Qt::CaseInsensitive) != 0))
     {
-        qCWarning(chatterinoApp)
-            << "Refused to open a link that isn't http(s)";
+        qCWarning(chatterinoApp) << "Refused to open a link that isn't http(s)";
         return false;
     }
     return QDesktopServices::openUrl(url);
