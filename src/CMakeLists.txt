@@ -635,8 +635,6 @@ set(SOURCE_FILES
         providers/moltorino/MoltorinoAuth.cpp
         providers/moltorino/MoltorinoAuth.hpp
         providers/moltorino/MoltorinoFeatureFlags.hpp
-        # providers/moltorino/MoltorinoPresence.cpp
-        # providers/moltorino/MoltorinoPresence.hpp
         providers/moltorino/MoltorinoSupporterBadges.cpp
         providers/moltorino/MoltorinoSupporterBadges.hpp
 
@@ -989,8 +987,6 @@ set(SOURCE_FILES
         widgets/buttons/FollowButton.hpp
         widgets/buttons/DrawnButton.cpp
         widgets/buttons/DrawnButton.hpp
-        # widgets/buttons/InitMoltorinoUpdateButton.cpp
-        # widgets/buttons/InitMoltorinoUpdateButton.hpp
         widgets/buttons/InitUpdateButton.cpp
         widgets/buttons/InitUpdateButton.hpp
         widgets/buttons/LabelButton.cpp
@@ -1566,18 +1562,6 @@ if (BUILD_APP)
             list(APPEND WINDEPLOYQT_COMMAND_ARGV --force-openssl)
         endif()
         string(REPLACE ";" " " WINDEPLOYQT_COMMAND "${WINDEPLOYQT_COMMAND_ARGV}")
-
-        set(MOLTORINO_SUPPORT_7ZIP_DIR "${CMAKE_SOURCE_DIR}/tools/support/7zip")
-        if (EXISTS "${MOLTORINO_SUPPORT_7ZIP_DIR}/7z.exe")
-            add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${MOLTORINO_SUPPORT_7ZIP_DIR}"
-                    "$<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>/support/7zip"
-                VERBATIM)
-
-            install(DIRECTORY "${MOLTORINO_SUPPORT_7ZIP_DIR}/"
-                DESTINATION support/7zip)
-        endif()
 
         install(TARGETS ${EXECUTABLE_PROJECT}
             RUNTIME_DEPENDENCIES

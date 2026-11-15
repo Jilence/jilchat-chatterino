@@ -47,10 +47,12 @@ def create_artifacts_table(artifact_dir: str, include_installer: bool):
             for ia, file in enumerate(files):
                 s += "<tr>"
                 if io == 0 and ia == 0:
-                    s += f'<td rowspan="{sum(len(f) for f in archs.values())}" colspan="1">{os_name}</td>'
+                    rows = sum(len(f) for f in archs.values())
+                    s += f'<td rowspan="{rows}" colspan="1">{os_name}</td>'
                 if ia == 0:
                     s += f'<td rowspan="{len(files)}" colspan="1">{arch}</td>'
-                s += f'<td><a href="{ROOT_DOWNLOAD_URL}/{file}">{file}</a></td>'
+                url = f"{ROOT_DOWNLOAD_URL}/{file}"
+                s += f'<td><a href="{url}">{file}</a></td>'
                 s += "</tr>"
     s += "</tbody></table>"
     return s
@@ -126,11 +128,13 @@ parser.add_argument("--include-installer", action="store_true")
 args = parser.parse_args()
 
 
+stable_url = "https://github.com/Jilence/jilchat-chatterino/releases/tag"
+
 print("> [!WARNING]")
 print(
     "> This is an experimental version that may break. "
     "If you're looking for the latest stable release, see "
-    f"https://github.com/Jilence/jilchat-chatterino/releases/tag/{get_current_stable()}.\n"
+    f"{stable_url}/{get_current_stable()}.\n"
 )
 
 print("### Downloads\n")

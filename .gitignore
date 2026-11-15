@@ -20,9 +20,6 @@ scratch/
 *.lib
 *.exp
 
-!tools/support/7zip/7z.exe
-!tools/support/7zip/7z.dll
-
 # Qt-es
 
 /.qmake.cache

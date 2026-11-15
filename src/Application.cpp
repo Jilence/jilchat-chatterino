@@ -79,7 +79,6 @@
 #include "singletons/CrashHandler.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/helper/LoggingChannel.hpp"
-// #include "providers/moltorino/MoltorinoPresence.hpp"
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
@@ -374,8 +373,6 @@ void Application::initialize(Settings &settings, const Paths &paths)
                                 this->seventvEventAPI.get());
 
     this->streamerMode->start();
-
-    // getMoltorinoPresence()->init();
 
     {
         auto &s = *getSettings();

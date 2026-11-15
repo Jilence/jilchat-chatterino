@@ -29,4 +29,4 @@ out = {set["set_id"]: [trim_version(v) for v in set["versions"]] for set in base
 with open(
     Path(__file__).parent.parent / "resources" / "twitch-badges.json", mode="w"
 ) as f:
-    f.write(json.dumps(out, separators=(",", ":")))
+    f.write(json.dumps(out, indent=1) + "\n")
