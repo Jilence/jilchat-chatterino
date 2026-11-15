@@ -81,6 +81,11 @@ public:
     QString name;
 
 protected:
+    /// Draws what getNametagPixmap hands out (it keeps the result).
+    QPixmap renderNametagPixmap(const QString &text, const QFont &font,
+                                QColor userColor, QSizeF textSize, float scale,
+                                float dpr, QMarginsF margins) const;
+
     /// getNametagPixmap for paints with their own getPixmap: drawn with
     /// overflow() on every side, then cut to `margins`
     QPixmap croppedNametagPixmap(const QString &text, const QFont &font,

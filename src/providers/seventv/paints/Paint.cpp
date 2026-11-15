@@ -5,6 +5,7 @@
 #include "singletons/Theme.hpp"
 
 #include <private/qpixmapfilter_p.h>
+#include <QCache>
 #include <QFontMetricsF>
 #include <QHashFunctions>
 #include <QLabel>
@@ -206,6 +207,34 @@ QPixmap Paint::getPixmap(const QString &text, const QFont &font,
 QPixmap Paint::getNametagPixmap(const QString &text, const QFont &font,
                                 QColor userColor, QSizeF textSize, float scale,
                                 float dpr, QMarginsF margins) const
+{
+    // Names with an animated paint are asked for on every repaint (up to 50
+    // times a second, for each name on screen), and drawing one means
+    // painting the text with the paint's image and blurring its shadows.
+    // The picture is kept by everything that shapes it, including the
+    // paint's current frame, so a name is only drawn again when it changes.
+    static QCache<QString, QPixmap> pictures(16 * 1024);  // KiB
+    const auto colon = getApp()->getThemes()->messages.textColors.regular;
+    const auto key = this->getNametagPixmapCacheKey(
+                         text, font, userColor, textSize, scale, dpr, margins) +
+                     u'/' + QString::number(colon.rgba());
+    if (const auto *kept = pictures.object(key))
+    {
+        return *kept;
+    }
+    auto pixmap = this->renderNametagPixmap(text, font, userColor, textSize,
+                                            scale, dpr, margins);
+    const auto cost = static_cast<qsizetype>(
+        (static_cast<qint64>(pixmap.width()) * pixmap.height() * 4 + 1023) /
+        1024);
+    pictures.insert(key, new QPixmap(pixmap), std::max<qsizetype>(1, cost));
+    return pixmap;
+}
+
+QPixmap Paint::renderNametagPixmap(const QString &text, const QFont &font,
+                                   QColor userColor, QSizeF textSize,
+                                   float scale, float dpr,
+                                   QMarginsF margins) const
 {
     margins = {
         std::max<qreal>(0, margins.left()),
