@@ -6,6 +6,9 @@
 
 #include "Application.hpp"
 #include "common/Common.hpp"
+#include "common/Credentials.hpp"
+#include "common/network/NetworkRequest.hpp"
+#include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/automod/AutoModReviewController.hpp"
@@ -93,12 +96,17 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QSet>
 #include <QSlider>
@@ -906,9 +914,460 @@ QMenu *addEmoteContextMenuItems(QMenu *menu, const Emote &emote,
     return openMenu;
 }
 
+/// A 7TV emote set the signed-in 7TV user may change
+struct SevenTvEditableSet {
+    QString id;
+    QString name;
+    /// Empty for the user's own sets, else whose set it is
+    QString owner;
+    /// Twitch login of the set's owner
+    QString ownerLogin;
+    bool active = false;
+};
+
+/// The sets the 7TV login from the badge picker may change: its own and those
+/// of the people it's an editor for. Loaded once and kept for a few minutes.
+struct SevenTvEditableSets {
+    QString twitchUserId;
+    QString token;
+    std::vector<SevenTvEditableSet> sets;
+    QDateTime loadedAt;
+    bool loading = false;
+    /// Set when the last load failed or there is no 7TV login
+    QString problem;
+    std::vector<std::function<void()>> waiting;
+};
+
+SevenTvEditableSets &sevenTvEditableSets()
+{
+    static SevenTvEditableSets cache;
+    return cache;
+}
+
+void sevenTvGql(const QString &token, const QString &query,
+                const QJsonObject &variables,
+                std::function<void(const QJsonObject &, const QString &)> done)
+{
+    NetworkRequest(QStringLiteral("https://api.7tv.app/v4/gql"),
+                   NetworkRequestType::Post)
+        .header("Authorization", "Bearer " + token.toUtf8())
+        .json(QJsonObject{{"query", query}, {"variables", variables}})
+        .timeout(15000)
+        .onSuccess([done](const NetworkResult &result) {
+            const auto json = result.parseJson();
+            const auto errors = json.value(QStringLiteral("errors")).toArray();
+            done(json.value(QStringLiteral("data")).toObject(),
+                 errors.isEmpty()
+                     ? QString()
+                     : errors.first().toObject().value("message").toString(
+                           QStringLiteral("not allowed")));
+        })
+        .onError([done](const NetworkResult &result) {
+            if (result.status() == 401)
+            {
+                done({}, QStringLiteral("7TV login expired, connect it again "
+                                        "in the badge picker"));
+                return;
+            }
+            done({},
+                 QStringLiteral("couldn't reach 7TV: ") + result.formatError());
+        })
+        .execute();
+}
+
+/// Loads the editable sets if they aren't fresh, then calls `then`
+void loadSevenTvEditableSets(std::function<void()> then)
+{
+    auto &cache = sevenTvEditableSets();
+    const auto userId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+    if (cache.twitchUserId == userId && cache.problem.isEmpty() &&
+        cache.loadedAt.isValid() &&
+        cache.loadedAt.secsTo(QDateTime::currentDateTime()) < 300)
+    {
+        then();
+        return;
+    }
+    cache.waiting.push_back(std::move(then));
+    if (cache.loading && cache.twitchUserId == userId)
+    {
+        return;
+    }
+    cache.loading = true;
+    cache.twitchUserId = userId;
+
+    const auto finish = [userId](std::vector<SevenTvEditableSet> sets,
+                                 const QString &problem) {
+        auto &cache = sevenTvEditableSets();
+        if (cache.twitchUserId != userId)
+        {
+            return;
+        }
+        cache.loading = false;
+        cache.sets = std::move(sets);
+        cache.problem = problem;
+        cache.loadedAt = QDateTime::currentDateTime();
+        auto waiting = std::move(cache.waiting);
+        cache.waiting.clear();
+        for (auto &fn : waiting)
+        {
+            fn();
+        }
+    };
+
+    // The badge picker keeps the 7TV login under this name
+    Credentials::instance().get(
+        QStringLiteral("7tv"), userId, qApp, [finish](const QString &token) {
+            sevenTvEditableSets().token = token;
+            if (token.isEmpty())
+            {
+                finish({}, QStringLiteral("Connect 7TV in the badge picker "
+                                          "first"));
+                return;
+            }
+            static const auto QUERY = QStringLiteral(R"(
+query EditableSets {
+  users { me {
+    style { activeEmoteSetId }
+    ownedEmoteSets { id name kind }
+    editorFor {
+      state
+      permissions { emoteSet { manage } }
+      user {
+        mainConnection { platformUsername platformDisplayName }
+        style { activeEmoteSetId }
+        ownedEmoteSets { id name kind }
+      }
+    }
+  } }
+})");
+            sevenTvGql(
+                token, QUERY, {},
+                [finish](const QJsonObject &data, const QString &error) {
+                    const auto me =
+                        data.value("users").toObject().value("me").toObject();
+                    if (me.isEmpty())
+                    {
+                        finish({}, error.isEmpty()
+                                       ? QStringLiteral(
+                                             "7TV didn't accept the login, "
+                                             "connect it again in the badge "
+                                             "picker")
+                                       : error);
+                        return;
+                    }
+                    std::vector<SevenTvEditableSet> sets;
+                    const auto addSets = [&sets](const QJsonObject &user,
+                                                 const QString &owner,
+                                                 const QString &ownerLogin) {
+                        const auto active = user.value("style")
+                                                .toObject()
+                                                .value("activeEmoteSetId")
+                                                .toString();
+                        for (const auto &value :
+                             user.value("ownedEmoteSets").toArray())
+                        {
+                            const auto set = value.toObject();
+                            const auto kind = set.value("kind").toString();
+                            if (kind != "NORMAL" && kind != "PERSONAL")
+                            {
+                                continue;
+                            }
+                            const auto id = set.value("id").toString();
+                            sets.push_back({
+                                .id = id,
+                                .name = set.value("name").toString(),
+                                .owner = owner,
+                                .ownerLogin = ownerLogin,
+                                .active = id == active,
+                            });
+                        }
+                    };
+                    addSets(me, {},
+                            getApp()
+                                ->getAccounts()
+                                ->twitch.getCurrent()
+                                ->getUserName());
+                    for (const auto &value : me.value("editorFor").toArray())
+                    {
+                        const auto editor = value.toObject();
+                        if (editor.value("state").toString() != "ACCEPTED" ||
+                            !editor.value("permissions")
+                                 .toObject()
+                                 .value("emoteSet")
+                                 .toObject()
+                                 .value("manage")
+                                 .toBool())
+                        {
+                            continue;
+                        }
+                        const auto user = editor.value("user").toObject();
+                        auto owner = user.value("mainConnection")
+                                         .toObject()
+                                         .value("platformDisplayName")
+                                         .toString();
+                        if (owner.isEmpty())
+                        {
+                            owner = QStringLiteral("Someone");
+                        }
+                        addSets(user, owner,
+                                user.value("mainConnection")
+                                    .toObject()
+                                    .value("platformUsername")
+                                    .toString());
+                    }
+                    finish(std::move(sets), {});
+                });
+        });
+}
+
+/// Adds the emote to a 7TV set under `alias`, or removes it, and says how it
+/// went in `reportTo`. `liveInChannel` is the login whose chat shows this set
+/// live, so 7TV's own notice there isn't doubled.
+void editSevenTvSet(const QString &setId, const QString &setName,
+                    const QString &emoteId, const QString &alias, bool add,
+                    const QString &liveInChannel, const ChannelPtr &reportTo)
+{
+    static const auto ADD = QStringLiteral(R"(
+mutation AddEmote($set: Id!, $emote: Id!, $alias: String) {
+  emoteSets { emoteSet(id: $set) { addEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
+})");
+    static const auto REMOVE = QStringLiteral(R"(
+mutation RemoveEmote($set: Id!, $emote: Id!, $alias: String) {
+  emoteSets { emoteSet(id: $set) { removeEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
+})");
+    sevenTvGql(sevenTvEditableSets().token, add ? ADD : REMOVE,
+               {{"set", setId}, {"emote", emoteId}, {"alias", alias}},
+               [=](const QJsonObject &, const QString &error) {
+                   if (!error.isEmpty())
+                   {
+                       reportTo->addSystemMessage(
+                           QStringLiteral("7TV didn't %1 %2: %3")
+                               .arg(add ? QStringLiteral("add")
+                                        : QStringLiteral("remove"),
+                                    alias, error));
+                       return;
+                   }
+                   // This chat's own 7TV set announces the change itself, so don't
+                   // say it twice
+                   if (!liveInChannel.isEmpty() &&
+                       reportTo->getName().compare(liveInChannel,
+                                                   Qt::CaseInsensitive) == 0)
+                   {
+                       return;
+                   }
+                   reportTo->addSystemMessage(
+                       add ? QStringLiteral("Added %1 to the 7TV set %2.")
+                                 .arg(alias, setName)
+                           : QStringLiteral("Removed %1 from the 7TV set %2.")
+                                 .arg(alias, setName));
+               });
+}
+
+/// Fills `menu` with the sets the emote can go into. Without `askName`, each
+/// entry is ticked when the emote is already in that set and a click adds it
+/// under its 7TV name or removes it. With `askName`, a click asks for the
+/// name to add it under. 7TV is asked by the emote's ID which sets have it.
+void fillSevenTvSetsMenu(const QPointer<QMenu> &menu, const QString &emoteId,
+                         const ChannelPtr &reportTo, bool askName)
+{
+    if (!menu)
+    {
+        return;
+    }
+    menu->clear();
+    const auto &cache = sevenTvEditableSets();
+    if (cache.loading)
+    {
+        menu->addAction(QStringLiteral("Loading..."))->setEnabled(false);
+        return;
+    }
+    if (!cache.problem.isEmpty() || cache.sets.empty())
+    {
+        menu->addAction(cache.problem.isEmpty()
+                            ? QStringLiteral("No 7TV sets you can change")
+                            : cache.problem)
+            ->setEnabled(false);
+        return;
+    }
+
+    struct Entry {
+        SevenTvEditableSet set;
+        QPointer<QAction> action;
+    };
+    QString lastOwner;
+    std::vector<Entry> entries;
+    for (const auto &set : cache.sets)
+    {
+        if (entries.empty() || set.owner != lastOwner)
+        {
+            menu->addSection(set.owner.isEmpty()
+                                 ? QStringLiteral("Your sets")
+                                 : QStringLiteral("%1's sets").arg(set.owner));
+            lastOwner = set.owner;
+        }
+        auto *action = menu->addAction(
+            set.active ? set.name + QStringLiteral(" (active)") : set.name);
+        action->setCheckable(!askName);
+        // Waits for 7TV's answer: the emote's name and the sets it's in
+        action->setEnabled(false);
+        entries.push_back({set, action});
+    }
+
+    QJsonArray ids;
+    for (const auto &entry : entries)
+    {
+        ids.append(entry.set.id);
+    }
+    static const auto QUERY = QStringLiteral(R"(
+query EmoteInSets($id: Id!, $sets: [Id!]!) {
+  emotes { emote(id: $id) {
+    defaultName
+    inEmoteSets(emoteSetIds: $sets) { emoteSetId emote { alias } }
+  } }
+})");
+    sevenTvGql(
+        cache.token, QUERY, {{"id", emoteId}, {"sets", ids}},
+        [menu, entries, emoteId, reportTo, askName](const QJsonObject &data,
+                                                    const QString &error) {
+            if (!menu)
+            {
+                return;
+            }
+            const auto emote =
+                data.value("emotes").toObject().value("emote").toObject();
+            const auto name = emote.value("defaultName").toString();
+            if (name.isEmpty())
+            {
+                menu->clear();
+                menu->addAction(
+                        error.isEmpty()
+                            ? QStringLiteral("7TV doesn't know this emote")
+                            : error)
+                    ->setEnabled(false);
+                return;
+            }
+            // The name the emote has in each set that has it
+            QHash<QString, QString> aliasInSet;
+            for (const auto &value : emote.value("inEmoteSets").toArray())
+            {
+                const auto inSet = value.toObject();
+                const auto entry = inSet.value("emote").toObject();
+                if (!entry.isEmpty())
+                {
+                    aliasInSet.insert(inSet.value("emoteSetId").toString(),
+                                      entry.value("alias").toString(name));
+                }
+            }
+            for (const auto &entry : entries)
+            {
+                if (!entry.action)
+                {
+                    continue;
+                }
+                const auto &set = entry.set;
+                // Only the owner's active set shows in their chat
+                const auto liveInChannel =
+                    set.active ? set.ownerLogin : QString();
+                if (askName)
+                {
+                    QObject::connect(
+                        entry.action, &QAction::triggered, entry.action,
+                        [setId = set.id, setName = set.name, emoteId, name,
+                         liveInChannel, reportTo] {
+                            bool ok = false;
+                            const auto alias =
+                                QInputDialog::getText(
+                                    nullptr, QStringLiteral("Add to 7TV set"),
+                                    QStringLiteral("Name in %1:").arg(setName),
+                                    QLineEdit::Normal, name, &ok)
+                                    .trimmed();
+                            if (ok && !alias.isEmpty())
+                            {
+                                editSevenTvSet(setId, setName, emoteId, alias,
+                                               true, liveInChannel, reportTo);
+                            }
+                        });
+                }
+                else
+                {
+                    const auto alias = aliasInSet.value(set.id);
+                    entry.action->setChecked(!alias.isEmpty());
+                    QObject::connect(
+                        entry.action, &QAction::triggered, entry.action,
+                        [setId = set.id, setName = set.name, emoteId, name,
+                         alias, liveInChannel, reportTo](bool checked) {
+                            // `checked` is the new state: ticked means add,
+                            // under the 7TV name; removing uses the name it
+                            // has in that set
+                            editSevenTvSet(setId, setName, emoteId,
+                                           checked ? name : alias, checked,
+                                           liveInChannel, reportTo);
+                        });
+                }
+                entry.action->setEnabled(true);
+            }
+        });
+}
+
+/// Matches a 7TV emote page; the first group is the emote's ID
+const QRegularExpression &sevenTvEmotePage()
+{
+    static const QRegularExpression page(
+        QStringLiteral("7tv\\.app/emotes/([A-Za-z0-9]+)"));
+    return page;
+}
+
+/// "Add to 7TV set" and "Add to 7TV set as..." for a 7TV emote: your own
+/// 7TV sets and the sets of people you're a 7TV editor for. Shown in every
+/// channel, whatever your Twitch role there; 7TV itself decides what you may
+/// change.
+void addSevenTvSetsMenu(QMenu *menu, const QString &emoteId,
+                        const ChannelPtr &reportTo)
+{
+    if (emoteId.isEmpty() || reportTo == nullptr ||
+        getApp()->getAccounts()->twitch.getCurrent()->isAnon())
+    {
+        return;
+    }
+    menu->addSeparator();
+    for (const bool askName : {false, true})
+    {
+        auto *setsMenu =
+            menu->addMenu(askName ? QStringLiteral("Add to 7TV set as...")
+                                  : QStringLiteral("Add to 7TV set"));
+        QPointer<QMenu> guard(setsMenu);
+        QObject::connect(
+            setsMenu, &QMenu::aboutToShow, setsMenu,
+            [guard, emoteId, reportTo, askName] {
+                // Filled right away when the list is fresh
+                guard->clear();
+                guard->addAction(QStringLiteral("Loading..."))
+                    ->setEnabled(false);
+                loadSevenTvEditableSets([guard, emoteId, reportTo, askName] {
+                    fillSevenTvSetsMenu(guard, emoteId, reportTo, askName);
+                });
+            });
+    }
+    // Start early so the list is often ready on hover
+    loadSevenTvEditableSets([] {});
+}
+
+/// The same for an emote in chat, when it comes from 7TV
+void addSevenTvSetsMenu(QMenu *menu, const Emote &emote,
+                        const ChannelPtr &reportTo)
+{
+    const auto match = sevenTvEmotePage().match(emote.homePage.string);
+    if (match.hasMatch())
+    {
+        addSevenTvSetsMenu(menu, match.captured(1), reportTo);
+    }
+}
+
 void addImageContextMenuItems(QMenu *menu,
                               const MessageLayoutElement *hoveredElement,
-                              const TwitchChannel *twitchChannel)
+                              const TwitchChannel *twitchChannel,
+                              const ChannelPtr &reportTo)
 {
     if (hoveredElement == nullptr)
     {
@@ -950,6 +1409,8 @@ void addImageContextMenuItems(QMenu *menu,
                 dynamic_cast<const EmoteElement *>(&creator))
         {
             addEmoteContextMenuItems(menu, *emoteElement->getEmote(), u"emote");
+
+            addSevenTvSetsMenu(menu, *emoteElement->getEmote(), reportTo);
         }
         else if (const auto *layeredElement =
                      dynamic_cast<const LayeredEmoteElement *>(&creator))
@@ -961,6 +1422,7 @@ void addImageContextMenuItems(QMenu *menu,
                 auto *emoteMenu = new QMenu(menu);
                 emoteAction->setMenu(emoteMenu);
                 addEmoteContextMenuItems(emoteMenu, *emote.ptr, u"emote");
+                addSevenTvSetsMenu(emoteMenu, *emote.ptr, reportTo);
             }
         }
     }
@@ -1087,6 +1549,14 @@ void addLinkContextMenuItems(QMenu *menu,
     menu->addAction("&Copy link", [url] {
         crossPlatformCopy(url);
     });
+
+    // Links to a 7TV emote can go into your 7TV sets too
+    if (const auto match = sevenTvEmotePage().match(url); match.hasMatch())
+    {
+        addSevenTvSetsMenu(menu, match.captured(1),
+                           view->underlyingChannel() ? view->underlyingChannel()
+                                                     : view->channel());
+    }
 
     menu->addSeparator();
 }
@@ -4687,7 +5157,11 @@ void ChannelView::addContextMenuItems(
     // Add image options if the element clicked contains an image (e.g. a badge or an emote)
     const auto *twitchChannel =
         dynamic_cast<TwitchChannel *>(this->underlyingChannel().get());
-    addImageContextMenuItems(menu, hoveredElement, twitchChannel);
+    // The real channel, so 7TV's answer lands in the chat itself
+    addImageContextMenuItems(menu, hoveredElement, twitchChannel,
+                             this->underlyingChannel()
+                                 ? this->underlyingChannel()
+                                 : this->channel());
 
     // Add link options if the element clicked contains a link
     addLinkContextMenuItems(menu, hoveredElement, this);
