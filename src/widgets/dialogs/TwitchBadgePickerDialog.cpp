@@ -39,6 +39,7 @@
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
+#include "util/Helpers.hpp"
 #include "util/OwnBadgeLayout.hpp"
 #include "util/Twitch.hpp"
 #include "widgets/buttons/Button.hpp"
@@ -2815,7 +2816,7 @@ void TwitchBadgePickerDialog::rebuildEventBadges()
             {
                 const auto url = badge.streamDatabaseUrl;
                 QObject::connect(tile, &QPushButton::clicked, this, [url] {
-                    QDesktopServices::openUrl(QUrl(url));
+                    openWebUrl(QUrl(url));
                 });
             }
             return tile;
@@ -2832,7 +2833,7 @@ void TwitchBadgePickerDialog::rebuildEventBadges()
         {
             const auto url = badge.streamDatabaseUrl;
             QObject::connect(tile, &QPushButton::clicked, this, [url] {
-                QDesktopServices::openUrl(QUrl(url));
+                openWebUrl(QUrl(url));
             });
         }
         layout->addWidget(tile, 0, Qt::AlignHCenter);
@@ -6273,11 +6274,11 @@ void TwitchBadgePickerDialog::signInJiltv()
                                  ? code.verificationUri
                                  : code.verificationUriComplete;
             QObject::connect(openButton, &QPushButton::clicked, &dialog, [url] {
-                QDesktopServices::openUrl(QUrl(url));
+                openWebUrl(QUrl(url));
             });
             openButton->show();
             stateLabel->setText(QStringLiteral("Waiting for JilTV..."));
-            QDesktopServices::openUrl(QUrl(url));
+            openWebUrl(QUrl(url));
             pollTimer.start(interval * 1000);
         },
         [&, alive](const QString &error) {

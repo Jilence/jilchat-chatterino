@@ -19,6 +19,10 @@ env:
   C2_ENABLE_LTO: ${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/bugfix-release/') || startsWith(github.ref, 'refs/heads/release/') }}
   CHATTERINO_REQUIRE_CLEAN_GIT: On
 
+# The token of a run only reads the repository, unless a job asks for more
+permissions:
+  contents: read
+
 jobs:
   build-vm:
     name: "Build FreeBSD"

@@ -149,7 +149,7 @@ EmotePtr makeBadgeEmote(const QJsonObject &category, int version)
     auto emote = Emote{
         .name = EmoteName{u"moltorino:"_s + id},
         .images = std::move(imageSet),
-        .tooltip = Tooltip{tooltip},
+        .tooltip = Tooltip{tooltip.toHtmlEscaped()},
         .homePage = Url{},
         .id = EmoteId{id},
     };

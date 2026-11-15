@@ -849,7 +849,7 @@ QMenu *addEmoteContextMenuItems(QMenu *menu, const Emote &emote,
                 crossPlatformCopy(url.string);
             });
             openMenu->addAction("&" + factor + "x link", [url = image->url()] {
-                QDesktopServices::openUrl(QUrl(url.string));
+                openWebUrl(QUrl(url.string));
             });
         }
     };

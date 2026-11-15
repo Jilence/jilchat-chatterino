@@ -12,6 +12,10 @@ concurrency:
   group: check-formatting-${{ github.ref }}
   cancel-in-progress: true
 
+# The token of a run only reads the repository, unless a job asks for more
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-24.04

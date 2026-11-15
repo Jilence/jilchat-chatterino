@@ -61,7 +61,8 @@ EmotePtr makeBadgeEmote(const QJsonObject &badgeJson)
                 Image::fromUrl(Url{pickUrl(url2x)}, 0.5, BADGE_BASE_SIZE * 2),
                 Image::fromUrl(Url{pickUrl(url4x)}, 0.25, BADGE_BASE_SIZE * 4),
             },
-        .tooltip = Tooltip{tooltip.isEmpty() ? id : tooltip},
+        .tooltip =
+            Tooltip{(tooltip.isEmpty() ? id : tooltip).toHtmlEscaped()},
         .homePage = Url{},
         .id = EmoteId{id},
     };

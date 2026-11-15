@@ -58,7 +58,7 @@ EmotePtr makeJilChatBadge(const QJsonObject &badgeJson)
     auto emote = Emote{
         .name = EmoteName{u"jilchat:" % (slug.isEmpty() ? name : slug)},
         .images = makeJilChatImageSet(imageUrl),
-        .tooltip = Tooltip{name},
+        .tooltip = Tooltip{name.toHtmlEscaped()},
         .homePage = Url{},
         .id = EmoteId{id},
     };

@@ -102,10 +102,11 @@ namespace JilChatUninstall
             }
 
             // Hand the folder over to a copy outside it
-            string helper = Path.Combine(Path.GetTempPath(), "JilChat-Uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
+            string helper = Path.Combine(HelperFolder(), "JilChat-Uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
             try
             {
-                File.Copy(self, helper, true);
+                // Never over a file that's already there
+                File.Copy(self, helper, false);
                 var start = new ProcessStartInfo(helper);
                 start.Arguments = "--finish \"" + folder + "\" " + Process.GetCurrentProcess().Id;
                 start.UseShellExecute = false;
@@ -142,6 +143,20 @@ namespace JilChatUninstall
 
             // This copy is in the temp folder; Windows removes it with the rest
             return 0;
+        }
+
+        /// Where the copy that finishes the job goes. As administrator that's
+        /// the temp folder of Windows, not the user's: there a program without
+        /// administrator rights can't swap the copy before it starts, and so
+        /// can't run with our rights.
+        static string HelperFolder()
+        {
+            if (IsElevated())
+            {
+                string system = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp");
+                if (Directory.Exists(system)) { return system; }
+            }
+            return Path.GetTempPath();
         }
 
         static bool IsElevated()

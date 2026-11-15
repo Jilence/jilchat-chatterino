@@ -17,6 +17,10 @@ env:
   CACHIX_CACHE: ${{ vars.CACHIX_CACHE }}
   CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
+# The token of a run only reads the repository, unless a job asks for more
+permissions:
+  contents: read
+
 jobs:
   nix:
     if: false

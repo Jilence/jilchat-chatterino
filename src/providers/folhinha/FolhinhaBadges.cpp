@@ -79,9 +79,9 @@ const BadgeImageUrls *lookupBadgeAssets(
 BadgeImageUrls fallbackBadgeAssets(const QString &kind)
 {
     return {
-        u"http://folhinhabot.com/badges/" % kind % u"1",
-        u"http://folhinhabot.com/badges/" % kind % u"2",
-        u"http://folhinhabot.com/badges/" % kind % u"3",
+        u"https://folhinhabot.com/badges/" % kind % u"1",
+        u"https://folhinhabot.com/badges/" % kind % u"2",
+        u"https://folhinhabot.com/badges/" % kind % u"3",
     };
 }
 

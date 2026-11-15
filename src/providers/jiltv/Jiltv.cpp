@@ -89,12 +89,13 @@ EmoteMap parseEmotes(const QJsonArray &emotes, const QString &cdn,
             return Url{u"%1/%2/%3/%4x.webp"_s.arg(cdn, id, version,
                                                   QString::number(scale))};
         };
-        auto tooltip = name + QStringLiteral("<br>JilTV ") + kind +
-                       QStringLiteral(" Emote");
+        auto tooltip = name.toHtmlEscaped() + QStringLiteral("<br>JilTV ") +
+                       kind + QStringLiteral(" Emote");
         const auto original = e.value("original_name").toString();
         if (!original.isEmpty() && original != name)
         {
-            tooltip += QStringLiteral("<br>Alias of ") + original;
+            tooltip +=
+                QStringLiteral("<br>Alias of ") + original.toHtmlEscaped();
         }
         Emote emote{
             .name = EmoteName{name},
@@ -244,7 +245,7 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         }
         const Url url{cdn + QStringLiteral("/badges/") + image};
         const QSize base(18, 18);
-        auto tooltip = b.value("name").toString();
+        auto tooltip = b.value("name").toString().toHtmlEscaped();
         if (const auto r = rarityName(b.value("r").toString()); !r.isEmpty())
         {
             tooltip += QStringLiteral(" (") + r + QStringLiteral(")");

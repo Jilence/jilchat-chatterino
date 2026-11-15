@@ -35,6 +35,7 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
@@ -203,6 +204,8 @@ namespace JilChatSetup
             string root = Path.GetFullPath(options.Destination);
             string rootPrefix = root.TrimEnd('\\') + "\\";
             Directory.CreateDirectory(root);
+            // An install for all users: only administrators may change it
+            if (IsMachineInstall(root)) { Protect(root); }
 
             using (var stream = assembly.GetManifestResourceStream("app.zip"))
             {
@@ -264,8 +267,7 @@ namespace JilChatSetup
             if (options.Register)
             {
                 CurrentFile = "Creating shortcuts";
-                bool machine = IsElevated() && !root.StartsWith(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), StringComparison.OrdinalIgnoreCase);
+                bool machine = IsMachineInstall(root);
                 string programs = Environment.GetFolderPath(machine
                     ? Environment.SpecialFolder.CommonPrograms : Environment.SpecialFolder.Programs);
                 string desktop = Environment.GetFolderPath(machine
@@ -308,6 +310,54 @@ namespace JilChatSetup
                     catch (IOException) { }
                 }
             }
+        }
+
+        /// As administrator into a folder outside the user's own: that's an
+        /// install for all users, with shortcuts and the entry for all of them
+        static bool IsMachineInstall(string root)
+        {
+            return IsElevated() && !root.StartsWith(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// Folders like C:\Games let every user change the files in them.
+        /// The shortcuts for all users would then start a program any of them
+        /// could have replaced. So the folder gets the rights Program Files
+        /// has: everyone reads and runs, administrators and Windows change.
+        /// Folders in Program Files have that already and are left alone.
+        static void Protect(string root)
+        {
+            foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+            {
+                string programFiles = Environment.GetFolderPath(folder);
+                if (!string.IsNullOrEmpty(programFiles) &&
+                    root.StartsWith(programFiles.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            try
+            {
+                const InheritanceFlags inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                var security = new DirectorySecurity();
+                // Nothing taken over from the folder above
+                security.SetAccessRuleProtection(true, false);
+                security.AddAccessRule(new FileSystemAccessRule(
+                    new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+                    FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+                security.AddAccessRule(new FileSystemAccessRule(
+                    new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                    FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+                security.AddAccessRule(new FileSystemAccessRule(
+                    new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+                    FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
+                Directory.SetAccessControl(root, security);
+            }
+            // The install still works with the rights the folder had
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            catch (SystemException) { }
         }
 
         static void Register(string exe, string root, bool machine)
