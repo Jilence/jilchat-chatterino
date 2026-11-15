@@ -16,6 +16,7 @@
 #include <QWidget>
 
 #include <array>
+#include <cstdint>
 
 namespace chatterino {
 
@@ -45,7 +46,13 @@ protected:
 private:
     UpdatePrompt();
 
-    enum Control { UpdateNow, RemindLater, SkipVersion, Close, ControlCount };
+    enum Control : std::uint8_t {
+        UpdateNow,
+        RemindLater,
+        SkipVersion,
+        Close,
+        ControlCount,
+    };
 
     void layOut();
     int controlAt(QPointF position) const;

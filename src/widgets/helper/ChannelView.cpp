@@ -966,12 +966,12 @@ struct EditableEmoteSets {
 EditableEmoteSets &editableSets(SetProvider provider)
 {
     static std::array<EditableEmoteSets, 3> cache;
-    return cache[static_cast<size_t>(provider)];
+    return cache.at(static_cast<size_t>(provider));
 }
 
-void sevenTvGql(const QString &token, const QString &query,
-                const QJsonObject &variables,
-                std::function<void(const QJsonObject &, const QString &)> done)
+void sevenTvGql(
+    const QString &token, const QString &query, const QJsonObject &variables,
+    const std::function<void(const QJsonObject &, const QString &)> &done)
 {
     NetworkRequest(QStringLiteral("https://api.7tv.app/v4/gql"),
                    NetworkRequestType::Post)
@@ -1002,9 +1002,10 @@ void sevenTvGql(const QString &token, const QString &query,
 
 /// A request to the BetterTTV API with the token from the badge picker.
 /// `done` gets the answer, or an error to show.
-void bttvRequest(NetworkRequestType type, const QString &path,
-                 const std::optional<QJsonObject> &body,
-                 std::function<void(const QJsonValue &, const QString &)> done)
+void bttvRequest(
+    NetworkRequestType type, const QString &path,
+    const std::optional<QJsonObject> &body,
+    const std::function<void(const QJsonValue &, const QString &)> &done)
 {
     auto request =
         NetworkRequest(
@@ -1038,8 +1039,8 @@ void bttvRequest(NetworkRequestType type, const QString &path,
         .execute();
 }
 
-void fetchBttvSets(
-    std::function<void(std::vector<EditableEmoteSet>, const QString &)> finish)
+void fetchBttvSets(const std::function<void(std::vector<EditableEmoteSet>,
+                                            const QString &)> &finish)
 {
     const auto userId =
         getApp()->getAccounts()->twitch.getCurrent()->getUserId();
@@ -1086,7 +1087,8 @@ void fetchBttvSets(
                                 {},
                                 me.value("providerId").toString(),
                             }};
-                            for (const auto &dashboard : value.toArray())
+                            const auto dashboardList = value.toArray();
+                            for (const auto &dashboard : dashboardList)
                             {
                                 const auto d = dashboard.toObject();
                                 const auto id = d.value("id").toString();
@@ -1139,8 +1141,9 @@ void fetchBttvSets(
                                                 .liveIn = {},
                                             });
                                     }
-                                    for (auto set : (*ownerSets)[i])
+                                    for (const auto &ownerSet : (*ownerSets)[i])
                                     {
+                                        auto set = ownerSet;
                                         // No primary set: the default one
                                         // is shown
                                         auto live =
@@ -1161,7 +1164,7 @@ void fetchBttvSets(
                             };
                             for (size_t i = 0; i < owners.size(); ++i)
                             {
-                                const auto owner = owners[i];
+                                const auto &owner = owners[i];
                                 bttvRequest(
                                     NetworkRequestType::Get,
                                     QStringLiteral("users/%1/emote_sets")
@@ -1186,7 +1189,8 @@ void fetchBttvSets(
                                                             .toArray();
                                             }
                                         }
-                                        for (const auto &set : array)
+                                        for (const auto &set :
+                                             std::as_const(array))
                                         {
                                             const auto o = set.toObject();
                                             (*ownerSets)[i].push_back({
@@ -1221,14 +1225,13 @@ void fetchBttvSets(
 }
 
 /// A GraphQL request to the provider with the user's login
-void setsRequest(SetProvider provider, const QString &query,
-                 const QJsonObject &variables,
-                 std::function<void(const QJsonObject &, const QString &)> done)
+void setsRequest(
+    SetProvider provider, const QString &query, const QJsonObject &variables,
+    const std::function<void(const QJsonObject &, const QString &)> &done)
 {
     if (provider == SetProvider::SevenTv)
     {
-        sevenTvGql(editableSets(provider).token, query, variables,
-                   std::move(done));
+        sevenTvGql(editableSets(provider).token, query, variables, done);
         return;
     }
     JiltvAuth::instance().graphql(
@@ -1241,8 +1244,8 @@ void setsRequest(SetProvider provider, const QString &query,
         });
 }
 
-void fetchSevenTvSets(
-    std::function<void(std::vector<EditableEmoteSet>, const QString &)> finish)
+void fetchSevenTvSets(const std::function<void(std::vector<EditableEmoteSet>,
+                                               const QString &)> &finish)
 {
     const auto userId =
         getApp()->getAccounts()->twitch.getCurrent()->getUserId();
@@ -1256,7 +1259,7 @@ void fetchSevenTvSets(
                                           "first"));
                 return;
             }
-            static const auto QUERY = QStringLiteral(R"(
+            static const auto query = QStringLiteral(R"(
 query EditableSets {
   users { me {
     mainConnection { platformUsername }
@@ -1274,7 +1277,7 @@ query EditableSets {
   } }
 })");
             sevenTvGql(
-                token, QUERY, {},
+                token, query, {},
                 [finish](const QJsonObject &data, const QString &error) {
                     const auto me =
                         data.value("users").toObject().value("me").toObject();
@@ -1299,8 +1302,9 @@ query EditableSets {
                                                .toObject()
                                                .value("platformUsername")
                                                .toString();
-                        for (const auto &value :
-                             user.value("ownedEmoteSets").toArray())
+                        const auto valueList =
+                            user.value("ownedEmoteSets").toArray();
+                        for (const auto &value : valueList)
                         {
                             const auto set = value.toObject();
                             const auto kind = set.value("kind").toString();
@@ -1318,7 +1322,8 @@ query EditableSets {
                         }
                     };
                     addSets(me, {});
-                    for (const auto &value : me.value("editorFor").toArray())
+                    const auto valueList = me.value("editorFor").toArray();
+                    for (const auto &value : valueList)
                     {
                         const auto editor = value.toObject();
                         if (editor.value("state").toString() != "ACCEPTED" ||
@@ -1347,8 +1352,8 @@ query EditableSets {
         });
 }
 
-void fetchJiltvSets(
-    std::function<void(std::vector<EditableEmoteSet>, const QString &)> finish)
+void fetchJiltvSets(const std::function<void(std::vector<EditableEmoteSet>,
+                                             const QString &)> &finish)
 {
     JiltvAuth::instance().load(qApp, [finish] {
         if (!JiltvAuth::instance().signedIn())
@@ -1357,7 +1362,7 @@ void fetchJiltvSets(
                                       "first"));
             return;
         }
-        static const auto QUERY = QStringLiteral(R"(
+        static const auto query = QStringLiteral(R"(
 query EditableSets {
   viewer {
     user { id }
@@ -1371,13 +1376,14 @@ query EditableSets {
   }
 })");
         JiltvAuth::instance().graphql(
-            QUERY, {},
+            query, {},
             [finish](const QJsonObject &data) {
                 const auto viewer = data.value("viewer").toObject();
                 const auto me =
                     viewer.value("user").toObject().value("id").toString();
                 std::vector<EditableEmoteSet> sets;
-                for (const auto &value : viewer.value("editableSets").toArray())
+                const auto valueList = viewer.value("editableSets").toArray();
+                for (const auto &value : valueList)
                 {
                     const auto set = value.toObject();
                     if (set.value("kind").toString() == "GLOBAL")
@@ -1387,8 +1393,8 @@ query EditableSets {
                     const auto id = set.value("id").toString();
                     const auto owner = set.value("owner").toObject();
                     QString liveIn;
-                    for (const auto &channel :
-                         owner.value("channels").toArray())
+                    const auto channelList = owner.value("channels").toArray();
+                    for (const auto &channel : channelList)
                     {
                         const auto c = channel.toObject();
                         if (c.value("platform").toString() == "TWITCH" &&
@@ -1411,8 +1417,8 @@ query EditableSets {
                     });
                 }
                 // Your own sets first, then each channel's
-                std::stable_sort(
-                    sets.begin(), sets.end(), [](const auto &a, const auto &b) {
+                std::ranges::stable_sort(
+                    sets, [](const auto &a, const auto &b) {
                         return a.owner.isEmpty() && !b.owner.isEmpty();
                     });
                 finish(std::move(sets), {});
@@ -1465,13 +1471,13 @@ void loadEditableSets(SetProvider provider, std::function<void()> then)
     switch (provider)
     {
         case SetProvider::SevenTv:
-            fetchSevenTvSets(std::move(finish));
+            fetchSevenTvSets(finish);
             break;
         case SetProvider::Jiltv:
-            fetchJiltvSets(std::move(finish));
+            fetchJiltvSets(finish);
             break;
         case SetProvider::Bttv:
-            fetchBttvSets(std::move(finish));
+            fetchBttvSets(finish);
             break;
     }
 }
@@ -1497,11 +1503,16 @@ void reportSetEdit(SetProvider provider, const EditableEmoteSet &set,
     {
         return;
     }
-    reportTo->addSystemMessage(
-        (replaced ? QStringLiteral("Replaced %1 in the %2 set %3.")
-         : add    ? QStringLiteral("Added %1 to the %2 set %3.")
-                  : QStringLiteral("Removed %1 from the %2 set %3."))
-            .arg(alias, name, set.name));
+    QString text = QStringLiteral("Removed %1 from the %2 set %3.");
+    if (replaced)
+    {
+        text = QStringLiteral("Replaced %1 in the %2 set %3.");
+    }
+    else if (add)
+    {
+        text = QStringLiteral("Added %1 to the %2 set %3.");
+    }
+    reportTo->addSystemMessage(text.arg(alias, name, set.name));
 }
 
 /// BTTV: shares the emote into the set (renamed to `alias` when that differs
@@ -1556,19 +1567,19 @@ void editEmoteSet(SetProvider provider, const EditableEmoteSet &set,
                   const QString &emoteId, const QString &alias, bool add,
                   const ChannelPtr &reportTo, bool replaced = false)
 {
-    static const auto SEVENTV_ADD = QStringLiteral(R"(
+    static const auto sevenTvAdd = QStringLiteral(R"(
 mutation AddEmote($set: Id!, $emote: Id!, $alias: String) {
   emoteSets { emoteSet(id: $set) { addEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
 })");
-    static const auto SEVENTV_REMOVE = QStringLiteral(R"(
+    static const auto sevenTvRemove = QStringLiteral(R"(
 mutation RemoveEmote($set: Id!, $emote: Id!, $alias: String) {
   emoteSets { emoteSet(id: $set) { removeEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
 })");
-    static const auto JILTV_ADD = QStringLiteral(R"(
+    static const auto jiltvAdd = QStringLiteral(R"(
 mutation AddEmote($set: ID!, $emote: ID!, $alias: String) {
   addEmoteToSet(setId: $set, emoteId: $emote, alias: $alias) { id }
 })");
-    static const auto JILTV_REMOVE = QStringLiteral(R"(
+    static const auto jiltvRemove = QStringLiteral(R"(
 mutation RemoveEmote($set: ID!, $emote: ID!) {
   removeEmoteFromSet(setId: $set, emoteId: $emote) { id }
 })");
@@ -1578,10 +1589,16 @@ mutation RemoveEmote($set: ID!, $emote: ID!) {
     {
         variables.insert("alias", alias);
     }
-    setsRequest(provider,
-                add ? (sevenTv ? SEVENTV_ADD : JILTV_ADD)
-                    : (sevenTv ? SEVENTV_REMOVE : JILTV_REMOVE),
-                variables,
+    QString mutation;
+    if (add)
+    {
+        mutation = sevenTv ? sevenTvAdd : jiltvAdd;
+    }
+    else
+    {
+        mutation = sevenTv ? sevenTvRemove : jiltvRemove;
+    }
+    setsRequest(provider, mutation, variables,
                 [provider, set, alias, add, reportTo, replaced](
                     const QJsonObject &, const QString &error) {
                     reportSetEdit(provider, set, alias, add, error, reportTo,
@@ -1592,27 +1609,29 @@ mutation RemoveEmote($set: ID!, $emote: ID!) {
 /// Looks in the set for an emote called `alias`; `done` gets its ID, or
 /// nothing when the name is free
 void findNameInSet(SetProvider provider, const EditableEmoteSet &set,
-                   const QString &alias, std::function<void(QString)> done)
+                   const QString &alias,
+                   const std::function<void(QString)> &done)
 {
     if (provider == SetProvider::SevenTv)
     {
-        static const auto QUERY = QStringLiteral(R"(
+        static const auto query = QStringLiteral(R"(
 query NameInSet($set: Id!, $name: String!) {
   emoteSets { emoteSet(id: $set) {
     emotes(query: $name, perPage: 50) { items { id alias } }
   } }
 })");
-        sevenTvGql(editableSets(provider).token, QUERY,
+        sevenTvGql(editableSets(provider).token, query,
                    {{"set", set.id}, {"name", alias}},
                    [alias, done](const QJsonObject &data, const QString &) {
-                       for (const auto &value : data.value("emoteSets")
-                                                    .toObject()
-                                                    .value("emoteSet")
-                                                    .toObject()
-                                                    .value("emotes")
-                                                    .toObject()
-                                                    .value("items")
-                                                    .toArray())
+                       const auto valueList = data.value("emoteSets")
+                                                  .toObject()
+                                                  .value("emoteSet")
+                                                  .toObject()
+                                                  .value("emotes")
+                                                  .toObject()
+                                                  .value("items")
+                                                  .toArray();
+                       for (const auto &value : valueList)
                        {
                            const auto item = value.toObject();
                            if (item.value("alias").toString() == alias)
@@ -1627,27 +1646,27 @@ query NameInSet($set: Id!, $name: String!) {
     }
     if (provider == SetProvider::Jiltv)
     {
-        static const auto QUERY = QStringLiteral(R"(
+        static const auto query = QStringLiteral(R"(
 query NameInSet($set: ID!) { emoteSet(id: $set) { emotes { name emote { id } } } })");
-        setsRequest(provider, QUERY, {{"set", set.id}},
-                    [alias, done](const QJsonObject &data, const QString &) {
-                        for (const auto &value : data.value("emoteSet")
-                                                     .toObject()
-                                                     .value("emotes")
-                                                     .toArray())
-                        {
-                            const auto entry = value.toObject();
-                            if (entry.value("name").toString() == alias)
-                            {
-                                done(entry.value("emote")
-                                         .toObject()
-                                         .value("id")
-                                         .toString());
-                                return;
-                            }
-                        }
-                        done({});
-                    });
+        setsRequest(
+            provider, query, {{"set", set.id}},
+            [alias, done](const QJsonObject &data, const QString &) {
+                const auto valueList =
+                    data.value("emoteSet").toObject().value("emotes").toArray();
+                for (const auto &value : valueList)
+                {
+                    const auto entry = value.toObject();
+                    if (entry.value("name").toString() == alias)
+                    {
+                        done(entry.value("emote")
+                                 .toObject()
+                                 .value("id")
+                                 .toString());
+                        return;
+                    }
+                }
+                done({});
+            });
         return;
     }
     // BTTV: the default set is the channel's emotes, the others are sets
@@ -1666,7 +1685,8 @@ query NameInSet($set: ID!) { emoteSet(id: $set) { emotes { name emote { id } } }
             const auto object = value.toObject();
             for (const auto *key : {"channelEmotes", "sharedEmotes", "emotes"})
             {
-                for (const auto &item : object.value(key).toArray())
+                const auto itemList = object.value(key).toArray();
+                for (const auto &item : itemList)
                 {
                     const auto entry = item.toObject();
                     // Either the emote itself or an entry holding it
@@ -1690,7 +1710,7 @@ query NameInSet($set: ID!) { emoteSet(id: $set) { emotes { name emote { id } } }
 /// an error, or nothing when it worked
 void removeFromSetQuietly(SetProvider provider, const EditableEmoteSet &set,
                           const QString &emoteId, const QString &alias,
-                          std::function<void(QString)> done)
+                          const std::function<void(QString)> &done)
 {
     if (provider == SetProvider::Bttv)
     {
@@ -1726,14 +1746,14 @@ mutation RemoveEmote($set: ID!, $emote: ID!) {
 /// Adds the emote as `alias`. When another emote already has that name in
 /// the set, asks whether to replace it, and if so takes that one out first.
 void addToSetOrReplace(SetProvider provider, const EditableEmoteSet &set,
-                       const QString &emoteId, const QString &ownName,
+                       const QString &emoteId, const QString &name,
                        const QString &alias, const ChannelPtr &reportTo)
 {
-    const auto add = [provider, set, emoteId, ownName, alias,
+    const auto add = [provider, set, emoteId, name, alias,
                       reportTo](bool replaced) {
         if (provider == SetProvider::Bttv)
         {
-            editBttvSet(set, emoteId, ownName, alias, true, reportTo, replaced);
+            editBttvSet(set, emoteId, name, alias, true, reportTo, replaced);
         }
         else
         {
@@ -1829,7 +1849,7 @@ void fillBttvSetsMenu(const QPointer<QMenu> &menu,
             }
             auto states = std::make_shared<QHash<QString, QJsonObject>>();
             auto left = std::make_shared<qsizetype>(owners.size());
-            for (const auto &owner : owners)
+            for (const auto &owner : std::as_const(owners))
             {
                 bttvRequest(
                     NetworkRequestType::Get,
@@ -1929,6 +1949,7 @@ void fillEmoteSetsMenu(const QPointer<QMenu> &menu, SetProvider provider,
 
     QString lastOwner;
     std::vector<EmoteSetMenuEntry> entries;
+    entries.reserve(cache.sets.size());
     for (const auto &set : cache.sets)
     {
         if (entries.empty() || set.owner != lastOwner)
@@ -2008,7 +2029,8 @@ query EmoteInSets($id: Id!, $sets: [Id!]!) {
                 const auto emote =
                     data.value("emotes").toObject().value("emote").toObject();
                 name = emote.value("defaultName").toString();
-                for (const auto &value : emote.value("inEmoteSets").toArray())
+                const auto valueList = emote.value("inEmoteSets").toArray();
+                for (const auto &value : valueList)
                 {
                     const auto inSet = value.toObject();
                     const auto entry = inSet.value("emote").toObject();
@@ -2029,7 +2051,8 @@ query EmoteInSets($id: Id!, $sets: [Id!]!) {
                     {
                         continue;
                     }
-                    for (const auto &value : set.value("emotes").toArray())
+                    const auto valueList = set.value("emotes").toArray();
+                    for (const auto &value : valueList)
                     {
                         const auto entry = value.toObject();
                         if (entry.value("emote")
