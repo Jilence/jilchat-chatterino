@@ -54,15 +54,6 @@ if (-not (Test-Path $csc)) { Write-Error "The C# compiler of Windows wasn't foun
 if (Test-Path $work) { Remove-Item $work -Recurse -Force -Confirm:$false }
 New-Item -ItemType Directory -Path $work | Out-Null
 
-# The Visual C++ runtime, installed by the setup when Windows has an older one
-if ($null -eq $Env:VCToolsRedistDir) {
-    Write-Error "VCToolsRedistDir is not set. Forgot to set Visual Studio environment variables?";
-    exit 1
-}
-$vcRedist = Join-Path $Env:VCToolsRedistDir "vc_redist.$architecture.exe"
-$vcrtInfo = Join-Path $work 'vcrt.txt'
-"$architecture $((Get-Item $vcRedist).VersionInfo.FileMinorPart)" | Out-File $vcrtInfo -Encoding ASCII -NoNewline
-
 # The version in the file details Windows shows (Properties > Details).
 # Programs without them look more suspicious to antivirus apps.
 $cmakeLists = Get-Content (Join-Path $root 'CMakeLists.txt') -Raw
@@ -113,8 +104,6 @@ $arguments = @(
     "/resource:$zip,app.zip",
     "/resource:$(Join-Path $root 'resources\icon.png'),logo.png",
     "/resource:$uninstaller,uninstall.exe",
-    "/resource:$vcRedist,vc_redist.exe",
-    "/resource:$vcrtInfo,vcrt.txt",
     '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
     '/r:System.IO.Compression.dll',
     $setupDetails, (Join-Path $sources 'JilChatSetup.cs')

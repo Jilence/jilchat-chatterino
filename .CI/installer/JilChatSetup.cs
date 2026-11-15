@@ -243,8 +243,6 @@ namespace JilChatSetup
             string exe = Path.Combine(root, App.Exe);
             if (!File.Exists(exe)) { throw new Exception(App.Exe + " wasn't installed. Please download the setup again."); }
 
-            InstallRuntimeIfNeeded(assembly);
-
             CurrentFile = "Cleaning up";
             foreach (var old in App.OldNames)
             {
@@ -284,71 +282,6 @@ namespace JilChatSetup
                 Register(exe, root, machine);
             }
             CurrentFile = "";
-        }
-
-        /// Installs the Visual C++ runtime the setup carries when Windows has
-        /// none or an older one, like the Inno Setup installer did. Its own
-        /// installer asks for administrator rights.
-        void InstallRuntimeIfNeeded(Assembly assembly)
-        {
-            string shipped;
-            using (var stream = assembly.GetManifestResourceStream("vcrt.txt"))
-            {
-                if (stream == null) { return; }
-                using (var reader = new StreamReader(stream)) { shipped = reader.ReadToEnd().Trim(); }
-            }
-            // "<arch> <minor>", e.g. "x64 44"
-            var parts = shipped.Split(' ');
-            int shippedMinor;
-            if (parts.Length != 2 || !int.TryParse(parts[1], out shippedMinor)) { return; }
-
-            try
-            {
-                using (var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
-                using (var key = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\" + parts[0]))
-                {
-                    var minor = key != null ? key.GetValue("Minor") : null;
-                    if (minor is int && (int)minor >= shippedMinor) { return; }
-                }
-            }
-            catch (System.Security.SecurityException) { }
-            catch (UnauthorizedAccessException) { }
-            catch (IOException) { }
-
-            CurrentFile = "Installing the Visual C++ runtime";
-            string path = Path.Combine(Path.GetTempPath(), "jilchat-vc_redist-" + Guid.NewGuid().ToString("N") + ".exe");
-            using (var stream = assembly.GetManifestResourceStream("vc_redist.exe"))
-            {
-                if (stream == null) { return; }
-                using (var output = File.Create(path)) { stream.CopyTo(output); }
-            }
-            try
-            {
-                var start = new ProcessStartInfo(path, "/install /passive /norestart");
-                start.UseShellExecute = true;
-                using (var process = System.Diagnostics.Process.Start(start))
-                {
-                    process.WaitForExit();
-                    // 1638: a newer one is installed, 3010: needs a restart
-                    int code = process.ExitCode;
-                    if (code != 0 && code != 1638 && code != 3010)
-                    {
-                        throw new Exception("The Visual C++ runtime couldn't be installed (error " + code + "). " +
-                                            App.Name + " may not start without it.");
-                    }
-                }
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                throw new Exception("The Visual C++ runtime wasn't installed, because Windows didn't allow it. " +
-                                    App.Name + " may not start without it.");
-            }
-            finally
-            {
-                try { File.Delete(path); }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            }
         }
 
         /// Takes over a folder that the Inno Setup installer of older versions
