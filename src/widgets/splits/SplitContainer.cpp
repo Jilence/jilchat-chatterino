@@ -329,8 +329,8 @@ void SplitContainer::setSelected(Split *split)
     // A tab with a name of its own shows the selected channel's paint
     if (this->tab_ != nullptr && getSettings()->channelNamePaints)
     {
-        // (NotebookTab hides update(); repaint it as a widget)
-        static_cast<QWidget *>(this->tab_)->update();
+        // NotebookTab's own update() is protected; QWidget's is the same
+        this->tab_->QWidget::update();
     }
 }
 
