@@ -1,0 +1,1 @@
+- New BTTV emote sets for newer BTTV links. Right-clicking a BTTV link with a short code, like betterttv.com/emotes/2nimqqQ9xgrwwDke6/nopers, offers the BTTV emote sets too.
