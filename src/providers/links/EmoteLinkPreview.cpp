@@ -16,6 +16,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <ranges>
 
 namespace chatterino {
 
@@ -52,10 +53,10 @@ QString bttvEmoteIdFromLink(const QString &code)
         }
         // bytes = bytes * 58 + digit
         auto carry = static_cast<quint32>(digit);
-        for (auto it = bytes.rbegin(); it != bytes.rend(); ++it)
+        for (auto &byte : std::ranges::reverse_view(bytes))
         {
-            carry += static_cast<quint32>(*it) * 58;
-            *it = static_cast<quint8>(carry & 0xFF);
+            carry += static_cast<quint32>(byte) * 58;
+            byte = static_cast<quint8>(carry & 0xFF);
             carry >>= 8;
         }
         if (carry != 0)
@@ -66,7 +67,7 @@ QString bttvEmoteIdFromLink(const QString &code)
     QString id;
     for (const auto byte : bytes)
     {
-        id += QStringLiteral("%1").arg(byte, 2, 16, QLatin1Char('0'));
+        id += QStringLiteral("%1").arg(byte, 2, 16, u'0');
     }
     return id;
 }
@@ -88,13 +89,20 @@ std::optional<EmotePage> parse(const QString &url)
         const auto id = bttvEmoteIdFromLink(m.captured(1));
         if (!id.isEmpty())
         {
-            return EmotePage{Provider::Bttv, id,
-                             QUrl::fromPercentEncoding(m.captured(2).toUtf8())};
+            return EmotePage{
+                .provider = Provider::Bttv,
+                .id = id,
+                .nameInLink = QUrl::fromPercentEncoding(m.captured(2).toUtf8()),
+            };
         }
     }
     if (const auto m = jiltv.match(url); m.hasMatch())
     {
-        return EmotePage{Provider::Jiltv, m.captured(1), {}};
+        return EmotePage{
+            .provider = Provider::Jiltv,
+            .id = m.captured(1),
+            .nameInLink = {},
+        };
     }
     return std::nullopt;
 }
