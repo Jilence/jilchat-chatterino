@@ -455,6 +455,13 @@ public:
     FloatSetting boldScale = {"/appearance/boldScale", 63};
     BoolSetting showTabCloseButton = {"/appearance/showTabCloseButton", true};
     BoolSetting showTabLive = {"/appearance/showTabLiveButton", true};
+    /// Channel names on tabs and in the channel bar in the broadcaster's
+    /// paint
+    BoolSetting channelNamePaints = {"/appearance/channelNamePaints", false};
+    /// Moving paints on channel names move on every tab, not only the
+    /// selected one
+    BoolSetting animateAllTabPaints = {"/appearance/animateAllTabPaints",
+                                       false};
     BoolSetting colorTabHighlightsByMessage = {
         "/appearance/tabs/colorHighlightsByMessage",
         false,

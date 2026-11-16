@@ -34,6 +34,7 @@
 #include "singletons/StreamerMode.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/ChannelNamePaint.hpp"
 #include "util/FormatTime.hpp"
 #include "util/Helpers.hpp"
 #include "util/LayoutHelper.hpp"
@@ -800,6 +801,26 @@ SplitHeader::SplitHeader(Split *split)
     // The lifetime of these signals are tied to the lifetime of the Split.
     // Since the SplitHeader is owned by the Split, they will always be destroyed
     // at the same time.
+    // Names in a paint: drawn again once a paint is known, and moving ones
+    // with the GIFs
+    this->managedConnections_.managedConnect(channelNamePaintsChanged(),
+                                             [this] {
+                                                 this->updateChannelText();
+                                             });
+    getSettings()->channelNamePaints.connect(
+        [this] {
+            this->updateChannelText();
+        },
+        this->managedConnections_, false);
+    this->managedConnections_.managedConnect(
+        getApp()->getWindows()->gifRepaintRequested, [this] {
+            if (this->titleLabel_ != nullptr &&
+                this->titleLabel_->hasAnimatedNamePaint() && this->isVisible())
+            {
+                this->titleLabel_->update();
+            }
+        });
+
     std::ignore = this->split_->focused.connect([this]() {
         this->themeChangedEvent();
     });
@@ -2316,6 +2337,9 @@ void SplitHeader::updateChannelText()
         this->titleLabel_->setShouldElide(true);
         this->titleLabel_->setElideSuffix(suffix);
         this->titleLabel_->setText(mainText.isEmpty() ? "<empty>" : mainText);
+        this->titleLabel_->setNamePaint(nullptr, 0);
+        this->titleLabel_->setNameColor({}, 0);
+        this->titleLabel_->setNameStart(0);
         this->tooltipText_ = formatMultiChannelTooltip(*mc);
         return;
     }
@@ -2480,6 +2504,29 @@ void SplitHeader::updateChannelText()
     }
 
     this->titleLabel_->setText(title.isEmpty() ? "<empty>" : title);
+
+    // The channel's name in the streamer's paint, also after "watching: "
+    std::shared_ptr<Paint> namePaint;
+    QColor nameColor;
+    if (auto *twitchChannel =
+            dynamic_cast<TwitchChannel *>(selectedChannel.get());
+        twitchChannel != nullptr)
+    {
+        namePaint =
+            channelNamePaint(twitchChannel->getName(), twitchChannel->roomId());
+        // and in the streamer's Twitch color instead of the gray
+        nameColor = channelNameColor(*twitchChannel);
+    }
+    this->titleLabel_->setNameStart(indirectChannel.getType() ==
+                                            Channel::Type::TwitchWatching
+                                        ? QStringLiteral("watching: ").size()
+                                        : 0);
+    this->titleLabel_->setNameColor(
+        nameColor,
+        nameColor.isValid() ? selectedChannel->getLocalizedName().size() : 0);
+    this->titleLabel_->setNamePaint(
+        namePaint,
+        namePaint != nullptr ? selectedChannel->getLocalizedName().size() : 0);
 }
 
 void SplitHeader::updateIcons()

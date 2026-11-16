@@ -11,6 +11,7 @@
 #include "debug/AssertInGuiThread.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "singletons/Fonts.hpp"
+#include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/QMagicEnum.hpp"
@@ -323,6 +324,13 @@ void SplitContainer::setSelected(Split *split)
     {
         this->focusSplitRecursive(node);
         this->setPreferedTargetRecursive(node);
+    }
+
+    // A tab with a name of its own shows the selected channel's paint
+    if (this->tab_ != nullptr && getSettings()->channelNamePaints)
+    {
+        // (NotebookTab hides update(); repaint it as a widget)
+        static_cast<QWidget *>(this->tab_)->update();
     }
 }
 
