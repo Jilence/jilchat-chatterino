@@ -625,6 +625,8 @@ set(SOURCE_FILES
         providers/kick/ws/KickPusherManager.cpp
         providers/kick/ws/KickWebSocketCommon.cpp
 
+        providers/links/EmoteLinkPreview.cpp
+        providers/links/EmoteLinkPreview.hpp
         providers/links/LinkInfo.cpp
         providers/links/LinkInfo.hpp
         providers/links/LinkResolver.cpp

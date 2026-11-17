@@ -8,6 +8,7 @@
 #include "common/network/NetworkRequest.hpp"
 #include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
+#include "providers/links/EmoteLinkPreview.hpp"
 #include "providers/links/LinkInfo.hpp"
 #include "providers/links/TikTokLinkResolver.hpp"
 #include "singletons/Settings.hpp"
@@ -182,6 +183,16 @@ void LinkResolver::resolve(LinkInfo *info)
 
     if (!getSettings()->linkInfoTooltip)
     {
+        return;
+    }
+
+    // Emote links the general link previews can't show (JilTV, BTTV) are
+    // asked from the emote's provider instead
+    if (isEmotePageLink(info->originalUrl()))
+    {
+        info->setTooltip("Loading...");
+        info->setState(State::Loading);
+        resolveEmotePageLink(info);
         return;
     }
 
