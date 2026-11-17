@@ -20,7 +20,8 @@ using namespace chatterino;
 
 /// The JilChat Chatterino app on jiltv.app. Public, there is no secret.
 constexpr auto CLIENT_ID = "01M64W4045EXJBPZSSEBWHPZ39";
-constexpr auto SCOPE = "COSMETICS_WRITE";
+// Cosmetics for the badge picker, sets for "Add to JilTV set..."
+constexpr auto SCOPE = "COSMETICS_WRITE SETS_WRITE";
 constexpr auto CREDENTIAL_PROVIDER = "jiltv";
 /// Renew this long before the access token expires
 constexpr qint64 REFRESH_EARLY_SECS = 60;

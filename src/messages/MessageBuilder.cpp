@@ -2180,6 +2180,8 @@ MessagePtr MessageBuilder::makeDeletionMessageFromIRC(
                               MessageColor::Text)
         ->setLink({Link::JumpToMessage, originalMessage->id});
     builder.message().timeoutUser = originalMessage->loginName;
+    builder.message().platform = originalMessage->platform;
+    builder.message().channelName = originalMessage->channelName;
 
     const auto deletionText =
         QString("A message from %1 was deleted: %2")
