@@ -35,6 +35,7 @@
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/links/EmoteLinkPreview.hpp"
 #include "providers/links/LinkInfo.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/seventv/paints/Paint.hpp"
@@ -2140,10 +2141,15 @@ std::optional<std::pair<SetProvider, QString>> emoteSetTarget(
         return std::make_pair(SetProvider::Jiltv, match.captured(1));
     }
     static const QRegularExpression bttv(
-        QStringLiteral("betterttv\\.com/emotes/([0-9a-f]{24})"));
+        QStringLiteral("betterttv\\.com/emotes/([A-Za-z0-9]+)"));
     if (const auto match = bttv.match(url); match.hasMatch())
     {
-        return std::make_pair(SetProvider::Bttv, match.captured(1));
+        // Newer links carry the ID as a short code
+        const auto id = bttvEmoteIdFromLink(match.captured(1));
+        if (!id.isEmpty())
+        {
+            return std::make_pair(SetProvider::Bttv, id);
+        }
     }
     return std::nullopt;
 }
