@@ -26,6 +26,7 @@ namespace {
 constexpr auto USER_URL = "https://api.wydios.de/user/get";
 constexpr qsizetype MAX_PAYLOAD_SIZE = 1024 * 1024;
 constexpr qint64 REFRESH_INTERVAL = 30LL * 60 * 1000;
+constexpr qint64 RETRY_AFTER_ERROR = 5LL * 60 * 1000;
 
 bool validUserId(const QString &id)
 {
@@ -250,10 +251,26 @@ void WydiosBadges::requestUserBadge(const QString &userID)
             this->badgesUpdated.invoke();
             WindowManager::notifyBadgesUpdated(userID);
         })
-        .onError([userID](const NetworkResult &result) {
+        .onError([this, userID](const NetworkResult &result) {
+            // Wydios answers users without an account with 404: no badge,
+            // asked again with the next refresh like any other user
+            if (result.status() == 404)
+            {
+                std::unique_lock lock(this->mutex_);
+                this->users_.insert(userID, {});
+                this->fetchedAt_.insert(userID,
+                                        QDateTime::currentMSecsSinceEpoch());
+                return;
+            }
+
             qCWarning(chatterinoApp)
                 << "[Wydios] User badge request failed for Twitch ID:" << userID
                 << result.formatError();
+            // Not again with every message, only after a while
+            std::unique_lock lock(this->mutex_);
+            this->fetchedAt_.insert(
+                userID, QDateTime::currentMSecsSinceEpoch() - REFRESH_INTERVAL +
+                            RETRY_AFTER_ERROR);
         })
         .finally([this, userID] {
             std::unique_lock lock(this->mutex_);

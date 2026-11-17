@@ -1,0 +1,1 @@
+- Fixed Wydios badges asking again with every message of someone without a Wydios account.
