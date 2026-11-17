@@ -11,6 +11,7 @@
 #include <QBackingStore>
 #include <QElapsedTimer>
 #include <QGraphicsOpacityEffect>
+#include <QGuiApplication>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
@@ -505,7 +506,10 @@ void fadeOutWindow(QWidget *window)
 {
     if (skipsWindowAnimation(window) || !window->isVisible() ||
         window->isMinimized() || window->size().isEmpty() ||
-        QCoreApplication::closingDown())
+        QCoreApplication::closingDown() ||
+        // Wayland doesn't let apps place their windows: the picture would
+        // show up somewhere else instead of where the window was
+        QGuiApplication::platformName().startsWith(u"wayland"))
     {
         return;
     }
