@@ -25,7 +25,10 @@ class QDateTimeEdit;
 class QLabel;
 class QLineEdit;
 class QMenu;
+class QPushButton;
+class QScrollArea;
 class QToolButton;
+class QVBoxLayout;
 
 namespace chatterino {
 
@@ -62,6 +65,18 @@ private:
     void updateResultCountLabelStyle();
     void addShortcuts() override;
     std::vector<MessagePtr> buildSnapshot();
+
+    QScrollArea *createFilterPanel();
+    void setFilterPanelOpen(bool open);
+    void updateChannelFilters();
+    void syncFilterPanel();
+    QStringList activeFilterValues(const QString &name) const;
+    void setFilterValue(const QString &name, const QString &value,
+                        bool enabled);
+    void setFilterValues(const QString &name, const QStringList &values);
+    bool hasFilters() const;
+    void clearFilters();
+    void setSearchText(const QString &text);
 
     /// The Twitch channels whose public logs can be searched (one, or all
     /// open ones when searching all tabs).
@@ -105,6 +120,10 @@ private:
     /// public logs search: only shown while it is on, so the search is a
     /// single field otherwise
     void updateLogControlsVisibility();
+    /// With the public logs, the User field is where the user goes: a
+    /// `from:` in the search text moves there (the first user, when the
+    /// field is empty) and leaves the search text.
+    void moveFromFilterToUserField();
     void rebuildChannelsMenu();
     void updateChannelsButtonText();
 
@@ -171,6 +190,28 @@ private:
     /// row cause one refresh.
     QTimer searchRefreshTimer_;
     QLabel *resultCountLabel_{};
+    QPushButton *filterButton_{};
+
+    struct FilterCheckBox {
+        QCheckBox *checkBox;
+        QString name;
+        QString value;
+    };
+    struct FilterSection {
+        QToolButton *header;
+        QWidget *body;
+    };
+    QScrollArea *filterPanel_{};
+    std::vector<FilterCheckBox> filterCheckBoxes_;
+    std::vector<FilterSection> filterSections_;
+    QPushButton *clearFiltersButton_{};
+    std::vector<FilterSection> filterMoreGroups_;
+    QLineEdit *fromUsersInput_{};
+    /// The "From user" section, hidden while the public logs are searched
+    /// (the User field then picks the user)
+    FilterSection fromUsersSection_{};
+    QWidget *channelSection_{};
+    QVBoxLayout *channelFiltersLayout_{};
     ChannelView *channelView_{};
     QString channelName_{};
     Split *split_ = nullptr;

@@ -5,6 +5,7 @@
 #include "widgets/dialogs/UpdatePrompt.hpp"
 
 #include "Application.hpp"
+#include "singletons/Settings.hpp"
 #include "widgets/helper/JilChatCard.hpp"
 
 #include <QFontMetricsF>
@@ -128,9 +129,14 @@ void UpdatePrompt::showPrompt()
 void UpdatePrompt::showIfNew()
 {
     const auto &updates = getApp()->getUpdates();
+    // Off in the settings, or this version was skipped: only the manual
+    // check in the settings still shows it
     if (updates.getStatus() != Updates::UpdateAvailable ||
         updates.getOnlineVersion().isEmpty() ||
-        updates.getOnlineVersion() == handledVersion())
+        updates.getOnlineVersion() == handledVersion() ||
+        !getSettings()->showUpdatePrompt ||
+        updates.getOnlineVersion() ==
+            getSettings()->skippedUpdateVersion.getValue())
     {
         return;
     }
@@ -231,6 +237,8 @@ void UpdatePrompt::layOut()
         QRectF(right - 130, buttonsTop, 130, BUTTON_HEIGHT);
     this->controls_[RemindLater] =
         QRectF(right - 130 - 8 - 140, buttonsTop, 140, BUTTON_HEIGHT);
+    this->controls_[SkipVersion] =
+        QRectF(this->card_.left() + PAD, buttonsTop, 118, BUTTON_HEIGHT);
     this->controls_[Close] =
         QRectF(this->card_.right() - 38, this->card_.top() + 10, 28, 28);
     this->scrollTo(0, true);
@@ -572,6 +580,8 @@ void UpdatePrompt::paintEvent(QPaintEvent * /*event*/)
                       card.width() - (PAD * 2), 18),
                Qt::AlignLeft | Qt::AlignVCenter, footer);
 
+    drawButton(p, this->controls_[SkipVersion], QStringLiteral("Skip version"),
+               false, this->hover_[SkipVersion], false, now);
     drawButton(p, this->controls_[RemindLater],
                QStringLiteral("Remind me later"), false,
                this->hover_[RemindLater], false, now);
@@ -691,6 +701,12 @@ void UpdatePrompt::mouseReleaseEvent(QMouseEvent *event)
             this->close();
         }
         return;
+    }
+    if (released == SkipVersion)
+    {
+        // No popup for this version again; the next one shows as usual
+        getSettings()->skippedUpdateVersion =
+            getApp()->getUpdates().getOnlineVersion();
     }
     // "Remind me later" and the X: until the next start
     this->close();

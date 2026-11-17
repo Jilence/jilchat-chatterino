@@ -972,6 +972,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
         SettingWidget::checkbox("Receive beta updates", s.betaUpdates)
             ->addTo(layout);
+        SettingWidget::checkbox("Show a popup when an update is out",
+                                s.showUpdatePrompt)
+            ->setTooltip("Off: no popup on start. Checking for updates by "
+                         "hand still shows it.")
+            ->addTo(layout);
     }
     else
     {
