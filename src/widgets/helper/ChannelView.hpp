@@ -10,6 +10,7 @@
 #include "messages/LimitedQueue.hpp"
 #include "messages/MessageFlag.hpp"
 #include "messages/Selection.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/ThreadGuard.hpp"
 #include "widgets/BaseWidget.hpp"
 #include "widgets/TooltipWidget.hpp"
@@ -490,6 +491,17 @@ private:
     /// Rectangles of animated elements painted in the view.
     /// Empty when nothing animated is on screen.
     QRegion animationRegion_;
+    /// The part of animationRegion_ that is names with an animated paint:
+    /// repainted only when the paints have a new picture.
+    QRegion animationPaintRegion_;
+    qint64 lastAnimatedPaintTick_ = -1;
+    /// The animated images in animationRegion_, each repainted only when it
+    /// shows another picture.
+    std::vector<AnimatedImageSpot> animationImageSpots_;
+    /// Their rectangles together.
+    QRegion animationImageRegion_;
+    /// Names whose paint is made of images: repainted on every tick.
+    QRegion animationImagePaintRegion_;
 
     bool pausable_ = false;
     QTimer pauseTimer_;

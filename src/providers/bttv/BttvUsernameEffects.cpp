@@ -16,6 +16,7 @@
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/PostToThread.hpp"
 
 #include <QBrush>
@@ -23,6 +24,7 @@
 #include <QDateTime>
 #include <QFontMetricsF>
 #include <QHash>
+#include <QHashFunctions>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -78,26 +80,17 @@ public:
         const auto step = static_cast<int>(
             double(QDateTime::currentMSecsSinceEpoch() % 16000) * 96.0 * 2.0 /
             16000.0);
-        const auto key =
-            QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8|%9")
-                .arg(text, font.key())
-                .arg(size.width())
-                .arg(size.height())
-                .arg(dpr)
-                .arg(centerVertically)
-                .arg(padding)
-                .arg(outlined)
-                .arg(texture ? QString{} : userColor.name(QColor::HexArgb));
-        if (const auto *frame = this->frames_.object(key);
-            frame != nullptr && frame->step == step)
+        // A number, not a text: asked for every name on every repaint
+        const auto key = qHashMulti(0, text, font, size.width(), size.height(),
+                                    dpr, centerVertically, padding, outlined,
+                                    texture ? QRgb{0} : userColor.rgba());
+        const auto *kept = this->frames_.object(key);
+        if (kept != nullptr && kept->step == step)
         {
-            return frame->pixmap;
+            return kept->pixmap;
         }
 
         const QSizeF drawSize = size + QSizeF(2 * padding, 2 * padding);
-        QPixmap pixmap((drawSize * dpr).toSize());
-        pixmap.setDevicePixelRatio(dpr);
-        pixmap.fill(Qt::transparent);
 
         // The colon after the name isn't part of the name.
         auto nametag = text;
@@ -115,14 +108,26 @@ public:
                       ((textRect.height() - metrics.height()) / 2) +
                       metrics.ascent()
                 : textRect.bottom() - metrics.descent();
-        QPainterPath name;
-        name.addText(textRect.left(), baseline, font, nametag);
-
-        QPainter painter(&pixmap);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        if (outlined)
+        // The outline doesn't move, only the image inside the name does:
+        // it is drawn once (outlining the name's shape is the slow part)
+        // and each new picture starts from it.
+        QPixmap outline;
+        if (kept != nullptr)
         {
+            outline = kept->outline;
+        }
+        else
+        {
+            outline = QPixmap((drawSize * dpr).toSize());
+            outline.setDevicePixelRatio(dpr);
+            outline.fill(Qt::transparent);
+        }
+        if (kept == nullptr && outlined)
+        {
+            QPainterPath name;
+            name.addText(textRect.left(), baseline, font, nametag);
+            QPainter painter(&outline);
+            painter.setRenderHint(QPainter::Antialiasing);
             // What the extension does in the web chat: the shape of the
             // name, grown by a pixel to all sides, in the outline's color;
             // and the same again two pixels lower. There, the name is in a
@@ -139,8 +144,13 @@ public:
                 QRectF(0, 0, drawSize.width(), textRect.bottom()));
             painter.drawPath(name.translated(0, 2 * unit));
             painter.drawPath(name);
-            painter.setClipping(false);
         }
+
+        auto pixmap = outline.copy();
+        pixmap.setDevicePixelRatio(dpr);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
         // The name itself as text, so its letters look like those of names
         // without an effect (hinted), only the outline follows its shape
         QPen pen;
@@ -171,7 +181,11 @@ public:
         }
         painter.end();
 
-        this->frames_.insert(key, new Frame{.step = step, .pixmap = pixmap});
+        this->frames_.insert(key, new Frame{
+                                      .step = step,
+                                      .pixmap = pixmap,
+                                      .outline = outline,
+                                  });
         return pixmap;
     }
 
@@ -208,6 +222,15 @@ public:
                              QColor userColor, QSizeF textSize, float scale,
                              float dpr, QMarginsF margins) const override
     {
+        // The chat asks for the whole room around the name
+        // (overflowMargins), which is the picture getPixmap makes: hand
+        // that out instead of copying it on every repaint.
+        const auto room = this->overflow(scale);
+        if (margins == QMarginsF(room, room, room, room))
+        {
+            return this->getPixmap(text, font, userColor, textSize, scale, dpr,
+                                   false, room);
+        }
         return this->croppedNametagPixmap(text, font, userColor, textSize,
                                           scale, dpr, margins);
     }
@@ -229,11 +252,13 @@ private:
     struct Frame {
         int step;
         QPixmap pixmap;
+        /// The name's outline alone, which every picture starts from
+        QPixmap outline;
     };
 
     ImagePtr image_;
     QColor outline_;
-    mutable QCache<QString, Frame> frames_{128};
+    mutable QCache<size_t, Frame> frames_{128};
 };
 
 /// The name in its color; a light crosses it in the first half of every
@@ -282,6 +307,17 @@ public:
     QString sourceName() const override
     {
         return QStringLiteral("BTTV");
+    }
+
+protected:
+    /// The light moves with the time, not with an image: the picture of a
+    /// name is kept per paint tick while it crosses, and once for the rest
+    /// of the eight seconds.
+    qint64 sourcePixmapCacheKey() const override
+    {
+        const auto phase =
+            double(QDateTime::currentMSecsSinceEpoch() % 8000) / 4000.0;
+        return phase < 1.0 ? animatedPaintTick() : -1;
     }
 
 private:
