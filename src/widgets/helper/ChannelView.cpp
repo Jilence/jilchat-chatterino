@@ -108,9 +108,9 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
-#include <QScopeGuard>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QSet>
 #include <QSlider>
