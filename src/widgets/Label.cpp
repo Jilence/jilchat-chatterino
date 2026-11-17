@@ -5,6 +5,8 @@
 #include "widgets/Label.hpp"
 
 #include "Application.hpp"
+#include "providers/seventv/paints/Paint.hpp"
+#include "util/ChannelNamePaint.hpp"
 
 #include <QPainter>
 
@@ -125,6 +127,43 @@ QSize Label::minimumSizeHint() const
     return this->minimumSizeHint_;
 }
 
+void Label::setNamePaint(std::shared_ptr<Paint> paint, qsizetype length)
+{
+    if (this->namePaint_ == paint && this->namePaintLength_ == length)
+    {
+        return;
+    }
+    this->namePaint_ = std::move(paint);
+    this->namePaintLength_ = length;
+    this->update();
+}
+
+void Label::setNameColor(QColor color, qsizetype length)
+{
+    if (this->nameColor_ == color && this->nameColorLength_ == length)
+    {
+        return;
+    }
+    this->nameColor_ = color;
+    this->nameColorLength_ = length;
+    this->update();
+}
+
+void Label::setNameStart(qsizetype start)
+{
+    if (this->nameStart_ == start)
+    {
+        return;
+    }
+    this->nameStart_ = start;
+    this->update();
+}
+
+bool Label::hasAnimatedNamePaint() const
+{
+    return this->namePaint_ != nullptr && this->namePaint_->animated();
+}
+
 void Label::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
@@ -160,6 +199,64 @@ void Label::paintEvent(QPaintEvent *)
     else
     {
         option.setWrapMode(QTextOption::NoWrap);
+    }
+    const bool paintedName =
+        this->namePaint_ != nullptr && this->namePaintLength_ > 0;
+    const bool coloredName =
+        this->nameColor_.isValid() && this->nameColorLength_ > 0;
+    if ((paintedName || coloredName) && !this->wordWrap_)
+    {
+        // The name in its paint, the text before and after it as usual
+        const auto font =
+            getApp()->getFonts()->getFont(this->getFontStyle(), this->scale());
+        const auto prefix = text.left(this->nameStart_);
+        const auto name =
+            text.mid(prefix.size(), paintedName ? this->namePaintLength_
+                                                : this->nameColorLength_);
+        const auto rest = text.mid(prefix.size() + name.size());
+        const auto nameWidth = metrics.horizontalAdvance(name);
+        auto left = textRect.left();
+        if (alignment.testFlag(Qt::AlignHCenter))
+        {
+            left += (textRect.width() - width) / 2;
+        }
+        if (!prefix.isEmpty())
+        {
+            QTextOption prefixOption(Qt::AlignLeft | Qt::AlignVCenter);
+            prefixOption.setWrapMode(QTextOption::NoWrap);
+            const auto prefixWidth = metrics.horizontalAdvance(prefix);
+            painter.drawText(
+                QRectF(left, textRect.top(), prefixWidth, textRect.height()),
+                prefix, prefixOption);
+            left += prefixWidth;
+        }
+        const QRectF nameRect(left, textRect.top(), nameWidth,
+                              textRect.height());
+        const auto nameColor = this->nameColor_.isValid()
+                                   ? this->nameColor_
+                                   : this->palette().windowText().color();
+        if (paintedName)
+        {
+            drawPaintedName(painter, nameRect, name, font, nameColor,
+                            *this->namePaint_, Qt::AlignLeft | Qt::AlignVCenter,
+                            this->scale());
+        }
+        else
+        {
+            painter.save();
+            painter.setPen(nameColor);
+            QTextOption nameOption(Qt::AlignLeft | Qt::AlignVCenter);
+            nameOption.setWrapMode(QTextOption::NoWrap);
+            painter.drawText(nameRect, name, nameOption);
+            painter.restore();
+        }
+        QTextOption restOption(Qt::AlignLeft | Qt::AlignVCenter);
+        restOption.setWrapMode(QTextOption::NoWrap);
+        painter.drawText(
+            QRectF(left + nameWidth, textRect.top(),
+                   textRect.right() - left - nameWidth, textRect.height()),
+            rest, restOption);
+        return;
     }
     painter.drawText(textRect, text, option);
 

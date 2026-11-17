@@ -10,10 +10,13 @@
 #include "common/QLogging.hpp"
 #include "controllers/hotkeys/HotkeyCategory.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
+#include "providers/seventv/paints/Paint.hpp"
+#include "providers/twitch/TwitchChannel.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/ChannelNamePaint.hpp"
 #include "util/Helpers.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
 #include "widgets/dialogs/SettingsDialog.hpp"
@@ -270,6 +273,27 @@ NotebookTab::NotebookTab(Notebook *notebook)
             this->tabSizeChanged();
         },
         this->managedConnections_);
+    // Titles in a paint: drawn again once a paint is known, and a moving one
+    // on the selected tab with the GIFs
+    this->managedConnections_.managedConnect(channelNamePaintsChanged(),
+                                             [this] {
+                                                 this->update();
+                                             });
+    getSettings()->channelNamePaints.connect(
+        [this] {
+            this->update();
+        },
+        this->managedConnections_, false);
+    this->managedConnections_.managedConnect(
+        getApp()->getWindows()->gifRepaintRequested, [this] {
+            if (this->titlePaintAnimated_ &&
+                (this->selected_ ||
+                 getSettings()->animateAllTabPaints.getValue()) &&
+                this->isVisible())
+            {
+                this->update();
+            }
+        });
     getSettings()->tabStyle.connect(
         [this] {
             this->tabSizeChanged();
@@ -781,6 +805,72 @@ void NotebookTab::setDefaultTitle(const QString &title)
 const QString &NotebookTab::getDefaultTitle() const
 {
     return this->defaultTitle_;
+}
+
+std::vector<NotebookTab::TitlePiece> NotebookTab::titlePieces() const
+{
+    const auto &title = this->getTitle();
+    std::vector<TitlePiece> plain{{title, nullptr}};
+    if (!getSettings()->channelNamePaints)
+    {
+        return plain;
+    }
+    auto *container = dynamic_cast<SplitContainer *>(this->page);
+    if (container == nullptr)
+    {
+        return plain;
+    }
+
+    // The title the tab gets from its channels (as SplitContainer makes it),
+    // in pieces
+    std::vector<TitlePiece> pieces;
+    QString generated;
+    TwitchChannel *firstTwitch = nullptr;
+    for (auto *split : container->getSplits())
+    {
+        const auto channel = split->getChannel();
+        auto name = channel->getLocalizedName();
+        if (name.isEmpty())
+        {
+            continue;
+        }
+        auto *twitchChannel = dynamic_cast<TwitchChannel *>(channel.get());
+        if (firstTwitch == nullptr)
+        {
+            firstTwitch = twitchChannel;
+        }
+        if (!generated.isEmpty())
+        {
+            generated += QStringLiteral(", ");
+            pieces.push_back({QStringLiteral(", "), nullptr});
+        }
+        generated += name;
+        pieces.push_back({name, twitchChannel});
+        if (twitchChannel != nullptr && twitchChannel->isAnonymous())
+        {
+            generated += QStringLiteral(" (anonymous)");
+            pieces.push_back({QStringLiteral(" (anonymous)"), nullptr});
+        }
+    }
+    if (title == generated)
+    {
+        return pieces;
+    }
+    // A name of its own: all of it in the paint of the selected split's
+    // channel (of the first one while none is selected)
+    if (auto *selected = container->getSelectedSplit(); selected != nullptr)
+    {
+        if (auto *twitchChannel =
+                dynamic_cast<TwitchChannel *>(selected->getChannel().get()))
+        {
+            return {{title, twitchChannel}};
+        }
+    }
+    if (firstTwitch != nullptr)
+    {
+        return {{title, firstTwitch}};
+    }
+    return plain;
 }
 
 const QString &NotebookTab::getTitle() const
@@ -1461,7 +1551,57 @@ void NotebookTab::paintEvent(QPaintEvent *)
 
     QTextOption option(alignment);
     option.setWrapMode(QTextOption::NoWrap);
-    painter.drawText(textRect, this->getTitle(), option);
+    // With paints on channel names: each channel's name in its streamer's
+    // paint, else at least in their Twitch color instead of the gray
+    const auto pieces = this->titlePieces();
+    this->titlePaintAnimated_ = false;
+    if (pieces.size() == 1 && pieces.front().channel == nullptr)
+    {
+        painter.drawText(textRect, this->getTitle(), option);
+    }
+    else
+    {
+        const auto font = painter.font();
+        qreal left = textRect.left();
+        if (alignment.testFlag(Qt::AlignHCenter))
+        {
+            left += (textRect.width() - width) / 2.0;
+        }
+        for (const auto &piece : pieces)
+        {
+            const auto pieceWidth = metrics.horizontalAdvance(piece.text);
+            const QRectF pieceRect(left, textRect.top(), pieceWidth,
+                                   textRect.height());
+            left += pieceWidth;
+            if (left - pieceWidth > textRect.right())
+            {
+                break;  // beyond the tab
+            }
+            std::shared_ptr<Paint> paint;
+            QColor nameColor;
+            if (piece.channel != nullptr)
+            {
+                paint = channelNamePaint(piece.channel->getName(),
+                                         piece.channel->roomId());
+                nameColor = channelNameColor(*piece.channel);
+            }
+            if (paint != nullptr)
+            {
+                this->titlePaintAnimated_ =
+                    this->titlePaintAnimated_ || paint->animated();
+                drawPaintedName(painter, pieceRect, piece.text, font,
+                                nameColor.isValid() ? nameColor : colors.text,
+                                *paint, Qt::AlignLeft | Qt::AlignVCenter,
+                                scale);
+                continue;
+            }
+            painter.setPen(nameColor.isValid() ? nameColor : colors.text);
+            QTextOption pieceOption(Qt::AlignLeft | Qt::AlignVCenter);
+            pieceOption.setWrapMode(QTextOption::NoWrap);
+            painter.drawText(pieceRect, piece.text, pieceOption);
+        }
+        painter.setPen(colors.text);
+    }
 
     // draw close x
     if (this->shouldDrawXButton())

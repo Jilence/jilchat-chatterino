@@ -851,6 +851,8 @@ set(SOURCE_FILES
         util/BoostJsonWrap.hpp
         util/CancellationToken.hpp
         util/ChannelHelpers.hpp
+        util/ChannelNamePaint.cpp
+        util/ChannelNamePaint.hpp
         util/Clipboard.cpp
         util/Clipboard.hpp
         util/CustomPlayer.cpp

@@ -24,6 +24,8 @@ namespace chatterino {
 inline constexpr int NOTEBOOK_TAB_HEIGHT = 28;
 
 class SplitContainer;
+class Paint;
+class TwitchChannel;
 
 class NotebookTab : public Button
 {
@@ -215,6 +217,20 @@ private:
     QAction *closeTabsAfterSelectedAction_{};
 
     pajlada::Signals::SignalHolder managedConnections_;
+
+    /// A piece of the title and the Twitch channel whose paint (or color)
+    /// it's drawn in; nullptr for plain text such as ", "
+    struct TitlePiece {
+        QString text;
+        TwitchChannel *channel = nullptr;
+    };
+    /// The title in pieces when channel names are drawn in paints: each
+    /// channel's name in its own paint when the tab is named after its
+    /// channels, or the whole title in the first channel's paint when it has
+    /// a name of its own. One plain piece otherwise.
+    std::vector<TitlePiece> titlePieces() const;
+    /// Whether the title was last drawn in a paint that moves
+    bool titlePaintAnimated_ = false;
 };
 
 }  // namespace chatterino

@@ -319,6 +319,19 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             removeTabShortcut + ".")
         ->addTo(layout);
 
+    SettingWidget::checkbox("Paints on channel names", s.channelNamePaints)
+        ->setTooltip(
+            "Draws a channel's name on its tab and in the channel bar in the "
+            "streamer's username paint. For 7TV paints of streamers who "
+            "haven't chatted, each channel's paint is asked from 7TV once.")
+        ->addTo(layout);
+
+    SettingWidget::checkbox("Animate paints on all tabs", s.animateAllTabPaints)
+        ->setTooltip("Moving paints on channel names move on every tab. Off: "
+                     "only on the selected tab and in the channel bar. Uses "
+                     "a little more CPU.")
+        ->addTo(layout);
+
     SettingWidget::checkbox("Always on top", s.windowTopMost)
         ->setTooltip("Always keep JilChat Chatterino as the top window.")
         ->addTo(layout);
