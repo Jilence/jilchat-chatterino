@@ -67,11 +67,36 @@ void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
     }
     recent.insert(key, now);
 
-    // Several mods may have this on in the same chat. Each waits a different
-    // moment, and whoever goes first is the only one who sends it.
-    const int waitMs = 2000 + QRandomGenerator::global()->bounded(3000);
+    auto command = getSettings()->raidShoutoutCommand.getValue().trimmed();
+    if (command.isEmpty())
+    {
+        command = QStringLiteral("!so @{user}");
+    }
+    command.replace(QStringLiteral("{user}"), login, Qt::CaseInsensitive);
+    const bool commandIsTwitchShoutout =
+        command.startsWith(QStringLiteral("/shoutout"), Qt::CaseInsensitive) ||
+        command.startsWith(QStringLiteral("/so "), Qt::CaseInsensitive);
+
+    // Twitch's own shoutout goes out at once, in case the channel has no bot
+    // for the command. Twitch itself refuses a second one from another mod.
+    if (!commandIsTwitchShoutout)
+    {
+        const auto twitch = getApp()->getCommands()->execCommand(
+            QStringLiteral("/shoutout ") + login, channel, false);
+        if (!twitch.isEmpty())
+        {
+            channel->sendMessage(twitch);
+        }
+    }
+
+    // The streamer sends the command at once. Mods wait a short, different
+    // moment each, so if several have this on, whoever goes first is the only
+    // one who sends it.
+    const int waitMs = channel->isBroadcaster() || commandIsTwitchShoutout
+                           ? 0
+                           : int(QRandomGenerator::global()->bounded(1500));
     std::weak_ptr<Channel> weak = channel;
-    QTimer::singleShot(waitMs, qApp, [weak, login] {
+    QTimer::singleShot(waitMs, qApp, [weak, login, command] {
         auto channel = weak.lock();
         if (channel == nullptr || !channel->hasModRights() ||
             !getSettings()->autoShoutoutRaids || !isChatOnScreen(*channel))
@@ -93,12 +118,6 @@ void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
             }
         }
 
-        auto command = getSettings()->raidShoutoutCommand.getValue().trimmed();
-        if (command.isEmpty())
-        {
-            command = QStringLiteral("!so @{user}");
-        }
-        command.replace(QStringLiteral("{user}"), login, Qt::CaseInsensitive);
         // Through the same path as typing it, so /shoutout works too
         const auto text =
             getApp()->getCommands()->execCommand(command, channel, false);

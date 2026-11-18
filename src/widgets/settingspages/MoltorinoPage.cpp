@@ -916,14 +916,14 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
     SettingWidget::checkbox("Shout out raiders automatically",
                             s.autoShoutoutRaids)
         ->setTooltip("When someone raids a channel you moderate, sends the "
-                     "command below a few seconds later. If another mod "
+                     "command below right away. If another mod "
                      "already shouted them out, it isn't sent twice.")
         ->addTo(*view);
     SettingWidget::lineEdit("Shoutout command", s.raidShoutoutCommand,
                             "!so @{user}")
         ->setTooltip("{user} becomes the raider's name. Use the command your "
-                     "channel's bot listens to, or /shoutout {user} for "
-                     "Twitch's own shoutout.")
+                     "channel's bot listens to. Twitch's own /shoutout is "
+                     "sent as well, in case there's no bot.")
         ->conditionallyEnabledBy(s.autoShoutoutRaids)
         ->addTo(*view);
 
