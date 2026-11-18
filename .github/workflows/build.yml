@@ -365,6 +365,9 @@ jobs:
             PATH="$PWD/yasm-tool/direct_deploy/yasm/bin:$PATH"
             export PATH
           fi
+          # dav1d 1.5.4 doesn't compile with MSVC 19.5 (C7780 in its
+          # stdatomic.h). This header gives it the fallback from dav1d master.
+          DAV1D_COMPAT="$(cygpath -m "$GITHUB_WORKSPACE/.CI/dav1d-msvc-compat.h")"
           conan install .. \
               -s build_type=RelWithDebInfo \
               -c tools.cmake.cmaketoolchain:generator="Ninja" \
@@ -372,7 +375,8 @@ jobs:
               --output-folder=. \
               -o with_openssl3=True \
               -o with_theme_video=True \
-              -c "libwebm/*:tools.build:cxxflags=['/permissive-']" || {
+              -c "libwebm/*:tools.build:cxxflags=['/permissive-']" \
+              -c "dav1d/*:tools.build:cflags=['/FI$DAV1D_COMPAT']" || {
             # what ffmpeg's configure tried, if that is what failed; also in
             # the summary of the run, the log of this step gets very long
             for log in ~/.conan2/p/b/ffmpe*/b/*/ffbuild/config.log; do
