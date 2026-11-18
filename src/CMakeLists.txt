@@ -908,10 +908,14 @@ set(SOURCE_FILES
         util/ReloadBadges.hpp
         util/RenameThread.cpp
         util/RenameThread.hpp
+        util/Restart.cpp
+        util/Restart.hpp
         util/SampleData.cpp
         util/SampleData.hpp
         util/SelfCheck.cpp
         util/SelfCheck.hpp
+        util/SettingsTransfer.cpp
+        util/SettingsTransfer.hpp
         util/SharedPtrElementLess.hpp
         util/RaidShoutout.cpp
         util/RaidShoutout.hpp
@@ -1219,6 +1223,8 @@ set(SOURCE_FILES
         widgets/settingspages/AboutPage.hpp
         widgets/settingspages/AccountsPage.cpp
         widgets/settingspages/AccountsPage.hpp
+        widgets/settingspages/BackupsPage.cpp
+        widgets/settingspages/BackupsPage.hpp
         widgets/settingspages/CommandPage.cpp
         widgets/settingspages/CommandPage.hpp
         widgets/settingspages/CustomWidgets.hpp

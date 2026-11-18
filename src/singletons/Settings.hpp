@@ -46,6 +46,8 @@
 
 using TimeoutButton = std::pair<QString, int>;
 
+class QJsonObject;
+
 namespace chatterino {
 
 class Args;
@@ -313,6 +315,9 @@ public:
 
     void saveSnapshot();
     void restoreSnapshot();
+
+    /// Returns the current value of every registered setting, keyed by path
+    QJsonObject registeredValues() const;
 
     void disableSave();
 
