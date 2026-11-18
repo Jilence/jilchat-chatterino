@@ -53,6 +53,7 @@ class Image;
 using ImagePtr = std::shared_ptr<Image>;
 class UsercardLogsView;
 class UsercardRolesView;
+class UsercardBanner;
 class Split;
 struct HelixUser;
 struct IvrSubage;
@@ -164,6 +165,7 @@ private:
     void updateUsercardSubGiftRow(const IvrSubage &subageInfo);
     void hideUsercardSubGiftRow();
     void resetUsercardInfoRows();
+    void loadIvrBanner(const QString &bannerUrl);
     void applyIvrUserProfile(const IvrUserProfile &profile);
     void updateLiveIndicatorDisplay();
 
@@ -236,6 +238,8 @@ private:
     QString userName_;
     QString userId_;
     uint64_t userDataRequestGeneration_ = 0;
+    uint64_t ivrBannerRequestGeneration_ = 0;
+    QString ivrBannerUrl_;
     QString avatarUrl_;
     QString helixAvatarUrl_;
     QString seventvAvatarUrl_;
@@ -335,6 +339,7 @@ private:
         Label *lastLiveLabel = nullptr;
         Label *userIDLabel = nullptr;
         QLabel *bannedAvatarLabel = nullptr;
+        UsercardBanner *ivrBanner = nullptr;
         QWidget *followageRow = nullptr;
         QLabel *followageIcon = nullptr;
         Label *followageLabel = nullptr;

@@ -819,6 +819,8 @@ public:
     };
     BoolSetting streamerModeHideUsercardAvatars = {
         "/streamerMode/hideUsercardAvatars", true};
+    BoolSetting streamerModeHideUsercardBanners = {
+        "/streamerMode/hideUsercardBanners", true};
     BoolSetting streamerModeHideLinkThumbnails = {
         "/streamerMode/hideLinkThumbnails", true};
     BoolSetting streamerModeHideViewerCountAndDuration = {
@@ -1046,6 +1048,9 @@ public:
                                              true};
     BoolSetting showUsercardNameHistoryButton = {
         "/usercard/showNameHistoryButton", true};
+    BoolSetting showUsercardBanners = {"/usercard/showBanners", false};
+    QStringSetting usercardBannerDisplayMode = {"/usercard/bannerDisplayMode",
+                                                "above"};
     BoolSetting showUsercardLoadMoreMessagesButton = {
         "/usercard/showLoadMoreMessagesButton", true};
     /// Where the user last moved a usercard to ("x,y") and the size they last
