@@ -1,6 +1,7 @@
 #include "widgets/helper/PredictionBanner.hpp"
 
 #include "Application.hpp"
+#include "controllers/commands/CommandController.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
@@ -16,6 +17,7 @@
 #include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QShowEvent>
 #include <QTimer>
 #include <QVariantAnimation>
@@ -334,6 +336,16 @@ PredictionBanner::PredictionBanner(Split *split, QWidget *parent)
 
     this->rootLayout_->addLayout(this->contentLayout_);
 
+    // Mods and the streamer get Pay out and Refund buttons under an open
+    // prediction
+    this->modButtons_ = new QWidget(this);
+    this->modButtonsLayout_ = new QHBoxLayout(this->modButtons_);
+    this->modButtonsLayout_->setContentsMargins(BASE_CONTENT_LEFT_MARGIN, 2, 0,
+                                                0);
+    this->modButtonsLayout_->setSpacing(6);
+    this->modButtons_->hide();
+    this->rootLayout_->addWidget(this->modButtons_);
+
     this->updateTimer_ = new QTimer(this);
     this->updateTimer_->setInterval(1000);
     this->connect(this->updateTimer_, &QTimer::timeout, this,
@@ -408,6 +420,7 @@ void PredictionBanner::setPrediction(
         this->rightOutcomeLabel_->clear();
         this->timerLabel_->clear();
         this->outcomeBar_->hide();
+        this->updateModButtons();
         this->hide();
         return;
     }
@@ -460,6 +473,7 @@ void PredictionBanner::setPrediction(
 
     this->updateLayout();
     this->updateTimer();
+    this->updateModButtons();
 
     if (prediction->status == "ACTIVE" && this->predictionEndsAt().isValid())
     {
@@ -905,6 +919,154 @@ void PredictionBanner::themeChangedEvent()
         this->updateTimer();
     }
     this->update();
+}
+
+void PredictionBanner::updateModButtons()
+{
+    const bool open = this->prediction_ && this->twitchChannel_ != nullptr &&
+                      (this->prediction_->status == "ACTIVE" ||
+                       this->prediction_->status == "LOCKED") &&
+                      (this->twitchChannel_->hasModRights() ||
+                       this->twitchChannel_->isBroadcaster());
+    if (!open)
+    {
+        this->modButtons_->hide();
+        this->modButtonsKey_.clear();
+        this->armedButton_ = nullptr;
+        return;
+    }
+
+    // Only rebuilt when the prediction, its state or its outcomes change, so
+    // live point updates don't reset a button waiting for its second click
+    QString key = this->prediction_->id + ':' + this->prediction_->status;
+    for (const auto &outcome : this->prediction_->outcomes)
+    {
+        key += ':' + outcome.id + '=' + outcome.title;
+    }
+    if (key == this->modButtonsKey_)
+    {
+        this->modButtons_->show();
+        return;
+    }
+    this->modButtonsKey_ = key;
+    this->armedButton_ = nullptr;
+
+    while (auto *item = this->modButtonsLayout_->takeAt(0))
+    {
+        if (auto *widget = item->widget())
+        {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+
+    const auto style = [](const QString &background, const QString &hover) {
+        return QString("QPushButton { font-size: 11px; font-weight: bold;"
+                       " color: #ffffff; background: %1; border: none;"
+                       " border-radius: 4px; padding: 3px 10px; }"
+                       "QPushButton:hover { background: %2; }"
+                       "QPushButton:disabled { color: rgba(255,255,255,0.6); }")
+            .arg(background, hover);
+    };
+
+    int index = 1;
+    for (const auto &outcome : this->prediction_->outcomes)
+    {
+        const auto title = QFontMetrics(this->font())
+                               .elidedText(outcome.title, Qt::ElideRight, 140);
+        const auto label = QStringLiteral("Pay out ") + title;
+        auto *button = new QPushButton(label, this->modButtons_);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(
+            QStringLiteral("Make \"%1\" the winner and pay out the points")
+                .arg(outcome.title));
+        QString background = QStringLiteral("#2f6fd6");
+        QString hover = QStringLiteral("#4383ea");
+        if (outcome.color.compare("PINK", Qt::CaseInsensitive) == 0)
+        {
+            background = QStringLiteral("#c2307a");
+            hover = QStringLiteral("#d94a92");
+        }
+        else if (outcome.color.compare("GREEN", Qt::CaseInsensitive) == 0)
+        {
+            background = QStringLiteral("#1f8f4a");
+            hover = QStringLiteral("#27a85a");
+        }
+        button->setStyleSheet(style(background, hover));
+        const auto command =
+            QStringLiteral("/completeprediction --index %1").arg(index);
+        QObject::connect(button, &QPushButton::clicked, this,
+                         [this, button, label, command] {
+                             this->armOrRun(button, label, command);
+                         });
+        this->modButtonsLayout_->addWidget(button);
+        ++index;
+    }
+
+    auto *refund = new QPushButton(QStringLiteral("Refund"), this->modButtons_);
+    refund->setCursor(Qt::PointingHandCursor);
+    refund->setToolTip(QStringLiteral(
+        "Cancel the prediction and give everyone their points back"));
+    refund->setStyleSheet(
+        style(QStringLiteral("#5a5560"), QStringLiteral("#6e6875")));
+    QObject::connect(refund, &QPushButton::clicked, this, [this, refund] {
+        this->armOrRun(refund, QStringLiteral("Refund"),
+                       QStringLiteral("/cancelprediction"));
+    });
+    this->modButtonsLayout_->addWidget(refund);
+    this->modButtonsLayout_->addStretch(1);
+    this->modButtons_->show();
+}
+
+void PredictionBanner::armOrRun(QPushButton *button, const QString &label,
+                                const QString &command)
+{
+    if (this->armedButton_ != button)
+    {
+        // Only one button waits for a second click at a time
+        if (this->armedButton_ != nullptr)
+        {
+            this->armedButton_->setText(
+                this->armedButton_->property("solrinoLabel").toString());
+        }
+        this->armedButton_ = button;
+        button->setProperty("solrinoLabel", label);
+        button->setText(QStringLiteral("Click again: ") + label);
+        QPointer<QPushButton> guard(button);
+        QTimer::singleShot(3000, this, [this, guard, label] {
+            if (guard && this->armedButton_ == guard.data())
+            {
+                guard->setText(label);
+                this->armedButton_ = nullptr;
+            }
+        });
+        return;
+    }
+
+    this->armedButton_ = nullptr;
+    button->setText(label);
+    if (this->split_ == nullptr)
+    {
+        return;
+    }
+    auto channel = this->split_->getChannel();
+    if (!channel)
+    {
+        return;
+    }
+    // The same as typing the command, so any problem shows up in chat
+    getApp()->getCommands()->execCommand(command, channel, false);
+    for (auto *other : this->modButtons_->findChildren<QPushButton *>())
+    {
+        other->setEnabled(false);
+    }
+    // Usable again if Twitch didn't end the prediction
+    QTimer::singleShot(5000, this, [this] {
+        for (auto *other : this->modButtons_->findChildren<QPushButton *>())
+        {
+            other->setEnabled(true);
+        }
+    });
 }
 
 void PredictionBanner::updateLabelStyles()
