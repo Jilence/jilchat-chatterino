@@ -189,6 +189,8 @@ int scaledInt(float value, int minimum = 1)
 
 PredictionBanner::PredictionBanner(Split *split, QWidget *parent)
     : BaseWidget(parent)
+    , modButtons_(new QWidget(this))
+    , modButtonsLayout_(new QHBoxLayout(this->modButtons_))
     , split_(split)
 {
     this->setObjectName("PredictionBanner");
@@ -338,8 +340,6 @@ PredictionBanner::PredictionBanner(Split *split, QWidget *parent)
 
     // Mods and the streamer get Pay out and Refund buttons under an open
     // prediction
-    this->modButtons_ = new QWidget(this);
-    this->modButtonsLayout_ = new QHBoxLayout(this->modButtons_);
     this->modButtonsLayout_->setContentsMargins(BASE_CONTENT_LEFT_MARGIN, 2, 0,
                                                 0);
     this->modButtonsLayout_->setSpacing(6);
@@ -1056,13 +1056,15 @@ void PredictionBanner::armOrRun(QPushButton *button, const QString &label,
     }
     // The same as typing the command, so any problem shows up in chat
     getApp()->getCommands()->execCommand(command, channel, false);
-    for (auto *other : this->modButtons_->findChildren<QPushButton *>())
+    const auto buttons = this->modButtons_->findChildren<QPushButton *>();
+    for (auto *other : buttons)
     {
         other->setEnabled(false);
     }
     // Usable again if Twitch didn't end the prediction
     QTimer::singleShot(5000, this, [this] {
-        for (auto *other : this->modButtons_->findChildren<QPushButton *>())
+        const auto buttons = this->modButtons_->findChildren<QPushButton *>();
+        for (auto *other : buttons)
         {
             other->setEnabled(true);
         }
