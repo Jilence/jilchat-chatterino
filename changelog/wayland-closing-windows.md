@@ -1,0 +1,1 @@
+- Fixed closing windows on Wayland briefly showing up somewhere else before fading out.
