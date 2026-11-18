@@ -1,0 +1,1 @@
+- Fixed Flatpak updates not installing on some systems. The host couldn't find the downloaded update, so it's now handed to the host directly.

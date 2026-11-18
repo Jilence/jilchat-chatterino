@@ -31,8 +31,14 @@
 #include <semver/semver.hpp>
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <system_error>
+
+#ifdef Q_OS_LINUX
+#    include <fcntl.h>
+#    include <unistd.h>
+#endif
 
 namespace {
 
@@ -81,12 +87,22 @@ std::optional<FlatpakInstance> readFlatpakInstance()
     return instance;
 }
 
-// Runs on the host with the app id, branch, running commit, bundle and
-// installation (--user or --system). Exits with 3 if the installed version is
+// Runs on the host with the app id, branch, running commit and installation
+// (--user or --system), with the bundle on file descriptor 3. The app's files
+// aren't always at the same path on the host, so the bundle is copied to a
+// file of the host's own first. Exits with 3 if the installed version is
 // still the running one, so we don't restart into the same version.
 const QString FLATPAK_INSTALL_SCRIPT = uR"sh(
-flatpak install "$5" -y --noninteractive --reinstall --bundle "$4" || exit
-[ "$(flatpak info "$5" --show-commit "$1//$2")" != "$3" ] || exit 3
+bundle=$(mktemp --suffix=.flatpak) || exit
+if ! cat <&3 >"$bundle"; then
+    rm -f "$bundle"
+    exit 1
+fi
+flatpak install "$4" -y --noninteractive --reinstall --bundle "$bundle"
+status=$?
+rm -f "$bundle"
+[ "$status" -eq 0 ] || exit "$status"
+[ "$(flatpak info "$4" --show-commit "$1//$2")" != "$3" ] || exit 3
 )sh"_s;
 
 // Runs on the host with the app id, branch and instance id. Starts the new
@@ -546,13 +562,39 @@ void Updates::installFlatpakBundle(const QString &bundlePath)
             QApplication::exit(0);
         });
 
-    // The bundle is in the app's data directory, which has the same path on
-    // the host
+    // The host gets the bundle as file descriptor 3, as the app's data
+    // directory isn't always at the same path there
+    auto bundle = std::make_shared<QFile>(bundlePath);
+    if (!bundle->open(QIODevice::ReadOnly))
+    {
+        qCWarning(chatterinoUpdate)
+            << "Failed to open" << bundlePath << bundle->errorString();
+        QFile::remove(bundlePath);
+        this->setStatus_(RunUpdaterFailed);
+        process->deleteLater();
+        return;
+    }
+    const int bundleFd = bundle->handle();
+    process->setChildProcessModifier([bundleFd] {
+        if (bundleFd == 3)
+        {
+            // dup2() keeps close-on-exec when it's the same descriptor
+            ::fcntl(3, F_SETFD, 0);
+        }
+        else
+        {
+            ::dup2(bundleFd, 3);
+        }
+    });
     process->start(
         u"flatpak-spawn"_s,
-        {u"--host"_s, u"sh"_s, u"-c"_s, FLATPAK_INSTALL_SCRIPT, u"sh"_s,
-         instance->appId, instance->branch, instance->commit, bundlePath,
-         instance->system ? u"--system"_s : u"--user"_s});
+        {u"--host"_s, u"--forward-fd=3"_s, u"sh"_s, u"-c"_s,
+         FLATPAK_INSTALL_SCRIPT, u"sh"_s, instance->appId, instance->branch,
+         instance->commit, instance->system ? u"--system"_s : u"--user"_s});
+    // open until flatpak-spawn has handed it to the host
+    QObject::connect(process, &QProcess::finished, process, [bundle] {
+        bundle->close();
+    });
 #else
     (void)bundlePath;
     this->setStatus_(RunUpdaterFailed);
