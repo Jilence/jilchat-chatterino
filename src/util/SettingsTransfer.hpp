@@ -27,6 +27,9 @@ namespace chatterino::settingstransfer {
 
 /// Files bigger than this aren't read
 inline constexpr qsizetype MAX_FILE_SIZE = 32 * 1024 * 1024;
+/// Exports bigger than this aren't made or read. They can hold the
+/// backgrounds of themes, which can be large.
+inline constexpr qsizetype MAX_EXPORT_SIZE = 512 * 1024 * 1024;
 
 struct Category {
     QString id;
@@ -50,6 +53,10 @@ struct Bundle {
     QHash<QString, QJsonObject> settings;
     /// File name (e.g. commands.json) -> contents
     QHash<QString, QJsonValue> files;
+    /// Own themes: file name -> contents
+    QHash<QString, QJsonObject> themes;
+    /// Backgrounds of those themes: file name -> contents
+    QHash<QString, QByteArray> wallpapers;
 
     /// IDs of the categories that have something to import
     QSet<QString> categories() const;

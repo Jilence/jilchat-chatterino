@@ -30,7 +30,6 @@
 #include "widgets/settingspages/NicknamesPage.hpp"
 #include "widgets/settingspages/NotificationPage.hpp"
 #include "widgets/settingspages/PluginsPage.hpp"
-#include "widgets/settingspages/SettingsProfilePage.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -245,7 +244,6 @@ void SettingsDialog::addTabs()
     // clang-format off
     this->addTab([]{return new GeneralPage;},          "General",        ":/settings/about.svg", SettingsTabId::General);
     this->addTab([]{return new CustomizationPage;},    "Customization",  ":/settings/customization.svg", SettingsTabId::Customization);
-    this->addTab([]{return new SettingsProfilePage;},  "Import/Export",  ":/settings/commands.svg");
     this->addTab([]{return new JilChatPage;},          "JilChat Chatterino", ":/settings/jilchat.svg", SettingsTabId::JilChat);
     this->ui_.tabContainer->addSpacing(16);
     this->addTab([]{return new AccountsPage;},         "Accounts",       ":/settings/accounts.svg", SettingsTabId::Accounts);

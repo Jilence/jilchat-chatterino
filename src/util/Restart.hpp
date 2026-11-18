@@ -28,7 +28,7 @@ std::optional<FlatpakInstance> readFlatpakInstance();
 /// restart has to come from the host.
 bool startFlatpakRestart(const FlatpakInstance &instance);
 
-/// Quits, and starts Leafyrino again once this instance is gone
+/// Quits, and starts JilChat Chatterino again once this instance is gone
 ///
 /// Returns false if no restart could be set up, nothing happens then.
 bool restartApplication();

@@ -31,12 +31,22 @@ using namespace chatterino::settingstransfer;
 const QString FORMAT_NAME = u"leafyrino-settings"_s;
 // Moltorino's exports use the same format
 const QString MOLTORINO_FORMAT_NAME = u"moltorino-settings"_s;
+/// What the former Import/Export page made: whole settings files, themes and
+/// their backgrounds
+const QString LEGACY_FORMAT_NAME = u"leafyrino-settings-export"_s;
 constexpr int FORMAT_VERSION = 1;
 
 const QString SETTINGS_FILE = u"settings.json"_s;
 const QString LAYOUT_FILE = u"window-layout.json"_s;
 const QString COMMANDS_FILE = u"commands.json"_s;
 const QString USER_DATA_FILE = u"user-data.json"_s;
+const QString CHAT_AUTOMATIONS_FILE = u"chat-automations.json"_s;
+
+/// Own themes are next to the settings, backgrounds in a folder of theirs
+const QString THEMES_DIRECTORY = u"../Themes"_s;
+const QString WALLPAPERS_DIRECTORY = u"Wallpapers"_s;
+/// A background bigger than this stays out of the export
+constexpr qint64 MAX_WALLPAPER_SIZE = 100LL * 1024 * 1024;
 
 const QString STAGING_DIRECTORY = u".leafyrino-restore"_s;
 const QString MANIFEST_FILE = u"pending.json"_s;
@@ -49,6 +59,8 @@ const QString CATEGORY_CHAT = u"chat"_s;
 const QString CATEGORY_LAYOUT = u"layout"_s;
 const QString CATEGORY_HIGHLIGHTS = u"highlights"_s;
 const QString CATEGORY_COMMANDS = u"commands"_s;
+const QString CATEGORY_AUTOMATIONS = u"automations"_s;
+const QString CATEGORY_THEMES = u"themes"_s;
 const QString CATEGORY_LISTS = u"lists"_s;
 const QString CATEGORY_MODERATION = u"moderation"_s;
 const QString CATEGORY_NOTIFICATIONS = u"notifications"_s;
@@ -59,7 +71,7 @@ const QString CATEGORY_ADVANCED = u"advanced"_s;
 const QString CATEGORY_OTHER = u"other"_s;
 
 /// Categories that can be applied without restarting
-const QSet<QString> LIVE_CATEGORIES{CATEGORY_APPEARANCE};
+const QSet<QString> LIVE_CATEGORIES{CATEGORY_APPEARANCE, CATEGORY_THEMES};
 
 /// Settings in live categories that are only read on startup (lowercase)
 const QSet<QString> RESTART_SETTINGS{u"/appearance/uselegacyscaling"_s};
@@ -76,7 +88,34 @@ const std::vector<TransferFile> TRANSFER_FILES{
     {COMMANDS_FILE, CATEGORY_COMMANDS, u"commands"_s},
     {LAYOUT_FILE, CATEGORY_LAYOUT, u"layout"_s},
     {USER_DATA_FILE, CATEGORY_PERSONAL, u"userData"_s},
+    {CHAT_AUTOMATIONS_FILE, CATEGORY_AUTOMATIONS, u"chatAutomations"_s},
 };
+
+/// Whether `name` is a plain file name, nothing that leads elsewhere
+bool isPlainFileName(const QString &name)
+{
+    return !name.isEmpty() && name != u"."_s && name != u".."_s &&
+           !name.contains(u'/') && !name.contains(u'\\') &&
+           !name.contains(u':');
+}
+
+QString themesDirectoryOf(const QString &settingsDirectory)
+{
+    return QDir::cleanPath(combinePath(settingsDirectory, THEMES_DIRECTORY));
+}
+
+/// The source of the background `theme` uses
+QString wallpaperSourceOf(const QJsonObject &theme)
+{
+    return theme.value(u"metadata"_s)
+        .toObject()
+        .value(u"moltorino"_s)
+        .toObject()
+        .value(u"wallpaper"_s)
+        .toObject()
+        .value(u"source"_s)
+        .toString();
+}
 
 QString categoryForFile(const QString &file)
 {
@@ -387,6 +426,125 @@ QJsonValue valueAtPath(const QJsonObject &root, const QString &path)
 
 /// Collects the values in settings.json by path. Registered settings are kept
 /// whole, other objects are split up into their values.
+void flattenSettings(const QJsonValue &value, const QString &path,
+                     const QJsonObject &registered, QJsonObject &flat);
+
+/// Reads the own themes and the backgrounds they keep in the Wallpapers
+/// folder. Backgrounds that are too large are left out.
+void readThemes(const QString &settingsDirectory, QJsonObject &themes,
+                QJsonObject &wallpapers)
+{
+    const QDir directory(themesDirectoryOf(settingsDirectory));
+    const auto wallpapersPath = directory.filePath(WALLPAPERS_DIRECTORY);
+    const auto entries = directory.entryInfoList({u"*.json"_s}, QDir::Files);
+    for (const auto &entry : entries)
+    {
+        auto contents = readFile(entry.absoluteFilePath());
+        if (!contents)
+        {
+            continue;
+        }
+        auto json = parseJson(*contents);
+        if (!json || !json->isObject())
+        {
+            continue;
+        }
+        const auto theme = json->toObject();
+        themes.insert(entry.fileName(), theme);
+
+        const QFileInfo wallpaper(wallpaperSourceOf(theme));
+        const auto name = wallpaper.fileName();
+        if (name.isEmpty() || wallpapers.contains(name) ||
+            QDir::cleanPath(wallpaper.absolutePath()) !=
+                QDir::cleanPath(wallpapersPath) ||
+            !wallpaper.isFile() || wallpaper.size() > MAX_WALLPAPER_SIZE)
+        {
+            continue;
+        }
+        QFile file(wallpaper.absoluteFilePath());
+        if (file.open(QIODevice::ReadOnly))
+        {
+            wallpapers.insert(name,
+                              QString::fromLatin1(file.readAll().toBase64()));
+        }
+    }
+}
+
+/// Reads the themes and backgrounds of an export
+void parseThemes(const QJsonObject &root, Bundle &bundle)
+{
+    const auto themes = root.value(u"themes"_s).toObject();
+    for (auto it = themes.begin(); it != themes.end(); ++it)
+    {
+        if (isPlainFileName(it.key()) && it.key().endsWith(u".json"_s) &&
+            it.value().isObject())
+        {
+            bundle.themes.insert(it.key(), it.value().toObject());
+        }
+    }
+    const auto wallpapers = root.value(u"wallpapers"_s).toObject();
+    for (auto it = wallpapers.begin(); it != wallpapers.end(); ++it)
+    {
+        if (isPlainFileName(it.key()))
+        {
+            bundle.wallpapers.insert(
+                it.key(),
+                QByteArray::fromBase64(it.value().toString().toLatin1()));
+        }
+    }
+}
+
+/// Writes the themes of `bundle`, with their backgrounds. A background is
+/// pointed to where it is on this computer.
+ExpectedStr<void> writeThemes(const QString &settingsDirectory,
+                              const Bundle &bundle)
+{
+    const QDir directory(themesDirectoryOf(settingsDirectory));
+    const auto wallpapersPath = directory.filePath(WALLPAPERS_DIRECTORY);
+    if (!bundle.wallpapers.isEmpty() && !QDir().mkpath(wallpapersPath))
+    {
+        return makeUnexpected(u"Couldn't create the folder for backgrounds."_s);
+    }
+    for (auto it = bundle.wallpapers.begin(); it != bundle.wallpapers.end();
+         ++it)
+    {
+        auto written =
+            writeFile(QDir(wallpapersPath).filePath(it.key()), it.value());
+        if (!written)
+        {
+            return written;
+        }
+    }
+
+    if (!QDir().mkpath(directory.path()))
+    {
+        return makeUnexpected(u"Couldn't create the folder for themes."_s);
+    }
+    for (auto it = bundle.themes.begin(); it != bundle.themes.end(); ++it)
+    {
+        auto theme = it.value();
+        const auto source = wallpaperSourceOf(theme);
+        const auto name = QFileInfo(source).fileName();
+        if (!source.isEmpty() && !source.startsWith(u":/"_s) &&
+            bundle.wallpapers.contains(name))
+        {
+            auto metadata = theme.value(u"metadata"_s).toObject();
+            auto moltorino = metadata.value(u"moltorino"_s).toObject();
+            auto wallpaper = moltorino.value(u"wallpaper"_s).toObject();
+            wallpaper.insert(u"source"_s, QDir(wallpapersPath).filePath(name));
+            moltorino.insert(u"wallpaper"_s, wallpaper);
+            metadata.insert(u"moltorino"_s, moltorino);
+            theme.insert(u"metadata"_s, metadata);
+        }
+        auto written = writeFile(directory.filePath(it.key()), toJson(theme));
+        if (!written)
+        {
+            return written;
+        }
+    }
+    return {};
+}
+
 void flattenSettings(const QJsonValue &value, const QString &path,
                      const QJsonObject &registered, QJsonObject &flat)
 {
@@ -727,6 +885,8 @@ ExpectedStr<QJsonObject> liveValues(const Bundle &bundle,
             return makeUnexpected(needsRestart);
         }
     }
+    const bool withThemes =
+        selected.contains(CATEGORY_THEMES) && !bundle.themes.isEmpty();
 
     const auto registered = getSettings()->registeredValues();
     QJsonObject values;
@@ -750,7 +910,7 @@ ExpectedStr<QJsonObject> liveValues(const Bundle &bundle,
             values.insert(it.key(), it.value());
         }
     }
-    if (values.isEmpty())
+    if (values.isEmpty() && !withThemes)
     {
         return makeUnexpected(
             u"There's nothing to import in this selection."_s);
@@ -777,6 +937,47 @@ bool setLiveValue(const QString &path, const QJsonValue &value)
     return true;
 }
 
+/// Reads an export of the former Import/Export page, which has whole files
+ExpectedStr<Bundle> parseLegacyBundle(const QJsonObject &root)
+{
+    Bundle bundle;
+    const auto files = root.value(u"files"_s).toObject();
+
+    const auto settings = files.value(SETTINGS_FILE).toObject();
+    if (!settings.isEmpty())
+    {
+        QJsonObject flat;
+        flattenSettings(settings, {}, getSettings()->registeredValues(), flat);
+        for (auto it = flat.begin(); it != flat.end(); ++it)
+        {
+            if (isTransferableSettingPath(it.key()))
+            {
+                bundle.settings[categoryForSettingPath(it.key())].insert(
+                    it.key(), withoutPrivateKeys(it.value()));
+            }
+        }
+    }
+
+    for (auto it = files.begin(); it != files.end(); ++it)
+    {
+        const auto data = withoutPrivateKeys(it.value());
+        if (!categoryForFile(it.key()).isEmpty() &&
+            isValidContent(it.key(), data))
+        {
+            bundle.files.insert(it.key(), data);
+        }
+    }
+    parseThemes(root, bundle);
+
+    if (bundle.settings.isEmpty() && bundle.files.isEmpty() &&
+        bundle.themes.isEmpty())
+    {
+        return makeUnexpected(
+            u"This settings file has nothing that can be imported."_s);
+    }
+    return bundle;
+}
+
 }  // namespace
 
 namespace chatterino::settingstransfer {
@@ -794,6 +995,10 @@ const std::vector<Category> &categories()
          u"Highlighted messages, users, and badges"_s},
         {CATEGORY_COMMANDS, u"Hotkeys and commands"_s,
          u"Keyboard shortcuts and custom commands"_s},
+        {CATEGORY_AUTOMATIONS, u"Chat automations"_s,
+         u"Messages that are sent or answered automatically"_s},
+        {CATEGORY_THEMES, u"Your themes"_s,
+         u"Themes you made, with their background images and videos"_s},
         {CATEGORY_LISTS, u"Filters and personal lists"_s,
          u"Filters, ignores, nicknames, and muted channels"_s},
         {CATEGORY_MODERATION, u"Moderation"_s,
@@ -803,7 +1008,8 @@ const std::vector<Category> &categories()
         {CATEGORY_STREAMER_MODE, u"Streamer mode"_s,
          u"When streamer mode turns on and what it hides"_s},
         {CATEGORY_FEATURES, u"Extra features"_s,
-         u"User cards and Leafyrino, Moltorino, and Technorino features"_s},
+         u"User cards and JilChat Chatterino, Moltorino, and Technorino "
+         u"features"_s},
         {CATEGORY_PERSONAL, u"User notes and colors"_s,
          u"Notes and colors you gave to users"_s},
         {CATEGORY_ADVANCED, u"Advanced"_s,
@@ -943,7 +1149,7 @@ bool isTransferableSettingPath(const QString &path)
     }
 
     // accounts and secrets, privacy choices, state that belongs to this
-    // install, and settings that make Leafyrino start programs
+    // install, and settings that make JilChat Chatterino start programs
     static constexpr QStringView BLOCKED[] = {
         u"/accounts",
         u"/kickaccounts",
@@ -1004,6 +1210,10 @@ QSet<QString> Bundle::categories() const
     for (auto it = this->files.begin(); it != this->files.end(); ++it)
     {
         result.insert(categoryForFile(it.key()));
+    }
+    if (!this->themes.isEmpty())
+    {
+        result.insert(CATEGORY_THEMES);
     }
     return result;
 }
@@ -1068,7 +1278,14 @@ ExpectedStr<QByteArray> exportSettings(const QString &settingsDirectory,
                                });
     }
 
-    if (settings.isEmpty() && files.isEmpty())
+    QJsonObject themes;
+    QJsonObject wallpapers;
+    if (selected.contains(CATEGORY_THEMES))
+    {
+        readThemes(settingsDirectory, themes, wallpapers);
+    }
+
+    if (settings.isEmpty() && files.isEmpty() && themes.isEmpty())
     {
         return makeUnexpected(
             u"There's nothing to export in this selection."_s);
@@ -1082,7 +1299,7 @@ ExpectedStr<QByteArray> exportSettings(const QString &settingsDirectory,
             categoryIDs.append(category.id);
         }
     }
-    const QJsonObject root{
+    QJsonObject root{
         {u"format"_s, FORMAT_NAME},
         {u"version"_s, FORMAT_VERSION},
         {u"createdAt"_s,
@@ -1091,8 +1308,16 @@ ExpectedStr<QByteArray> exportSettings(const QString &settingsDirectory,
         {u"settings"_s, settings},
         {u"files"_s, files},
     };
+    if (!themes.isEmpty())
+    {
+        root.insert(u"themes"_s, themes);
+    }
+    if (!wallpapers.isEmpty())
+    {
+        root.insert(u"wallpapers"_s, wallpapers);
+    }
     auto contents = QJsonDocument(root).toJson(QJsonDocument::Indented);
-    if (contents.size() > MAX_FILE_SIZE)
+    if (contents.size() > MAX_EXPORT_SIZE)
     {
         return makeUnexpected(u"These settings are too large to export."_s);
     }
@@ -1101,14 +1326,19 @@ ExpectedStr<QByteArray> exportSettings(const QString &settingsDirectory,
 
 ExpectedStr<Bundle> parseBundle(const QByteArray &contents)
 {
-    const auto notSettings = u"This isn't a Leafyrino settings file."_s;
-    if (contents.size() > MAX_FILE_SIZE)
+    const auto notSettings =
+        u"This isn't a JilChat Chatterino or Moltorino settings file."_s;
+    if (contents.size() > MAX_EXPORT_SIZE)
     {
         return makeUnexpected(notSettings);
     }
     auto json = parseJson(contents);
     const auto root = json ? json->toObject() : QJsonObject{};
     const auto format = root.value(u"format"_s).toString();
+    if (format == LEGACY_FORMAT_NAME)
+    {
+        return parseLegacyBundle(root);
+    }
     if (format != FORMAT_NAME && format != MOLTORINO_FORMAT_NAME)
     {
         return makeUnexpected(notSettings);
@@ -1117,7 +1347,8 @@ ExpectedStr<Bundle> parseBundle(const QByteArray &contents)
     if (version > FORMAT_VERSION)
     {
         return makeUnexpected(
-            u"This settings file is from a newer version of Leafyrino."_s);
+            u"This settings file is from a newer version of JilChat "
+            u"Chatterino."_s);
     }
     if (version < 1)
     {
@@ -1152,8 +1383,10 @@ ExpectedStr<Bundle> parseBundle(const QByteArray &contents)
             bundle.files.insert(target, data);
         }
     }
+    parseThemes(root, bundle);
 
-    if (bundle.settings.isEmpty() && bundle.files.isEmpty())
+    if (bundle.settings.isEmpty() && bundle.files.isEmpty() &&
+        bundle.themes.isEmpty())
     {
         return makeUnexpected(
             u"This settings file has nothing that can be imported."_s);
@@ -1222,10 +1455,24 @@ ExpectedStr<void> stageImport(const QString &settingsDirectory,
         staged.insert(file, toJson(data));
     }
 
-    if (staged.isEmpty())
+    const bool withThemes =
+        selected.contains(CATEGORY_THEMES) && !bundle.themes.isEmpty();
+    if (staged.isEmpty() && !withThemes)
     {
         return makeUnexpected(
             u"There's nothing to import in this selection."_s);
+    }
+    if (withThemes)
+    {
+        auto written = writeThemes(settingsDirectory, bundle);
+        if (!written)
+        {
+            return written;
+        }
+    }
+    if (staged.isEmpty())
+    {
+        return {};
     }
     return stageFiles(settingsDirectory, staged);
 }
@@ -1262,6 +1509,15 @@ ExpectedStr<void> applyImportNow(const QString &settingsDirectory,
         removeOldRescueCopies(settingsDirectory, SETTINGS_FILE);
     }
 
+    if (selected.contains(CATEGORY_THEMES) && !bundle.themes.isEmpty())
+    {
+        auto written = writeThemes(settingsDirectory, bundle);
+        if (!written)
+        {
+            return written;
+        }
+    }
+
     const auto current = stored->toObject();
     for (auto it = values->begin(); it != values->end(); ++it)
     {
@@ -1295,6 +1551,7 @@ const std::vector<RecoveryTarget> &recoveryTargets()
         {LAYOUT_FILE, u"Tabs and layout"_s},
         {COMMANDS_FILE, u"Commands"_s},
         {USER_DATA_FILE, u"User notes and colors"_s},
+        {CHAT_AUTOMATIONS_FILE, u"Chat automations"_s},
     };
     return targets;
 }
@@ -1407,8 +1664,8 @@ ExpectedStr<void> applyPendingRestore(const QString &settingsDirectory)
     if (!removed)
     {
         return makeUnexpected(
-            u"Couldn't remove %1. Delete it before Leafyrino starts again, or "
-            u"the restore will be done again."_s.arg(manifestPath));
+            u"Couldn't remove %1. Delete it before JilChat Chatterino starts "
+            u"again, or the restore will be done again."_s.arg(manifestPath));
     }
     return {};
 }

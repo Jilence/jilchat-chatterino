@@ -5,6 +5,7 @@
 #include "widgets/settingspages/BackupsPage.hpp"
 
 #include "Application.hpp"
+#include "controllers/chat/ChatAutomationController.hpp"
 #include "controllers/commands/CommandController.hpp"
 #include "controllers/hotkeys/HotkeyController.hpp"
 #include "singletons/Paths.hpp"
@@ -33,6 +34,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <tuple>
 
 using namespace Qt::Literals;
 
@@ -83,6 +85,10 @@ void saveEverything()
 {
     getApp()->getHotkeys()->save();
     getApp()->getCommands()->save();
+    if (auto *automations = getApp()->getChatAutomations())
+    {
+        std::ignore = automations->save();
+    }
     getApp()->getWindows()->save();
     getSettings()->requestSave();
 }
@@ -104,13 +110,15 @@ void restartAfterStaging(QWidget *parent)
         return;
     }
     QMessageBox::information(
-        parent, u"Leafyrino - Restart needed"_s,
-        u"Leafyrino couldn't restart by itself. Close it and open it again to "
+        parent, u"JilChat Chatterino - Restart needed"_s,
+        u"JilChat Chatterino couldn't restart by itself. Close it and open it "
+        u"again to "
         u"finish. Settings you change until then will be lost."_s);
 }
 
 const QString OTHER_INSTANCES_NOTE =
-    u"Close any other running Leafyrino first, or it might save over this."_s;
+    u"Close any other running JilChat Chatterino first, or it might save "
+    u"over this."_s;
 
 }  // namespace
 
@@ -192,7 +200,8 @@ QWidget *BackupsPage::createImportTab()
     auto *page = new QWidget(this);
     auto *layout = new QVBoxLayout(page);
     layout->addWidget(makeDescription(
-        u"Import settings from a file that was exported from Leafyrino or "
+        u"Import settings from a file that was exported from JilChat "
+        u"Chatterino or "
         u"Moltorino."_s,
         page));
 
@@ -251,7 +260,8 @@ QWidget *BackupsPage::createRecoveryTab()
     auto *page = new QWidget(this);
     auto *layout = new QVBoxLayout(page);
     layout->addWidget(makeDescription(
-        u"Leafyrino keeps backups of these files every time it saves them. "
+        u"JilChat Chatterino keeps backups of these files every time it saves "
+        u"them. "
         u"Choose a backup for each one you want to restore. Copies of your "
         u"current files are kept, so a restore can be undone from here too."_s,
         page));
@@ -323,12 +333,12 @@ void BackupsPage::exportToFile()
         settingstransfer::exportSettings(settingsDirectory(), selected);
     if (!contents)
     {
-        QMessageBox::warning(this, u"Leafyrino - Export failed"_s,
+        QMessageBox::warning(this, u"JilChat Chatterino - Export failed"_s,
                              contents.error());
         return;
     }
 
-    const auto fileName = u"leafyrino-settings-%1.json"_s.arg(
+    const auto fileName = u"jilchat-chatterino-settings-%1.json"_s.arg(
         QDate::currentDate().toString(Qt::ISODate));
     const auto path = QFileDialog::getSaveFileName(
         this, u"Export settings"_s,
@@ -344,7 +354,7 @@ void BackupsPage::exportToFile()
         file.write(*contents) != contents->size() || !file.commit())
     {
         QMessageBox::warning(
-            this, u"Leafyrino - Export failed"_s,
+            this, u"JilChat Chatterino - Export failed"_s,
             u"Couldn't write %1."_s.arg(QFileInfo(path).fileName()));
         return;
     }
@@ -378,7 +388,7 @@ void BackupsPage::chooseImportFile()
             return makeUnexpected(u"Couldn't read that file."_s);
         }
         return settingstransfer::parseBundle(
-            file.read(settingstransfer::MAX_FILE_SIZE + 1));
+            file.read(settingstransfer::MAX_EXPORT_SIZE + 1));
     };
     auto bundle = load();
     if (!bundle)
@@ -426,7 +436,7 @@ void BackupsPage::updateImportActions()
     else
     {
         this->importStatus_->setText(
-            u"Leafyrino needs to restart to import this."_s);
+            u"JilChat Chatterino needs to restart to import this."_s);
     }
 }
 
@@ -444,7 +454,7 @@ void BackupsPage::applyImportNow()
         this->mergeLists_->isChecked());
     if (!applied)
     {
-        QMessageBox::warning(this, u"Leafyrino - Import failed"_s,
+        QMessageBox::warning(this, u"JilChat Chatterino - Import failed"_s,
                              applied.error());
         this->updateImportActions();
         return;
@@ -463,8 +473,9 @@ void BackupsPage::importAndRestart()
         return;
     }
     if (QMessageBox::question(
-            this, u"Leafyrino - Import settings"_s,
-            u"Import the selected settings and restart Leafyrino now?\n\n"_s %
+            this, u"JilChat Chatterino - Import settings"_s,
+            u"Import the selected settings and restart JilChat Chatterino "
+            u"now?\n\n"_s %
                 OTHER_INSTANCES_NOTE) != QMessageBox::Yes)
     {
         return;
@@ -477,7 +488,7 @@ void BackupsPage::importAndRestart()
                                       this->mergeLists_->isChecked());
     if (!staged)
     {
-        QMessageBox::warning(this, u"Leafyrino - Import failed"_s,
+        QMessageBox::warning(this, u"JilChat Chatterino - Import failed"_s,
                              staged.error());
         return;
     }
@@ -588,9 +599,9 @@ void BackupsPage::restoreSelected()
     }
 
     if (QMessageBox::question(
-            this, u"Leafyrino - Restore backup"_s,
-            u"Restore the backup of your %1 and restart Leafyrino now?\n\n"_s
-                    .arg(names.join(u", "_s)) %
+            this, u"JilChat Chatterino - Restore backup"_s,
+            u"Restore the backup of your %1 and restart JilChat Chatterino "
+            u"now?\n\n"_s.arg(names.join(u", "_s)) %
                 OTHER_INSTANCES_NOTE) != QMessageBox::Yes)
     {
         return;
@@ -599,7 +610,7 @@ void BackupsPage::restoreSelected()
     auto staged = settingstransfer::stageRecovery(settingsDirectory(), files);
     if (!staged)
     {
-        QMessageBox::warning(this, u"Leafyrino - Restore failed"_s,
+        QMessageBox::warning(this, u"JilChat Chatterino - Restore failed"_s,
                              staged.error());
         return;
     }

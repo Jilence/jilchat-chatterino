@@ -1268,8 +1268,6 @@ set(SOURCE_FILES
         widgets/settingspages/PluginsPage.hpp
         widgets/settingspages/SettingsPage.cpp
         widgets/settingspages/SettingsPage.hpp
-        widgets/settingspages/SettingsProfilePage.cpp
-        widgets/settingspages/SettingsProfilePage.hpp
         widgets/settingspages/SettingWidget.cpp
         widgets/settingspages/SettingWidget.hpp
 
