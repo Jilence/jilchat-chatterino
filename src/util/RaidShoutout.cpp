@@ -94,7 +94,7 @@ void shoutoutRaider(const ChannelPtr &channel, const QString &raiderLogin)
     // one who sends it.
     const int waitMs = channel->isBroadcaster() || commandIsTwitchShoutout
                            ? 0
-                           : int(QRandomGenerator::global()->bounded(1500));
+                           : QRandomGenerator::global()->bounded(1500);
     std::weak_ptr<Channel> weak = channel;
     QTimer::singleShot(waitMs, qApp, [weak, login, command] {
         auto channel = weak.lock();
