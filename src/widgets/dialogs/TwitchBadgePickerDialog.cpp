@@ -2485,6 +2485,7 @@ void TwitchBadgePickerDialog::rebuildGlobalBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Twitch badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         if (selected.setID.isEmpty())
             noBadgeTile->setSelected(true);
@@ -4115,6 +4116,7 @@ void TwitchBadgePickerDialog::rebuildMoltorinoBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Moltorino badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         noBadgeTile->setSelected(this->moltorinoSelected_.isEmpty());
         QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
@@ -4197,6 +4199,7 @@ void TwitchBadgePickerDialog::rebuildSolrinoBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Solrino badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         noBadgeTile->setSelected(this->solrinoSelected_.isEmpty());
         QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
@@ -4400,6 +4403,7 @@ void TwitchBadgePickerDialog::rebuildChatleeBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Chatlee badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         noBadgeTile->setSelected(this->chatleeSelected_.isEmpty());
         QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
@@ -4842,6 +4846,7 @@ void TwitchBadgePickerDialog::rebuildJilChatBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No JilChat badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         noBadgeTile->setSelected(this->jilChatSelected_.isEmpty());
         QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
@@ -4938,17 +4943,20 @@ void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
             selected = this->bluzyrinoPending_;
         }
     }
-    if (selected.isEmpty() || !isOwned(selected))
+    QString firstOwnedDonor;
+    for (const auto &badge : catalog)
     {
-        selected.clear();
-        for (const auto &badge : catalog)
+        if (badge.category == donor && isOwned(badge.id))
         {
-            if (badge.category == donor && isOwned(badge.id))
-            {
-                selected = badge.id;
-                break;
-            }
+            firstOwnedDonor = badge.id;
+            break;
         }
+    }
+    // Hidden for everyone: nothing is picked, any tier shows it again
+    const bool donorHidden = selected == NO_DONOR_BADGE;
+    if (!donorHidden && (selected.isEmpty() || !isOwned(selected)))
+    {
+        selected = firstOwnedDonor;
     }
 
     if (bluzyrino->ownsFounder(userId))
@@ -4976,6 +4984,36 @@ void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
         QWidget *gridWidget = nullptr;
         QGridLayout *grid = nullptr;
         int index = 0;
+        const auto startGrid = [&] {
+            auto *label = new QLabel(title, this->contentWidget_);
+            label->setObjectName("TwitchBadgePickerSectionLabel");
+            this->contentLayout_->addWidget(label);
+
+            gridWidget = new QWidget(this->contentWidget_);
+            grid = new QGridLayout(gridWidget);
+            grid->setContentsMargins(0, 0, 0, 0);
+            grid->setSpacing(BADGE_GRID_SPACING);
+        };
+
+        // Wearing no donor badge, saved on the registry so nobody sees one
+        if (pickable && !firstOwnedDonor.isEmpty() && needle.isEmpty())
+        {
+            startGrid();
+            auto *noneTile = new NoBadgeTileButton(gridWidget);
+            noneTile->setToolTip(QStringLiteral("No Bluzyrino badge"));
+            noneTile->setSelected(donorHidden);
+            noneTile->setEnabled(!this->actionInFlight_);
+            if (!donorHidden)
+            {
+                QObject::connect(noneTile, &QPushButton::clicked, this, [this] {
+                    this->selectBluzyrino(NO_DONOR_BADGE.toString(),
+                                          QStringLiteral("No donor badge"));
+                });
+            }
+            grid->addWidget(noneTile, 0, 0);
+            ++index;
+        }
+
         for (const auto &badge : catalog)
         {
             if (badge.category != category || !badge.emote)
@@ -4997,14 +5035,7 @@ void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
 
             if (grid == nullptr)
             {
-                auto *label = new QLabel(title, this->contentWidget_);
-                label->setObjectName("TwitchBadgePickerSectionLabel");
-                this->contentLayout_->addWidget(label);
-
-                gridWidget = new QWidget(this->contentWidget_);
-                grid = new QGridLayout(gridWidget);
-                grid->setContentsMargins(0, 0, 0, 0);
-                grid->setSpacing(BADGE_GRID_SPACING);
+                startGrid();
             }
 
             auto *tile = new BadgeTileButton(tileBadge, gridWidget);

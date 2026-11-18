@@ -20,6 +20,9 @@
 namespace chatterino {
 
 struct Emote;
+
+/// The donor selection that shows no donor badge at all, to everyone
+inline constexpr QStringView NO_DONOR_BADGE = u"none";
 using EmotePtr = std::shared_ptr<const Emote>;
 
 /// A single badge definition from the Bluzyrino registry catalog.
@@ -56,7 +59,8 @@ public:
     /// The badge IDs the given user is entitled to display, in catalog order.
     std::vector<QString> availableBadgeIds(const QString &userId) const;
 
-    /// The donor tier the given user currently displays (empty if none).
+    /// The donor tier the given user picked: empty if they didn't pick one,
+    /// NO_DONOR_BADGE if they hide it.
     QString selectedDonor(const QString &userId) const;
 
     /// Whether the given user has any founder badge in the catalog.
