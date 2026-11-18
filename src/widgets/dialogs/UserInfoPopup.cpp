@@ -94,6 +94,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QLineEdit>
 #include <QList>
 #include <QLocale>
@@ -107,6 +108,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QPushButton>
 #include <QShowEvent>
@@ -1343,6 +1345,72 @@ QUrl tiktokProfileUrl(const QString &handle)
 
 using namespace literals;
 
+/// The user's Twitch profile banner, cropped to a wide strip
+class UsercardBanner : public QWidget
+{
+public:
+    explicit UsercardBanner(QWidget *parent)
+        : QWidget(parent)
+    {
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    bool hasHeightForWidth() const override
+    {
+        return true;
+    }
+
+    int heightForWidth(int width) const override
+    {
+        return qRound(width * 0.2);
+    }
+
+    void setPixmap(QPixmap pixmap)
+    {
+        this->pixmap_ = std::move(pixmap);
+        this->update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+
+        QPainterPath clip;
+        clip.addRoundedRect(QRectF(this->rect()), 8, 8);
+        painter.setClipPath(clip);
+        painter.fillRect(this->rect(), Qt::black);
+
+        if (!this->pixmap_.isNull())
+        {
+            const auto size = this->pixmap_.size().scaled(
+                this->size(), Qt::KeepAspectRatioByExpanding);
+            QRect target(QPoint(0, 0), size);
+            target.moveCenter(this->rect().center());
+            painter.drawPixmap(target, this->pixmap_);
+        }
+
+        if (getSettings()->usercardBannerDisplayMode ==
+            QStringLiteral("background"))
+        {
+            // Darkened, and fading into the usercard so the name stays
+            // readable
+            painter.fillRect(this->rect(), QColor(0, 0, 0, 100));
+
+            QLinearGradient gradient(0, 0, 0, this->height());
+            gradient.setColorAt(0.0, QColor(15, 15, 15, 20));
+            gradient.setColorAt(0.4, QColor(15, 15, 15, 130));
+            gradient.setColorAt(1.0, QColor(15, 15, 15, 255));
+            painter.fillRect(this->rect(), gradient);
+        }
+    }
+
+private:
+    QPixmap pixmap_;
+};
+
 UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
     : DraggablePopup(closeAutomatically, split)
     , split_(split)
@@ -1477,8 +1545,44 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                       .withoutMargin();
     auto layout = layers.emplace<QVBoxLayout>();
 
+    // IVR profile banner
+    if (getSettings()->showUsercardBanners &&
+        (!getApp()->getStreamerMode()->isEnabled() ||
+         !getSettings()->streamerModeHideUsercardBanners))
+    {
+        auto *ivrBanner = new UsercardBanner(this);
+        ivrBanner->hide();
+
+        this->ui_.ivrBanner = ivrBanner;
+
+        if (getSettings()->usercardBannerDisplayMode !=
+            QStringLiteral("background"))
+        {
+            layout->addWidget(ivrBanner);
+        }
+    }
+
+    // Profile header
+    auto *profileHeader = new QWidget(this);
+    auto *headerLayout = new QGridLayout(profileHeader);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(0);
+
+    // Banner behind profile header
+    if (this->ui_.ivrBanner != nullptr &&
+        getSettings()->usercardBannerDisplayMode ==
+            QStringLiteral("background"))
+    {
+        this->ui_.ivrBanner->setFixedHeight(100);
+        headerLayout->addWidget(this->ui_.ivrBanner, 0, 0, Qt::AlignTop);
+    }
+
     // first line
-    auto head = layout.emplace<QHBoxLayout>().withoutMargin();
+    auto *headLayout = new QHBoxLayout;
+    headLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->addLayout(headLayout, 0, 0);
+
+    auto head = LayoutCreator<QHBoxLayout>(headLayout);
     {
         auto avatarBox = head.emplace<QVBoxLayout>().withoutMargin();
         avatarBox->setAlignment(Qt::AlignTop);
@@ -1845,6 +1949,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         }
     }
 
+    layout->addWidget(profileHeader);
     layout.emplace<Line>(false);
 
     // second line
@@ -5551,11 +5656,75 @@ void UserInfoPopup::resetUsercardInfoRows()
     this->refreshSeventvPaint();
 }
 
+void UserInfoPopup::loadIvrBanner(const QString &bannerUrl)
+{
+    const auto generation = ++this->ivrBannerRequestGeneration_;
+    this->ivrBannerUrl_ = bannerUrl;
+
+    if (this->ui_.ivrBanner == nullptr)
+    {
+        return;
+    }
+
+    this->ui_.ivrBanner->setPixmap(QPixmap{});
+    this->ui_.ivrBanner->hide();
+
+    const QUrl url(bannerUrl);
+    if (bannerUrl.isEmpty() || !url.isValid() ||
+        url.scheme() != QStringLiteral("https") || url.host().isEmpty() ||
+        !url.userInfo().isEmpty() || url.port(443) != 443)
+    {
+        return;
+    }
+
+    // Banners are a few hundred KB; anything far bigger isn't loaded
+    constexpr qint64 maxBannerBytes = qint64{5} * 1024 * 1024;
+
+    QNetworkRequest req{url};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "Chatterino");
+    req.setTransferTimeout(10000);
+    static auto *manager = new QNetworkAccessManager();
+    auto *reply = manager->get(req);
+    QObject::connect(reply, &QNetworkReply::finished, reply,
+                     &QObject::deleteLater);
+    QObject::connect(this, &QObject::destroyed, reply, &QNetworkReply::abort);
+    QObject::connect(
+        reply, &QNetworkReply::downloadProgress, reply,
+        [reply](qint64 received, qint64 total) {
+            if (received > maxBannerBytes || total > maxBannerBytes)
+            {
+                reply->abort();
+            }
+        });
+    QObject::connect(
+        reply, &QNetworkReply::finished, this,
+        [this, reply, generation, bannerUrl] {
+            if (reply->error() != QNetworkReply::NoError ||
+                generation != this->ivrBannerRequestGeneration_ ||
+                bannerUrl != this->ivrBannerUrl_ ||
+                this->ui_.ivrBanner == nullptr)
+            {
+                return;
+            }
+
+            QPixmap pixmap;
+            if (!pixmap.loadFromData(reply->readAll()) || pixmap.isNull())
+            {
+                return;
+            }
+
+            this->ui_.ivrBanner->setPixmap(std::move(pixmap));
+            this->ui_.ivrBanner->show();
+        });
+}
+
 void UserInfoPopup::applyIvrUserProfile(const IvrUserProfile &profile)
 {
     auto *settings = getSettings();
 
     this->ui_.bannedAvatarLabel->setVisible(profile.banned);
+
+    this->loadIvrBanner(profile.banner);
 
     if (settings->showUsercardChatterCount &&
         settings->showUserinfoPopupChatters.getValue())
