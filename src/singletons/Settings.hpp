@@ -1438,6 +1438,10 @@ public:
     /// The keys of the own badges the user hides
     ChatterinoSetting<std::vector<QString>> ownBadgeHidden = {
         "/appearance/badges/ownHidden"};
+    /// Also sort the badges of everyone else's messages like the own ones.
+    /// Hiding stays for the own badges.
+    BoolSetting ownBadgeOrderForEveryone = {
+        "/appearance/badges/ownOrderForEveryone", false};
     /// Show messages held by AutoMod with all their actions in the chat,
     /// instead of the compact two lines with Allow and Deny
     BoolSetting advancedAutoModInChat{
