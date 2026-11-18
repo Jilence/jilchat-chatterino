@@ -26,10 +26,10 @@ class QByteArray;
 namespace chatterino::settingstransfer {
 
 /// Files bigger than this aren't read
-inline constexpr qsizetype MAX_FILE_SIZE = 32 * 1024 * 1024;
+inline constexpr qsizetype MAX_FILE_SIZE = qsizetype{32} * 1024 * 1024;
 /// Exports bigger than this aren't made or read. They can hold the
 /// backgrounds of themes, which can be large.
-inline constexpr qsizetype MAX_EXPORT_SIZE = 512 * 1024 * 1024;
+inline constexpr qsizetype MAX_EXPORT_SIZE = qsizetype{512} * 1024 * 1024;
 
 struct Category {
     QString id;
