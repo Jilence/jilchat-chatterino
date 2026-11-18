@@ -1636,6 +1636,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendSolrinoBadges(message.userID);
     builder.appendWydiosBadges(message.userID);
     builder.appendSeventvBadges(message.userID);
+    builder.appendJiltvBadges(message.loginName);
     builder.appendDankChatBadges(message.userID);
     builder.appendChatleeBadges(message.userID);
     builder.appendChatsenBadges(message.userID);
@@ -1645,7 +1646,6 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendLimerinoBadges(message.userID);
     builder.appendStreamNookBadges(message.userID);
     builder.appendJilChatBadges(message.userID);
-    builder.appendJiltvBadges(message.loginName);
 
     auto &elements = message.elements;
     const auto isThirdParty = [&](const std::unique_ptr<MessageElement> &el) {
@@ -2559,6 +2559,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendSolrinoBadges(userID);
         builder.appendWydiosBadges(userID);
         builder.appendSeventvBadges(userID);
+        builder.appendJiltvBadges(builder->loginName);
         builder.appendDankChatBadges(userID);
         builder.appendChatleeBadges(userID);
         builder.appendChatsenBadges(userID);
@@ -2568,7 +2569,6 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendLimerinoBadges(userID);
         builder.appendStreamNookBadges(userID);
         builder.appendJilChatBadges(userID);
-        builder.appendJiltvBadges(builder->loginName);
         if (senderIsCurrentUser)
         {
             // the order the user wants their own badges in
@@ -4643,6 +4643,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendSolrinoBadges(userId);
     builder.appendWydiosBadges(userId);
     builder.appendSeventvBadges(userId);
+    builder.appendJiltvBadges(loginName);
     builder.appendDankChatBadges(userId);
     builder.appendChatleeBadges(userId);
     builder.appendChatsenBadges(userId);
@@ -4652,7 +4653,6 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendLimerinoBadges(userId);
     builder.appendStreamNookBadges(userId);
     builder.appendJilChatBadges(userId);
-    builder.appendJiltvBadges(loginName);
 
     MessageParseArgs args;
     args.isAction = true;
