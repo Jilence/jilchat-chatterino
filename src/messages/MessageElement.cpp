@@ -2667,8 +2667,7 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
         {
             const auto imgSize = image->size();
             const auto aspect = imgSize.width() > 0 && imgSize.height() > 0
-                                    ? static_cast<qreal>(imgSize.width()) /
-                                          static_cast<qreal>(imgSize.height())
+                                    ? imgSize.width() / imgSize.height()
                                     : 1.0;
             size = QSizeF(emoteHeight * aspect, emoteHeight);
             const auto maxWidth =
