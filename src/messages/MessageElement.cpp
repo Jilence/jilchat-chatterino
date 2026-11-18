@@ -2570,6 +2570,12 @@ void LinebreakElement::addToContainer(MessageLayoutContainer &container,
 {
     if (this->matchesFlags(ctx.flags))
     {
+        // Twitch GIFs at "Emote size" sit in the text like an emote
+        if (this->getFlags().has(MessageElementFlag::TwitchGif) &&
+            !(getSettings()->twitchGifScale.getValue() > 0.0F))
+        {
+            return;
+        }
         container.breakLine();
     }
 }
@@ -2615,7 +2621,13 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
         // The 1x Giphy asset is about 100px, so boost quality with the box.
         static constexpr qreal twitchGifAssetSize = 100;
 
+        // Height of a 7TV, BTTV or FFZ emote at 1x, which most emotes in chat
+        // are (Twitch's own are 28)
+        static constexpr qreal emoteLogicalHeight = 32;
+
         auto gifScale = static_cast<qreal>(1);
+        // "Emote size": as tall as the emotes in chat, emote scale included
+        bool emoteSized = false;
         if (isTwitchGif)
         {
             gifScale =
@@ -2624,15 +2636,26 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
             {
                 gifScale = 0.75;
             }
+            emoteSized = gifScale <= 0;
             gifScale = std::clamp<qreal>(gifScale, 0.5, 2.0);
         }
 
-        const auto requestScale =
-            isTwitchGif ? container.getImageScale() *
-                              static_cast<float>(
-                                  (twitchGifLogicalSize / twitchGifAssetSize) *
-                                  gifScale)
-                        : container.getImageScale();
+        const auto emoteHeight =
+            emoteLogicalHeight * container.getEmoteScale() *
+            static_cast<qreal>(getSettings()->emoteScale.getValue());
+
+        float requestScale = container.getImageScale();
+        if (emoteSized)
+        {
+            requestScale *=
+                static_cast<float>(emoteLogicalHeight / twitchGifAssetSize *
+                                   getSettings()->emoteScale.getValue());
+        }
+        else if (isTwitchGif)
+        {
+            requestScale *= static_cast<float>(
+                (twitchGifLogicalSize / twitchGifAssetSize) * gifScale);
+        }
         const auto &image = this->images_.getImageOrLoaded(requestScale);
         if (image->isEmpty())
         {
@@ -2640,7 +2663,22 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
         }
 
         QSizeF size;
-        if (isTwitchGif)
+        if (emoteSized)
+        {
+            const auto imgSize = image->size();
+            const auto aspect = imgSize.width() > 0 && imgSize.height() > 0
+                                    ? static_cast<qreal>(imgSize.width()) /
+                                          static_cast<qreal>(imgSize.height())
+                                    : 1.0;
+            size = QSizeF(emoteHeight * aspect, emoteHeight);
+            const auto maxWidth =
+                std::max<qreal>(1.0, container.remainingWidth());
+            if (size.width() > maxWidth)
+            {
+                size *= maxWidth / size.width();
+            }
+        }
+        else if (isTwitchGif)
         {
             const auto maxLogicalSize = std::min<qreal>(
                 twitchGifLogicalSize * container.getScale() * gifScale,
@@ -2719,7 +2757,12 @@ void TwitchGifElement::addToContainer(MessageLayoutContainer &container,
         return;
     }
 
-    const auto scale = getSettings()->twitchGifScale.getValue();
+    auto scale = getSettings()->twitchGifScale.getValue();
+    if (!(scale > 0.0F))
+    {
+        // "Emote size" is only handled by ScalingImageElement
+        scale = 0.75F;
+    }
     const auto &image =
         this->images().getImageOrLoaded(container.getImageScale() * scale);
     if (image->isEmpty())
