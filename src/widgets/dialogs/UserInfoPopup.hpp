@@ -154,6 +154,8 @@ private:
     bool applyCachedNameHistory();
     void updateNameHistoryButton();
     void updateVanityButton();
+    void updateBadgesButton();
+    void openBadgesDialog();
     /// Shows the badges of the user's newest message below their name.
     void updateUsercardBadges();
     void openVanityPage();
@@ -373,6 +375,7 @@ private:
         LabelButton *usercardLabel = nullptr;
         LabelButton *userlogsLabel = nullptr;
         LabelButton *vanityLabel = nullptr;
+        LabelButton *badgesLabel = nullptr;
         LabelButton *sevenTVUserLabel = nullptr;
         QLabel *seventvPaintPixmapLabel = nullptr;
         QWidget *seventvPaintRow = nullptr;
