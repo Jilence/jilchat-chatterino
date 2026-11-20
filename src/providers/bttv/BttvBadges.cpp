@@ -79,8 +79,10 @@ EmotePtr BttvBadges::createBadge(const QString &id,
             break;
     }
 
+    // The Pro badge's description has when the subscription started; only
+    // the staff badges keep theirs
     const auto description = badgeJson[u"description"_s].toString();
-    if (!description.isEmpty())
+    if (badgeType >= 1 && badgeType <= 4 && !description.isEmpty())
     {
         tooltip = description;
     }
@@ -95,6 +97,17 @@ EmotePtr BttvBadges::createBadge(const QString &id,
     return std::make_shared<const Emote>(std::move(emote));
 }
 
+std::optional<EmotePtr> BttvBadges::getStaffBadge(const UserId &id) const
+{
+    std::shared_lock lock(this->staffMutex_);
+    const auto it = this->staffBadges_.find(id.string);
+    if (it == this->staffBadges_.end())
+    {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 void BttvBadges::load()
 {
     NetworkRequest(u"https://api.betterttv.net/3/cached/badges/twitch"_s)
@@ -102,7 +115,7 @@ void BttvBadges::load()
         .timeout(10000)
         .onSuccess([this](const NetworkResult &result) {
             const auto users = result.parseJsonArray();
-            size_t assigned = 0;
+            std::unordered_map<QString, EmotePtr> staff;
 
             for (const auto &userValue : users)
             {
@@ -115,14 +128,18 @@ void BttvBadges::load()
                     continue;
                 }
 
-                const auto badgeID = this->registerBadge(badgeObject);
-                if (badgeID.isEmpty())
+                const auto id = this->idForBadge(badgeObject);
+                if (id.isEmpty())
                 {
                     continue;
                 }
+                staff[providerId] = this->createBadge(id, badgeObject);
+            }
 
-                this->assignBadgeToUser(badgeID, UserId{providerId});
-                ++assigned;
+            const auto assigned = staff.size();
+            {
+                std::unique_lock lock(this->staffMutex_);
+                this->staffBadges_ = std::move(staff);
             }
 
             if (assigned > 0)
