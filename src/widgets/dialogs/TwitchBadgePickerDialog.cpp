@@ -6584,11 +6584,19 @@ void TwitchBadgePickerDialog::applyDankChatAccount(const QJsonObject &account)
     }
     const auto choice = account.value(QStringLiteral("choice")).toObject();
     const auto type = choice.value(QStringLiteral("type")).toString();
-    this->dankChatChoice_ =
-        type == u"badge" ? QStringLiteral("badge:") +
-                               choice.value(QStringLiteral("id")).toString()
-                         : (type == u"hidden" ? QStringLiteral("hidden")
-                                              : QStringLiteral("automatic"));
+    if (type == u"badge")
+    {
+        this->dankChatChoice_ = QStringLiteral("badge:") +
+                                choice.value(QStringLiteral("id")).toString();
+    }
+    else if (type == u"hidden")
+    {
+        this->dankChatChoice_ = QStringLiteral("hidden");
+    }
+    else
+    {
+        this->dankChatChoice_ = QStringLiteral("automatic");
+    }
     this->dankChatLoaded_ = true;
 }
 
@@ -6848,7 +6856,7 @@ void TwitchBadgePickerDialog::selectDankChat(const QJsonObject &choice,
                     [userId = account.value("twitchId").toString()](bool ok) {
                         if (ok)
                         {
-                            getApp()->getWindows()->notifyBadgesUpdated(userId);
+                            WindowManager::notifyBadgesUpdated(userId);
                         }
                     });
             }
