@@ -710,12 +710,13 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
     {
         if (jiltvFirstHere)
         {
-            emote = jiltv.channelEmote(twitchChannel->roomId(), name);
+            // A user's personal emote wins over a channel emote of the same name.
+            emote = jiltv.personalEmote(login, name);
             if (emote)
             {
                 return *emote;
             }
-            emote = jiltv.personalEmote(login, name);
+            emote = jiltv.channelEmote(twitchChannel->roomId(), name);
             if (emote)
             {
                 return *emote;
@@ -756,12 +757,13 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
 
         if (!jiltvFirstHere)
         {
-            emote = jiltv.channelEmote(twitchChannel->roomId(), name);
+            // A user's personal emote wins over a channel emote of the same name.
+            emote = jiltv.personalEmote(login, name);
             if (emote)
             {
                 return *emote;
             }
-            emote = jiltv.personalEmote(login, name);
+            emote = jiltv.channelEmote(twitchChannel->roomId(), name);
             if (emote)
             {
                 return *emote;
