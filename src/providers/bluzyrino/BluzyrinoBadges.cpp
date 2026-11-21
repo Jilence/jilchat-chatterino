@@ -248,8 +248,10 @@ void BluzyrinoBadges::applyJson(const QJsonObject &root)
             }
         }
         // donor: the selected tier, or — absent a valid selection — the
-        // first owned donor tier in catalog order.
-        if (donorToShow.isEmpty())
+        // first owned donor tier in catalog order. "none" hides it.
+        const bool donorHidden = selectedDonorIt != donorSelection.end() &&
+                                 selectedDonorIt->second == NO_DONOR_BADGE;
+        if (donorToShow.isEmpty() && !donorHidden)
         {
             for (const auto &id : owned)
             {
