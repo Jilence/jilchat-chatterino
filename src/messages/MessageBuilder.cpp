@@ -4146,11 +4146,21 @@ void MessageBuilder::appendFfzBadges(TwitchChannel *twitchChannel,
 
 void MessageBuilder::appendBttvBadges(const QString &userID)
 {
-    if (auto badge = getApp()->getBttvBadges()->getBadge({userID}))
+    // Like the extension: the staff badge, then the Pro badge
+    auto *badges = getApp()->getBttvBadges();
+    const auto staff = badges->getStaffBadge({userID});
+    if (staff)
+    {
+        this->emplace<BadgeElement>(*staff, MessageElementFlag::BadgeBttv);
+        /// e.g. "betterttv:translator"
+        this->message().externalBadges.emplace_back((*staff)->name.string);
+    }
+    if (auto badge = badges->getBadge({userID});
+        badge && (!staff || (*badge)->id.string != (*staff)->id.string))
     {
         this->emplace<BadgeElement>(*badge, MessageElementFlag::BadgeBttv);
 
-        /// e.g. "betterttv:Pro Subscriber"
+        /// e.g. "betterttv:pro"
         this->message().externalBadges.emplace_back((*badge)->name.string);
     }
 }

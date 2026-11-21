@@ -1,0 +1,1 @@
+Fixed: BetterTTV staff badges like Developer or Translator show next to the Pro badge instead of being replaced by it.
