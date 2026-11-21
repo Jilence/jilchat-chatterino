@@ -2576,6 +2576,11 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
                              twitchChannel != nullptr ? twitchChannel->getName()
                                                       : QString{});
         }
+        else
+        {
+            // the same order for everyone else, if the user wants that
+            ownbadges::applyToOther(builder->elements, firstBadge);
+        }
 
         builder.appendUsername(tags, args);
 

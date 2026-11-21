@@ -43,6 +43,12 @@ struct Entry {
 void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
            size_t firstBadge, const QString &channelName = {});
 
+/// Puts the badges of someone else's message in the order the user chose
+/// for their own, if they want that for everyone. Nothing is hidden or
+/// remembered.
+void applyToOther(std::vector<std::unique_ptr<MessageElement>> &elements,
+                  size_t firstBadge);
+
 /// One of Twitch's badges the user has in a channel
 struct TwitchBadgeHeld {
     MessageElementFlag flag;

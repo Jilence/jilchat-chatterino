@@ -52,6 +52,7 @@
 #include "widgets/TooltipWidget.hpp"
 
 #include <pajlada/signals/signalholder.hpp>
+#include <QCheckBox>
 #include <QColor>
 #include <QCursor>
 #include <QDateTime>
@@ -3065,10 +3066,21 @@ void TwitchBadgePickerDialog::rebuildOrder()
     QObject::connect(list->model(), &QAbstractItemModel::rowsMoved, list,
                      saveRows);
 
-    auto *note =
-        new QLabel("This only changes how you see your own badges, and only in "
-                   "messages that arrive from now on.",
-                   this->contentWidget_);
+    auto *everyone = new QCheckBox("Use this order for everyone's badges",
+                                   this->contentWidget_);
+    everyone->setToolTip(
+        "Sorts the badges of other users' messages like yours too. Hidden "
+        "badges stay hidden only on your own messages.");
+    everyone->setChecked(getSettings()->ownBadgeOrderForEveryone);
+    QObject::connect(everyone, &QCheckBox::toggled, this, [](bool checked) {
+        getSettings()->ownBadgeOrderForEveryone = checked;
+    });
+    this->contentLayout_->addWidget(everyone);
+
+    auto *note = new QLabel(
+        "This only changes how you see the badges, others still see them in "
+        "their usual order. It applies to messages that arrive from now on.",
+        this->contentWidget_);
     note->setWordWrap(true);
     this->contentLayout_->addWidget(note);
 }
