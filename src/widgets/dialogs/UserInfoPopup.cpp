@@ -61,6 +61,7 @@
 #include "widgets/buttons/PixmapButton.hpp"
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/EditUserNotesDialog.hpp"
+#include "widgets/dialogs/UserBadgesDialog.hpp"
 #include "widgets/helper/AvatarFrame.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/InvisibleSizeGrip.hpp"
@@ -1743,6 +1744,15 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                                  this, [this] {
                                      this->openVanityPage();
                                  });
+                auto badges =
+                    box.emplace<LabelButton>("badges", this, QSize{4, 0})
+                        .assign(&this->ui_.badgesLabel);
+                badges->setToolTip("View earned Twitch badges");
+                badges->hide();
+                QObject::connect(badges.getElement(), &Button::leftClicked,
+                                 this, [this] {
+                                     this->openBadgesDialog();
+                                 });
                 box->addSpacing(5);
                 box->addStretch(1);
 
@@ -3195,6 +3205,7 @@ void UserInfoPopup::setData(const QString &name,
     }
 
     this->updateVanityButton();
+    this->updateBadgesButton();
 }
 
 void UserInfoPopup::setYouTubeContext()
@@ -6086,6 +6097,58 @@ void UserInfoPopup::updateVanityButton()
     this->ui_.vanityLabel->setVisible(!this->isKick_ && !this->isYouTube_ &&
                                       !this->isTikTok_ &&
                                       !this->userName_.isEmpty());
+}
+
+void UserInfoPopup::updateBadgesButton()
+{
+    if (this->ui_.badgesLabel == nullptr)
+    {
+        return;
+    }
+
+    // The earned badges are Twitch's, read in the chat of the channel
+    bool canShow = !this->isKick_ && !this->isYouTube_ && !this->isTikTok_ &&
+                   !this->userName_.isEmpty() && this->underlyingChannel_ &&
+                   !this->underlyingChannel_->getName().isEmpty();
+
+    if (canShow && this->channel_)
+    {
+        const auto type = this->channel_->getType();
+        if (type == Channel::Type::TwitchLive ||
+            type == Channel::Type::TwitchWhispers ||
+            type == Channel::Type::Misc || type == Channel::Type::Kick)
+        {
+            canShow = false;
+        }
+    }
+
+    this->ui_.badgesLabel->setVisible(canShow);
+    this->ui_.badgesLabel->setEnabled(canShow);
+    this->ui_.badgesLabel->setToolTip(canShow ? "View earned Twitch badges"
+                                              : QString());
+}
+
+void UserInfoPopup::openBadgesDialog()
+{
+    if (this->isKick_ || this->isYouTube_ || this->isTikTok_ ||
+        this->userName_.isEmpty() || !this->underlyingChannel_)
+    {
+        return;
+    }
+
+    const auto channelName = this->underlyingChannel_->getName();
+    if (channelName.isEmpty())
+    {
+        return;
+    }
+
+    const auto displayName = this->ui_.nameLabel != nullptr
+                                 ? this->ui_.nameLabel->getText()
+                                 : this->userName_;
+    auto *twitchChannel =
+        dynamic_cast<TwitchChannel *>(this->underlyingChannel_.get());
+    UserBadgesDialog::showDialog(this->userName_, channelName, displayName,
+                                 twitchChannel, this);
 }
 
 void UserInfoPopup::openVanityPage()
