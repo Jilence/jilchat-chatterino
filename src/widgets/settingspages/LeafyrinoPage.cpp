@@ -27,55 +27,6 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
 {
     auto &s = *getSettings();
 
-    layout.addTitle("Badges");
-    SettingWidget::checkbox("Folhinha", s.showBadgesFolhinha)
-        ->addKeywords({"folhinha", "folhinhabot"})
-        ->setTooltip("Developer, admin, and Plus badges.")
-        ->addTo(layout);
-    SettingWidget::checkbox("FFZ:AP", s.showBadgesFfzAp)
-        ->addKeywords({"ffz", "ffzap", "frankerfacez"})
-        ->setTooltip("Developer, helper, and supporter badges.")
-        ->addTo(layout);
-    SettingWidget::checkbox("DankChat", s.showBadgesDankChat)
-        ->addKeywords({"dankchat", "dank"})
-        ->setTooltip("Dev/contributor, QA, and supporter badges.")
-        ->addTo(layout);
-    SettingWidget::checkbox("Chatlee", s.showBadgesChatlee)
-        ->addKeywords({"chatlee"})
-        ->setTooltip("The badge a Chatlee user picked to wear. Badges by "
-                     "Chatlee (chatlee.lol). Nothing is requested from "
-                     "Chatlee while this is off.")
-        ->addTo(layout);
-    SettingWidget::checkbox("Solrino", s.showBadgesSolrino)
-        ->addKeywords({"solrino"})
-        ->setTooltip("The badge a Solrino user picked to wear.")
-        ->addTo(layout);
-    SettingWidget::checkbox("Wydios", s.showBadgesWydios)
-        ->addKeywords({"wydios"})
-        ->setTooltip("The badge of a Wydios user, looked up per chatter.")
-        ->addTo(layout);
-    SettingWidget::checkbox("StreamNook", s.showBadgesStreamNook)
-        ->addKeywords({"streamnook", "nook"})
-        ->setTooltip("The badge a StreamNook member wears: member, supporter, "
-                     "subscriber and event badges.")
-        ->addTo(layout);
-    SettingWidget::checkbox("Chatsen", s.showBadgesChatsen)
-        ->addKeywords({"chatsen"})
-        ->setTooltip("Developer, supporter, artist, and Patreon badges.")
-        ->addTo(layout);
-    SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
-        ->addKeywords({"jilchat", "jil", "badges"})
-        ->setTooltip("JilChat badges")
-        ->addTo(layout);
-    SettingWidget::checkbox("BadgeHQ", s.showBadgesBadgeHQ)
-        ->addKeywords({"badgehq", "badge hq", "supporter", "founder"})
-        ->setTooltip("Founder and supporter badges.")
-        ->addTo(layout);
-    SettingWidget::checkbox("Limerino", s.showBadgesLimerino)
-        ->addKeywords({"limerino"})
-        ->setTooltip("Founder and event badges.")
-        ->addTo(layout);
-
     layout.addTitle("JilTV");
     layout.addDescription("Paints, badges and emotes from jiltv.app.");
     SettingWidget::checkbox("Enable JilTV", s.enableJiltv)
