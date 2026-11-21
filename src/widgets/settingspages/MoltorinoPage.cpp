@@ -739,9 +739,15 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
         ->addTo(*view);
 
     view->addDropdown<float>(
-            "Twitch GIF size", {"0.5x", "Default", "1x", "1.25x", "1.5x", "2x"},
+            "Twitch GIF size",
+            {"Emote size", "0.5x", "Default", "1x", "1.25x", "1.5x", "2x"},
             s.twitchGifScale,
             [](auto val) {
+                // 0 stands for "as tall as an emote"
+                if (val <= 0.0F)
+                {
+                    return QString("Emote size");
+                }
                 if (val == 0.75F)
                 {
                     return QString("Default");
@@ -749,9 +755,15 @@ MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
                 return QString::number(val) + "x";
             },
             [](auto args) {
+                if (args.value == "Emote size")
+                {
+                    return 0.0F;
+                }
                 return std::clamp(fuzzyToFloat(args.value, 0.75F), 0.5F, 2.0F);
             },
-            true, "Scale Twitch GIFs from 0.5x to 2x.")
+            true,
+            "Scale Twitch GIFs from 0.5x to 2x, or make them as tall as an "
+            "emote.")
         ->setToolTip("Scale Twitch GIFs from 0.5x to 2x.");
 
     view->addTitle("Input Box");
