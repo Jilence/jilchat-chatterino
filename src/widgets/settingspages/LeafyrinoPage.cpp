@@ -4,8 +4,11 @@
 
 #include "widgets/settingspages/LeafyrinoPage.hpp"
 
+#include "Application.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/WindowManager.hpp"
 #include "widgets/BaseWindow.hpp"
+#include "widgets/dialogs/ChatColorCycleDialog.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
 
@@ -15,67 +18,84 @@
 
 namespace chatterino {
 
-LeafyrinoPage::LeafyrinoPage()
+LeafyrinoPage::LeafyrinoPage(GeneralPageView &view)
 {
-    auto *outer = new QVBoxLayout;
-    auto *inner = new QHBoxLayout;
-    auto *view = GeneralPageView::withNavigation(this);
-    this->view_ = view;
-
-    inner->addWidget(view);
-    auto *frame = new QFrame;
-    frame->setLayout(inner);
-    outer->addWidget(frame);
-    this->setLayout(outer);
-
-    this->initLayout(*view);
-}
-
-bool LeafyrinoPage::filterElements(const QString &query)
-{
-    if (this->view_)
-    {
-        return this->view_->filterElements(query) || query.isEmpty();
-    }
-
-    return false;
+    this->initLayout(view);
 }
 
 void LeafyrinoPage::initLayout(GeneralPageView &layout)
 {
     auto &s = *getSettings();
 
-    layout.addTitle("Badges");
-    SettingWidget::checkbox("Folhinha", s.showBadgesFolhinha)
-        ->addKeywords({"folhinha", "folhinhabot"})
-        ->setTooltip("Developer, admin, and Plus badges.")
+    layout.addTitle("JilTV");
+    layout.addDescription("Paints, badges and emotes from jiltv.app.");
+    SettingWidget::checkbox("Enable JilTV", s.enableJiltv)
+        ->addKeywords({"jiltv", "paints", "emotes", "badges"})
+        ->setTooltip("Everything from JilTV. Off: no JilTV paints, badges, "
+                     "frames or emotes.")
         ->addTo(layout);
-    SettingWidget::checkbox("FFZ:AP", s.showBadgesFfzAp)
-        ->addKeywords({"ffz", "ffzap", "frankerfacez"})
-        ->setTooltip("Developer, helper, and supporter badges.")
+    SettingWidget::checkbox("Show JilTV emotes", s.enableJiltvEmotes)
+        ->addKeywords({"jiltv", "emotes"})
+        ->setTooltip("Global JilTV emotes and the emotes of channels that use "
+                     "JilTV.")
         ->addTo(layout);
-    SettingWidget::checkbox("DankChat", s.showBadgesDankChat)
-        ->addKeywords({"dankchat", "dank"})
-        ->setTooltip("Dev/contributor, QA, and supporter badges.")
+    SettingWidget::checkbox("Prefer JilTV emotes", s.jiltvPriority)
+        ->addKeywords({"jiltv", "priority", "7tv", "emotes"})
+        ->setTooltip("A JilTV emote wins over 7TV, BetterTTV and FrankerFaceZ "
+                     "emotes of the same name. Off: JilTV emotes come last.")
         ->addTo(layout);
-    SettingWidget::checkbox("Chatsen", s.showBadgesChatsen)
-        ->addKeywords({"chatsen"})
-        ->setTooltip("Developer, supporter, artist, and Patreon badges.")
+    SettingWidget::checkbox("Show JilTV badges", s.showBadgesJiltv)
+        ->addKeywords({"jiltv", "badges"})
+        ->setTooltip("The JilTV badge a chatter wears, next to their name.")
         ->addTo(layout);
-    SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
-        ->addKeywords({"jilchat", "jil", "badges"})
-        ->setTooltip("JilChat badges")
+    SettingWidget::checkbox("Show JilTV frames", s.showJiltvFrames)
+        ->addKeywords({"jiltv", "frames", "decorations", "avatar"})
+        ->setTooltip("The frames around profile pictures in usercards.")
         ->addTo(layout);
-    SettingWidget::checkbox("BadgeHQ", s.showBadgesBadgeHQ)
-        ->addKeywords({"badgehq", "badge hq", "supporter", "founder"})
-        ->setTooltip("Founder and supporter badges.")
+    SettingWidget::checkbox("Animate JilTV paints", s.jiltvAnimatedPaints)
+        ->addKeywords({"jiltv", "paints", "animation"})
+        ->setTooltip("Off: paints stand still on their first frame.")
         ->addTo(layout);
-    SettingWidget::checkbox("Limerino", s.showBadgesLimerino)
-        ->addKeywords({"limerino"})
-        ->setTooltip("Founder and event badges.")
+    SettingWidget::checkbox("Show JilTV paint shadows and outlines",
+                            s.jiltvPaintShadows)
+        ->addKeywords({"jiltv", "paints", "shadow", "outline"})
+        ->setTooltip("The glow, shadows and outlines some paints have. Off: "
+                     "only the paint's colors.")
         ->addTo(layout);
+    SettingWidget::checkbox("Show JilTV emotes waiting for review",
+                            s.jiltvShowPendingEmotes)
+        ->addKeywords({"jiltv", "emotes", "pending", "review"})
+        ->setTooltip("Emotes JilTV hasn't approved yet. Off: they show once "
+                     "they are approved.")
+        ->addTo(layout);
+    SettingWidget::lineEdit("JilTV API", s.jiltvApiUrl, "https://api.jiltv.app")
+        ->addKeywords({"jiltv", "api", "dev"})
+        ->setTooltip("Only change this to try a local JilTV server, e.g. "
+                     "http://localhost:8080.")
+        ->addTo(layout);
+    {
+        auto redraw = [] {
+            getApp()->getWindows()->invalidateChannelViewBuffers();
+        };
+        s.jiltvPriority.connect(redraw, false);
+        s.jiltvAnimatedPaints.connect(redraw, false);
+        s.jiltvPaintShadows.connect(redraw, false);
+    }
 
     layout.addTitle("Client");
+    SettingWidget::checkbox("Dock onto Twitch chat in a browser",
+                            s.dockOverTwitchChat)
+        ->addKeywords({"dock", "browser", "twitch", "overlay"})
+        ->setTooltip("Drag the main window onto Twitch chat in a browser to "
+                     "put it over that chat. It follows the browser and shows "
+                     "the same channel. Drag it away to undock. Windows only.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Smooth animations", s.smoothAnimations)
+        ->addKeywords({"animation", "transition", "fade", "glide"})
+        ->setTooltip("Glide between tabs and settings pages, fade windows as "
+                     "they open and close, and animate splits and menus. Turn "
+                     "this off if you prefer everything to switch instantly.")
+        ->addTo(layout);
     SettingWidget::checkbox("Show select badge button", s.showSelectBadgeButton)
         ->addKeywords({"badge", "select", "button", "client", "picker"})
         ->setTooltip("Show the badge picker button in the chat input bar.")
@@ -136,7 +156,7 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
                      "the display name. Hovering always shows the handle.")
         ->addTo(layout);
 
-    layout.addTitle("Usercard");
+    layout.addTitle("Usercards");
     layout.addDescription("Choose which extra details appear on usercards.");
 
     SettingWidget::checkbox("Show follower count", s.showUsercardFollowerCount)
@@ -195,7 +215,8 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
     SettingWidget::checkbox("Show follow button", s.showFollowButtonInUsercard)
         ->setTooltip("Show a follow/unfollow button on usercards. Requires "
-                     "Moltorino auth (Settings → Moltorino → Authentication).")
+                     "JilChat Chatterino login (Settings → JilChat Chatterino "
+                     "→ Authentication).")
         ->addKeywords({"usercard", "follow", "button"})
         ->addTo(layout);
     SettingWidget::checkbox("Confirm before unfollowing from usercard",
@@ -234,9 +255,19 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
 
     layout.addTitle("Events");
+
+    SettingWidget::checkbox("Show stream change notifications in chat",
+                            s.showStreamChangeMessages)
+        ->setTooltip("Show a chat message when the streamer changes the title "
+                     "or game, or when their shared chat session changes.")
+        ->addKeywords({"title", "game", "category", "shared chat", "events",
+                       "stream", "chat"})
+        ->addTo(layout);
+
     layout.addDescription(
-        "Channel event messages in chat. Requires Moltorino auth "
-        "(Settings → Moltorino → Authentication), experimental EventSub "
+        "Follow notifications require JilChat Chatterino login "
+        "(Settings → JilChat Chatterino → Authentication), experimental "
+        "EventSub "
         "enabled under Settings → General, and an app restart after turning "
         "EventSub on.");
 
@@ -290,6 +321,27 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"potat", "custom", "prefix", "command"})
         ->conditionallyEnabledBy(s.includePotatCommands)
         ->addTo(layout);
+
+    layout.addTitle("Chat color");
+    SettingWidget::checkbox("Change my color after every message",
+                            s.cycleChatColor)
+        ->setTooltip("After each message you send, change your Twitch chat "
+                     "color. Your color is shared by every channel, and it "
+                     "changes at most once per second.")
+        ->addKeywords({"color", "colour", "rainbow", "cycle", "random"})
+        ->addTo(layout);
+    SettingWidget::dropdown("Next color", s.chatColorCycleMode)
+        ->setTooltip("In order and Random use the colors you choose below. "
+                     "Rainbow goes around the color wheel and needs Turbo or "
+                     "Prime.")
+        ->addKeywords({"color", "colour", "rainbow", "cycle", "random"})
+        ->conditionallyEnabledBy(s.cycleChatColor)
+        ->addTo(layout);
+    layout.addButton("Choose colors...", [this] {
+        auto *dialog = new ChatColorCycleDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
 
     layout.addTitle("Miscellaneous");
     SettingWidget::checkbox("Use message colors for tab alerts",

@@ -1,0 +1,1 @@
+- New Paints on channel names. In General settings, a channel's name on its tab and in the channel bar can be drawn in the streamer's username paint (7TV, JilTV or BTTV), or in their Twitch color without one. Moving paints move on the selected tab, or on every tab with "Animate paints on all tabs".

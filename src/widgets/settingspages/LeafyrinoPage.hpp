@@ -4,25 +4,22 @@
 
 #pragma once
 
-#include "widgets/settingspages/SettingsPage.hpp"
+#include <QWidget>
 
 namespace chatterino {
 
 class GeneralPageView;
 
-class LeafyrinoPage : public SettingsPage
+/// The settings that came from Leafyrino, shown on the JilChat Chatterino page
+class LeafyrinoPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    LeafyrinoPage();
-
-    bool filterElements(const QString &query) override;
+    explicit LeafyrinoPage(GeneralPageView &view);
 
 private:
     void initLayout(GeneralPageView &layout);
-
-    GeneralPageView *view_{};
 };
 
 }  // namespace chatterino

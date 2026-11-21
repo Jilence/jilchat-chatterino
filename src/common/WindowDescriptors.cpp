@@ -8,12 +8,13 @@
 #include "common/QLogging.hpp"
 #include "debug/AssertInGuiThread.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "util/Backup.hpp"
 #include "util/Expected.hpp"
 #include "util/MultiChannel.hpp"
-#include "util/QMagicEnum.hpp"
+#include "util/QMagicEnumTagged.hpp"
 #include "widgets/Window.hpp"
 
 #include <QFile>
@@ -255,7 +256,8 @@ IndirectChannel SplitDescriptor::decodeChannel() const
         return getApp()->getTwitch()->getOrAddChannel(this->channelName_);
     };
 
-    auto type = qmagicenum::enumCast<Channel::Type>(this->type_);
+    auto type =
+        qmagicenum::SerializedName::enumCast<Channel::Type>(this->type_);
     if (!type)
     {
         return twitchChannel();
@@ -286,6 +288,9 @@ IndirectChannel SplitDescriptor::decodeChannel() const
                                     });
         case Channel::Type::YouTube:
             return getApp()->getYouTubeChatServer()->getOrCreate(
+                this->channelName_);
+        case Channel::Type::TikTok:
+            return getApp()->getTikTokChatServer()->getOrCreate(
                 this->channelName_);
         case Channel::Type::Multi: {
             QVarLengthArray<MultiChannel::Spec, 4> specs;

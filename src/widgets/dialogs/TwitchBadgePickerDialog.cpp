@@ -18,11 +18,16 @@
 #include "messages/MessageBuilder.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
+#include "providers/dankchat/DankChatBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/jiltv/Jiltv.hpp"
+#include "providers/jiltv/JiltvAuth.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/solrino/SolrinoBadges.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/TwitchGql.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -35,17 +40,20 @@
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Clipboard.hpp"
+#include "util/Helpers.hpp"
 #include "util/OwnBadgeLayout.hpp"
 #include "util/Twitch.hpp"
 #include "widgets/buttons/Button.hpp"
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/ColorPickerDialog.hpp"
+#include "widgets/helper/AvatarFrame.hpp"
 #include "widgets/helper/color/ColorButton.hpp"
 #include "widgets/helper/Line.hpp"
 #include "widgets/helper/MessageView.hpp"
 #include "widgets/TooltipWidget.hpp"
 
 #include <pajlada/signals/signalholder.hpp>
+#include <QCheckBox>
 #include <QColor>
 #include <QCursor>
 #include <QDateTime>
@@ -82,6 +90,7 @@
 #include <QtGlobal>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -100,6 +109,8 @@ constexpr int HEADER_SEPARATOR_HEIGHT = 8;
 constexpr int BADGE_GRID_SPACING = 4;
 constexpr int BADGE_TILE_PADDING = 4;
 constexpr QSize BADGE_ICON_SIZE(36, 36);
+/// JilTV frames are larger than badges, so their details show
+constexpr int FRAME_TILE_SIZE = 56;
 constexpr float BADGE_IMAGE_SCALE =
     float(BADGE_ICON_SIZE.width()) / float(BADGE_ICON_SIZE.width() / 2);
 constexpr char BADGE_SELECTED_COLOR[] = "#9146ff";
@@ -120,6 +131,11 @@ constexpr auto BTTV_TOKEN_COMMAND =
     "(()=>{copy(JSON.parse(localStorage.getItem('USER_TOKEN')));"
     "return 'BetterTTV token copied.'})()";
 constexpr auto BTTV_EFFECT_PATH = "account/subscription/username_effect";
+/// The account of the dank.chat site, as its own page uses it
+constexpr auto DANKCHAT_ACCOUNT_URL = "https://dank.chat/api/me";
+constexpr auto DANKCHAT_BADGE_URL = "https://dank.chat/api/me/badge";
+constexpr auto DANKCHAT_SITE_URL = "https://dank.chat/account";
+constexpr auto DANKCHAT_CREDENTIAL_PROVIDER = "dankchat";
 constexpr auto SEVENTV_GQL_URL = "https://api.7tv.app/v4/gql";
 /// Has the paint definitions in the format SeventvPaints reads.
 constexpr auto SEVENTV_V3_GQL_URL = "https://7tv.io/v3/gql";
@@ -128,6 +144,18 @@ constexpr auto SEVENTV_PAINTS_QUERY =
     "function color angle shape image_url repeat stops { at color } "
     "shadows { x_offset y_offset radius color } } } }";
 constexpr int PAINT_TILE_HEIGHT = 50;
+constexpr auto JILTV_INVENTORY_QUERY =
+    "{ viewer { user { paint { id } badge { id } decoration { id } "
+    "ownedPaints { paint { id name } } "
+    "ownedBadges { badge { id name imageUrl } } "
+    "ownedDecorations { decoration { id name imageUrl } } } } }";
+constexpr auto JILTV_EQUIP_PAINT_MUTATION =
+    "mutation($id: ID) { equipPaint(paintId: $id) { paint { id } } }";
+constexpr auto JILTV_EQUIP_BADGE_MUTATION =
+    "mutation($id: ID) { equipBadge(badgeId: $id) { badge { id } } }";
+constexpr auto JILTV_EQUIP_FRAME_MUTATION =
+    "mutation($id: ID) { equipDecoration(decorationId: $id) "
+    "{ decoration { id } } }";
 constexpr auto SEVENTV_CREDENTIAL_PROVIDER = "7tv";
 /// Run in the browser console on 7tv.app: copies the user's own 7TV token.
 constexpr auto SEVENTV_TOKEN_COMMAND =
@@ -155,6 +183,10 @@ constexpr auto SEVENTV_SET_PAINT_MUTATION =
   users { user(id: $id) { activePaint(paintId: $paintId) { id } } }
 })";
 constexpr auto MOLTORINO_PROFILE_URL = "https://api.moltorino.com/v2/badges/me";
+constexpr auto SOLRINO_BADGES_URL =
+    "https://solrino-badges.solrino-badge-server.workers.dev/v2/badges";
+constexpr auto SOLRINO_PROFILE_URL =
+    "https://solrino-badges.solrino-badge-server.workers.dev/v2/badges/me";
 
 int scaledSeparatorHeight(float scale)
 {
@@ -176,7 +208,7 @@ int badgeTileSize()
     return BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2;
 }
 
-int badgeGridColumnsForWidth(int availableWidth)
+int badgeGridColumnsForWidth(int availableWidth, int tileSize = 0)
 {
     if (availableWidth <= 0)
     {
@@ -185,7 +217,8 @@ int badgeGridColumnsForWidth(int availableWidth)
         availableWidth = fallbackWidth;
     }
 
-    const int stride = badgeTileSize() + BADGE_GRID_SPACING;
+    const int stride =
+        (tileSize > 0 ? tileSize : badgeTileSize()) + BADGE_GRID_SPACING;
     return std::max(1, (availableWidth + BADGE_GRID_SPACING) / stride);
 }
 
@@ -260,8 +293,9 @@ ImageSet badgeImages(const GqlBadge &badge)
     };
 }
 
+/// `round` draws a circle instead of a rounded square, e.g. for frames
 void paintBadgeTileBackground(QPainter &painter, const QRect &rect,
-                              bool underMouse, bool isDown)
+                              bool underMouse, bool isDown, bool round = false)
 {
     const auto *theme = getApp()->getThemes();
     auto bg = theme->splits.header.background;
@@ -279,16 +313,31 @@ void paintBadgeTileBackground(QPainter &painter, const QRect &rect,
 
     painter.setPen(QPen(border, 1));
     painter.setBrush(bg);
-    painter.drawRoundedRect(rect, 3, 3);
+    if (round)
+    {
+        painter.drawEllipse(rect);
+    }
+    else
+    {
+        painter.drawRoundedRect(rect, 3, 3);
+    }
 }
 
-void paintBadgeTileFocusRing(QPainter &painter, const QRect &rect)
+void paintBadgeTileFocusRing(QPainter &painter, const QRect &rect,
+                             bool round = false)
 {
     auto focus = getApp()->getThemes()->window.text;
     focus.setAlpha(200);
     painter.setPen(QPen(focus, 1));
     painter.setBrush(Qt::NoBrush);
-    painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 3, 3);
+    if (round)
+    {
+        painter.drawEllipse(rect.adjusted(1, 1, -1, -1));
+    }
+    else
+    {
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 3, 3);
+    }
 }
 
 class BadgePickerToggleSwitch final : public QPushButton
@@ -488,15 +537,25 @@ bool handleTileTooltip(QWidget *tile, QEvent *event)
 class NoBadgeTileButton final : public QPushButton
 {
 public:
-    NoBadgeTileButton(QWidget *parent)
+    /// `round` for a round tile, next to the round frames
+    NoBadgeTileButton(QWidget *parent, bool round = false)
         : QPushButton(parent)
+        , round_(round)
     {
         this->setCursor(Qt::PointingHandCursor);
         this->setFocusPolicy(Qt::StrongFocus);
         this->setAttribute(Qt::WA_Hover, true);
         this->setFlat(true);
-        this->setFixedSize(BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2,
-                           BADGE_ICON_SIZE.height() + BADGE_TILE_PADDING * 2);
+        if (round)
+        {
+            this->setFixedSize(FRAME_TILE_SIZE, FRAME_TILE_SIZE);
+        }
+        else
+        {
+            this->setFixedSize(
+                BADGE_ICON_SIZE.width() + BADGE_TILE_PADDING * 2,
+                BADGE_ICON_SIZE.height() + BADGE_TILE_PADDING * 2);
+        }
         this->setToolTip("No Badge");
     }
 
@@ -524,21 +583,30 @@ protected:
             const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
             painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
             painter.setBrush(Qt::NoBrush);
-            painter.drawRoundedRect(selectionRect, 3, 3);
+            if (this->round_)
+            {
+                painter.drawEllipse(selectionRect);
+            }
+            else
+            {
+                painter.drawRoundedRect(selectionRect, 3, 3);
+            }
             const auto innerRect = selectionRect.adjusted(2, 2, -2, -2);
             paintBadgeTileBackground(painter, innerRect, this->underMouse(),
-                                     this->isDown());
+                                     this->isDown(), this->round_);
         }
         else
         {
             paintBadgeTileBackground(painter, rect, this->underMouse(),
-                                     this->isDown());
+                                     this->isDown(), this->round_);
         }
 
         const int pad = BADGE_TILE_PADDING;
         const QRect iconRect(pad, pad, rect.width() - pad * 2,
                              rect.height() - pad * 2);
-        const auto center = iconRect.center();
+        // The middle of the background and the selection ring, which leave
+        // out the last pixel; QRect::center() would round down
+        const auto center = QRectF(rect).center();
         const int radius =
             std::min(iconRect.width(), iconRect.height()) / 2 - 3;
 
@@ -554,11 +622,12 @@ protected:
 
         if (this->hasFocus())
         {
-            paintBadgeTileFocusRing(painter, rect);
+            paintBadgeTileFocusRing(painter, rect, this->round_);
         }
     }
 
 private:
+    bool round_ = false;
     bool selected_ = false;
 };
 
@@ -689,9 +758,12 @@ private:
 class PaintTileButton final : public QPushButton
 {
 public:
+    /// `jiltv` for a JilTV paint, else a 7TV one.
     PaintTileButton(QString paintId, QString paintName, QString userName,
-                    const QColor &userColor, QWidget *parent)
+                    const QColor &userColor, QWidget *parent,
+                    bool jiltv = false)
         : QPushButton(parent)
+        , jiltv_(jiltv)
         , paintId_(std::move(paintId))
         , paintName_(std::move(paintName))
         , userName_(std::move(userName))
@@ -706,8 +778,7 @@ public:
         // Animated paints only move when the tile is painted again.
         this->connections_.managedConnect(
             getApp()->getEmotes()->getGIFTimer()->signal, [this] {
-                const auto paint =
-                    getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+                const auto paint = this->paint();
                 if (paint && paint->animated() && this->isVisible())
                 {
                     this->update();
@@ -756,10 +827,7 @@ protected:
                               nameMetrics.height());
         const QPointF namePos((rect.width() - nameSize.width()) / 2, 5);
 
-        const auto paint =
-            this->paintId_.isEmpty()
-                ? nullptr
-                : getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+        const auto paint = this->paint();
         if (paint)
         {
             const auto pixmap =
@@ -795,10 +863,182 @@ protected:
     }
 
 private:
+    std::shared_ptr<Paint> paint() const
+    {
+        if (this->paintId_.isEmpty())
+        {
+            return nullptr;
+        }
+        return this->jiltv_
+                   ? Jiltv::instance().paintById(this->paintId_)
+                   : getApp()->getSeventvPaints()->getPaintById(this->paintId_);
+    }
+
+    bool jiltv_ = false;
     QString paintId_;
     QString paintName_;
     QString userName_;
     QColor userColor_;
+    bool selected_ = false;
+    pajlada::Signals::SignalHolder connections_;
+};
+
+/// Draws a profile picture with a frame around it; the picture and frame
+/// come from functions, asked whenever it is painted.
+class AvatarWithFrame : public QWidget
+{
+public:
+    AvatarWithFrame(std::function<ImagePtr()> avatar,
+                    std::function<ImagePtr()> frame, QWidget *parent)
+        : QWidget(parent)
+        , avatar_(std::move(avatar))
+        , frame_(std::move(frame))
+    {
+        this->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        // Repaint while images load, and for animated frames
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                if (this->isVisible() && this->needsRepaint())
+                {
+                    this->update();
+                }
+            });
+        this->connections_.managedConnect(
+            getApp()->getWindows()->layoutRequested, [this](Channel *) {
+                if (this->isVisible() && this->needsRepaint())
+                {
+                    this->update();
+                }
+            });
+    }
+
+    void paintInto(QPainter &painter, const QRectF &rect)
+    {
+        const auto avatar = this->avatar_ ? this->avatar_() : nullptr;
+        const auto frame = this->frame_ ? this->frame_() : nullptr;
+        QPixmap avatarPixmap;
+        bool loading = false;
+        if (avatar)
+        {
+            if (auto pixmap = avatar->pixmapOrLoad())
+            {
+                avatarPixmap = *pixmap;
+            }
+            else
+            {
+                loading = true;
+            }
+        }
+        if (!paintAvatarWithFrame(painter, rect, avatarPixmap, frame))
+        {
+            loading = true;
+        }
+        this->loading_ = loading;
+        this->animated_ = frame && frame->animated();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        const auto side = std::min(this->width(), this->height());
+        this->paintInto(painter,
+                        QRectF((this->width() - side) / 2.0,
+                               (this->height() - side) / 2.0, side, side));
+    }
+
+private:
+    bool needsRepaint() const
+    {
+        return this->loading_ || this->animated_;
+    }
+
+    std::function<ImagePtr()> avatar_;
+    std::function<ImagePtr()> frame_;
+    bool loading_ = true;
+    bool animated_ = false;
+    pajlada::Signals::SignalHolder connections_;
+};
+
+/// A JilTV frame around the own profile picture, to pick it.
+class FrameTileButton final : public QPushButton
+{
+public:
+    FrameTileButton(const GqlBadge &frame, std::function<ImagePtr()> avatar,
+                    const ImagePtr &frameImage, QWidget *parent)
+        : QPushButton(parent)
+    {
+        this->setCursor(Qt::PointingHandCursor);
+        this->setFocusPolicy(Qt::StrongFocus);
+        this->setAttribute(Qt::WA_Hover, true);
+        this->setFlat(true);
+        this->setFixedSize(FRAME_TILE_SIZE, FRAME_TILE_SIZE);
+        this->setToolTip(frame.title);
+        this->picture_ = new AvatarWithFrame(
+            std::move(avatar),
+            [frameImage] {
+                return frameImage;
+            },
+            this);
+        this->picture_->hide();
+        // The hidden picture doesn't repaint itself, so the tile does
+        this->connections_.managedConnect(
+            getApp()->getEmotes()->getGIFTimer()->signal, [this] {
+                if (this->isVisible())
+                {
+                    this->update();
+                }
+            });
+    }
+
+    void setSelected(bool selected)
+    {
+        this->selected_ = selected;
+        this->update();
+    }
+
+protected:
+    bool event(QEvent *event) override
+    {
+        return handleTileTooltip(this, event) || QPushButton::event(event);
+    }
+
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const auto rect = this->rect().adjusted(0, 0, -1, -1);
+        if (this->selected_)
+        {
+            const auto selectionRect = this->rect().adjusted(1, 1, -2, -2);
+            painter.setPen(QPen(QColor(BADGE_SELECTED_COLOR), 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(selectionRect);
+            paintBadgeTileBackground(painter,
+                                     selectionRect.adjusted(2, 2, -2, -2),
+                                     this->underMouse(), this->isDown(), true);
+        }
+        else
+        {
+            paintBadgeTileBackground(painter, rect, this->underMouse(),
+                                     this->isDown(), true);
+        }
+
+        // A gap to the round edge, like badges have to theirs
+        const int pad = BADGE_TILE_PADDING;
+        const auto side = std::min(rect.width(), rect.height()) - (pad * 2);
+        this->picture_->paintInto(
+            painter, QRectF((rect.width() - side) / 2.0,
+                            (rect.height() - side) / 2.0, side, side));
+
+        if (this->hasFocus())
+        {
+            paintBadgeTileFocusRing(painter, rect, true);
+        }
+    }
+
+private:
+    AvatarWithFrame *picture_{};
     bool selected_ = false;
     pajlada::Signals::SignalHolder connections_;
 };
@@ -1745,8 +1985,24 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
     previewLayout->setContentsMargins(0, scaledMetric(this->scale(), 4, 2), 0,
                                       scaledMetric(this->scale(), 4, 2));
     previewLayout->setSpacing(0);
+    auto *previewRow = new QHBoxLayout();
+    previewRow->setContentsMargins(0, 0, 0, 0);
+    previewRow->setSpacing(scaledMetric(this->scale(), 6, 3));
+    this->previewAvatar_ = new AvatarWithFrame(
+        [this] {
+            return this->ownAvatar_;
+        },
+        [this] {
+            return this->previewFrame();
+        },
+        this->previewWidget_);
+    const int avatarSide = scaledMetric(this->scale(), 40, 24);
+    this->previewAvatar_->setFixedSize(avatarSide, avatarSide);
+    previewRow->addWidget(this->previewAvatar_, 0, Qt::AlignVCenter);
     this->previewView_ = new MessageView(this->previewWidget_);
-    previewLayout->addWidget(this->previewView_);
+    previewRow->addWidget(this->previewView_, 1);
+    previewLayout->addLayout(previewRow);
+    this->loadOwnAvatar();
     this->mainLayout_->addWidget(this->previewWidget_);
 
     // Tab rows
@@ -1849,14 +2105,27 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
         makeTab(otherTabRow, "BTTV Paint", View::BttvEffects);
     this->bttvTabButton_ = makeTab(otherTabRow, "BTTV Badge", View::Bttv);
     otherTabRow->addWidget(this->moltorinoTabButton_, 1);
+    this->solrinoTabButton_ = makeTab(otherTabRow, "Solrino", View::Solrino);
+    this->chatleeTabButton_ = makeTab(otherTabRow, "Chatlee", View::Chatlee);
     auto *paintTabRow = new QHBoxLayout();
     paintTabRow->setSpacing(tabSpacing);
     this->bluzyrinoTabButton_ =
         makeTab(paintTabRow, "Bluzyrino", View::Bluzyrino);
     this->jilChatTabButton_ = makeTab(paintTabRow, "JilChat", View::JilChat);
+    this->dankChatTabButton_ = makeTab(paintTabRow, "DankChat", View::DankChat);
     this->sevenTvPaintTabButton_ =
         makeTab(paintTabRow, "7TV Paint", View::SevenTvPaints);
     tabRows->addLayout(paintTabRow);
+    auto *jiltvTabRow = new QHBoxLayout();
+    jiltvTabRow->setSpacing(tabSpacing);
+    this->jiltvPaintTabButton_ =
+        makeTab(jiltvTabRow, "JilTV Paint", View::JiltvPaints);
+    this->jiltvBadgeTabButton_ =
+        makeTab(jiltvTabRow, "JilTV Badge", View::JiltvBadges);
+    this->jiltvFrameTabButton_ =
+        makeTab(jiltvTabRow, "JilTV Frame", View::JiltvFrames);
+    // Right after the Twitch badges
+    tabRows->insertLayout(1, jiltvTabRow);
     this->sevenTvBadgeTabButton_ =
         makeTab(extraTabRow, "7TV Badge", View::SevenTvBadges);
     extraTabRow->addWidget(this->colorTabButton_, 1);
@@ -1992,7 +2261,7 @@ void TwitchBadgePickerDialog::scaleChangedEvent(float scale)
     }
 }
 
-int TwitchBadgePickerDialog::badgeGridColumns() const
+int TwitchBadgePickerDialog::badgeGridColumns(int tileSize) const
 {
     int availableWidth = 0;
     if (this->scrollArea_ != nullptr)
@@ -2008,7 +2277,7 @@ int TwitchBadgePickerDialog::badgeGridColumns() const
             contentHorizontalMargin(scale) * 2;
     }
 
-    return badgeGridColumnsForWidth(availableWidth);
+    return badgeGridColumnsForWidth(availableWidth, tileSize);
 }
 
 void TwitchBadgePickerDialog::resizeEvent(QResizeEvent *event)
@@ -2103,9 +2372,13 @@ void TwitchBadgePickerDialog::rebuildContent()
 
     if (this->badgesLoading_ && this->view_ != View::Color &&
         this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
-        this->view_ != View::Moltorino && this->view_ != View::JilChat &&
-        this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
-        this->view_ != View::SevenTvPaints && this->view_ != View::Order)
+        this->view_ != View::Moltorino && this->view_ != View::Solrino &&
+        this->view_ != View::Chatlee && this->view_ != View::JilChat &&
+        this->view_ != View::Bluzyrino && this->view_ != View::DankChat &&
+        this->view_ != View::SevenTvBadges &&
+        this->view_ != View::SevenTvPaints && this->view_ != View::Order &&
+        this->view_ != View::JiltvPaints && this->view_ != View::JiltvBadges &&
+        this->view_ != View::JiltvFrames)
     {
         this->setStatus("Loading badges...");
         this->contentLayout_->addStretch(1);
@@ -2128,9 +2401,21 @@ void TwitchBadgePickerDialog::rebuildContent()
     {
         this->rebuildMoltorinoBadges();
     }
+    else if (this->view_ == View::Solrino)
+    {
+        this->rebuildSolrinoBadges();
+    }
+    else if (this->view_ == View::Chatlee)
+    {
+        this->rebuildChatleeBadges();
+    }
     else if (this->view_ == View::JilChat)
     {
         this->rebuildJilChatBadges();
+    }
+    else if (this->view_ == View::DankChat)
+    {
+        this->rebuildDankChat();
     }
     else if (this->view_ == View::Bluzyrino)
     {
@@ -2144,6 +2429,12 @@ void TwitchBadgePickerDialog::rebuildContent()
              this->view_ == View::SevenTvPaints)
     {
         this->rebuildSevenTv();
+    }
+    else if (this->view_ == View::JiltvPaints ||
+             this->view_ == View::JiltvBadges ||
+             this->view_ == View::JiltvFrames)
+    {
+        this->rebuildJiltv();
     }
     else if (this->view_ == View::Order)
     {
@@ -2207,6 +2498,7 @@ void TwitchBadgePickerDialog::rebuildGlobalBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Twitch badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         if (selected.setID.isEmpty())
             noBadgeTile->setSelected(true);
@@ -2538,7 +2830,7 @@ void TwitchBadgePickerDialog::rebuildEventBadges()
             {
                 const auto url = badge.streamDatabaseUrl;
                 QObject::connect(tile, &QPushButton::clicked, this, [url] {
-                    QDesktopServices::openUrl(QUrl(url));
+                    openWebUrl(QUrl(url));
                 });
             }
             return tile;
@@ -2555,7 +2847,7 @@ void TwitchBadgePickerDialog::rebuildEventBadges()
         {
             const auto url = badge.streamDatabaseUrl;
             QObject::connect(tile, &QPushButton::clicked, this, [url] {
-                QDesktopServices::openUrl(QUrl(url));
+                openWebUrl(QUrl(url));
             });
         }
         layout->addWidget(tile, 0, Qt::AlignHCenter);
@@ -2637,10 +2929,16 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->bttvTabButton_->setChecked(view == View::Bttv);
     this->bttvEffectTabButton_->setChecked(view == View::BttvEffects);
     this->moltorinoTabButton_->setChecked(view == View::Moltorino);
+    this->solrinoTabButton_->setChecked(view == View::Solrino);
+    this->chatleeTabButton_->setChecked(view == View::Chatlee);
     this->jilChatTabButton_->setChecked(view == View::JilChat);
     this->bluzyrinoTabButton_->setChecked(view == View::Bluzyrino);
+    this->dankChatTabButton_->setChecked(view == View::DankChat);
     this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
     this->sevenTvPaintTabButton_->setChecked(view == View::SevenTvPaints);
+    this->jiltvPaintTabButton_->setChecked(view == View::JiltvPaints);
+    this->jiltvBadgeTabButton_->setChecked(view == View::JiltvBadges);
+    this->jiltvFrameTabButton_->setChecked(view == View::JiltvFrames);
     this->updateSearchVisibility();
 
     if (view == View::EventBadges)
@@ -2651,6 +2949,14 @@ void TwitchBadgePickerDialog::switchView(View view)
     {
         this->loadMoltorinoBadges(false);
     }
+    else if (view == View::Solrino)
+    {
+        this->loadSolrinoBadges(false);
+    }
+    else if (view == View::Chatlee)
+    {
+        this->loadChatleeBadges(false);
+    }
     else if (view == View::JilChat)
     {
         this->loadJilChatBadges(false);
@@ -2659,9 +2965,18 @@ void TwitchBadgePickerDialog::switchView(View view)
     {
         this->loadBttv(false);
     }
+    else if (view == View::DankChat)
+    {
+        this->loadDankChat(false);
+    }
     else if (view == View::SevenTvBadges || view == View::SevenTvPaints)
     {
         this->loadSevenTv(false);
+    }
+    else if (view == View::JiltvPaints || view == View::JiltvBadges ||
+             view == View::JiltvFrames)
+    {
+        this->loadJiltv(false);
     }
 
     this->rebuildContent();
@@ -2671,9 +2986,9 @@ void TwitchBadgePickerDialog::updateSearchVisibility()
 {
     if (this->searchRowWidget_ != nullptr)
     {
-        this->searchRowWidget_->setVisible(this->view_ != View::Color &&
-                                           this->view_ != View::Bttv &&
-                                           this->view_ != View::Order);
+        this->searchRowWidget_->setVisible(
+            this->view_ != View::Color && this->view_ != View::Bttv &&
+            this->view_ != View::DankChat && this->view_ != View::Order);
     }
 }
 
@@ -2769,10 +3084,21 @@ void TwitchBadgePickerDialog::rebuildOrder()
     QObject::connect(list->model(), &QAbstractItemModel::rowsMoved, list,
                      saveRows);
 
-    auto *note =
-        new QLabel("This only changes how you see your own badges, and only in "
-                   "messages that arrive from now on.",
-                   this->contentWidget_);
+    auto *everyone = new QCheckBox("Use this order for everyone's badges",
+                                   this->contentWidget_);
+    everyone->setToolTip(
+        "Sorts the badges of other users' messages like yours too. Hidden "
+        "badges stay hidden only on your own messages.");
+    everyone->setChecked(getSettings()->ownBadgeOrderForEveryone);
+    QObject::connect(everyone, &QCheckBox::toggled, this, [](bool checked) {
+        getSettings()->ownBadgeOrderForEveryone = checked;
+    });
+    this->contentLayout_->addWidget(everyone);
+
+    auto *note = new QLabel(
+        "This only changes how you see the badges, others still see them in "
+        "their usual order. It applies to messages that arrive from now on.",
+        this->contentWidget_);
     note->setWordWrap(true);
     this->contentLayout_->addWidget(note);
 }
@@ -3128,8 +3454,17 @@ void TwitchBadgePickerDialog::updatePreview()
     const auto message = this->buildPreviewMessage();
     const int contentWidth = measureMessageContentWidth(
         message, this->scale(), float(this->devicePixelRatioF()));
-    this->applyPreviewDialogWidth(contentWidth);
+    // Room for the profile picture next to the message
+    const int avatarWidth =
+        this->previewAvatar_ == nullptr
+            ? 0
+            : this->previewAvatar_->width() + scaledMetric(this->scale(), 6, 3);
+    this->applyPreviewDialogWidth(contentWidth + avatarWidth);
     this->previewView_->setWidth(contentWidth);
+    if (this->previewAvatar_ != nullptr)
+    {
+        this->previewAvatar_->update();
+    }
     this->previewView_->setFullMessage(message);
 }
 
@@ -3810,6 +4145,7 @@ void TwitchBadgePickerDialog::rebuildMoltorinoBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Moltorino badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         noBadgeTile->setSelected(this->moltorinoSelected_.isEmpty());
         QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
@@ -3859,6 +4195,495 @@ void TwitchBadgePickerDialog::rebuildMoltorinoBadges()
     }
 
     this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::rebuildSolrinoBadges()
+{
+    if (this->solrinoLoading_ || !this->solrinoLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+    auto *label = new QLabel("Solrino badge", this->contentWidget_);
+    label->setObjectName("TwitchBadgePickerSectionLabel");
+    this->contentLayout_->addWidget(label);
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Solrino badge"));
+        noBadgeTile->setEnabled(!this->actionInFlight_);
+        noBadgeTile->setSelected(this->solrinoSelected_.isEmpty());
+        QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+            this->selectSolrino({});
+        });
+        grid->addWidget(noBadgeTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &option : std::as_const(this->solrinoBadges_))
+    {
+        if (!badgeMatchesSearch(option.badge, needle))
+        {
+            continue;
+        }
+
+        auto *tile = new BadgeTileButton(option.badge, gridWidget);
+        tile->setSelected(option.badge.id == this->solrinoSelected_);
+        if (option.owned)
+        {
+            tile->setEnabled(!this->actionInFlight_);
+            QObject::connect(tile, &QPushButton::clicked, this,
+                             [this, id = option.badge.id] {
+                                 this->selectSolrino(id);
+                             });
+        }
+        else
+        {
+            // Not unlocked: shown dimmed for a preview, like in Solrino.
+            tile->setEnabled(false);
+            tile->setToolTip(option.badge.title + QStringLiteral(" (locked)"));
+            auto *dim = new QGraphicsOpacityEffect(tile);
+            dim->setOpacity(0.35);
+            tile->setGraphicsEffect(dim);
+        }
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0 && !needle.isEmpty())
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            QStringLiteral("No matching badges."), this->contentWidget_));
+        return;
+    }
+
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::loadSolrinoBadges(bool force)
+{
+    if (this->solrinoLoading_ || (this->solrinoLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        this->setStatus(QStringLiteral("Log in with Twitch to pick a Solrino "
+                                       "badge."),
+                        true);
+        this->rebuildContent();
+        return;
+    }
+
+    this->solrinoLoading_ = true;
+    this->setStatus("Loading Solrino badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto fail = [self](const NetworkResult &result) {
+        if (!self)
+        {
+            return;
+        }
+        self->solrinoLoading_ = false;
+        self->setStatus(QStringLiteral("Could not load Solrino badges: %1")
+                            .arg(result.formatError()),
+                        true);
+        self->rebuildContent();
+    };
+
+    QUrl profileUrl(QString::fromLatin1(SOLRINO_PROFILE_URL));
+    profileUrl.setQuery(QUrlQuery{{"userId", account->getUserId()}});
+
+    // All badges first, then which ones the user owns and picked.
+    NetworkRequest(QString::fromLatin1(SOLRINO_BADGES_URL))
+        .timeout(15000)
+        .onSuccess([self, profileUrl, fail](const NetworkResult &list) {
+            if (!self)
+            {
+                return;
+            }
+            const auto badges = list.parseJson().value("badges").toArray();
+
+            NetworkRequest(profileUrl)
+                .header("Accept", "application/json")
+                .timeout(15000)
+                .onSuccess([self, badges](const NetworkResult &result) {
+                    if (!self)
+                    {
+                        return;
+                    }
+                    const auto root = result.parseJson();
+                    const auto profile = root.value("profile").toObject();
+
+                    QSet<QString> owned;
+                    const auto assigned =
+                        root.value("assignedBadges").toArray();
+                    for (const auto &value : assigned)
+                    {
+                        owned.insert(
+                            value.isObject()
+                                ? value.toObject().value("id").toString()
+                                : value.toString());
+                    }
+
+                    self->solrinoBadges_.clear();
+                    for (const auto &value : badges)
+                    {
+                        const auto badge = value.toObject();
+                        const auto id = badge.value("id").toString();
+                        const auto images = badge.value("images").toObject();
+                        if (id.isEmpty())
+                        {
+                            continue;
+                        }
+                        const bool isOwned = owned.contains(id);
+                        // Unlisted badges only show up for people who own them.
+                        if (!isOwned && !badge.value("listed").toBool(true))
+                        {
+                            continue;
+                        }
+                        self->solrinoBadges_.push_back({
+                            .badge =
+                                {
+                                    .id = id,
+                                    .setID = id,
+                                    .title =
+                                        badge.value("tooltip").toString(id),
+                                    .description =
+                                        badge.value("description").toString(),
+                                    .image1x = images.value("1x").toString(),
+                                    .image2x = images.value("2x").toString(),
+                                    .image4x = images.value("3x").toString(),
+                                },
+                            .owned = isOwned,
+                        });
+                    }
+                    std::ranges::stable_partition(self->solrinoBadges_,
+                                                  [](const auto &option) {
+                                                      return option.owned;
+                                                  });
+
+                    self->solrinoProfile_ = profile;
+                    self->solrinoSelected_ =
+                        profile.value("selectedBadge").toString();
+                    self->solrinoLoading_ = false;
+                    self->solrinoLoaded_ = true;
+                    self->setStatus({});
+                    self->rebuildContent();
+                })
+                .onError(fail)
+                .execute();
+        })
+        .onError(fail)
+        .execute();
+}
+
+void TwitchBadgePickerDialog::rebuildChatleeBadges()
+{
+    if (this->chatleeLoading_ || !this->chatleeLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+    auto *label = new QLabel("Chatlee badge", this->contentWidget_);
+    label->setObjectName("TwitchBadgePickerSectionLabel");
+    this->contentLayout_->addWidget(label);
+
+    const int gridColumns = this->badgeGridColumns();
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No Chatlee badge"));
+        noBadgeTile->setEnabled(!this->actionInFlight_);
+        noBadgeTile->setSelected(this->chatleeSelected_.isEmpty());
+        QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
+            this->selectChatlee({});
+        });
+        grid->addWidget(noBadgeTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &option : std::as_const(this->chatleeBadges_))
+    {
+        if (!badgeMatchesSearch(option.badge, needle))
+        {
+            continue;
+        }
+        auto *tile = new BadgeTileButton(option.badge, gridWidget);
+        tile->setSelected(option.badge.id == this->chatleeSelected_);
+        tile->setEnabled(!this->actionInFlight_);
+        QObject::connect(tile, &QPushButton::clicked, this,
+                         [this, id = option.badge.id] {
+                             this->selectChatlee(id);
+                         });
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0)
+    {
+        this->contentLayout_->addWidget(makeEmptyListLabel(
+            needle.isEmpty()
+                ? QStringLiteral("You don't have any Chatlee badges yet. Get "
+                                 "them on chatlee.lol.")
+                : QStringLiteral("No matching badges."),
+            this->contentWidget_));
+        if (!needle.isEmpty())
+        {
+            return;
+        }
+    }
+
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::loadChatleeBadges(bool force)
+{
+    if (this->chatleeLoading_ || (this->chatleeLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        this->setStatus(QStringLiteral("Log in with Twitch to pick a Chatlee "
+                                       "badge."),
+                        true);
+        this->rebuildContent();
+        return;
+    }
+
+    this->chatleeLoading_ = true;
+    this->setStatus("Loading Chatlee badges...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    // Every badge the account owns, and which one it wears
+    NetworkRequest(QStringLiteral("https://api.chatlee.lol/api/chatlee/badges/"
+                                  "user/") +
+                   account->getUserId())
+        .header("Accept", "application/json")
+        .header("User-Agent", ChatleeBadges::userAgent())
+        .timeout(15000)
+        .onSuccess([self](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->chatleeBadges_.clear();
+            self->chatleeSelected_.clear();
+            const auto badges = result.parseJsonArray();
+            for (const auto &value : badges)
+            {
+                const auto badge = value.toObject();
+                const auto slug = badge.value("badge_id").toString();
+                const auto image = badge.value("image_url").toString();
+                if (slug.isEmpty() || image.isEmpty())
+                {
+                    continue;
+                }
+                if (badge.value("active").toBool())
+                {
+                    self->chatleeSelected_ = slug;
+                }
+                self->chatleeBadges_.push_back({
+                    .badge =
+                        {
+                            .id = slug,
+                            .setID = slug,
+                            .title = badge.value("name").toString(slug),
+                            .description = {},
+                            .image1x = image,
+                            .image2x = image,
+                            .image4x = image,
+                        },
+                    .owned = true,
+                });
+            }
+            self->chatleeLoading_ = false;
+            self->chatleeLoaded_ = true;
+            self->setStatus({});
+            self->rebuildContent();
+        })
+        .onError([self](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->chatleeLoading_ = false;
+            self->setStatus(QStringLiteral("Could not load Chatlee badges: %1")
+                                .arg(result.formatError()),
+                            true);
+            self->rebuildContent();
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::selectChatlee(const QString &slug)
+{
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        return;
+    }
+
+    const auto previous = this->chatleeSelected_;
+    this->chatleeSelected_ = slug;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    // Chatlee asks Twitch who the token belongs to, so it can only change
+    // the user's own badge
+    const QJsonObject body =
+        slug.isEmpty() ? QJsonObject{{"type", "none"}}
+                       : QJsonObject{{"type", "custom"}, {"badge_id", slug}};
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QStringLiteral("https://api.chatlee.lol/api/chatlee/badges/"
+                                  "me/active"),
+                   NetworkRequestType::Put)
+        .header("Authorization", "Bearer " + account->getOAuthToken().toUtf8())
+        .header("Accept", "application/json")
+        .header("User-Agent", ChatleeBadges::userAgent())
+        .json(body)
+        .timeout(15000)
+        .onSuccess([self, slug](const NetworkResult &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->channel_->addSystemMessage(
+                slug.isEmpty()
+                    ? QStringLiteral("Chatlee badge cleared.")
+                    : QStringLiteral("Chatlee badge set to: %1").arg(slug));
+            self->rebuildContent();
+            // So the chat shows it right away, not with the next minute
+            getApp()->getChatleeBadges()->load();
+        })
+        .onError([self, previous](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->chatleeSelected_ = previous;
+            self->setStatus(
+                QStringLiteral("Could not change the Chatlee badge: %1")
+                    .arg(result.formatError()),
+                true);
+            self->chatleeLoaded_ = false;
+            self->loadChatleeBadges(true);
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::selectSolrino(const QString &badgeId)
+{
+    const auto account = getApp()->getAccounts()->twitch.getCurrent();
+    if (account->isAnon())
+    {
+        return;
+    }
+
+    // Keep the order and hidden badges, only change the selection. Twitch
+    // confirms who this is, so nobody can change someone else's badges.
+    const auto &profile = this->solrinoProfile_;
+    QJsonObject body{
+        {"userId", account->getUserId()},
+        {"revision", profile.value("revision")},
+        {"layoutSchemaVersion", profile.value("layoutSchemaVersion").toInt(1)},
+        {"order", profile.value("order").toArray()},
+        {"hidden", profile.value("hidden").toArray()},
+        {"selectedBadge", badgeId.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                            : QJsonValue(badgeId)},
+        {"badgeSelectionExplicit", true},
+    };
+
+    const auto previous = this->solrinoSelected_;
+    this->solrinoSelected_ = badgeId;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    NetworkRequest(QString::fromLatin1(SOLRINO_PROFILE_URL),
+                   NetworkRequestType::Put)
+        .header("Authorization", "OAuth " + account->getOAuthToken().toUtf8())
+        .header("Accept", "application/json")
+        .json(body)
+        .timeout(15000)
+        .onSuccess([self, badgeId](const NetworkResult &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->channel_->addSystemMessage(
+                badgeId.isEmpty()
+                    ? QStringLiteral("Solrino badge cleared.")
+                    : QStringLiteral("Solrino badge set to: %1").arg(badgeId));
+            // New revision for the next change; badges for the chat.
+            self->loadSolrinoBadges(true);
+            getApp()->getSolrinoBadges()->load();
+        })
+        .onError([self, previous](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->solrinoSelected_ = previous;
+            self->setStatus(
+                QStringLiteral("Could not change the Solrino badge: %1")
+                    .arg(result.formatError()),
+                true);
+            // The profile may have changed elsewhere; load it again.
+            self->solrinoLoaded_ = false;
+            self->loadSolrinoBadges(true);
+        })
+        .execute();
 }
 
 void TwitchBadgePickerDialog::loadJilChatBadges(bool force)
@@ -4050,6 +4875,7 @@ void TwitchBadgePickerDialog::rebuildJilChatBadges()
     if (needle.isEmpty())
     {
         auto *noBadgeTile = new NoBadgeTileButton(gridWidget);
+        noBadgeTile->setToolTip(QStringLiteral("No JilChat badge"));
         noBadgeTile->setEnabled(!this->actionInFlight_);
         noBadgeTile->setSelected(this->jilChatSelected_.isEmpty());
         QObject::connect(noBadgeTile, &QPushButton::clicked, this, [this] {
@@ -4146,17 +4972,20 @@ void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
             selected = this->bluzyrinoPending_;
         }
     }
-    if (selected.isEmpty() || !isOwned(selected))
+    QString firstOwnedDonor;
+    for (const auto &badge : catalog)
     {
-        selected.clear();
-        for (const auto &badge : catalog)
+        if (badge.category == donor && isOwned(badge.id))
         {
-            if (badge.category == donor && isOwned(badge.id))
-            {
-                selected = badge.id;
-                break;
-            }
+            firstOwnedDonor = badge.id;
+            break;
         }
+    }
+    // Hidden for everyone: nothing is picked, any tier shows it again
+    const bool donorHidden = selected == NO_DONOR_BADGE;
+    if (!donorHidden && (selected.isEmpty() || !isOwned(selected)))
+    {
+        selected = firstOwnedDonor;
     }
 
     if (bluzyrino->ownsFounder(userId))
@@ -4184,6 +5013,36 @@ void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
         QWidget *gridWidget = nullptr;
         QGridLayout *grid = nullptr;
         int index = 0;
+        const auto startGrid = [&] {
+            auto *label = new QLabel(title, this->contentWidget_);
+            label->setObjectName("TwitchBadgePickerSectionLabel");
+            this->contentLayout_->addWidget(label);
+
+            gridWidget = new QWidget(this->contentWidget_);
+            grid = new QGridLayout(gridWidget);
+            grid->setContentsMargins(0, 0, 0, 0);
+            grid->setSpacing(BADGE_GRID_SPACING);
+        };
+
+        // Wearing no donor badge, saved on the registry so nobody sees one
+        if (pickable && !firstOwnedDonor.isEmpty() && needle.isEmpty())
+        {
+            startGrid();
+            auto *noneTile = new NoBadgeTileButton(gridWidget);
+            noneTile->setToolTip(QStringLiteral("No Bluzyrino badge"));
+            noneTile->setSelected(donorHidden);
+            noneTile->setEnabled(!this->actionInFlight_);
+            if (!donorHidden)
+            {
+                QObject::connect(noneTile, &QPushButton::clicked, this, [this] {
+                    this->selectBluzyrino(NO_DONOR_BADGE.toString(),
+                                          QStringLiteral("No donor badge"));
+                });
+            }
+            grid->addWidget(noneTile, 0, 0);
+            ++index;
+        }
+
         for (const auto &badge : catalog)
         {
             if (badge.category != category || !badge.emote)
@@ -4205,14 +5064,7 @@ void TwitchBadgePickerDialog::rebuildBluzyrinoBadges()
 
             if (grid == nullptr)
             {
-                auto *label = new QLabel(title, this->contentWidget_);
-                label->setObjectName("TwitchBadgePickerSectionLabel");
-                this->contentLayout_->addWidget(label);
-
-                gridWidget = new QWidget(this->contentWidget_);
-                grid = new QGridLayout(gridWidget);
-                grid->setContentsMargins(0, 0, 0, 0);
-                grid->setSpacing(BADGE_GRID_SPACING);
+                startGrid();
             }
 
             auto *tile = new BadgeTileButton(tileBadge, gridWidget);
@@ -4886,7 +5738,8 @@ void TwitchBadgePickerDialog::rebuildSevenTv()
 }
 
 std::optional<QString> TwitchBadgePickerDialog::askForToken(
-    const QString &service, const QString &command, const QString &site)
+    const QString &service, const QString &command, const QString &site,
+    const QString &steps, const QString &placeholder)
 {
     // The popup deletes itself when it loses focus, which the connect window
     // takes. Keep it open while the connect window is shown.
@@ -4898,27 +5751,37 @@ std::optional<QString> TwitchBadgePickerDialog::askForToken(
     dialog.setWindowTitle(QStringLiteral("Connect %1").arg(service));
     auto *layout = new QVBoxLayout(&dialog);
     auto *intro = new QLabel(
-        QStringLiteral(
-            "1. Click \"Copy command\" and open %1 while signed in.\n"
-            "2. Run the copied command in its browser console (F12).\n"
-            "3. Paste the copied token below.\n\n"
-            "Your %1 token stays on this device.")
-            .arg(service),
+        !steps.isEmpty()
+            ? steps
+            : QStringLiteral(
+                  "1. Click \"Copy command\" and open %1 while signed in.\n"
+                  "2. Run the copied command in its browser console (F12).\n"
+                  "3. Paste the copied token below.\n\n"
+                  "Your %1 token stays on this device.")
+                  .arg(service),
         &dialog);
     intro->setWordWrap(true);
     layout->addWidget(intro);
 
     auto *copyButton = new QPushButton(
-        QStringLiteral("Copy command and open %1").arg(service), &dialog);
+        command.isEmpty()
+            ? QStringLiteral("Open %1").arg(service)
+            : QStringLiteral("Copy command and open %1").arg(service),
+        &dialog);
     QObject::connect(copyButton, &QPushButton::clicked, &dialog,
                      [command, site] {
-                         crossPlatformCopy(command);
+                         if (!command.isEmpty())
+                         {
+                             crossPlatformCopy(command);
+                         }
                          QDesktopServices::openUrl(QUrl(site));
                      });
     layout->addWidget(copyButton);
 
     auto *tokenInput = new QLineEdit(&dialog);
-    tokenInput->setPlaceholderText(QStringLiteral("%1 token").arg(service));
+    tokenInput->setPlaceholderText(placeholder.isEmpty()
+                                       ? QStringLiteral("%1 token").arg(service)
+                                       : placeholder);
     tokenInput->setEchoMode(QLineEdit::Password);
     layout->addWidget(tokenInput);
 
@@ -5053,6 +5916,1005 @@ void TwitchBadgePickerDialog::selectSevenTv(bool paint, const QString &id)
             (paint ? self->sevenTvActivePaint_ : self->sevenTvActiveBadge_) =
                 previous;
             self->setStatus(error, true);
+            self->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::loadJiltv(bool force)
+{
+    if (this->jiltvLoading_ || (this->jiltvLoaded_ && !force))
+    {
+        return;
+    }
+
+    this->jiltvLoading_ = true;
+    this->setStatus("Loading JilTV...");
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    JiltvAuth::instance().load(this, [self] {
+        if (!self)
+        {
+            return;
+        }
+        if (!JiltvAuth::instance().signedIn())
+        {
+            self->jiltvLoading_ = false;
+            self->setStatus({});
+            self->rebuildContent();
+            return;
+        }
+
+        JiltvAuth::instance().graphql(
+            QString::fromLatin1(JILTV_INVENTORY_QUERY), {},
+            [self](const QJsonObject &data) {
+                if (!self)
+                {
+                    return;
+                }
+                self->jiltvLoading_ = false;
+                const auto user =
+                    data.value("viewer").toObject().value("user").toObject();
+                const auto idOf = [&](const char *key) {
+                    return user.value(key).toObject().value("id").toString();
+                };
+                self->jiltvActivePaint_ = idOf("paint");
+                self->jiltvActiveBadge_ = idOf("badge");
+                self->jiltvActiveFrame_ = idOf("decoration");
+
+                self->jiltvPaints_.clear();
+                const auto paints = user.value("ownedPaints").toArray();
+                for (const auto &value : paints)
+                {
+                    const auto paint =
+                        value.toObject().value("paint").toObject();
+                    const auto id = paint.value("id").toString();
+                    if (!id.isEmpty())
+                    {
+                        self->jiltvPaints_.push_back(
+                            {.id = id, .name = paint.value("name").toString()});
+                    }
+                }
+
+                // Badges and frames come as one image each.
+                const auto readImages = [](const QJsonArray &grants,
+                                           const char *key) {
+                    QVector<GqlBadge> out;
+                    for (const auto &value : grants)
+                    {
+                        const auto item =
+                            value.toObject().value(key).toObject();
+                        const auto id = item.value("id").toString();
+                        const auto image = item.value("imageUrl").toString();
+                        if (id.isEmpty() || image.isEmpty())
+                        {
+                            continue;
+                        }
+                        out.push_back({
+                            .id = id,
+                            .setID = id,
+                            .title = item.value("name").toString(),
+                            .image1x = image,
+                            .image2x = image,
+                            .image4x = image,
+                        });
+                    }
+                    return out;
+                };
+                self->jiltvBadges_ =
+                    readImages(user.value("ownedBadges").toArray(), "badge");
+                self->jiltvFrames_ = readImages(
+                    user.value("ownedDecorations").toArray(), "decoration");
+
+                self->jiltvLoaded_ = true;
+                self->setStatus({});
+                self->rebuildContent();
+            },
+            [self](const QString &error) {
+                if (!self)
+                {
+                    return;
+                }
+                self->jiltvLoading_ = false;
+                self->setStatus(error, true);
+                self->rebuildContent();
+            });
+    });
+}
+
+void TwitchBadgePickerDialog::rebuildJiltv()
+{
+    const auto kind = this->view_;
+    const bool connected = JiltvAuth::instance().signedIn();
+
+    QString titleText;
+    QString what;
+    if (kind == View::JiltvPaints)
+    {
+        titleText = "JilTV paint";
+        what = "paint";
+    }
+    else if (kind == View::JiltvBadges)
+    {
+        titleText = "JilTV badge";
+        what = "badge";
+    }
+    else
+    {
+        titleText = "JilTV frame";
+        what = "frame";
+    }
+
+    auto *headerRow = new QWidget(this->contentWidget_);
+    auto *header = new QHBoxLayout(headerRow);
+    header->setContentsMargins(0, 0, 0, 0);
+    auto *texts = new QVBoxLayout();
+    texts->setSpacing(0);
+    auto *title = new QLabel(titleText, this->contentWidget_);
+    title->setObjectName("TwitchBadgePickerSectionLabel");
+    texts->addWidget(title);
+    QString hintText;
+    if (!connected)
+    {
+        hintText =
+            QStringLiteral("Sign in with JilTV to choose a %1.").arg(what);
+    }
+    else if (kind == View::JiltvFrames)
+    {
+        hintText = "Choose the frame around your JilTV profile picture.";
+    }
+    else
+    {
+        hintText = QStringLiteral("Choose one of your JilTV %1s.").arg(what);
+    }
+    auto *hint = new QLabel(hintText, this->contentWidget_);
+    hint->setWordWrap(true);
+    texts->addWidget(hint);
+    header->addLayout(texts, 1);
+    auto *connectButton =
+        new QPushButton(connected ? "Sign out" : "Sign in", headerRow);
+    connectButton->setCursor(Qt::PointingHandCursor);
+    connectButton->setEnabled(!this->jiltvLoading_ && !this->actionInFlight_);
+    QObject::connect(connectButton, &QPushButton::clicked, this,
+                     [this, connected] {
+                         // Later: both rebuild the content, which deletes this
+                         // button.
+                         QTimer::singleShot(0, this, [this, connected] {
+                             if (connected)
+                             {
+                                 this->signOutJiltv();
+                             }
+                             else
+                             {
+                                 this->signInJiltv();
+                             }
+                         });
+                     });
+    header->addWidget(connectButton, 0, Qt::AlignTop);
+    this->contentLayout_->addWidget(headerRow);
+
+    if (!connected || this->jiltvLoading_ || !this->jiltvLoaded_)
+    {
+        return;
+    }
+
+    const auto needle = this->searchQuery_.trimmed();
+
+    if (kind == View::JiltvPaints)
+    {
+        // Your name in each paint, two per row.
+        auto user = getApp()->getAccounts()->twitch.getCurrent();
+        const auto userName = user->getUserName();
+        auto userColor = user->color();
+        if (!userColor.isValid())
+        {
+            userColor = this->theme->window.text;
+        }
+
+        auto *list = new QWidget(this->contentWidget_);
+        auto *paintGrid = new QGridLayout(list);
+        paintGrid->setContentsMargins(0, 0, 0, 0);
+        paintGrid->setSpacing(BADGE_GRID_SPACING);
+        constexpr int paintColumns = 2;
+        int paintIndex = 0;
+        const auto addPaint = [&](const QString &id, const QString &name) {
+            auto *tile =
+                new PaintTileButton(id, name, userName, userColor, list, true);
+            tile->setSelected(id == this->jiltvActivePaint_);
+            tile->setEnabled(!this->actionInFlight_);
+            QObject::connect(tile, &QPushButton::clicked, this, [this, id] {
+                this->selectJiltv(View::JiltvPaints, id);
+            });
+            paintGrid->addWidget(tile, paintIndex / paintColumns,
+                                 paintIndex % paintColumns);
+            ++paintIndex;
+        };
+        if (needle.isEmpty())
+        {
+            addPaint({}, "No paint");
+        }
+        int shown = 0;
+        for (const auto &paint : std::as_const(this->jiltvPaints_))
+        {
+            if (paint.name.contains(needle, Qt::CaseInsensitive))
+            {
+                addPaint(paint.id, paint.name);
+                ++shown;
+            }
+        }
+        if (shown == 0 && !needle.isEmpty())
+        {
+            this->contentLayout_->addWidget(makeEmptyListLabel(
+                QStringLiteral("No matching paints."), this->contentWidget_));
+            return;
+        }
+        this->contentLayout_->addWidget(list);
+        return;
+    }
+
+    const auto &items =
+        kind == View::JiltvBadges ? this->jiltvBadges_ : this->jiltvFrames_;
+    const auto &active = kind == View::JiltvBadges ? this->jiltvActiveBadge_
+                                                   : this->jiltvActiveFrame_;
+
+    const int gridColumns =
+        this->badgeGridColumns(kind == View::JiltvFrames ? FRAME_TILE_SIZE : 0);
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+    int row = 0;
+    int col = 0;
+    const auto next = [&] {
+        if (++col >= gridColumns)
+        {
+            col = 0;
+            ++row;
+        }
+    };
+
+    if (needle.isEmpty())
+    {
+        auto *noneTile =
+            new NoBadgeTileButton(gridWidget, kind == View::JiltvFrames);
+        noneTile->setToolTip(QStringLiteral("No JilTV %1").arg(what));
+        noneTile->setEnabled(!this->actionInFlight_);
+        noneTile->setSelected(active.isEmpty());
+        QObject::connect(noneTile, &QPushButton::clicked, this, [this, kind] {
+            this->selectJiltv(kind, {});
+        });
+        grid->addWidget(noneTile, row, col);
+        next();
+    }
+
+    int shown = 0;
+    for (const auto &item : items)
+    {
+        if (!badgeMatchesSearch(item, needle))
+        {
+            continue;
+        }
+        QPushButton *tile = nullptr;
+        if (kind == View::JiltvFrames)
+        {
+            auto *frameTile = new FrameTileButton(
+                item,
+                [this] {
+                    return this->ownAvatar_;
+                },
+                this->jiltvFrameImage(item.id), gridWidget);
+            frameTile->setSelected(item.id == active);
+            tile = frameTile;
+        }
+        else
+        {
+            auto *badgeTile = new BadgeTileButton(item, gridWidget);
+            badgeTile->setSelected(item.id == active);
+            tile = badgeTile;
+        }
+        tile->setEnabled(!this->actionInFlight_);
+        QObject::connect(tile, &QPushButton::clicked, this,
+                         [this, kind, id = item.id] {
+                             this->selectJiltv(kind, id);
+                         });
+        grid->addWidget(tile, row, col);
+        ++shown;
+        next();
+    }
+
+    if (shown == 0 && !needle.isEmpty())
+    {
+        this->contentLayout_->addWidget(
+            makeEmptyListLabel(QStringLiteral("No matching %1s.").arg(what),
+                               this->contentWidget_));
+        return;
+    }
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::signInJiltv()
+{
+    // The popup deletes itself when it loses focus, which the sign-in window
+    // and the browser take. Keep it open meanwhile.
+    const auto deactivateAction = this->windowDeactivateAction;
+    this->windowDeactivateAction = WindowDeactivateAction::Nothing;
+    const QPointer<TwitchBadgePickerDialog> self = this;
+
+    QDialog dialog;
+    dialog.setWindowTitle(QStringLiteral("Sign in with JilTV"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *intro =
+        new QLabel(QStringLiteral("Getting a code from JilTV..."), &dialog);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    auto *codeLabel = new QLabel(&dialog);
+    codeLabel->setAlignment(Qt::AlignCenter);
+    codeLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    auto codeFont = codeLabel->font();
+    codeFont.setPointSizeF(codeFont.pointSizeF() * 2.2);
+    codeFont.setBold(true);
+    codeFont.setLetterSpacing(QFont::AbsoluteSpacing, 3);
+    codeLabel->setFont(codeFont);
+    codeLabel->hide();
+    layout->addWidget(codeLabel);
+
+    auto *openButton =
+        new QPushButton(QStringLiteral("Open jiltv.app"), &dialog);
+    openButton->hide();
+    layout->addWidget(openButton);
+
+    auto *stateLabel = new QLabel(&dialog);
+    stateLabel->setWordWrap(true);
+    layout->addWidget(stateLabel);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
+                     &QDialog::reject);
+    layout->addWidget(buttons);
+
+    // Polling, until the user answers or the code expires
+    QTimer pollTimer;
+    pollTimer.setSingleShot(true);
+    QString deviceCode;
+    int interval = 5;
+    QDateTime deadline;
+    QString failure;
+
+    const auto fail = [&](const QString &text) {
+        failure = text;
+        dialog.reject();
+    };
+
+    QObject::connect(&pollTimer, &QTimer::timeout, &dialog, [&] {
+        if (QDateTime::currentDateTimeUtc() > deadline)
+        {
+            fail(QStringLiteral("The JilTV code expired. Sign in again."));
+            return;
+        }
+        const QPointer<QDialog> alive = &dialog;
+        JiltvAuth::instance().poll(deviceCode, [&, alive](
+                                                   JiltvAuth::PollResult result,
+                                                   const QString &error) {
+            if (!alive)
+            {
+                return;
+            }
+            switch (result)
+            {
+                case JiltvAuth::PollResult::Done:
+                    dialog.accept();
+                    return;
+                case JiltvAuth::PollResult::SlowDown:
+                    interval += 5;
+                    [[fallthrough]];
+                case JiltvAuth::PollResult::Pending:
+                    pollTimer.start(interval * 1000);
+                    return;
+                case JiltvAuth::PollResult::Denied:
+                    fail(QStringLiteral("You declined the sign-in on "
+                                        "JilTV."));
+                    return;
+                case JiltvAuth::PollResult::Expired:
+                    fail(QStringLiteral(
+                        "The JilTV code expired. Sign in again."));
+                    return;
+                case JiltvAuth::PollResult::Failed:
+                    fail(QStringLiteral("JilTV sign-in failed: %1").arg(error));
+                    return;
+            }
+        });
+    });
+
+    const QPointer<QDialog> alive = &dialog;
+    JiltvAuth::requestDeviceCode(
+        [&, alive](const JiltvAuth::DeviceCode &code) {
+            if (!alive)
+            {
+                return;
+            }
+            deviceCode = code.deviceCode;
+            interval = std::max(code.interval, 1);
+            deadline = QDateTime::currentDateTimeUtc().addSecs(code.expiresIn);
+            intro->setText(QStringLiteral(
+                "Open jiltv.app, check that it shows this code and click "
+                "Allow:"));
+            codeLabel->setText(code.userCode);
+            codeLabel->show();
+            const auto url = code.verificationUriComplete.isEmpty()
+                                 ? code.verificationUri
+                                 : code.verificationUriComplete;
+            QObject::connect(openButton, &QPushButton::clicked, &dialog, [url] {
+                openWebUrl(QUrl(url));
+            });
+            openButton->show();
+            stateLabel->setText(QStringLiteral("Waiting for JilTV..."));
+            openWebUrl(QUrl(url));
+            pollTimer.start(interval * 1000);
+        },
+        [&, alive](const QString &error) {
+            if (alive)
+            {
+                fail(QStringLiteral("JilTV sign-in failed: %1").arg(error));
+            }
+        });
+
+    const auto accepted = dialog.exec() == QDialog::Accepted;
+    pollTimer.stop();
+    if (!self)
+    {
+        return;
+    }
+    this->windowDeactivateAction = deactivateAction;
+    this->activateWindow();
+    if (!accepted)
+    {
+        if (!failure.isEmpty())
+        {
+            this->setStatus(failure, true);
+            this->rebuildContent();
+        }
+        return;
+    }
+
+    this->setStatus({});
+    this->loadJiltv(true);
+    // Other clients see the personal emotes and cosmetics from now on
+    Jiltv::instance().updatePresence();
+}
+
+ImagePtr TwitchBadgePickerDialog::jiltvFrameImage(const QString &id) const
+{
+    if (id.isEmpty())
+    {
+        return nullptr;
+    }
+    if (auto image = Jiltv::instance().frameById(id))
+    {
+        return image;
+    }
+    // Not in the catalog (yet): the image from the inventory
+    for (const auto &frame : this->jiltvFrames_)
+    {
+        if (frame.id == id)
+        {
+            return Image::fromUrl(Url{frame.image1x});
+        }
+    }
+    return nullptr;
+}
+
+ImagePtr TwitchBadgePickerDialog::previewFrame() const
+{
+    // The one picked here once JilTV is loaded, else what JilTV says the
+    // user wears
+    if (this->jiltvLoaded_)
+    {
+        return this->jiltvFrameImage(this->jiltvActiveFrame_);
+    }
+    return Jiltv::instance().frame(
+        getApp()->getAccounts()->twitch.getCurrent()->getUserName());
+}
+
+void TwitchBadgePickerDialog::loadOwnAvatar()
+{
+    const auto user = getApp()->getAccounts()->twitch.getCurrent();
+    if (user->isAnon())
+    {
+        return;
+    }
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    getHelix()->getUserById(
+        user->getUserId(),
+        [self](const HelixUser &helixUser) {
+            if (!self || helixUser.profileImageUrl.isEmpty())
+            {
+                return;
+            }
+            self->ownAvatar_ = Image::fromUrl(Url{helixUser.profileImageUrl});
+            if (self->previewAvatar_ != nullptr)
+            {
+                self->previewAvatar_->update();
+            }
+            if (self->view_ == View::JiltvFrames)
+            {
+                self->rebuildContent();
+            }
+        },
+        [] {});
+}
+
+void TwitchBadgePickerDialog::signOutJiltv()
+{
+    JiltvAuth::instance().signOut();
+    this->jiltvLoaded_ = false;
+    this->jiltvPaints_.clear();
+    this->jiltvBadges_.clear();
+    this->jiltvFrames_.clear();
+    this->setStatus({});
+    this->rebuildContent();
+}
+
+void TwitchBadgePickerDialog::selectJiltv(View kind, const QString &id)
+{
+    QString *active = &this->jiltvActiveFrame_;
+    const char *mutation = JILTV_EQUIP_FRAME_MUTATION;
+    QString what = QStringLiteral("frame");
+    if (kind == View::JiltvPaints)
+    {
+        active = &this->jiltvActivePaint_;
+        mutation = JILTV_EQUIP_PAINT_MUTATION;
+        what = QStringLiteral("paint");
+    }
+    else if (kind == View::JiltvBadges)
+    {
+        active = &this->jiltvActiveBadge_;
+        mutation = JILTV_EQUIP_BADGE_MUTATION;
+        what = QStringLiteral("badge");
+    }
+
+    const auto previous = *active;
+    *active = id;
+    this->actionInFlight_ = true;
+    this->rebuildContent();
+
+    QString name;
+    if (kind == View::JiltvPaints)
+    {
+        for (const auto &p : std::as_const(this->jiltvPaints_))
+        {
+            if (p.id == id)
+            {
+                name = p.name;
+            }
+        }
+    }
+    else
+    {
+        const auto &items =
+            kind == View::JiltvBadges ? this->jiltvBadges_ : this->jiltvFrames_;
+        for (const auto &item : items)
+        {
+            if (item.id == id)
+            {
+                name = item.title;
+            }
+        }
+    }
+
+    const auto value =
+        id.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(id);
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    JiltvAuth::instance().graphql(
+        QString::fromLatin1(mutation), {{"id", value}},
+        [self, id, what, name](const QJsonObject &) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            // Show it here right away; others get it from the live
+            // cosmetics updates.
+            Jiltv::instance().setWorn(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+                self->jiltvActivePaint_, self->jiltvActiveBadge_,
+                self->jiltvActiveFrame_);
+            self->updatePreview();
+            if (id.isEmpty())
+            {
+                self->channel_->addSystemMessage(
+                    QStringLiteral("JilTV %1 removed.").arg(what));
+            }
+            else
+            {
+                self->channel_->addSystemMessage(
+                    QStringLiteral("JilTV %1 set to: %2").arg(what, name));
+            }
+            self->rebuildContent();
+        },
+        [self, kind, previous](const QString &error) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            if (kind == View::JiltvPaints)
+            {
+                self->jiltvActivePaint_ = previous;
+            }
+            else if (kind == View::JiltvBadges)
+            {
+                self->jiltvActiveBadge_ = previous;
+            }
+            else
+            {
+                self->jiltvActiveFrame_ = previous;
+            }
+            if (!JiltvAuth::instance().signedIn())
+            {
+                self->jiltvLoaded_ = false;
+            }
+            self->setStatus(error, true);
+            self->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::dankChatRequest(
+    const std::optional<QJsonObject> &put,
+    const std::function<void(const QJsonObject &)> &onData,
+    const std::function<void(const QString &)> &onError)
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    auto request =
+        NetworkRequest(QUrl(QString::fromLatin1(put ? DANKCHAT_BADGE_URL
+                                                    : DANKCHAT_ACCOUNT_URL)),
+                       put ? NetworkRequestType::Put : NetworkRequestType::Get)
+            .header("Cookie", "q_session=" + this->dankChatCookie_.toUtf8())
+            // the site's own requests send this; without it a signed out
+            // request is sent to the Twitch login instead of being refused
+            .header("X-Requested-With", "JavaScript")
+            .header("Accept", "application/json")
+            .timeout(15000);
+    if (put)
+    {
+        request = std::move(request).json(*put);
+    }
+    std::move(request)
+        .onSuccess([self, onData, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            const auto account = result.parseJson();
+            if (!account.contains(QStringLiteral("twitchId")))
+            {
+                // the login page instead of the account
+                onError(QStringLiteral(
+                    "Your DankChat login expired. Connect it again."));
+                return;
+            }
+            onData(account);
+        })
+        .onError([self, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            if (result.status() == 401 || result.status() == 499)
+            {
+                onError(QStringLiteral(
+                    "Your DankChat login expired. Connect it again."));
+                return;
+            }
+            const auto message = result.parseJson().value("message").toString();
+            onError(message.isEmpty() ? result.formatError() : message);
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::applyDankChatAccount(const QJsonObject &account)
+{
+    this->dankChatBadges_.clear();
+    const auto badges = account.value(QStringLiteral("badges")).toArray();
+    for (const auto &value : badges)
+    {
+        const auto badge = value.toObject();
+        this->dankChatBadges_.push_back({
+            .id = badge.value(QStringLiteral("id")).toString(),
+            .title = badge.value(QStringLiteral("title")).toString(),
+            .url = badge.value(QStringLiteral("url")).toString(),
+        });
+    }
+    const auto choice = account.value(QStringLiteral("choice")).toObject();
+    const auto type = choice.value(QStringLiteral("type")).toString();
+    if (type == u"badge")
+    {
+        this->dankChatChoice_ = QStringLiteral("badge:") +
+                                choice.value(QStringLiteral("id")).toString();
+    }
+    else if (type == u"hidden")
+    {
+        this->dankChatChoice_ = QStringLiteral("hidden");
+    }
+    else
+    {
+        this->dankChatChoice_ = QStringLiteral("automatic");
+    }
+    this->dankChatLoaded_ = true;
+}
+
+void TwitchBadgePickerDialog::loadDankChat(bool force)
+{
+    if (this->dankChatLoading_ || (this->dankChatLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto twitchUserId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+
+    // The cookie is read from the credential store once.
+    if (!this->dankChatCookieRead_)
+    {
+        this->dankChatLoading_ = true;
+        this->setStatus("Loading DankChat...");
+        this->rebuildContent();
+        Credentials::instance().get(
+            QString::fromLatin1(DANKCHAT_CREDENTIAL_PROVIDER), twitchUserId,
+            this, [this](const QString &cookie) {
+                this->dankChatCookieRead_ = true;
+                this->dankChatCookie_ = cookie;
+                this->dankChatLoading_ = false;
+                this->setStatus({});
+                this->loadDankChat(true);
+            });
+        return;
+    }
+
+    if (this->dankChatCookie_.isEmpty())
+    {
+        this->rebuildContent();
+        return;
+    }
+
+    this->dankChatLoading_ = true;
+    this->setStatus("Loading DankChat badges...");
+    this->rebuildContent();
+    this->dankChatRequest(
+        std::nullopt,
+        [this](const QJsonObject &account) {
+            this->dankChatLoading_ = false;
+            this->applyDankChatAccount(account);
+            this->setStatus({});
+            this->rebuildContent();
+        },
+        [this](const QString &error) {
+            this->dankChatLoading_ = false;
+            this->dankChatLoaded_ = false;
+            this->setStatus(error, true);
+            this->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::rebuildDankChat()
+{
+    const bool connected = !this->dankChatCookie_.isEmpty();
+
+    // Title, hint and the connect button, like for BTTV.
+    auto *headerRow = new QWidget(this->contentWidget_);
+    auto *header = new QHBoxLayout(headerRow);
+    header->setContentsMargins(0, 0, 0, 0);
+    auto *texts = new QVBoxLayout();
+    texts->setSpacing(0);
+    auto *title = new QLabel("DankChat badge", this->contentWidget_);
+    title->setObjectName("TwitchBadgePickerSectionLabel");
+    texts->addWidget(title);
+    auto *hint = new QLabel(
+        connected ? "Choose the badge everyone sees. Automatic shows your "
+                    "first one."
+                  : "Connect DankChat to choose your badge.",
+        this->contentWidget_);
+    hint->setWordWrap(true);
+    texts->addWidget(hint);
+    header->addLayout(texts, 1);
+    auto *connectButton =
+        new QPushButton(connected ? "Disconnect" : "Connect", headerRow);
+    connectButton->setCursor(Qt::PointingHandCursor);
+    connectButton->setEnabled(!this->dankChatLoading_ &&
+                              !this->actionInFlight_);
+    QObject::connect(connectButton, &QPushButton::clicked, this,
+                     [this, connected] {
+                         // Later: both rebuild the content, which deletes this
+                         // button.
+                         QTimer::singleShot(0, this, [this, connected] {
+                             if (connected)
+                             {
+                                 this->disconnectDankChat();
+                             }
+                             else
+                             {
+                                 this->connectDankChat();
+                             }
+                         });
+                     });
+    header->addWidget(connectButton, 0, Qt::AlignTop);
+    this->contentLayout_->addWidget(headerRow);
+
+    if (!connected || this->dankChatLoading_ || !this->dankChatLoaded_)
+    {
+        return;
+    }
+    if (this->dankChatBadges_.isEmpty())
+    {
+        this->contentLayout_->addWidget(
+            makeEmptyListLabel(QStringLiteral("You have no DankChat badges."),
+                               this->contentWidget_));
+        return;
+    }
+
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+    const int columns = this->badgeGridColumns();
+    int index = 0;
+    const auto place = [&](QWidget *tile) {
+        grid->addWidget(tile, index / columns, index % columns);
+        ++index;
+    };
+    const auto tileOf = [&](const DankChatBadgeOption &badge,
+                            const QString &tooltip) {
+        GqlBadge tileBadge;
+        tileBadge.id = badge.id;
+        tileBadge.setID = badge.id;
+        tileBadge.title = tooltip;
+        tileBadge.image1x = badge.url;
+        tileBadge.image2x = badge.url;
+        tileBadge.image4x = badge.url;
+        return new BadgeTileButton(tileBadge, gridWidget);
+    };
+
+    // Wearing no badge
+    auto *noneTile = new NoBadgeTileButton(gridWidget);
+    noneTile->setToolTip(QStringLiteral("No DankChat badge"));
+    noneTile->setSelected(this->dankChatChoice_ == u"hidden");
+    noneTile->setEnabled(!this->actionInFlight_);
+    if (this->dankChatChoice_ != u"hidden")
+    {
+        QObject::connect(noneTile, &QPushButton::clicked, this, [this] {
+            this->selectDankChat(QJsonObject{{"type", "hidden"}},
+                                 QStringLiteral("No DankChat badge"));
+        });
+    }
+    place(noneTile);
+
+    // The site's "Automatic": the first badge, chosen by DankChat
+    auto *automaticTile = tileOf(this->dankChatBadges_.front(),
+                                 QStringLiteral("Automatic (%1)")
+                                     .arg(this->dankChatBadges_.front().title));
+    automaticTile->setSelected(this->dankChatChoice_ == u"automatic");
+    automaticTile->setEnabled(!this->actionInFlight_);
+    if (this->dankChatChoice_ != u"automatic")
+    {
+        QObject::connect(automaticTile, &QPushButton::clicked, this, [this] {
+            this->selectDankChat(QJsonObject{{"type", "automatic"}},
+                                 QStringLiteral("Automatic"));
+        });
+    }
+    place(automaticTile);
+
+    for (const auto &badge : std::as_const(this->dankChatBadges_))
+    {
+        const auto key = QStringLiteral("badge:") + badge.id;
+        auto *tile = tileOf(badge, badge.title);
+        tile->setSelected(this->dankChatChoice_ == key);
+        tile->setEnabled(!this->actionInFlight_);
+        if (this->dankChatChoice_ != key)
+        {
+            QObject::connect(tile, &QPushButton::clicked, this,
+                             [this, id = badge.id, name = badge.title] {
+                                 this->selectDankChat(
+                                     QJsonObject{{"type", "badge"}, {"id", id}},
+                                     name);
+                             });
+        }
+        place(tile);
+    }
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::connectDankChat()
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto cookie = this->askForToken(
+        QStringLiteral("DankChat"), {}, QString::fromLatin1(DANKCHAT_SITE_URL),
+        QStringLiteral(
+            "1. Click \"Open DankChat\" and sign in there with Twitch.\n"
+            "2. Open the developer tools (F12) and go to Application, then "
+            "Cookies, then https://dank.chat.\n"
+            "3. Copy the value of q_session and paste it below.\n\n"
+            "It stays on this device. DankChat signs you out after about 30 "
+            "days; then connect it again."),
+        QStringLiteral("Value of q_session"));
+    if (!self || !cookie)
+    {
+        return;
+    }
+
+    auto value = *cookie;
+    // pasted together with its name
+    if (value.startsWith(QStringLiteral("q_session=")))
+    {
+        value = value.mid(QStringLiteral("q_session=").size());
+    }
+    this->dankChatCookie_ = value;
+    this->dankChatCookieRead_ = true;
+    Credentials::instance().set(
+        QString::fromLatin1(DANKCHAT_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId(), value);
+    this->setStatus({});
+    this->loadDankChat(true);
+}
+
+void TwitchBadgePickerDialog::disconnectDankChat()
+{
+    Credentials::instance().erase(
+        QString::fromLatin1(DANKCHAT_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId());
+    this->dankChatCookie_.clear();
+    this->dankChatLoaded_ = false;
+    this->dankChatBadges_.clear();
+    this->dankChatChoice_.clear();
+    this->setStatus({});
+    this->rebuildContent();
+}
+
+void TwitchBadgePickerDialog::selectDankChat(const QJsonObject &choice,
+                                             const QString &title)
+{
+    if (this->actionInFlight_)
+    {
+        return;
+    }
+    this->actionInFlight_ = true;
+    this->setStatus({});
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    this->dankChatRequest(
+        choice,
+        [self, title](const QJsonObject &account) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->applyDankChatAccount(account);
+            self->channel_->addSystemMessage(
+                QStringLiteral("DankChat badge set to: %1").arg(title));
+            // the chat shows the new badge once DankChat's list has it
+            if (auto *badges = getApp()->getDankChatBadges())
+            {
+                badges->load(
+                    [userId = account.value("twitchId").toString()](bool ok) {
+                        if (ok)
+                        {
+                            WindowManager::notifyBadgesUpdated(userId);
+                        }
+                    });
+            }
+            self->rebuildContent();
+        },
+        [self](const QString &error) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->setStatus(
+                QStringLiteral("Could not change the DankChat badge: %1")
+                    .arg(error),
+                true);
             self->rebuildContent();
         });
 }

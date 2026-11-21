@@ -136,6 +136,12 @@ public:
                           QString toolTipText = {});
     void addNavigationSpacing();
 
+    /// Puts the groups in the order of `order`, by name; groups not named
+    /// there follow in the order they were added. Groups with the same name
+    /// become one, with the title of the first. Stretches added so far are
+    /// dropped, so call addStretch afterwards.
+    void arrangeGroups(const QStringList &order);
+
     template <typename OnClick>
     QPushButton *makeButton(const QString &text, OnClick onClick)
     {

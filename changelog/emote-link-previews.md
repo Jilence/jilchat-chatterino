@@ -1,0 +1,1 @@
+- New Link previews for BTTV and JilTV emotes. With link previews on, links to a BTTV or JilTV emote show the emote, also BTTV's newer links like betterttv.com/emotes/2nimqqQ9xgrwwDke6/nopers.

@@ -1053,9 +1053,8 @@ void AutoModReviewController::captureContext(Entry &entry)
         {
             continue;
         }
-        if (entry.item.receivedAt.isValid() &&
-            message->serverReceivedTime.isValid() &&
-            message->serverReceivedTime >= entry.item.receivedAt)
+        if (entry.item.receivedAt.isValid() && message->timestamp.isValid() &&
+            message->timestamp >= entry.item.receivedAt)
         {
             continue;
         }
@@ -1064,7 +1063,7 @@ void AutoModReviewController::captureContext(Entry &entry)
                                ? message->loginName
                                : message->displayName,
             .text = message->messageText,
-            .receivedAt = message->serverReceivedTime,
+            .receivedAt = message->timestamp,
         });
     }
     std::reverse(entry.item.context.begin(), entry.item.context.end());

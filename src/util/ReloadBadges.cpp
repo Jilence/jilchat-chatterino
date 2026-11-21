@@ -8,6 +8,7 @@
 #include "common/Channel.hpp"
 #include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
@@ -18,6 +19,8 @@
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
+#include "providers/solrino/SolrinoBadges.hpp"
+#include "providers/streamnook/StreamNookBadges.hpp"
 #include "singletons/Settings.hpp"
 #include "util/PostToThread.hpp"
 
@@ -110,6 +113,19 @@ void reloadBadgeProviders(const ChannelPtr &channel)
     {
         app->getDankChatBadges()->load(
             reloadMessage(channel, "DankChat badges"));
+    }
+    if (settings->showBadgesChatlee)
+    {
+        app->getChatleeBadges()->load(reloadMessage(channel, "Chatlee badges"));
+    }
+    if (settings->showBadgesSolrino)
+    {
+        app->getSolrinoBadges()->load(reloadMessage(channel, "Solrino badges"));
+    }
+    if (settings->showBadgesStreamNook)
+    {
+        app->getStreamNookBadges()->load(
+            reloadMessage(channel, "StreamNook badges"));
     }
     if (settings->showBadgesChatterino)
     {

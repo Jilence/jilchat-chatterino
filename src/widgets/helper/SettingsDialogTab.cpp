@@ -5,6 +5,7 @@
 #include "widgets/helper/SettingsDialogTab.hpp"
 
 #include "widgets/dialogs/SettingsDialog.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/settingspages/SettingsPage.hpp"
 
 #include <QPainter>
@@ -30,7 +31,7 @@ SettingsDialogTab::SettingsDialogTab(SettingsDialog *_dialog,
     this->setStyleSheet("color: #FFF");
 }
 
-void SettingsDialogTab::setSelected(bool _selected)
+void SettingsDialogTab::setSelected(bool _selected, bool animate)
 {
     if (this->selected_ == _selected)
     {
@@ -39,6 +40,10 @@ void SettingsDialogTab::setSelected(bool _selected)
 
     //    height: <checkbox-size>px;
 
+    if (animate)
+    {
+        transitions::fadeChange(this, true);
+    }
     this->selected_ = _selected;
     this->selectedChanged(this->selected_);
 }

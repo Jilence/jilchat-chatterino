@@ -49,6 +49,7 @@ class JilChatBadges;
 class BluzyrinoBadges;
 class SeventvPersonalEmotes;
 class ImageUploader;
+class UrlShortener;
 class SeventvAPI;
 class CrashHandler;
 class BttvEmotes;
@@ -61,6 +62,10 @@ class HomiesBadges;
 class FolhinhaBadges;
 class FfzApBadges;
 class DankChatBadges;
+class SolrinoBadges;
+class WydiosBadges;
+class ChatleeBadges;
+class StreamNookBadges;
 class ChatsenBadges;
 class ChatAutomationController;
 class LimerinoBadges;
@@ -84,6 +89,7 @@ class SpellChecker;
 class KickChatServer;
 
 class YouTubeChatServer;
+class TikTokChatServer;
 
 class PotatCommands;
 
@@ -127,6 +133,10 @@ public:
     virtual FolhinhaBadges *getFolhinhaBadges() = 0;
     virtual FfzApBadges *getFfzApBadges() = 0;
     virtual DankChatBadges *getDankChatBadges() = 0;
+    virtual SolrinoBadges *getSolrinoBadges() = 0;
+    virtual WydiosBadges *getWydiosBadges() = 0;
+    virtual ChatleeBadges *getChatleeBadges() = 0;
+    virtual StreamNookBadges *getStreamNookBadges() = 0;
     virtual ChatsenBadges *getChatsenBadges() = 0;
     /// The self bot rules. nullptr in tests and while shutting down.
     virtual ChatAutomationController *getChatAutomations() = 0;
@@ -144,6 +154,7 @@ public:
     virtual SeventvPaints *getSeventvPaints() = 0;
     virtual TwitchBadges *getTwitchBadges() = 0;
     virtual ImageUploader *getImageUploader() = 0;
+    virtual UrlShortener *getUrlShortener() = 0;
     virtual SeventvAPI *getSeventvAPI() = 0;
 #ifdef CHATTERINO_HAVE_PLUGINS
     virtual PluginController *getPlugins() = 0;
@@ -164,6 +175,7 @@ public:
     virtual SpellChecker *getSpellChecker() = 0;
     virtual KickChatServer *getKickChatServer() = 0;
     virtual YouTubeChatServer *getYouTubeChatServer() = 0;
+    virtual TikTokChatServer *getTikTokChatServer() = 0;
     virtual PotatCommands *getPotatCommands() = 0;
     virtual SupibotCommands *getSupibotCommands() = 0;
 
@@ -216,6 +228,7 @@ private:
     std::unique_ptr<WindowManager> windows;
     std::unique_ptr<Toasts> toasts;
     std::unique_ptr<ImageUploader> imageUploader;
+    std::unique_ptr<UrlShortener> urlShortener;
     std::unique_ptr<SeventvAPI> seventvAPI;
     std::unique_ptr<CrashHandler> crashHandler;
     std::unique_ptr<CommandController> commands;
@@ -230,6 +243,10 @@ private:
     std::unique_ptr<FolhinhaBadges> folhinhaBadges;
     std::unique_ptr<FfzApBadges> ffzApBadges;
     std::unique_ptr<DankChatBadges> dankChatBadges;
+    std::unique_ptr<SolrinoBadges> solrinoBadges;
+    std::unique_ptr<WydiosBadges> wydiosBadges;
+    std::unique_ptr<ChatleeBadges> chatleeBadges;
+    std::unique_ptr<StreamNookBadges> streamNookBadges;
     std::unique_ptr<ChatsenBadges> chatsenBadges;
     std::unique_ptr<LimerinoBadges> limerinoBadges;
     std::unique_ptr<BadgeHQBadges> badgeHQBadges;
@@ -257,6 +274,7 @@ private:
     std::unique_ptr<SpellChecker> spellChecker;
     std::unique_ptr<KickChatServer> kickChatServer;
     std::unique_ptr<YouTubeChatServer> youTubeChatServer;
+    std::unique_ptr<TikTokChatServer> tikTokChatServer;
     std::unique_ptr<PotatCommands> potatCommands;
     std::unique_ptr<SupibotCommands> supibotCommands;
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -297,6 +315,10 @@ public:
     FolhinhaBadges *getFolhinhaBadges() override;
     FfzApBadges *getFfzApBadges() override;
     DankChatBadges *getDankChatBadges() override;
+    SolrinoBadges *getSolrinoBadges() override;
+    WydiosBadges *getWydiosBadges() override;
+    ChatleeBadges *getChatleeBadges() override;
+    StreamNookBadges *getStreamNookBadges() override;
     ChatsenBadges *getChatsenBadges() override;
     ChatAutomationController *getChatAutomations() override;
     BadgeHQBadges *getBadgeHQBadges() override;
@@ -311,6 +333,7 @@ public:
     TwitchBadges *getTwitchBadges() override;
     IChatterinoBadges *getChatterinoBadges() override;
     ImageUploader *getImageUploader() override;
+    UrlShortener *getUrlShortener() override;
     SeventvAPI *getSeventvAPI() override;
 #ifdef CHATTERINO_HAVE_PLUGINS
     PluginController *getPlugins() override;
@@ -335,6 +358,7 @@ public:
     SpellChecker *getSpellChecker() override;
     KickChatServer *getKickChatServer() override;
     YouTubeChatServer *getYouTubeChatServer() override;
+    TikTokChatServer *getTikTokChatServer() override;
     PotatCommands *getPotatCommands() override;
     SupibotCommands *getSupibotCommands() override;
 

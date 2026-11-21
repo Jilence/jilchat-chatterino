@@ -74,11 +74,22 @@ constexpr std::array PROVIDERS{
     Provider{.flag = MessageElementFlag::BadgeBluzyrino,
              .key = u"bl",
              .name = u"Bluzyrino"},
+    Provider{.flag = MessageElementFlag::BadgeSolrino,
+             .key = u"so",
+             .name = u"Solrino"},
+    Provider{.flag = MessageElementFlag::BadgeWydios,
+             .key = u"wy",
+             .name = u"Wydios"},
     Provider{
         .flag = MessageElementFlag::BadgeSevenTV, .key = u"7", .name = u"7TV"},
+    Provider{
+        .flag = MessageElementFlag::BadgeJiltv, .key = u"jt", .name = u"JilTV"},
     Provider{.flag = MessageElementFlag::BadgeDankChat,
              .key = u"dc",
              .name = u"DankChat"},
+    Provider{.flag = MessageElementFlag::BadgeChatlee,
+             .key = u"cl",
+             .name = u"Chatlee"},
     Provider{.flag = MessageElementFlag::BadgeChatsen,
              .key = u"cs",
              .name = u"Chatsen"},
@@ -100,6 +111,9 @@ constexpr std::array PROVIDERS{
     Provider{.flag = MessageElementFlag::BadgeLimerino,
              .key = u"li",
              .name = u"Limerino"},
+    Provider{.flag = MessageElementFlag::BadgeStreamNook,
+             .key = u"sn",
+             .name = u"StreamNook"},
     Provider{.flag = MessageElementFlag::BadgeJilChat,
              .key = u"jc",
              .name = u"JilChat"},
@@ -223,6 +237,12 @@ std::vector<std::pair<QString, QString>> savedOrder()
     return order;
 }
 
+/// Sorts the badges from `firstBadge` on by `order`, the others after them
+/// in their usual order
+void sortBadges(std::vector<std::unique_ptr<MessageElement>> &elements,
+                size_t firstBadge,
+                const std::vector<std::pair<QString, QString>> &order);
+
 }  // namespace
 
 void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
@@ -270,6 +290,30 @@ void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
                                   }),
                    elements.end());
 
+    sortBadges(elements, firstBadge, order);
+}
+
+void applyToOther(std::vector<std::unique_ptr<MessageElement>> &elements,
+                  size_t firstBadge)
+{
+    if (firstBadge >= elements.size() ||
+        !getSettings()->ownBadgeOrderForEveryone)
+    {
+        return;
+    }
+    const auto order = savedOrder();
+    if (!order.empty())
+    {
+        sortBadges(elements, firstBadge, order);
+    }
+}
+
+namespace {
+
+void sortBadges(std::vector<std::unique_ptr<MessageElement>> &elements,
+                size_t firstBadge,
+                const std::vector<std::pair<QString, QString>> &order)
+{
     QHash<QString, int> ranks;
     for (size_t index = 0; index < order.size(); ++index)
     {
@@ -292,6 +336,8 @@ void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
                          return rankOf(*left) < rankOf(*right);
                      });
 }
+
+}  // namespace
 
 void noteChannelBadges(const QString &channelName,
                        const std::vector<TwitchBadgeHeld> &badges)

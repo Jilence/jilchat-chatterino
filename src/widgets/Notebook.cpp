@@ -16,17 +16,17 @@
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "widgets/buttons/DrawnButton.hpp"
-// #include "widgets/buttons/InitMoltorinoUpdateButton.hpp"
+#include "widgets/buttons/InitUpdateButton.hpp"
 #include "widgets/buttons/PixmapButton.hpp"
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/SettingsDialog.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/NotebookTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/splits/SplitContainer.hpp"
 #include "widgets/Window.hpp"
 
-#include <boost/foreach.hpp>
 #include <QActionGroup>
 #include <QDebug>
 #include <QFile>
@@ -78,10 +78,6 @@ Notebook::Notebook(QWidget *parent)
         });
 
     this->lockNotebookLayoutAction_ = new QAction("Lock Tab Layout", this);
-
-    // Load lock notebook layout state from settings
-    this->setLockNotebookLayout(getSettings()->lockNotebookLayout.getValue());
-
     this->lockNotebookLayoutAction_->setCheckable(true);
     this->lockNotebookLayoutAction_->setChecked(this->lockNotebookLayout_);
 
@@ -156,6 +152,10 @@ NotebookTab *Notebook::addPageAt(QWidget *page, int position, QString title,
 
     this->performLayout();
     tab->setVisible(this->shouldShowTab(tab));
+    if (this->isVisible() && tab->isVisible())
+    {
+        transitions::fadeInWidget(tab);
+    }
     this->afterPageAdded();
     return tab;
 }
@@ -329,6 +329,17 @@ void Notebook::select(QWidget *page, bool focusPage, bool recordInHistory)
     if (recordInHistory && this->selectedPage_ != nullptr && page != nullptr)
     {
         this->tabHistory_.recordNavigation(this->selectedPage_, page);
+    }
+
+    if (page && this->selectedPage_)
+    {
+        transitions::slidePages(
+            this->selectedPage_, page,
+            this->indexOf(page) > this->indexOf(this->selectedPage_)
+                ? transitions::PageDirection::Forward
+                : transitions::PageDirection::Backward,
+            this->tabLocation_ == NotebookTabLocation::Left ||
+                this->tabLocation_ == NotebookTabLocation::Right);
     }
 
     if (page)
@@ -719,12 +730,6 @@ void Notebook::setShowTabs(bool value)
     this->performLayout();
 
     this->updateTabVisibility();
-
-    // show a popup upon hiding tabs
-    if (!value && getSettings()->informOnTabVisibilityToggle.getValue())
-    {
-        this->showTabVisibilityInfoPopup();
-    }
 }
 
 void Notebook::setGrowWrappedNotebookLines(bool value)
@@ -733,48 +738,6 @@ void Notebook::setGrowWrappedNotebookLines(bool value)
     {
         this->growWrappedNotebookLines = value;
         this->performLayout();
-    }
-}
-
-void Notebook::showTabVisibilityInfoPopup()
-{
-    auto unhideSeq = getApp()->getHotkeys()->getDisplaySequence(
-        HotkeyCategory::Window, "setTabVisibility", {std::vector<QString>()});
-    if (unhideSeq.isEmpty())
-    {
-        unhideSeq = getApp()->getHotkeys()->getDisplaySequence(
-            HotkeyCategory::Window, "setTabVisibility", {{"toggle"}});
-    }
-    if (unhideSeq.isEmpty())
-    {
-        unhideSeq = getApp()->getHotkeys()->getDisplaySequence(
-            HotkeyCategory::Window, "setTabVisibility", {{"on"}});
-    }
-    QString hotkeyInfo = "(currently unbound)";
-    if (!unhideSeq.isEmpty())
-    {
-        hotkeyInfo =
-            "(" + unhideSeq.toString(QKeySequence::SequenceFormat::NativeText) +
-            ")";
-    }
-    QMessageBox msgBox(this->window());
-    msgBox.window()->setWindowTitle("JilChat Chatterino - hidden tabs");
-    msgBox.setText("You've just hidden your tabs.");
-    msgBox.setInformativeText(
-        "You can toggle tabs by using the keyboard shortcut " + hotkeyInfo +
-        " or right-clicking the tab area and selecting \"Toggle "
-        "visibility of tabs\".");
-    msgBox.addButton(QMessageBox::Ok);
-    auto *dsaButton =
-        msgBox.addButton("Don't show again", QMessageBox::YesRole);
-
-    msgBox.setDefaultButton(QMessageBox::Ok);
-
-    msgBox.exec();
-
-    if (msgBox.clickedButton() == dsaButton)
-    {
-        getSettings()->informOnTabVisibilityToggle.setValue(false);
     }
 }
 
@@ -1362,7 +1325,6 @@ void Notebook::setLockNotebookLayout(bool value)
 {
     this->lockNotebookLayout_ = value;
     this->lockNotebookLayoutAction_->setChecked(value);
-    getSettings()->lockNotebookLayout.setValue(value);
 }
 
 void Notebook::addNotebookActionsToMenu(QMenu *menu)
@@ -1603,6 +1565,9 @@ SplitNotebook::SplitNotebook(Window *parent)
             this->setGrowWrappedNotebookLines(value);
         },
         this->signalHolder_, true);
+
+    // Load lock notebook layout state from settings
+    this->setLockNotebookLayout(getSettings()->lockNotebookLayout.getValue());
 }
 
 void SplitNotebook::addNotebookActionsToMenu(QMenu *menu)
@@ -1741,14 +1706,16 @@ void SplitNotebook::addCustomButtons()
     });
 
     // updates
-    // auto *updateBtn = this->addCustomButton<PixmapButton>();
-    //
-    // initMoltorinoUpdateButton(
-    //     *updateBtn,
-    //     [this] {
-    //         this->performLayout(false);
-    //     },
-    //     this->signalHolder_);
+    auto *updateBtn = this->addCustomButton<SvgButton>(SvgButton::Src{
+        .dark = ":/buttons/update-darkMode.svg",
+        .light = ":/buttons/update-lightMode.svg",
+    });
+    initUpdateButton(
+        *updateBtn,
+        [this] {
+            this->performLayout(false);
+        },
+        this->signalHolder_);
 
     // streamer mode
     this->streamerModeIcon_ = this->addCustomButton<PixmapButton>();
@@ -1876,7 +1843,19 @@ void SplitNotebook::forEachSplit(const std::function<void(Split *)> &cb)
 void SplitNotebook::setLockNotebookLayout(bool value)
 {
     Notebook::setLockNotebookLayout(value);
+    getSettings()->lockNotebookLayout.setValue(value);
     this->sortTabsAlphabeticallyAction_->setEnabled(!value);
+}
+
+void SplitNotebook::setShowTabs(bool value)
+{
+    Notebook::setShowTabs(value);
+
+    // show a popup upon hiding tabs
+    if (!value && getSettings()->informOnTabVisibilityToggle.getValue())
+    {
+        this->showTabVisibilityInfoPopup();
+    }
 }
 
 void SplitNotebook::afterPageAdded()
@@ -1892,6 +1871,48 @@ void SplitNotebook::afterPageRemoved()
 void SplitNotebook::afterPageMoved()
 {
     getApp()->getWindows()->queueSave();
+}
+
+void SplitNotebook::showTabVisibilityInfoPopup()
+{
+    auto unhideSeq = getApp()->getHotkeys()->getDisplaySequence(
+        HotkeyCategory::Window, "setTabVisibility", {std::vector<QString>()});
+    if (unhideSeq.isEmpty())
+    {
+        unhideSeq = getApp()->getHotkeys()->getDisplaySequence(
+            HotkeyCategory::Window, "setTabVisibility", {{"toggle"}});
+    }
+    if (unhideSeq.isEmpty())
+    {
+        unhideSeq = getApp()->getHotkeys()->getDisplaySequence(
+            HotkeyCategory::Window, "setTabVisibility", {{"on"}});
+    }
+    QString hotkeyInfo = "(currently unbound)";
+    if (!unhideSeq.isEmpty())
+    {
+        hotkeyInfo =
+            "(" + unhideSeq.toString(QKeySequence::SequenceFormat::NativeText) +
+            ")";
+    }
+    QMessageBox msgBox(this->window());
+    msgBox.window()->setWindowTitle("JilChat Chatterino - hidden tabs");
+    msgBox.setText("You've just hidden your tabs.");
+    msgBox.setInformativeText(
+        "You can toggle tabs by using the keyboard shortcut " + hotkeyInfo +
+        " or right-clicking the tab area and selecting \"Toggle "
+        "visibility of tabs\".");
+    msgBox.addButton(QMessageBox::Ok);
+    auto *dsaButton =
+        msgBox.addButton("Don't show again", QMessageBox::YesRole);
+
+    msgBox.setDefaultButton(QMessageBox::Ok);
+
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == dsaButton)
+    {
+        getSettings()->informOnTabVisibilityToggle.setValue(false);
+    }
 }
 
 }  // namespace chatterino

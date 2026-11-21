@@ -152,11 +152,13 @@ struct IvrUserProfile {
     bool isVerifiedBot = false;
     QString lastBroadcastStartedAt;
     QString lastBroadcastTitle;
+    QString banner;
 
     IvrUserProfile() = default;
     explicit IvrUserProfile(const QJsonObject &root)
         : banned(root.value("banned").toBool())
         , chatColor(root.value("chatColor").toString())
+        , banner(root.value("banner").toString())
     {
         const auto chatterCountValue = root.value("chatterCount");
         if (!chatterCountValue.isNull() && !chatterCountValue.isUndefined())

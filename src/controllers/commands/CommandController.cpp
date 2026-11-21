@@ -62,6 +62,8 @@
 #include "singletons/Settings.hpp"
 #include "util/CombinePath.hpp"
 #include "util/QStringHash.hpp"
+#include "util/ShareWatchStreak.hpp"
+#include "widgets/dialogs/WrappedDialog.hpp"
 
 #include <QString>
 #include <QStringBuilder>
@@ -564,6 +566,26 @@ CommandController::CommandController(const Paths &paths)
     this->registerCommand("/cancelpoll", &commands::cancelPoll);
     this->registerCommand("/endpoll", &commands::endPoll);
 
+    this->registerCommand(
+        "/sharestreak",
+        [](const QStringList &words, const ChannelPtr &channel) -> QString {
+            // "/sharestreak 10 in a row!" shares it with that message
+            shareWatchStreakIn(channel, words.mid(1).join(' '));
+            return "";
+        });
+
+    this->registerCommand(
+        "/wrapped",
+        [](const QStringList &words, const ChannelPtr &) -> QString {
+            // "/wrapped last" or "/wrapped year" opens on that period
+            const auto which = words.value(1).toLower();
+            WrappedDialog::showDialog(
+                which == "last"   ? WrappedDialog::Period::LastMonth
+                : which == "year" ? WrappedDialog::Period::ThisYear
+                                  : WrappedDialog::Period::ThisMonth);
+            return "";
+        });
+
     this->registerCommand("/prediction", &commands::showPredictions);
     this->registerCommand("/lockprediction", &commands::lockPrediction);
     this->registerCommand("/cancelprediction", &commands::cancelPrediction);
@@ -626,6 +648,8 @@ CommandController::CommandController(const Paths &paths)
         return "";
     });
 }
+
+CommandController::~CommandController() = default;
 
 void CommandController::save()
 {

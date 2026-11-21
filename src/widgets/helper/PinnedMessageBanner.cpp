@@ -118,11 +118,16 @@ MessageElementFlags pinnedMessageFlags()
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeFolhinha);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeFfzAp);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeDankChat);
+    setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeChatlee);
+    setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeSolrino);
+    setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeWydios);
+    setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeStreamNook);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeChatsen);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeBluzyrino);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeJilChat);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeBadgeHQ);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeLimerino);
+    setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeJiltv);
 
     return flags;
 }

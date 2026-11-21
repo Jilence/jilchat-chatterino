@@ -28,6 +28,7 @@
 #include "util/CustomPlayer.hpp"
 #include "util/IncognitoBrowser.hpp"
 #include "util/MultiChannel.hpp"
+#include "util/QMagicEnumTagged.hpp"
 #include "util/ReloadBadges.hpp"
 #include "util/StreamLink.hpp"
 #include "widgets/ChatterListWidget.hpp"
@@ -45,6 +46,7 @@
 #include "widgets/helper/PredictionBanner.hpp"
 #include "widgets/helper/ResizingTextEdit.hpp"
 #include "widgets/helper/SearchPopup.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/OverlayWindow.hpp"
 #include "widgets/Scrollbar.hpp"
@@ -2014,6 +2016,8 @@ void Split::wireTwitchBanners(TwitchChannel *tc)
 
 void Split::setChannel(IndirectChannel newChannel)
 {
+    transitions::fadeChange(this->view_);
+
     this->editorAccessProbedChannels_.clear();
     this->channelSignalHolder_.clear();
     this->input_->setSendWaitStatus("");
@@ -2903,12 +2907,14 @@ SplitDescriptor Split::buildDescriptor() const
     descriptor.spellCheckOverride = this->checkSpellingOverride();
 
     auto chan = this->getIndirectChannel();
-    descriptor.type_ = qmagicenum::enumNameString(chan.getType());
+    descriptor.type_ =
+        qmagicenum::SerializedName::enumNameString(chan.getType());
     switch (chan.getType())
     {
         case Channel::Type::Twitch:
         case Channel::Type::Misc:
         case Channel::Type::YouTube:
+        case Channel::Type::TikTok:
             descriptor.channelName_ = chan.get()->getName();
             break;
 

@@ -13,6 +13,12 @@ namespace chatterino {
 
 namespace detail {
 
+/// Coalesces requests to give freed memory back to the OS.
+///
+/// A request runs the relief after `coalesceDelay`, and never sooner than
+/// `minimumInterval` after the previous relief finished. Requests made while
+/// one is scheduled are merged into it, requests made while the relief runs
+/// schedule exactly one more.
 class MemoryReliefCoordinator
 {
 public:
@@ -20,6 +26,7 @@ public:
     using TimePoint = Clock::time_point;
     using Duration = std::chrono::milliseconds;
     using Task = std::function<void()>;
+
     using Now = std::function<TimePoint()>;
     using ScheduleTimer = std::function<void(Duration, Task)>;
     using Execute = std::function<void(Task)>;
@@ -52,12 +59,12 @@ private:
 
 }  // namespace detail
 
-/// Asks the allocator to give memory it holds but doesn't use back to the
-/// system, once things have settled. Does something with glibc and on macOS;
-/// requests in quick succession become one. Taken from Moltorino.
+/// Asks the allocator to return freed memory to the OS after a large amount
+/// of memory was released.
+///
+/// The work is coalesced and runs on a worker thread. It's only done where the
+/// allocator keeps freed pages around otherwise (glibc, macOS and the MSVC
+/// runtime on Windows).
 void requestMemoryPressureRelief();
-
-/// The same, and with MSVC on Windows as well
-void requestTransientMemoryPressureRelief();
 
 }  // namespace chatterino

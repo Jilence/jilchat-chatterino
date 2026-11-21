@@ -206,6 +206,10 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->updateWordTypeMaskListener.add(settings.showBadgesFolhinha);
     this->updateWordTypeMaskListener.add(settings.showBadgesFfzAp);
     this->updateWordTypeMaskListener.add(settings.showBadgesDankChat);
+    this->updateWordTypeMaskListener.add(settings.showBadgesChatlee);
+    this->updateWordTypeMaskListener.add(settings.showBadgesSolrino);
+    this->updateWordTypeMaskListener.add(settings.showBadgesWydios);
+    this->updateWordTypeMaskListener.add(settings.showBadgesStreamNook);
     this->updateWordTypeMaskListener.add(settings.showBadgesChatsen);
     this->updateWordTypeMaskListener.add(settings.showBadgesBluzyrino);
     this->updateWordTypeMaskListener.add(settings.showBadgesBadgeHQ);
@@ -226,12 +230,15 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
     this->forceLayoutChannelViewsListener.add(settings.twitchGifScale);
     this->forceLayoutChannelViewsListener.add(settings.enableEmoteModifiers);
     this->forceLayoutChannelViewsListener.add(settings.disabledEmoteModifiers);
+    this->forceLayoutChannelViewsListener.add(
+        settings.hideMessageTimestampsWhenLive);
     this->forceLayoutChannelViewsListener.add(settings.timestampFormat);
     this->forceLayoutChannelViewsListener.add(
         settings.showTimestampDateTooltip);
     this->forceLayoutChannelViewsListener.add(settings.collpseMessagesMinLines);
     this->forceLayoutChannelViewsListener.add(settings.multipleHighlightBands);
     this->forceLayoutChannelViewsListener.add(settings.enableGigantifyEmotes);
+    this->forceLayoutChannelViewsListener.add(settings.enableFfzGiantEmotes);
     this->forceLayoutChannelViewsListener.add(
         settings.showPinButtonOnModeratorsMode);
     this->forceLayoutChannelViewsListener.add(settings.showSelfDeleteButton);
@@ -250,6 +257,7 @@ WindowManager::WindowManager(const Args &appArgs_, const Paths &paths,
         settings.streamerModeHideModActions);
     this->forceLayoutChannelViewsListener.add(
         settings.streamerModeHideRestrictedUsers);
+    this->forceLayoutChannelViewsListener.add(this->themes.updated);
     this->forceLayoutChannelViewsListener.add(fonts.fontChanged);
 
     this->layoutChannelViewsListener.add(settings.timestampFormat);
@@ -360,8 +368,14 @@ void WindowManager::updateWordTypeMask()
     flags.set(settings->showBadgesFolhinha ? MEF::BadgeFolhinha : MEF::None);
     flags.set(settings->showBadgesFfzAp ? MEF::BadgeFfzAp : MEF::None);
     flags.set(settings->showBadgesDankChat ? MEF::BadgeDankChat : MEF::None);
+    flags.set(settings->showBadgesChatlee ? MEF::BadgeChatlee : MEF::None);
+    flags.set(settings->showBadgesSolrino ? MEF::BadgeSolrino : MEF::None);
+    flags.set(settings->showBadgesWydios ? MEF::BadgeWydios : MEF::None);
+    flags.set(settings->showBadgesStreamNook ? MEF::BadgeStreamNook
+                                             : MEF::None);
     flags.set(settings->showBadgesChatsen ? MEF::BadgeChatsen : MEF::None);
     flags.set(settings->showBadgesJilChat ? MEF::BadgeJilChat : MEF::None);
+    flags.set(settings->showBadgesJiltv ? MEF::BadgeJiltv : MEF::None);
     flags.set(settings->showBadgesBluzyrino ? MEF::BadgeBluzyrino : MEF::None);
     flags.set(settings->showBadgesBadgeHQ ? MEF::BadgeBadgeHQ : MEF::None);
     flags.set(settings->showBadgesLimerino ? MEF::BadgeLimerino : MEF::None);

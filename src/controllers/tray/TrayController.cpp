@@ -110,7 +110,7 @@ void TrayController::hideToTray()
         if (this->trayIcon_ != nullptr && QSystemTrayIcon::supportsMessages())
         {
             this->trayIcon_->showMessage(
-                QStringLiteral("Leafyrino is still running"),
+                QStringLiteral("JilChat Chatterino is still running"),
                 QStringLiteral(
                     "You can disable this feature from the settings."),
                 QSystemTrayIcon::Information, 7000);
@@ -192,7 +192,7 @@ void TrayController::ensureTrayIcon()
 
     this->menu_ = new QMenu;
     this->openAction_ =
-        this->menu_->addAction(QStringLiteral("Open Leafyrino"));
+        this->menu_->addAction(QStringLiteral("Open JilChat Chatterino"));
     QObject::connect(this->openAction_, &QAction::triggered, this, [this] {
         this->restoreFromTray();
     });
@@ -233,7 +233,7 @@ void TrayController::ensureTrayIcon()
 
     this->menu_->addSeparator();
     this->quitAction_ =
-        this->menu_->addAction(QStringLiteral("Quit Leafyrino"));
+        this->menu_->addAction(QStringLiteral("Quit JilChat Chatterino"));
     QObject::connect(this->quitAction_, &QAction::triggered, qApp, [] {
         QApplication::exit(0);
     });

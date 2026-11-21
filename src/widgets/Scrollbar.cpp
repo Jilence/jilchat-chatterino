@@ -255,6 +255,27 @@ void Scrollbar::offset(qreal value)
     this->setDesiredValue(this->desiredValue_ + value);
 }
 
+void Scrollbar::shiftPosition(qreal value)
+{
+    if (this->currentValueAnimation_.state() == QPropertyAnimation::Stopped)
+    {
+        this->offset(value);
+        return;
+    }
+
+    // Shift the animation too, so it keeps going from the same spot
+    this->currentValueAnimation_.setStartValue(
+        this->currentValueAnimation_.startValue().toReal() + value);
+    this->currentValueAnimation_.setEndValue(
+        this->currentValueAnimation_.endValue().toReal() + value);
+    this->desiredValue_ =
+        std::max(this->minimum_,
+                 std::min(this->getBottom(), this->desiredValue_ + value));
+    this->atBottom_ = areClose(this->getBottom(), this->desiredValue_);
+    this->desiredValueChanged_.invoke();
+    this->setCurrentValue(this->currentValue_ + value);
+}
+
 pajlada::Signals::NoArgSignal &Scrollbar::getCurrentValueChanged()
 {
     return this->currentValueChanged_;

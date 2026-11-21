@@ -8,6 +8,11 @@ concurrency:
   group: clang-tidy-${{ github.ref }}
   cancel-in-progress: true
 
+# The token of a run only reads the repository, unless a job asks for more
+permissions:
+  contents: read
+  pull-requests: read # the review reads the changes of the pull request
+
 jobs:
   review:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-clang-tidy') }}

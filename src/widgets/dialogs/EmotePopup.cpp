@@ -20,6 +20,7 @@
 #include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
@@ -37,6 +38,7 @@
 
 #include <QAbstractButton>
 #include <QHBoxLayout>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QStringBuilder>
@@ -719,6 +721,20 @@ void EmotePopup::loadChannel(ChannelPtr channel)
         std::make_shared<Channel>("", Channel::Type::None));
 
     this->reloadEmotes();
+
+    // The own JilTV personal emotes are asked for each time, as they can
+    // change on the website
+    if (this->twitchChannel_)
+    {
+        Jiltv::instance().loadPersonalEmotes(
+            getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+            [self = QPointer(this)] {
+                if (self)
+                {
+                    self->reloadEmotes();
+                }
+            });
+    }
 }
 
 void EmotePopup::addFavouriteEmoji(const QString &shortCode)
@@ -886,7 +902,12 @@ void EmotePopup::reloadEmotes()
             *globalChannel, *subChannel, twitchChannel_->roomId(),
             twitchChannel_->getName());
 
-        // channel
+        // channel, JilTV first
+        if (auto jiltv =
+                Jiltv::instance().channelEmotes(this->twitchChannel_->roomId()))
+        {
+            addEmotes(*channelChannel, *jiltv, "JilTV");
+        }
         if (getSettings()->enableBTTVChannelEmotes)
         {
             addEmotes(*channelChannel, *this->twitchChannel_->bttvEmotes(),
@@ -903,6 +924,11 @@ void EmotePopup::reloadEmotes()
                       "7TV");
         }
 
+        if (auto jiltvPersonal = Jiltv::instance().personalEmotes(
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName()))
+        {
+            addEmotes(*subChannel, *jiltvPersonal, "JilTV (Personal)");
+        }
         for (const auto &map :
              getApp()->getSeventvPersonalEmotes()->getEmoteSetsForTwitchUser(
                  getApp()->getAccounts()->twitch.getCurrent()->getUserId()))
@@ -949,6 +975,10 @@ void EmotePopup::reloadEmotes()
     {
         addEmotes(*globalChannel, *getApp()->getSeventvEmotes()->globalEmotes(),
                   "7TV");
+    }
+    if (auto jiltv = Jiltv::instance().globalEmotes())
+    {
+        addEmotes(*globalChannel, *jiltv, "JilTV");
     }
 
     this->favouriteEmotes_.clear();

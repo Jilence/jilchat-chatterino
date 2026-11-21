@@ -1,6 +1,6 @@
 #pragma once
 
-#include "widgets/settingspages/SettingsPage.hpp"
+#include <QWidget>
 
 class QLabel;
 class QCheckBox;
@@ -12,14 +12,13 @@ class GeneralPageView;
 class DescriptionLabel;
 struct DropdownArgs;
 
-class TechnorinoPage : public SettingsPage
+/// The settings that came from Technorino, shown on the JilChat Chatterino page
+class TechnorinoPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    TechnorinoPage();
-
-    bool filterElements(const QString &query) override;
+    explicit TechnorinoPage(GeneralPageView &view);
 
 private:
     void initLayout(GeneralPageView &layout);
@@ -28,7 +27,6 @@ private:
     QString getFont(const DropdownArgs &args) const;
 
     DescriptionLabel *cachePath_{};
-    GeneralPageView *view_{};
 };
 
 }  // namespace chatterino

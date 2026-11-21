@@ -36,6 +36,10 @@ env:
   C2_APP_EXECUTABLE: JilChatChatterino
   C2_APP_BUNDLE: JilChatChatterino.app
 
+# The token of a run only reads the repository, unless a job asks for more
+permissions:
+  contents: read
+
 jobs:
   build-ubuntu:
     name: "Build Ubuntu ${{ matrix.os }}, Qt ${{ matrix.qt-version }}"
@@ -100,7 +104,7 @@ jobs:
 
       - name: Cache Boost (Ubuntu 22.04)
         if: matrix.os == 'ubuntu-22.04'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: boost-cache
         with:
           path: ~/boost-1.83.0
@@ -120,7 +124,7 @@ jobs:
           ./b2 install --with-json --prefix="${BOOST_PREFIX}" -j"$(nproc)"
 
       - name: Install Qt6
-        uses: jurplel/install-qt-action@v4.3.1
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           cache: true
           cache-key-prefix: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}-v3
@@ -194,7 +198,7 @@ jobs:
 
       - name: Upload artifact - .deb (Ubuntu)
         if: matrix.build-deb
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Chatterino-${{ matrix.os }}.deb
           path: build/Chatterino-${{ matrix.os }}-x86_64.deb
@@ -307,7 +311,7 @@ jobs:
       # MARK: Windows
       - name: Setup sccache (Windows)
         # sccache v0.7.4
-        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         if: runner.os == 'Windows' || runner.os == 'macOS'
         with:
           variant: ${{ case(runner.os == 'Windows', 'sccache', 'ccache') }}
@@ -361,6 +365,9 @@ jobs:
             PATH="$PWD/yasm-tool/direct_deploy/yasm/bin:$PATH"
             export PATH
           fi
+          # dav1d 1.5.4 doesn't compile with MSVC 19.5 (C7780 in its
+          # stdatomic.h). This header gives it the fallback from dav1d master.
+          DAV1D_COMPAT="$(cygpath -m "$GITHUB_WORKSPACE/.CI/dav1d-msvc-compat.h")"
           conan install .. \
               -s build_type=RelWithDebInfo \
               -c tools.cmake.cmaketoolchain:generator="Ninja" \
@@ -368,7 +375,8 @@ jobs:
               --output-folder=. \
               -o with_openssl3=True \
               -o with_theme_video=True \
-              -c "libwebm/*:tools.build:cxxflags=['/permissive-']" || {
+              -c "libwebm/*:tools.build:cxxflags=['/permissive-']" \
+              -c "dav1d/*:tools.build:cflags=['/FI$DAV1D_COMPAT']" || {
             # what ffmpeg's configure tried, if that is what failed; also in
             # the summary of the run, the log of this step gets very long
             for log in ~/.conan2/p/b/ffmpe*/b/*/ffbuild/config.log; do
@@ -456,7 +464,34 @@ jobs:
         run: |
           windeployqt bin/${{ env.C2_APP_EXECUTABLE }}.exe --release --no-compiler-runtime --no-translations --no-opengl-sw --dir Chatterino2/ --force-openssl
           cp bin/${{ env.C2_APP_EXECUTABLE }}.exe Chatterino2/
-          ..\.CI\deploy-crt.ps1 Chatterino2
+          $InstallDir = "Chatterino2"
+
+          if ($null -eq $Env:VCToolsRedistDir) {
+              Write-Error "VCToolsRedistDir is not set. Forgot to set Visual Studio environment variables?";
+              exit 1
+          }
+
+          # A path to the runtime libraries (e.g. "$Env:VCToolsRedistDir\onecore\x64\Microsoft.VC143.CRT")
+          $vclibs = (Get-ChildItem "$Env:VCToolsRedistDir\onecore\x64" -Filter '*.CRT')[0].FullName;
+
+          # All executables and libraries in the installation directory
+          $targets = Get-ChildItem -Recurse -Include '*.dll', '*.exe' $InstallDir;
+          # All dependencies of the targets (with duplicates)
+          $all_deps = $targets | ForEach-Object { (dumpbin /DEPENDENTS $_.FullName) -match '^(?!Dump of).+\.dll$' } | ForEach-Object { $_.Trim() };
+          # All dependencies without duplicates
+          $dependencies = $all_deps | Sort-Object -Unique;
+
+          $n_deployed = 0;
+          foreach ($dll in $dependencies) {
+              Write-Output "Checking for $dll";
+              if (Test-Path -PathType Leaf "$vclibs\$dll") {
+                  Write-Output "Deploying $dll";
+                  Copy-Item "$vclibs\$dll" "$InstallDir\$dll" -Force;
+                  $n_deployed++;
+              }
+          }
+
+          Write-Output "Deployed $n_deployed libraries";
 
       - name: Package (windows)
         if: startsWith(matrix.os, 'windows')
@@ -466,14 +501,14 @@ jobs:
 
       - name: Upload artifact (Windows - binary)
         if: startsWith(matrix.os, 'windows') && !matrix.skip-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.zip
           path: build/chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.zip
 
       - name: Upload artifact (Windows - symbols)
         if: startsWith(matrix.os, 'windows') && !matrix.skip-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jilchat-chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}-symbols.pdb.7z
           path: build/bin/jilchat-chatterino-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.pdb.7z
@@ -578,7 +613,7 @@ jobs:
 
       - name: Upload artifact (MacOS)
         if: startsWith(matrix.os, 'macos')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: chatterino-macos-Qt-${{ matrix.qt-version }}-universal.dmg
           path: build/chatterino-macos-Qt-${{ matrix.qt-version }}-universal.dmg
@@ -598,7 +633,7 @@ jobs:
           fetch-depth: 0 # allows for tags access
           persist-credentials: true # Required to update the nightly-build tag.
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         name: Download artifacts
         with:
           path: release-artifacts/
@@ -615,7 +650,7 @@ jobs:
         shell: bash
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 

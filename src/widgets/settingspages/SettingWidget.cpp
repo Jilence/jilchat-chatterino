@@ -198,7 +198,7 @@ SettingWidget *SettingWidget::dropdown(const QString &label,
 
     for (const auto value : magic_enum::enum_values<T>())
     {
-        combo->addItem(qmagicenum::enumDisplayNameString(value),
+        combo->addItem(qmagicenum::DisplayName::enumNameString(value),
                        QVariant(static_cast<std::underlying_type_t<T>>(value)));
     }
 
@@ -267,6 +267,8 @@ template SettingWidget *SettingWidget::dropdown<SplitMpsCorner>(
     const QString &label, EnumStringSetting<SplitMpsCorner> &setting);
 template SettingWidget *SettingWidget::dropdown<SplitMpsWindow>(
     const QString &label, EnumStringSetting<SplitMpsWindow> &setting);
+template SettingWidget *SettingWidget::dropdown<ChatColorCycleMode>(
+    const QString &label, EnumStringSetting<ChatColorCycleMode> &setting);
 template SettingWidget *SettingWidget::dropdown<BrowserManifestFormat>(
     const QString &label, EnumStringSetting<BrowserManifestFormat> &setting);
 template SettingWidget *SettingWidget::dropdown<TwitchReadConnectionMode>(
@@ -286,7 +288,7 @@ SettingWidget *SettingWidget::dropdown(const QString &label,
 
     for (const auto value : magic_enum::enum_values<T>())
     {
-        combo->addItem(qmagicenum::enumDisplayNameString(value),
+        combo->addItem(qmagicenum::DisplayName::enumNameString(value),
                        QVariant(static_cast<std::underlying_type_t<T>>(value)));
     }
 

@@ -20,6 +20,8 @@
 #include "util/AttachToConsole.hpp"
 #include "util/CombinePath.hpp"
 #include "util/IpcQueue.hpp"
+#include "util/Restart.hpp"
+#include "util/SettingsTransfer.hpp"
 
 #ifdef Q_OS_MACOS
 #    include "util/MacOsHelpers.h"
@@ -240,22 +242,43 @@ int main(int argc, char **argv)
         }
 
         qCInfo(chatterinoApp).noquote()
-            << "Leafyrino Qt SSL library build version:"
+            << "JilChat Chatterino Qt SSL library build version:"
             << QSslSocket::sslLibraryBuildVersionString();
         qCInfo(chatterinoApp).noquote()
-            << "Leafyrino Qt SSL library version:"
+            << "JilChat Chatterino Qt SSL library version:"
             << QSslSocket::sslLibraryVersionString();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
         qCInfo(chatterinoApp).noquote()
-            << "Leafyrino Qt SSL active backend:" << QSslSocket::activeBackend()
-            << "of" << QSslSocket::availableBackends().join(", ");
+            << "JilChat Chatterino Qt SSL active backend:"
+            << QSslSocket::activeBackend() << "of"
+            << QSslSocket::availableBackends().join(", ");
 #    if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
-        qCInfo(chatterinoApp) << "Leafyrino Qt SSL active backend features:"
-                              << QSslSocket::supportedFeatures();
+        qCInfo(chatterinoApp)
+            << "JilChat Chatterino Qt SSL active backend features:"
+            << QSslSocket::supportedFeatures();
 #    endif
-        qCInfo(chatterinoApp) << "Leafyrino Qt SSL active backend protocols:"
-                              << QSslSocket::supportedProtocols();
+        qCInfo(chatterinoApp)
+            << "JilChat Chatterino Qt SSL active backend protocols:"
+            << QSslSocket::supportedProtocols();
 #endif
+
+        // before anything reads the settings files
+        if (!args.isFramelessEmbed)
+        {
+            auto restored =
+                settingstransfer::applyPendingRestore(paths->settingsDirectory);
+            if (!restored)
+            {
+                qCWarning(chatterinoSettings)
+                    << "Failed to apply the pending settings restore:"
+                    << restored.error();
+                QMessageBox::warning(
+                    nullptr, QStringLiteral("Leafyrino - Restore failed"),
+                    QStringLiteral("Leafyrino couldn't restore your settings."
+                                   "\n\n%1")
+                        .arg(restored.error()));
+            }
+        }
 
         Settings settings(modes, args, paths->settingsDirectory);
 #ifndef Q_OS_MACOS
@@ -275,6 +298,8 @@ int main(int argc, char **argv)
         Helix::initialize();
 
         runGui(a, modes, *paths, settings, args, updates);
+
+        startPendingRestart();
     }
     return 0;
 }

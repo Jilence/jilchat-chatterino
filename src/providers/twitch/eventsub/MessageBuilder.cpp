@@ -324,7 +324,7 @@ EventSubMessageBuilder::EventSubMessageBuilder(TwitchChannel *channel,
 {
     this->emplace<TimestampElement>(time.time());
     this->message().flags.set(MessageFlag::System, MessageFlag::EventSub);
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 }
 
 EventSubMessageBuilder::EventSubMessageBuilder(TwitchChannel *channel)
@@ -368,6 +368,7 @@ void makeModerateMessage(EventSubMessageBuilder &builder,
                          const lib::payload::channel_moderate::v2::Event &event,
                          const lib::payload::channel_moderate::v2::Vip &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -383,6 +384,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Unvip &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -397,6 +399,7 @@ void makeModerateMessage(EventSubMessageBuilder &builder,
                          const lib::payload::channel_moderate::v2::Event &event,
                          const lib::payload::channel_moderate::v2::Warn &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     builder->flags.set(MessageFlag::ModerationAction);
     QString text;
 
@@ -494,18 +497,32 @@ void makeModerateMessage(
     builder->flags.set(MessageFlag::DoNotTriggerNotification,
                        MessageFlag::ModerationAction);
 
-    (void)event;
     builder->loginName.clear();
+    // Twitch names the moderator here, so the notice does too
+    const bool hasModerator = !event.moderatorUserLogin.isEmpty();
+    QString prefix;
     QString text;
-    builder.emplace<TextElement>("A message from", MessageElementFlag::Text,
-                                 MessageColor::System);
-    builder
-        .emplace<TextElement>(action.userName.qt(),
-                              MessageElementFlag::Username,
-                              MessageColor::System, FontStyle::ChatMediumBold)
-        ->setLink({Link::UserInfo, action.userLogin.qt()});
-    builder.emplace<TextElement>("was deleted:", MessageElementFlag::Text,
-                                 MessageColor::System);
+    if (hasModerator)
+    {
+        builder.appendUser(event.moderatorUserName, event.moderatorUserLogin,
+                           prefix);
+        builder.emplaceSystemTextAndUpdate("deleted a message from", prefix);
+        // the colon goes right behind the name
+        builder.appendUser(action.userName, action.userLogin, prefix, false);
+        builder.emplaceSystemTextAndUpdate(":", prefix);
+    }
+    else
+    {
+        builder.emplace<TextElement>("A message from", MessageElementFlag::Text,
+                                     MessageColor::System);
+        builder
+            .emplace<TextElement>(
+                action.userName.qt(), MessageElementFlag::Username,
+                MessageColor::System, FontStyle::ChatMediumBold)
+            ->setLink({Link::UserInfo, action.userLogin.qt()});
+        builder.emplace<TextElement>("was deleted:", MessageElementFlag::Text,
+                                     MessageColor::System);
+    }
 
     auto limit = getSettings()->deletedMessageLengthLimit.getValue();
     if (limit > 0 && action.messageBody.view().length() > limit)
@@ -527,8 +544,15 @@ void makeModerateMessage(
         text.append(action.messageBody.qt());
     }
 
-    text = QString("A message from %1 was deleted: %2")
-               .arg(action.userLogin.qt(), text);
+    if (hasModerator)
+    {
+        text = prefix + text;
+    }
+    else
+    {
+        text = QString("A message from %1 was deleted: %2")
+                   .arg(action.userLogin.qt(), text);
+    }
     builder.setMessageAndSearchText(text);
     builder->timeoutUser = action.userLogin.qt();
 }
@@ -681,6 +705,7 @@ void makeModerateMessage(EventSubMessageBuilder &builder,
                          const lib::payload::channel_moderate::v2::Event &event,
                          const lib::payload::channel_moderate::v2::Mod &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -696,6 +721,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::Unmod &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     QString text;
 
     builder.appendUser(event.moderatorUserName, event.moderatorUserLogin, text);
@@ -738,6 +764,7 @@ void makeModerateMessage(
     const lib::payload::channel_moderate::v2::Event &event,
     const lib::payload::channel_moderate::v2::UnbanRequest &action)
 {
+    builder->timeoutUser = action.userLogin.qt();
     builder->flags.set(MessageFlag::ModerationAction);
 
     QString text;
@@ -822,7 +849,7 @@ MessagePtr makeAutoModReviewMessage(TwitchChannel *channel,
                                     AutoModReviewPresentation presentation)
 {
     EventSubMessageBuilder builder(channel);
-    builder->serverReceivedTime = item.receivedAt;
+    builder->timestamp = item.receivedAt;
     builder->id = u"automod_" % item.messageID;
     builder->loginName = item.userLogin;
     builder->displayName = item.userName;
@@ -1186,7 +1213,7 @@ std::pair<MessagePtr, HighlightAlert> makeSuspiciousUserMessage(
 
     // Builder for low trust user message with explanation
     builder->channelName = event.broadcasterUserLogin.qt();
-    builder->serverReceivedTime = time;
+    builder->timestamp = time;
     builder->loginName = event.userLogin.qt();
     builder->flags.set(MessageFlag::PubSub, MessageFlag::LowTrustUsers);
 
@@ -1326,7 +1353,7 @@ MessagePtr makeUserMessageHeldMessage(
     QString text("AutoMod: Hey! Your message is being checked by mods and has "
                  "not been sent.");
     EventSubMessageBuilder builder(channel);
-    builder->serverReceivedTime = time;
+    builder->timestamp = time;
     builder->id = u"automod_" % event.messageID.qt();
     builder->loginName = u"automod"_s;
     builder->channelName = event.broadcasterUserLogin.qt();
@@ -1355,7 +1382,7 @@ MessagePtr makeUserMessageUpdateMessage(
 
     QString text("AutoMod: ");
     EventSubMessageBuilder builder(channel);
-    builder->serverReceivedTime = time;
+    builder->timestamp = time;
     builder->id = u"automod_" % event.messageID.qt();
     builder->loginName = u"automod"_s;
     builder->channelName = event.broadcasterUserLogin.qt();

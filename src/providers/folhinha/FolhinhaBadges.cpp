@@ -79,9 +79,9 @@ const BadgeImageUrls *lookupBadgeAssets(
 BadgeImageUrls fallbackBadgeAssets(const QString &kind)
 {
     return {
-        u"http://folhinhabot.com/badges/" % kind % u"1",
-        u"http://folhinhabot.com/badges/" % kind % u"2",
-        u"http://folhinhabot.com/badges/" % kind % u"3",
+        u"https://folhinhabot.com/badges/" % kind % u"1",
+        u"https://folhinhabot.com/badges/" % kind % u"2",
+        u"https://folhinhabot.com/badges/" % kind % u"3",
     };
 }
 
@@ -130,6 +130,36 @@ void tryInsert(std::unordered_map<QString, BuiltBadge> &out,
     {
         out[userId] = std::move(badge);
     }
+}
+
+// Picks the sub-length tier badge sent by the API, falling back to "sub"
+// for missing, unknown or non-sub kinds
+QString plusBadgeKind(const QJsonObject &userObj,
+                      const std::unordered_map<QString, BadgeImageUrls> &assets)
+{
+    const auto kind = userObj.value("badge").toString();
+    if (kind.startsWith(u"sub") && assets.contains(kind))
+    {
+        return kind;
+    }
+    return u"sub"_s;
+}
+
+QString plusBadgeTooltip(const QString &kind)
+{
+    static const std::unordered_map<QString, QString> tooltips{
+        {u"sub3m"_s, u"FolhinhaBot Plus · Folha (3+ meses)"_s},
+        {u"sub6m"_s, u"FolhinhaBot Plus · Ramo (6+ meses)"_s},
+        {u"sub12m"_s, u"FolhinhaBot Plus · Árvore (12+ meses)"_s},
+        {u"sub24m"_s, u"FolhinhaBot Plus · Floresta (24+ meses)"_s},
+    };
+
+    const auto it = tooltips.find(kind);
+    if (it != tooltips.end())
+    {
+        return it->second;
+    }
+    return u"FolhinhaBot Plus"_s;
 }
 
 }  // namespace
@@ -283,10 +313,11 @@ void FolhinhaBadges::applyBadgeJson(const QJsonObject &jsonRoot)
             }
             else
             {
+                const auto kind = plusBadgeKind(userObj, badgeAssets);
                 tryInsert(built, userId,
                           BuiltBadge{
-                              .emote = makeFolhinhaBadge(u"FolhinhaBot Plus"_s,
-                                                         badgeAssets, u"sub"_s),
+                              .emote = makeFolhinhaBadge(plusBadgeTooltip(kind),
+                                                         badgeAssets, kind),
                               .priority =
                                   static_cast<int>(FolhinhaBadgePriority::Plus),
                           });

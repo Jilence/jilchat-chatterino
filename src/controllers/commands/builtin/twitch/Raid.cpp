@@ -140,7 +140,7 @@ QString raidAuthRequiredMessage()
 {
     return QStringLiteral(
         "Raid controls need a broadcaster or editor account. Add it in "
-        "Settings -> Moltorino -> Authentication, then try again.");
+        "Settings -> JilChat Chatterino -> Authentication, then try again.");
 }
 
 QString raidAuthMessage(const QString &authError)

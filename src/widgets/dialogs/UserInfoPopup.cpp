@@ -26,6 +26,7 @@
 #include "messages/MessageElement.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/IvrApi.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChatServer.hpp"
@@ -33,6 +34,7 @@
 #include "providers/pronouns/Pronouns.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/tiktok/TikTokChannel.hpp"
 #include "providers/twitch/api/Helix.hpp"
 #include "providers/twitch/api/TwitchGql.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
@@ -60,6 +62,7 @@
 #include "widgets/buttons/SvgButton.hpp"
 #include "widgets/dialogs/EditUserNotesDialog.hpp"
 #include "widgets/dialogs/UserBadgesDialog.hpp"
+#include "widgets/helper/AvatarFrame.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/InvisibleSizeGrip.hpp"
 #include "widgets/helper/Line.hpp"
@@ -72,6 +75,7 @@
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
+#include "widgets/splits/SplitInput.hpp"
 #include "widgets/TooltipWidget.hpp"
 #include "widgets/Window.hpp"
 
@@ -91,6 +95,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QLineEdit>
 #include <QList>
 #include <QLocale>
@@ -104,6 +109,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QPushButton>
 #include <QShowEvent>
@@ -407,7 +413,8 @@ void createUsercardStatusRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
 }
 
 void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
-                            QLabel **pixmapOut, Button **paintNameButtonOut)
+                            QLabel **pixmapOut, Button **paintNameButtonOut,
+                            LabelButton **hideButtonOut)
 {
     auto *row = new QWidget;
     auto *layout = new QHBoxLayout(row);
@@ -421,6 +428,10 @@ void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
 
     auto *paintNameButton = new ClickablePaintName;
     layout->addWidget(paintNameButton, 0, Qt::AlignVCenter);
+
+    auto *hideButton = new LabelButton("Hide", nullptr, QSize{6, 0});
+    layout->addSpacing(4);
+    layout->addWidget(hideButton, 0, Qt::AlignVCenter);
     layout->addStretch(1);
 
     row->setVisible(false);
@@ -429,6 +440,7 @@ void createUsercardPaintRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
     *rowOut = row;
     *pixmapOut = paintNameButton->pixmapLabel();
     *paintNameButtonOut = paintNameButton;
+    *hideButtonOut = hideButton;
 }
 
 void createUsercardColorRow(LayoutCreator<QVBoxLayout> &vbox, QWidget **rowOut,
@@ -684,12 +696,12 @@ constexpr QStringView USERCARD_DAY_SEPARATOR_ID = u"usercard-day-separator:";
 /// separators and messages without a timestamp.
 QDate usercardMessageDay(const MessagePtr &message)
 {
-    if (message == nullptr || !message->serverReceivedTime.isValid() ||
+    if (message == nullptr || !message->timestamp.isValid() ||
         message->id.startsWith(USERCARD_DAY_SEPARATOR_ID))
     {
         return {};
     }
-    return message->serverReceivedTime.toLocalTime().date();
+    return message->timestamp.toLocalTime().date();
 }
 
 MessagePtr makeUsercardDaySeparator(QDate day)
@@ -979,7 +991,7 @@ MessagePtr makeUsercardModLogMessage(const GqlUsercardMessage &message,
     builder->messageText = body;
     builder->searchText = displayName + QStringLiteral(": ") + body;
     builder->channelName = channelName;
-    builder->serverReceivedTime = sentAt;
+    builder->timestamp = sentAt;
     builder->usernameColor = color;
     builder->flags.set(MessageFlag::DoNotLog,
                        MessageFlag::DoNotTriggerNotification);
@@ -1010,14 +1022,14 @@ QDateTime oldestUsercardMessageTime(const ChannelPtr &channel)
 
     for (const auto &message : channel->getMessageSnapshot())
     {
-        if (message == nullptr || !message->serverReceivedTime.isValid())
+        if (message == nullptr || !message->timestamp.isValid())
         {
             continue;
         }
 
-        if (!oldest.isValid() || message->serverReceivedTime < oldest)
+        if (!oldest.isValid() || message->timestamp < oldest)
         {
-            oldest = message->serverReceivedTime;
+            oldest = message->timestamp;
         }
     }
 
@@ -1323,7 +1335,82 @@ void unregisterActiveUsercard(UserInfoPopup *popup)
 
 namespace chatterino {
 
+namespace {
+
+QUrl tiktokProfileUrl(const QString &handle)
+{
+    return QUrl(QStringLiteral("https://www.tiktok.com/@") + handle);
+}
+
+}  // namespace
+
 using namespace literals;
+
+/// The user's Twitch profile banner, cropped to a wide strip
+class UsercardBanner : public QWidget
+{
+public:
+    explicit UsercardBanner(QWidget *parent)
+        : QWidget(parent)
+    {
+        this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    bool hasHeightForWidth() const override
+    {
+        return true;
+    }
+
+    int heightForWidth(int width) const override
+    {
+        return qRound(width * 0.2);
+    }
+
+    void setPixmap(QPixmap pixmap)
+    {
+        this->pixmap_ = std::move(pixmap);
+        this->update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+
+        QPainterPath clip;
+        clip.addRoundedRect(QRectF(this->rect()), 8, 8);
+        painter.setClipPath(clip);
+        painter.fillRect(this->rect(), Qt::black);
+
+        if (!this->pixmap_.isNull())
+        {
+            const auto size = this->pixmap_.size().scaled(
+                this->size(), Qt::KeepAspectRatioByExpanding);
+            QRect target(QPoint(0, 0), size);
+            target.moveCenter(this->rect().center());
+            painter.drawPixmap(target, this->pixmap_);
+        }
+
+        if (getSettings()->usercardBannerDisplayMode ==
+            QStringLiteral("background"))
+        {
+            // Darkened, and fading into the usercard so the name stays
+            // readable
+            painter.fillRect(this->rect(), QColor(0, 0, 0, 100));
+
+            QLinearGradient gradient(0, 0, 0, this->height());
+            gradient.setColorAt(0.0, QColor(15, 15, 15, 20));
+            gradient.setColorAt(0.4, QColor(15, 15, 15, 130));
+            gradient.setColorAt(1.0, QColor(15, 15, 15, 255));
+            painter.fillRect(this->rect(), gradient);
+        }
+    }
+
+private:
+    QPixmap pixmap_;
+};
 
 UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
     : DraggablePopup(closeAutomatically, split)
@@ -1459,8 +1546,44 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                       .withoutMargin();
     auto layout = layers.emplace<QVBoxLayout>();
 
+    // IVR profile banner
+    if (getSettings()->showUsercardBanners &&
+        (!getApp()->getStreamerMode()->isEnabled() ||
+         !getSettings()->streamerModeHideUsercardBanners))
+    {
+        auto *ivrBanner = new UsercardBanner(this);
+        ivrBanner->hide();
+
+        this->ui_.ivrBanner = ivrBanner;
+
+        if (getSettings()->usercardBannerDisplayMode !=
+            QStringLiteral("background"))
+        {
+            layout->addWidget(ivrBanner);
+        }
+    }
+
+    // Profile header
+    auto *profileHeader = new QWidget(this);
+    auto *headerLayout = new QGridLayout(profileHeader);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(0);
+
+    // Banner behind profile header
+    if (this->ui_.ivrBanner != nullptr &&
+        getSettings()->usercardBannerDisplayMode ==
+            QStringLiteral("background"))
+    {
+        this->ui_.ivrBanner->setFixedHeight(100);
+        headerLayout->addWidget(this->ui_.ivrBanner, 0, 0, Qt::AlignTop);
+    }
+
     // first line
-    auto head = layout.emplace<QHBoxLayout>().withoutMargin();
+    auto *headLayout = new QHBoxLayout;
+    headLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->addLayout(headLayout, 0, 0);
+
+    auto head = LayoutCreator<QHBoxLayout>(headLayout);
     {
         auto avatarBox = head.emplace<QVBoxLayout>().withoutMargin();
         avatarBox->setAlignment(Qt::AlignTop);
@@ -1475,12 +1598,28 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         this->ui_.avatarButton = avatar;
         avatar->setScaleIndependentSize(100, 100);
         avatar->setDim(DimButton::Dim::None);
-        avatarLayout->addWidget(avatar, 0, 0);
+        avatar->setRound(true);
+        avatar->setMarginEnabled(false);
+        avatarLayout->addWidget(avatar, 0, 0, Qt::AlignCenter);
+
+        // A JilTV frame lies over the picture, which shrinks to fit inside
+        this->ui_.avatarFrame = new AvatarFrameOverlay(avatarFrame);
+        avatarLayout->addWidget(this->ui_.avatarFrame, 0, 0);
         QObject::connect(
             avatar, &Button::clicked, [this](Qt::MouseButton button) {
                 if (this->isKick_)
                 {
                     this->onKickProfilePictureClick(button);
+                    return;
+                }
+
+                if (this->isTikTok_)
+                {
+                    if (button == Qt::LeftButton)
+                    {
+                        QDesktopServices::openUrl(
+                            tiktokProfileUrl(this->tiktokHandle_));
+                    }
                     return;
                 }
 
@@ -1592,8 +1731,18 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 nameHistory->setToolTip("Show name history");
                 nameHistory->hide();
                 QObject::connect(nameHistory.getElement(), &Button::leftClicked,
-                                 [this] {
+                                 this, [this] {
                                      this->showNameHistoryMenu();
+                                 });
+                auto vanity =
+                    box.emplace<LabelButton>("vanity", this, QSize{4, 0})
+                        .assign(&this->ui_.vanityLabel);
+                vanity->setToolTip(
+                    "View earned cosmetics from various services");
+                vanity->hide();
+                QObject::connect(vanity.getElement(), &Button::leftClicked,
+                                 this, [this] {
+                                     this->openVanityPage();
                                  });
                 auto badges =
                     box.emplace<LabelButton>("badges", this, QSize{4, 0})
@@ -1601,7 +1750,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
                 badges->setToolTip("View earned Twitch badges");
                 badges->hide();
                 QObject::connect(badges.getElement(), &Button::leftClicked,
-                                 [this] {
+                                 this, [this] {
                                      this->openBadgesDialog();
                                  });
                 box->addSpacing(5);
@@ -1717,7 +1866,28 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
             Button *seventvPaintNameButton = nullptr;
             createUsercardPaintRow(vbox, &this->ui_.seventvPaintRow,
                                    &this->ui_.seventvPaintPixmapLabel,
-                                   &seventvPaintNameButton);
+                                   &seventvPaintNameButton,
+                                   &this->ui_.seventvPaintHideButton);
+            QObject::connect(
+                this->ui_.seventvPaintHideButton, &Button::leftClicked, this,
+                [this] {
+                    if (!this->seventvPaint_ ||
+                        this->seventvPaint_->id.isEmpty())
+                    {
+                        return;
+                    }
+
+                    auto *paints = getApp()->getSeventvPaints();
+                    if (paints->isPaintHidden(this->seventvPaint_->id))
+                    {
+                        paints->unhidePaint(this->seventvPaint_->id);
+                    }
+                    else
+                    {
+                        paints->hidePaint(this->seventvPaint_->id,
+                                          this->seventvPaint_->name);
+                    }
+                });
             if (seventvPaintNameButton)
             {
                 QObject::connect(
@@ -1789,6 +1959,7 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         }
     }
 
+    layout->addWidget(profileHeader);
     layout.emplace<Line>(false);
 
     // second line
@@ -1802,6 +1973,8 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         // visibility of this is updated in setData
 
         user.emplace<LabelButton>("&Notes", this).assign(&this->ui_.notesAdd);
+        auto whisper = user.emplace<LabelButton>("&Whisper", this)
+                           .assign(&this->ui_.whisperLabel);
         auto usercard = user.emplace<LabelButton>("&Usercard", this)
                             .assign(&this->ui_.usercardLabel);
         auto userlogs = user.emplace<LabelButton>("&Logs", this)
@@ -1835,17 +2008,34 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
 
         user->addStretch(1);
 
+        auto openWhisper = [this] {
+            if (this->userName_.isEmpty() || this->split_ == nullptr ||
+                this->isYouTube_ || this->isTikTok_ || this->isKick_)
+            {
+                return;
+            }
+
+            this->split_->getInput().setWhisperTarget(this->userName_);
+            this->split_->window()->activateWindow();
+            this->split_->setFocus(Qt::MouseFocusReason);
+        };
+        QObject::connect(whisper.getElement(), &Button::leftClicked, this,
+                         openWhisper);
+        this->registerMnemonicButton(this->ui_.whisperLabel, Qt::Key_W,
+                                     openWhisper);
+
         auto openUsercard = [this] {
             MessagePlatform platform =
-                this->isYouTube_ ? MessagePlatform::YouTube
-                : this->isKick_  ? MessagePlatform::Kick
-                                 : MessagePlatform::AnyOrTwitch;
+                this->isYouTube_  ? MessagePlatform::YouTube
+                : this->isTikTok_ ? MessagePlatform::TikTok
+                : this->isKick_   ? MessagePlatform::Kick
+                                  : MessagePlatform::AnyOrTwitch;
             QString channelName = this->underlyingChannel_
                                       ? this->underlyingChannel_->getName()
                                       : QString();
-            UserInfoPopup::openUserChannelAction(this->userName_, platform,
-                                                 channelName,
-                                                 this->youtubeChannelId_);
+            UserInfoPopup::openUserChannelAction(
+                this->isTikTok_ ? this->tiktokHandle_ : this->userName_,
+                platform, channelName, this->youtubeChannelId_);
         };
         QObject::connect(usercard.getElement(), &Button::leftClicked,
                          openUsercard);
@@ -2369,7 +2559,7 @@ void UserInfoPopup::installEvents()
     QObject::connect(
         this->ui_.block, &QCheckBox::stateChanged,
         [this](int newState) mutable {
-            if (this->isKick_ || this->isYouTube_)
+            if (this->isKick_ || this->isYouTube_ || this->isTikTok_)
             {
                 return;
             }
@@ -2573,6 +2763,11 @@ void UserInfoPopup::installEvents()
             this->refreshSeventvPaint();
         },
         this->signalHolder_);
+    getSettings()->usernamePaintSource.connect(
+        [this](const auto &) {
+            this->refreshSeventvPaint();
+        },
+        this->signalHolder_, false);
     getSettings()->showUsercardRolesButton.connect(
         [this](bool enabled) {
             if (!enabled && this->usercardRolesShown_)
@@ -2589,6 +2784,10 @@ void UserInfoPopup::installEvents()
             this->updateUsercardBadges();
         },
         this->signalHolder_, false);
+    this->signalHolder_.managedConnect(
+        getSettings()->hiddenSevenTVPaints.delayedItemsChanged, [this] {
+            this->refreshSeventvPaint();
+        });
     getSettings()->showSevenTVUsercardButton.connect(
         [this](bool enabled) {
             if (enabled && this->seventvUserID_.isEmpty() &&
@@ -2728,7 +2927,7 @@ bool UserInfoPopup::updateTargetModerationStatusFromMessage(
 
 bool UserInfoPopup::shouldShowModerationActions() const
 {
-    if (this->isYouTube_)
+    if (this->isYouTube_ || this->isTikTok_)
     {
         return false;
     }
@@ -2783,8 +2982,9 @@ bool UserInfoPopup::crossActionAvailable() const
 {
     const auto *twitchChannel =
         dynamic_cast<TwitchChannel *>(this->underlyingChannel_.get());
-    if (this->isKick_ || this->isYouTube_ || this->userName_.isEmpty() ||
-        twitchChannel == nullptr || twitchChannel->roomId().isEmpty())
+    if (this->isKick_ || this->isYouTube_ || this->isTikTok_ ||
+        this->userName_.isEmpty() || twitchChannel == nullptr ||
+        twitchChannel->roomId().isEmpty())
     {
         return false;
     }
@@ -2891,6 +3091,8 @@ void UserInfoPopup::setData(const QString &name,
     this->isYouTube_ =
         this->forceYouTube_ ||
         this->underlyingChannel_->getType() == Channel::Type::YouTube;
+    this->isTikTok_ =
+        this->underlyingChannel_->getType() == Channel::Type::TikTok;
     this->forceYouTube_ = false;
     if (this->isKick_)
     {
@@ -2932,6 +3134,10 @@ void UserInfoPopup::setData(const QString &name,
             this->ui_.pronounsLabel->hide();
         }
     }
+    else if (this->isTikTok_)
+    {
+        this->updateTikTokUserData();
+    }
     else if (this->isYouTube_)
     {
         this->updateYouTubeUserData();
@@ -2947,7 +3153,11 @@ void UserInfoPopup::setData(const QString &name,
 
     this->userStateChanged_.invoke();
 
-    if (this->isYouTube_)
+    if (this->isTikTok_)
+    {
+        this->updateTikTokLatestMessages();
+    }
+    else if (this->isYouTube_)
     {
         this->updateYouTubeLatestMessages();
     }
@@ -2958,10 +3168,19 @@ void UserInfoPopup::setData(const QString &name,
     // If we're opening by ID, this will be called as soon as we get the information from twitch
 
     auto type = this->channel_->getType();
-    if (this->isYouTube_)
+    if (this->isTikTok_)
+    {
+        this->ui_.usercardLabel->setText("Open profile on &TikTok");
+        this->ui_.usercardLabel->setVisible(!this->tiktokHandle_.isEmpty());
+        this->ui_.whisperLabel->hide();
+        this->ui_.userlogsLabel->hide();
+        this->ui_.rolesViewLabel->hide();
+    }
+    else if (this->isYouTube_)
     {
         this->ui_.usercardLabel->setText("Open channel on &YouTube");
         this->ui_.usercardLabel->setVisible(!this->youtubeChannelId_.isEmpty());
+        this->ui_.whisperLabel->hide();
         this->ui_.userlogsLabel->hide();
         this->ui_.rolesViewLabel->hide();
     }
@@ -2973,16 +3192,19 @@ void UserInfoPopup::setData(const QString &name,
         this->ui_.usercardLabel->hide();
         this->ui_.userlogsLabel->hide();
         this->ui_.rolesViewLabel->hide();
+        this->ui_.whisperLabel->setVisible(!this->isKick_);
     }
     else
     {
         this->ui_.usercardLabel->setText("&Usercard");
         this->ui_.usercardLabel->show();
+        this->ui_.whisperLabel->show();
         this->ui_.userlogsLabel->show();
         this->ui_.rolesViewLabel->setVisible(
             getSettings()->showUsercardRolesButton);
     }
 
+    this->updateVanityButton();
     this->updateBadgesButton();
 }
 
@@ -3009,6 +3231,9 @@ void UserInfoPopup::openUserChannelAction(const QString &userName,
         case MessagePlatform::Kick:
             url = u"https://kick.com/" % KickApi::slugify(userName);
             break;
+        case MessagePlatform::TikTok:
+            url = u"https://www.tiktok.com/@" % userName;
+            break;
         case MessagePlatform::AnyOrTwitch:
             if (channelName.isEmpty())
             {
@@ -3031,6 +3256,131 @@ void UserInfoPopup::openUserChannelAction(const QString &userName,
     else
     {
         QDesktopServices::openUrl(QUrl(url));
+    }
+}
+
+void UserInfoPopup::updateTikTokUserData()
+{
+    // userName_ is the handle, or "id:<user id>" for someone without one
+    auto *channel =
+        dynamic_cast<TikTokChannel *>(this->underlyingChannel_.get());
+    QStringView key = this->userName_;
+    if (key.startsWith(u"id:"))
+    {
+        key = key.sliced(3);
+    }
+    const auto author = channel ? channel->author(key).value_or(TikTokAuthor{})
+                                : TikTokAuthor{};
+
+    this->tiktokHandle_ = author.handle;
+    if (this->tiktokHandle_.isEmpty() && !this->userName_.startsWith(u"id:"))
+    {
+        this->tiktokHandle_ = this->userName_;
+    }
+    this->tiktokUserId_ = author.id;
+    if (this->tiktokUserId_.isEmpty() && this->userName_.startsWith(u"id:"))
+    {
+        this->tiktokUserId_ = this->userName_.sliced(3);
+    }
+
+    QString name = author.displayName;
+    if (name.isEmpty())
+    {
+        name = this->tiktokHandle_;
+    }
+    if (!this->tiktokHandle_.isEmpty() &&
+        name.compare(this->tiktokHandle_, Qt::CaseInsensitive) != 0)
+    {
+        name += u" (@" % this->tiktokHandle_ % u')';
+    }
+    this->ui_.nameLabel->setText(name);
+
+    if (this->tiktokUserId_.isEmpty())
+    {
+        this->ui_.userIDLabel->setText(u"ID " % TEXT_UNAVAILABLE);
+        this->ui_.userIDLabel->setProperty("copy-text",
+                                           TEXT_UNAVAILABLE.toString());
+    }
+    else
+    {
+        this->ui_.userIDLabel->setText(TEXT_USER_ID % this->tiktokUserId_);
+        this->ui_.userIDLabel->setProperty("copy-text", this->tiktokUserId_);
+    }
+
+    if (this->ui_.pronounsLabel)
+    {
+        this->ui_.pronounsLabel->hide();
+    }
+    this->ui_.followerCountLabel->hide();
+    this->ui_.createdDateLabel->hide();
+    this->ui_.followageRow->hide();
+    this->ui_.subageRow->hide();
+    this->hideUsercardSubGiftRow();
+    this->ui_.chatterCountLabel->hide();
+    this->ui_.lastLiveLabel->hide();
+    this->ui_.sevenTVUserLabel->hide();
+    this->ui_.rolesLabel->hide();
+    this->ui_.notesAdd->hide();
+    this->ui_.notesPreview->setVisible(false);
+    this->ui_.block->hide();
+    if (this->ui_.followButton)
+    {
+        this->ui_.followButton->hide();
+    }
+
+    this->loadYouTubeAvatar(author.avatarUrl);
+}
+
+void UserInfoPopup::updateTikTokLatestMessages()
+{
+    auto matches = [this](const MessagePtr &message) {
+        if (message->platform != MessagePlatform::TikTok)
+        {
+            return false;
+        }
+        if (!this->tiktokUserId_.isEmpty() &&
+            message->userID == this->tiktokUserId_)
+        {
+            return true;
+        }
+        return !this->tiktokHandle_.isEmpty() &&
+               message->loginName.compare(this->tiktokHandle_,
+                                          Qt::CaseInsensitive) == 0;
+    };
+
+    auto channelPtr = std::make_shared<Channel>(
+        this->underlyingChannel_ ? this->underlyingChannel_->getName()
+                                 : QString(),
+        Channel::Type::None);
+    if (this->underlyingChannel_)
+    {
+        for (const auto &message :
+             this->underlyingChannel_->getMessageSnapshot())
+        {
+            if (matches(message))
+            {
+                channelPtr->addMessage(message, MessageContext::Repost);
+            }
+        }
+    }
+    this->usercardMessagesChannel_ = channelPtr;
+    this->ui_.latestMessages->setChannel(channelPtr);
+    this->ui_.latestMessages->setSourceChannel(this->underlyingChannel_);
+    this->updateUsercardMessagesVisibility();
+
+    if (this->underlyingChannel_)
+    {
+        this->refreshConnection_ =
+            std::make_unique<pajlada::Signals::ScopedConnection>(
+                this->underlyingChannel_->messageAppended.connect(
+                    [this, matches](auto message, auto) {
+                        if (matches(message) && this->usercardMessagesChannel_)
+                        {
+                            this->usercardMessagesChannel_->addMessage(
+                                message, MessageContext::Repost);
+                            this->updateUsercardMessagesVisibility();
+                        }
+                    }));
     }
 }
 
@@ -3198,6 +3548,11 @@ void UserInfoPopup::updateYouTubeLatestMessages()
                         }
                     }));
     }
+}
+
+Split *UserInfoPopup::getSplit() const
+{
+    return this->split_;
 }
 
 void UserInfoPopup::updateLatestMessages()
@@ -3931,6 +4286,26 @@ void UserInfoPopup::updateUserData()
         this->maybeStartUsercardMessageAutoLoad();
         this->helixAvatarUrl_ = user.profileImageUrl;
         this->updateAvatarUrl();
+        this->ui_.avatarFrame->setSource(
+            [login = user.login] {
+                return Jiltv::instance().frame(login);
+            },
+            [this](bool framed) {
+                auto *avatar = this->ui_.avatarButton;
+                if (framed)
+                {
+                    this->ui_.avatarFrame->setFixedSize(avatar->size());
+                    const int side = int(100 * AVATAR_IN_FRAME);
+                    avatar->setScaleIndependentSize(side, side);
+                }
+                else
+                {
+                    avatar->setScaleIndependentSize(100, 100);
+                    this->ui_.avatarFrame->setMinimumSize(0, 0);
+                    this->ui_.avatarFrame->setMaximumSize(QWIDGETSIZE_MAX,
+                                                          QWIDGETSIZE_MAX);
+                }
+            });
         this->updateNotes();
 
         // copyable button for login name of users with a localized username
@@ -5010,7 +5385,7 @@ QString UserInfoPopup::showProfilePictureContextMenu()
 bool UserInfoPopup::canShowRoleManagementMenu() const
 {
     if (!getSettings()->showUsercardRoleManagementMenu || this->isKick_ ||
-        this->isYouTube_ || this->userName_.isEmpty() ||
+        this->isYouTube_ || this->isTikTok_ || this->userName_.isEmpty() ||
         !this->underlyingChannel_)
     {
         return false;
@@ -5236,7 +5611,8 @@ void UserInfoPopup::hideUsercardSubGiftRow()
 void UserInfoPopup::resetUsercardInfoRows()
 {
     auto *settings = getSettings();
-    const bool showTwitchProfileRows = !this->isKick_ && !this->isYouTube_;
+    const bool showTwitchProfileRows =
+        !this->isKick_ && !this->isYouTube_ && !this->isTikTok_;
 
     this->ui_.followerCountLabel->setText(TEXT_FOLLOWERS.arg(""));
     this->ui_.followerCountLabel->setVisible(
@@ -5291,11 +5667,75 @@ void UserInfoPopup::resetUsercardInfoRows()
     this->refreshSeventvPaint();
 }
 
+void UserInfoPopup::loadIvrBanner(const QString &bannerUrl)
+{
+    const auto generation = ++this->ivrBannerRequestGeneration_;
+    this->ivrBannerUrl_ = bannerUrl;
+
+    if (this->ui_.ivrBanner == nullptr)
+    {
+        return;
+    }
+
+    this->ui_.ivrBanner->setPixmap(QPixmap{});
+    this->ui_.ivrBanner->hide();
+
+    const QUrl url(bannerUrl);
+    if (bannerUrl.isEmpty() || !url.isValid() ||
+        url.scheme() != QStringLiteral("https") || url.host().isEmpty() ||
+        !url.userInfo().isEmpty() || url.port(443) != 443)
+    {
+        return;
+    }
+
+    // Banners are a few hundred KB; anything far bigger isn't loaded
+    constexpr qint64 maxBannerBytes = qint64{5} * 1024 * 1024;
+
+    QNetworkRequest req{url};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "Chatterino");
+    req.setTransferTimeout(10000);
+    static auto *manager = new QNetworkAccessManager();
+    auto *reply = manager->get(req);
+    QObject::connect(reply, &QNetworkReply::finished, reply,
+                     &QObject::deleteLater);
+    QObject::connect(this, &QObject::destroyed, reply, &QNetworkReply::abort);
+    QObject::connect(
+        reply, &QNetworkReply::downloadProgress, reply,
+        [reply](qint64 received, qint64 total) {
+            if (received > maxBannerBytes || total > maxBannerBytes)
+            {
+                reply->abort();
+            }
+        });
+    QObject::connect(
+        reply, &QNetworkReply::finished, this,
+        [this, reply, generation, bannerUrl] {
+            if (reply->error() != QNetworkReply::NoError ||
+                generation != this->ivrBannerRequestGeneration_ ||
+                bannerUrl != this->ivrBannerUrl_ ||
+                this->ui_.ivrBanner == nullptr)
+            {
+                return;
+            }
+
+            QPixmap pixmap;
+            if (!pixmap.loadFromData(reply->readAll()) || pixmap.isNull())
+            {
+                return;
+            }
+
+            this->ui_.ivrBanner->setPixmap(std::move(pixmap));
+            this->ui_.ivrBanner->show();
+        });
+}
+
 void UserInfoPopup::applyIvrUserProfile(const IvrUserProfile &profile)
 {
     auto *settings = getSettings();
 
     this->ui_.bannedAvatarLabel->setVisible(profile.banned);
+
+    this->loadIvrBanner(profile.banner);
 
     if (settings->showUsercardChatterCount &&
         settings->showUserinfoPopupChatters.getValue())
@@ -5413,7 +5853,7 @@ void UserInfoPopup::resetNameHistory()
 bool UserInfoPopup::applyCachedNameHistory()
 {
     if (this->userName_.isEmpty() || this->userId_.isEmpty() || this->isKick_ ||
-        this->isYouTube_)
+        this->isYouTube_ || this->isTikTok_)
     {
         return false;
     }
@@ -5446,7 +5886,7 @@ void UserInfoPopup::updateNameHistoryButton()
 
     const bool canShow = getSettings()->showUsercardNameHistoryButton &&
                          !this->isKick_ && !this->isYouTube_ &&
-                         !this->userName_.isEmpty();
+                         !this->isTikTok_ && !this->userName_.isEmpty();
     this->ui_.nameHistoryButton->setVisible(canShow);
     this->ui_.nameHistoryButton->setEnabled(canShow &&
                                             !this->userId_.isEmpty());
@@ -5647,6 +6087,18 @@ void UserInfoPopup::setUsercardBadgePixmap(QLabel *label, const ImagePtr &image)
     label->setPixmap(scaled);
 }
 
+void UserInfoPopup::updateVanityButton()
+{
+    if (this->ui_.vanityLabel == nullptr)
+    {
+        return;
+    }
+
+    this->ui_.vanityLabel->setVisible(!this->isKick_ && !this->isYouTube_ &&
+                                      !this->isTikTok_ &&
+                                      !this->userName_.isEmpty());
+}
+
 void UserInfoPopup::updateBadgesButton()
 {
     if (this->ui_.badgesLabel == nullptr)
@@ -5654,7 +6106,8 @@ void UserInfoPopup::updateBadgesButton()
         return;
     }
 
-    bool canShow = !this->isKick_ && !this->isYouTube_ &&
+    // The earned badges are Twitch's, read in the chat of the channel
+    bool canShow = !this->isKick_ && !this->isYouTube_ && !this->isTikTok_ &&
                    !this->userName_.isEmpty() && this->underlyingChannel_ &&
                    !this->underlyingChannel_->getName().isEmpty();
 
@@ -5671,19 +6124,14 @@ void UserInfoPopup::updateBadgesButton()
 
     this->ui_.badgesLabel->setVisible(canShow);
     this->ui_.badgesLabel->setEnabled(canShow);
-    if (!canShow)
-    {
-        this->ui_.badgesLabel->setToolTip({});
-        return;
-    }
-
-    this->ui_.badgesLabel->setToolTip("View earned Twitch badges");
+    this->ui_.badgesLabel->setToolTip(canShow ? "View earned Twitch badges"
+                                              : QString());
 }
 
 void UserInfoPopup::openBadgesDialog()
 {
-    if (this->isKick_ || this->isYouTube_ || this->userName_.isEmpty() ||
-        !this->underlyingChannel_)
+    if (this->isKick_ || this->isYouTube_ || this->isTikTok_ ||
+        this->userName_.isEmpty() || !this->underlyingChannel_)
     {
         return;
     }
@@ -5703,10 +6151,26 @@ void UserInfoPopup::openBadgesDialog()
                                  twitchChannel, this);
 }
 
+void UserInfoPopup::openVanityPage()
+{
+    if (this->isKick_ || this->isYouTube_ || this->isTikTok_ ||
+        this->userName_.isEmpty())
+    {
+        return;
+    }
+
+    QUrl url("https://vanity.zonian.dev/");
+    QUrlQuery query;
+    query.addQueryItem("u", this->userName_);
+    url.setQuery(query);
+    QDesktopServices::openUrl(url);
+}
+
 void UserInfoPopup::showNameHistoryMenu()
 {
     if (this->ui_.nameHistoryButton == nullptr || this->userName_.isEmpty() ||
-        this->userId_.isEmpty() || this->isKick_ || this->isYouTube_)
+        this->userId_.isEmpty() || this->isKick_ || this->isYouTube_ ||
+        this->isTikTok_)
     {
         return;
     }
@@ -5787,7 +6251,7 @@ void UserInfoPopup::openNameHistoryMenu(const QString &statusText)
 void UserInfoPopup::requestNameHistory()
 {
     if (this->userName_.isEmpty() || this->userId_.isEmpty() || this->isKick_ ||
-        this->isYouTube_)
+        this->isYouTube_ || this->isTikTok_)
     {
         return;
     }
@@ -6194,7 +6658,8 @@ void UserInfoPopup::updateAvatarUrl()
 
 void UserInfoPopup::refreshSeventvPaint()
 {
-    if (!getSettings()->showUsercardSevenTVPaint)
+    // With paints turned off, the usercard doesn't show one either
+    if (!getSettings()->showUsercardSevenTVPaint || !usernamePaintsEnabled())
     {
         this->seventvPaint_ = nullptr;
         if (this->ui_.seventvPaintRow)
@@ -6204,7 +6669,18 @@ void UserInfoPopup::refreshSeventvPaint()
         return;
     }
 
-    const auto paint = usernamePaint(this->userName_.toLower(), this->isKick_);
+    auto paint = this->isTikTok_
+                     ? nullptr
+                     : usernamePaint(this->userName_.toLower(), this->isKick_);
+    const auto source = getSettings()->usernamePaintSource.getEnum();
+    if (!paint && !this->isTikTok_ &&
+        (source == UsernamePaintSource::SevenTV ||
+         source == UsernamePaintSource::Automatic))
+    {
+        // A hidden 7TV paint, so it can be unhidden from here
+        paint = getApp()->getSeventvPaints()->getPaint(
+            this->userName_.toLower(), this->isKick_, true);
+    }
     this->seventvPaint_ = paint;
 
     if (!paint)
@@ -6219,6 +6695,17 @@ void UserInfoPopup::refreshSeventvPaint()
     {
         prefixLabel->setText(TEXT_PAINT.arg(paint->sourceName()));
     }
+
+    // Only 7TV paints can be hidden
+    const bool seventv =
+        getApp()->getSeventvPaints()->getPaintById(paint->id) == paint;
+    this->ui_.seventvPaintHideButton->setVisible(seventv);
+    const bool hidden = getApp()->getSeventvPaints()->isPaintHidden(paint->id);
+    this->ui_.seventvPaintHideButton->setText(hidden ? "Unhide" : "Hide");
+    this->ui_.seventvPaintHideButton->setToolTip(
+        hidden ? "Render this paint in chat again"
+               : "Stop rendering this paint in chat");
+
     this->ui_.seventvPaintRow->show();
     this->updateSeventvPaintPixmap();
 }
@@ -6266,6 +6753,20 @@ void UserInfoPopup::updateSeventvPaintPixmap()
         paint->getPixmap(paintName, font, userColor, size, this->scale(),
                          static_cast<float>(dpr), true, padding);
 
+    const bool hidden = getApp()->getSeventvPaints()->isPaintHidden(paint->id);
+    if (hidden)
+    {
+        // Dim hidden paints so their state is visible at a glance.
+        QPixmap dimmed(pixmap.size());
+        dimmed.setDevicePixelRatio(pixmap.devicePixelRatio());
+        dimmed.fill(Qt::transparent);
+        QPainter painter(&dimmed);
+        painter.setOpacity(0.4);
+        painter.drawPixmap(0, 0, pixmap);
+        painter.end();
+        pixmap = std::move(dimmed);
+    }
+
     // The room on the left would move the name away from "7TV Paint:". And
     // only a band around the text is shown: some paints have shadows reaching
     // far below, which would push the rows apart and the name off the middle.
@@ -6285,7 +6786,8 @@ void UserInfoPopup::updateSeventvPaintPixmap()
     this->ui_.seventvPaintPixmapLabel->setFixedSize(
         pixmap.deviceIndependentSize().toSize());
     this->ui_.seventvPaintPixmapLabel->setPixmap(pixmap);
-    this->ui_.seventvPaintPixmapLabel->setToolTip(paintName);
+    this->ui_.seventvPaintPixmapLabel->setToolTip(
+        hidden ? paintName + " (hidden)" : paintName);
 }
 
 UserInfoPopup::~UserInfoPopup()

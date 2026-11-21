@@ -20,6 +20,7 @@ public:
         Twitch,
         Kick,
         YouTube,
+        TikTok,
     };
 
     struct Spec {

@@ -9,12 +9,14 @@
 #include "common/network/NetworkResult.hpp"
 #include "messages/Image.hpp"
 #include "providers/bttv/BttvLiveUpdates.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/paints/PaintDropShadow.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/PostToThread.hpp"
 
 #include <QBrush>
@@ -22,6 +24,7 @@
 #include <QDateTime>
 #include <QFontMetricsF>
 #include <QHash>
+#include <QHashFunctions>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -33,6 +36,8 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -75,26 +80,17 @@ public:
         const auto step = static_cast<int>(
             double(QDateTime::currentMSecsSinceEpoch() % 16000) * 96.0 * 2.0 /
             16000.0);
-        const auto key =
-            QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8|%9")
-                .arg(text, font.key())
-                .arg(size.width())
-                .arg(size.height())
-                .arg(dpr)
-                .arg(centerVertically)
-                .arg(padding)
-                .arg(outlined)
-                .arg(texture ? QString{} : userColor.name(QColor::HexArgb));
-        if (const auto *frame = this->frames_.object(key);
-            frame != nullptr && frame->step == step)
+        // A number, not a text: asked for every name on every repaint
+        const auto key = qHashMulti(0, text, font, size.width(), size.height(),
+                                    dpr, centerVertically, padding, outlined,
+                                    texture ? QRgb{0} : userColor.rgba());
+        const auto *kept = this->frames_.object(key);
+        if (kept != nullptr && kept->step == step)
         {
-            return frame->pixmap;
+            return kept->pixmap;
         }
 
         const QSizeF drawSize = size + QSizeF(2 * padding, 2 * padding);
-        QPixmap pixmap((drawSize * dpr).toSize());
-        pixmap.setDevicePixelRatio(dpr);
-        pixmap.fill(Qt::transparent);
 
         // The colon after the name isn't part of the name.
         auto nametag = text;
@@ -112,14 +108,26 @@ public:
                       ((textRect.height() - metrics.height()) / 2) +
                       metrics.ascent()
                 : textRect.bottom() - metrics.descent();
-        QPainterPath name;
-        name.addText(textRect.left(), baseline, font, nametag);
-
-        QPainter painter(&pixmap);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        if (outlined)
+        // The outline doesn't move, only the image inside the name does:
+        // it is drawn once (outlining the name's shape is the slow part)
+        // and each new picture starts from it.
+        QPixmap outline;
+        if (kept != nullptr)
         {
+            outline = kept->outline;
+        }
+        else
+        {
+            outline = QPixmap((drawSize * dpr).toSize());
+            outline.setDevicePixelRatio(dpr);
+            outline.fill(Qt::transparent);
+        }
+        if (kept == nullptr && outlined)
+        {
+            QPainterPath name;
+            name.addText(textRect.left(), baseline, font, nametag);
+            QPainter painter(&outline);
+            painter.setRenderHint(QPainter::Antialiasing);
             // What the extension does in the web chat: the shape of the
             // name, grown by a pixel to all sides, in the outline's color;
             // and the same again two pixels lower. There, the name is in a
@@ -136,21 +144,31 @@ public:
                 QRectF(0, 0, drawSize.width(), textRect.bottom()));
             painter.drawPath(name.translated(0, 2 * unit));
             painter.drawPath(name);
-            painter.setClipping(false);
         }
-        painter.setPen(Qt::NoPen);
+
+        auto pixmap = outline.copy();
+        pixmap.setDevicePixelRatio(dpr);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        // The name itself as text, so its letters look like those of names
+        // without an effect (hinted), only the outline follows its shape
+        QPen pen;
         if (texture)
         {
             QBrush brush(*texture);
             brush.setTransform(
                 QTransform::fromTranslate(-step / 2.0, -step / 2.0));
-            painter.setBrush(brush);
+            pen.setBrush(brush);
         }
         else
         {
-            painter.setBrush(userColor);
+            pen.setColor(userColor);
         }
-        painter.drawPath(name);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+        painter.setFont(font);
+        painter.drawText(QPointF(textRect.left(), baseline), nametag);
 
         if (colon)
         {
@@ -163,7 +181,11 @@ public:
         }
         painter.end();
 
-        this->frames_.insert(key, new Frame{.step = step, .pixmap = pixmap});
+        this->frames_.insert(key, new Frame{
+                                      .step = step,
+                                      .pixmap = pixmap,
+                                      .outline = outline,
+                                  });
         return pixmap;
     }
 
@@ -190,7 +212,30 @@ public:
         return getSettings()->displayBttvUsernameEffectOutlines;
     }
 
-    qreal overflow() const override
+    QMarginsF overflowMargins(float scale) const override
+    {
+        const auto room = this->overflow(scale);
+        return {room, room, room, room};
+    }
+
+    QPixmap getNametagPixmap(const QString &text, const QFont &font,
+                             QColor userColor, QSizeF textSize, float scale,
+                             float dpr, QMarginsF margins) const override
+    {
+        // The chat asks for the whole room around the name
+        // (overflowMargins), which is the picture getPixmap makes: hand
+        // that out instead of copying it on every repaint.
+        const auto room = this->overflow(scale);
+        if (margins == QMarginsF(room, room, room, room))
+        {
+            return this->getPixmap(text, font, userColor, textSize, scale, dpr,
+                                   false, room);
+        }
+        return this->croppedNametagPixmap(text, font, userColor, textSize,
+                                          scale, dpr, margins);
+    }
+
+    qreal overflow(float /*scale*/) const override
     {
         // The outline is around the name.
         return this->shadowsEnabled() ? 3 : 0;
@@ -207,11 +252,13 @@ private:
     struct Frame {
         int step;
         QPixmap pixmap;
+        /// The name's outline alone, which every picture starts from
+        QPixmap outline;
     };
 
     ImagePtr image_;
     QColor outline_;
-    mutable QCache<QString, Frame> frames_{128};
+    mutable QCache<size_t, Frame> frames_{128};
 };
 
 /// The name in its color; a light crosses it in the first half of every
@@ -260,6 +307,17 @@ public:
     QString sourceName() const override
     {
         return QStringLiteral("BTTV");
+    }
+
+protected:
+    /// The light moves with the time, not with an image: the picture of a
+    /// name is kept per paint tick while it crosses, and once for the rest
+    /// of the eight seconds.
+    qint64 sourcePixmapCacheKey() const override
+    {
+        const auto phase =
+            double(QDateTime::currentMSecsSinceEpoch() % 8000) / 4000.0;
+        return phase < 1.0 ? animatedPaintTick() : -1;
     }
 
 private:
@@ -363,9 +421,35 @@ void BttvUsernameEffects::refresh()
                     const auto styleText = QString::fromUtf8(css.getData());
                     NetworkRequest(QUrl(site + script))
                         .timeout(30000)
-                        .onSuccess([this, styleText](const NetworkResult &js) {
-                            this->applySite(styleText,
-                                            QString::fromUtf8(js.getData()));
+                        .onSuccess([this, site,
+                                    styleText](const NetworkResult &js) {
+                            const auto scriptText =
+                                QString::fromUtf8(js.getData());
+                            // The names of the effects are in the script of
+                            // the dashboard, loaded by the main one
+                            static const QRegularExpression dashboardRegex(
+                                R"re(assets/Dashboard-[\w-]+\.js)re");
+                            const auto dashboard =
+                                dashboardRegex.match(scriptText).captured(0);
+                            if (dashboard.isEmpty())
+                            {
+                                this->applySite(styleText, scriptText);
+                                return;
+                            }
+                            NetworkRequest(QUrl(site + u'/' + dashboard))
+                                .timeout(30000)
+                                .onSuccess([this, styleText, scriptText](
+                                               const NetworkResult &chunk) {
+                                    this->applySite(
+                                        styleText,
+                                        scriptText + u'\n' +
+                                            QString::fromUtf8(chunk.getData()));
+                                })
+                                .onError([this, styleText,
+                                          scriptText](const NetworkResult &) {
+                                    this->applySite(styleText, scriptText);
+                                })
+                                .execute();
                         })
                         .execute();
                 })
@@ -398,6 +482,21 @@ void BttvUsernameEffects::applySite(const QString &style, const QString &script)
         outlines.insert(match.captured(1), match.captured(2));
         outlineOrder.push_back(match.captured(1));
     }
+    if (outlines.isEmpty())
+    {
+        // Now a map like {glacier:`#166258`,midas:`#674911`,...}
+        static const QRegularExpression colorMapRegex(
+            R"re(\{([a-z]+:`#[0-9a-fA-F]{3,8}`(?:,[a-z]+:`#[0-9a-fA-F]{3,8}`)+)\})re");
+        static const QRegularExpression colorRegex(
+            R"re(([a-z]+):`(#[0-9a-fA-F]{3,8})`)re");
+        const auto map = colorMapRegex.match(script).captured(1);
+        for (auto it = colorRegex.globalMatch(map); it.hasNext();)
+        {
+            const auto match = it.next();
+            outlines.insert(match.captured(1), match.captured(2));
+            outlineOrder.push_back(match.captured(1));
+        }
+    }
 
     QVector<BttvUsernameEffect> updated;
     QSet<QString> listed;
@@ -417,6 +516,59 @@ void BttvUsernameEffects::applySite(const QString &style, const QString &script)
             .outline = {},
         });
         listed.insert(id);
+    }
+    if (updated.isEmpty())
+    {
+        // Now two maps of messages by effect, {flare:{id:`..`,
+        // defaultMessage:[{type:0,value:`Flare`}]},...}: first the names,
+        // then what it takes to get them
+        static const QRegularExpression messageMapRegex(
+            R"re(\(\{((?:[a-z]+:\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`[^`]*`\}\]\},?)+)\}\))re");
+        static const QRegularExpression messageRegex(
+            R"re(([a-z]+):\{id:`[^`]*`,defaultMessage:\[\{type:0,value:`([^`]*)`\}\]\})re");
+        std::vector<std::vector<std::pair<QString, QString>>> maps;
+        for (auto it = messageMapRegex.globalMatch(script); it.hasNext();)
+        {
+            const auto body = it.next().captured(1);
+            std::vector<std::pair<QString, QString>> entries;
+            bool hasFlare = false;
+            for (auto m = messageRegex.globalMatch(body); m.hasNext();)
+            {
+                const auto match = m.next();
+                hasFlare = hasFlare || match.captured(1) == u"flare";
+                entries.emplace_back(match.captured(1), match.captured(2));
+            }
+            if (hasFlare)
+            {
+                maps.push_back(std::move(entries));
+            }
+        }
+        if (!maps.empty())
+        {
+            QHash<QString, QString> requirements;
+            if (maps.size() > 1)
+            {
+                for (const auto &[id, text] : maps[1])
+                {
+                    requirements.insert(id, text);
+                }
+            }
+            for (const auto &[id, label] : maps[0])
+            {
+                if (listed.contains(id))
+                {
+                    continue;
+                }
+                updated.push_back({
+                    .id = id,
+                    .label = label,
+                    .requirement = requirements.value(id),
+                    .texture = {},
+                    .outline = {},
+                });
+                listed.insert(id);
+            }
+        }
     }
     // An effect with an image the page describes in a way not known here.
     for (const auto &id : std::as_const(outlineOrder))
@@ -577,6 +729,25 @@ bool usernamePaintsEnabled()
 std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick)
 {
     const auto source = getSettings()->usernamePaintSource.getEnum();
+    const bool jiltv = !kick && getSettings()->enableJiltv;
+    const auto jiltvPaint = [&] {
+        return Jiltv::instance().paint(userName);
+    };
+
+    // Automatic draws a JilTV paint before a 7TV or BetterTTV one
+    const bool jiltvBefore = source == UsernamePaintSource::JilTV ||
+                             source == UsernamePaintSource::Automatic;
+    if (jiltv && jiltvBefore)
+    {
+        if (auto paint = jiltvPaint())
+        {
+            return paint;
+        }
+        if (source == UsernamePaintSource::JilTV)
+        {
+            return nullptr;
+        }
+    }
 
     if (source == UsernamePaintSource::SevenTV ||
         source == UsernamePaintSource::Automatic)
@@ -590,7 +761,10 @@ std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick)
     if (!kick && (source == UsernamePaintSource::BetterTTV ||
                   source == UsernamePaintSource::Automatic))
     {
-        return BttvUsernameEffects::instance().getPaint(userName);
+        if (auto paint = BttvUsernameEffects::instance().getPaint(userName))
+        {
+            return paint;
+        }
     }
     return nullptr;
 }

@@ -10,6 +10,7 @@
 #include "singletons/Paths.hpp"
 
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDirIterator>
 #include <QJsonObject>
 #include <QLocale>
@@ -19,6 +20,7 @@
 #include <QStringView>
 #include <QThreadPool>
 #include <QTimeZone>
+#include <QUrl>
 #include <QUuid>
 
 namespace {
@@ -612,6 +614,19 @@ std::pair<QByteArrayView, QByteArrayView> splitOnce(QByteArrayView haystack,
                                                     char needle) noexcept
 {
     return splitOnceImpl(haystack, {&needle, 1});
+}
+
+bool openWebUrl(const QUrl &url)
+{
+    const auto scheme = url.scheme();
+    if (!url.isValid() || url.host().isEmpty() ||
+        (scheme.compare(u"https", Qt::CaseInsensitive) != 0 &&
+         scheme.compare(u"http", Qt::CaseInsensitive) != 0))
+    {
+        qCWarning(chatterinoApp) << "Refused to open a link that isn't http(s)";
+        return false;
+    }
+    return QDesktopServices::openUrl(url);
 }
 
 }  // namespace chatterino

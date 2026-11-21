@@ -14,58 +14,149 @@
 #include "singletons/Settings.hpp"
 #include "util/CombinePath.hpp"
 #include "util/PostToThread.hpp"
+#include "util/Restart.hpp"
 
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QDesktopServices>
-#include <QMessageBox>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
-#include <QStringBuilder>
+#include <QSettings>
 #include <QtConcurrent>
+#include <QUrl>
 #include <semver/semver.hpp>
+
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <system_error>
+
+#ifdef Q_OS_LINUX
+#    include <fcntl.h>
+#    include <unistd.h>
+#endif
 
 namespace {
 
 using namespace chatterino;
 using namespace literals;
 
-QString currentBranch()
+const QString RELEASES_API =
+    u"https://api.github.com/repos/Jilence/jilchat-chatterino"_s;
+constexpr int FIRST_CHECK_DELAY_MS = 15 * 1000;
+constexpr int CHECK_INTERVAL_MS = 3 * 60 * 60 * 1000;
+
+#ifdef Q_OS_LINUX
+/// The AppImage this runs from, empty when it isn't one
+QString appImagePath()
 {
-    return getSettings()->betaUpdates ? "beta" : "stable";
+    return qEnvironmentVariable("APPIMAGE");
 }
 
-#if defined(Q_OS_WIN)
-const QString CHATTERINO_OS = u"win"_s;
-#elif defined(Q_OS_MACOS)
-const QString CHATTERINO_OS = u"macos"_s;
-#elif defined(Q_OS_LINUX)
-const QString CHATTERINO_OS = u"linux"_s;
-#elif defined(Q_OS_FREEBSD)
-const QString CHATTERINO_OS = u"freebsd"_s;
-#else
-const QString CHATTERINO_OS = u"unknown"_s;
+// Runs on the host with the app id, branch, running commit and installation
+// (--user or --system), with the bundle on file descriptor 3. The app's files
+// aren't always at the same path on the host, so the bundle is copied to a
+// file of the host's own first. Exits with 3 if the installed version is
+// still the running one, so we don't restart into the same version.
+const QString FLATPAK_INSTALL_SCRIPT = uR"sh(
+bundle=$(mktemp --suffix=.flatpak) || exit
+if ! cat <&3 >"$bundle"; then
+    rm -f "$bundle"
+    exit 1
+fi
+flatpak install "$4" -y --noninteractive --reinstall --bundle "$bundle"
+status=$?
+rm -f "$bundle"
+[ "$status" -eq 0 ] || exit "$status"
+[ "$(flatpak info "$4" --show-commit "$1//$2")" != "$3" ] || exit 3
+)sh"_s;
+
 #endif
 
-QJsonValue getForArchitecture(const QJsonObject &obj, const QString &key)
+#ifdef Q_OS_WIN
+/// Starts the portable updater on `zipPath`. It waits for this instance to
+/// exit, but can only restart "chatterino.exe", so cmd runs it and starts this
+/// program again once it succeeded.
+bool startPortableUpdater(const QString &updaterPath, const QString &zipPath)
 {
-    auto val = obj[key];
+    const auto command = uR"(/d /s /c ""%1" "%2" && start "" "%3"")"_s.arg(
+        QDir::toNativeSeparators(updaterPath),
+        QDir::toNativeSeparators(zipPath),
+        QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
 
-#ifdef Q_PROCESSOR_ARM
-    QString armKey = key % u"_arm";
-    if (obj[armKey].isString())
+    auto cmd = qEnvironmentVariable("ComSpec");
+    if (cmd.isEmpty())
     {
-        val = obj[armKey];
+        cmd = u"cmd.exe"_s;
     }
-#elif defined(Q_PROCESSOR_X86)
-    QString x86Key = key % u"_x86";
-    if (obj[x86Key].isString())
-    {
-        val = obj[x86Key];
-    }
+
+    QProcess process;
+    process.setProgram(cmd);
+    process.setNativeArguments(command);
+    process.setWorkingDirectory(QCoreApplication::applicationDirPath());
+    process.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) {
+            args->flags |= 0x08000000;  // CREATE_NO_WINDOW
+        });
+    return process.startDetached();
+}
 #endif
 
-    return val;
-}
+#ifdef Q_OS_MACOS
+/// Replaces the app bundle with the one in the disk image once this
+/// instance has quit, then starts it again.
+/// Arguments: the PID to wait for, the disk image, the bundle to replace.
+// clang-format off
+constexpr const char *MACOS_UPDATE_SCRIPT =
+    R"SH(#!/bin/bash
+pid="$1"
+dmg="$2"
+app="$3"
+
+while kill -0 "$pid" 2>/dev/null; do
+    sleep 0.5
+done
+
+mnt="$(mktemp -d /tmp/jilchat-update.XXXXXX)" || exit 1
+if ! hdiutil attach -nobrowse -readonly -noautoopen \
+        -mountpoint "$mnt" "$dmg" >/dev/null; then
+    open "$app"
+    exit 1
+fi
+
+src="$(find "$mnt" -maxdepth 1 -name '*.app' -print -quit)"
+new="${app%.app}.updating.app"
+rm -rf "$new"
+if [ -z "$src" ] || ! ditto "$src" "$new"; then
+    hdiutil detach "$mnt" -quiet
+    rm -rf "$new"
+    open "$app"
+    exit 1
+fi
+hdiutil detach "$mnt" -quiet
+rmdir "$mnt" 2>/dev/null
+
+# Swap the bundles; keep the old one until the new one is in place
+old="${app%.app}.old.app"
+rm -rf "$old"
+if mv "$app" "$old" && mv "$new" "$app"; then
+    rm -rf "$old"
+else
+    [ -d "$old" ] && [ ! -d "$app" ] && mv "$old" "$app"
+    rm -rf "$new"
+fi
+
+xattr -dr com.apple.quarantine "$app" 2>/dev/null
+rm -f "$dmg"
+open "$app"
+)SH";
+// clang-format on
+#endif
 
 }  // namespace
 
@@ -84,6 +175,20 @@ Updates::Updates(const Modes &modes_, const Paths &paths_, Settings &settings)
             this->checkForUpdates();
         },
         this->managedConnections, false);
+
+    // what an update left behind the last time
+    this->deleteOldFiles();
+
+    // Once shortly after starting, then every few hours
+    QTimer::singleShot(FIRST_CHECK_DELAY_MS, &this->checkTimer_, [this] {
+        this->checkForUpdates();
+    });
+    this->checkTimer_.setInterval(CHECK_INTERVAL_MS);
+    QObject::connect(&this->checkTimer_, &QTimer::timeout, &this->checkTimer_,
+                     [this] {
+                         this->checkForUpdates();
+                     });
+    this->checkTimer_.start();
 }
 
 bool Updates::isDowngradeOf(const QString &online, const QString &current)
@@ -150,335 +255,679 @@ const QString &Updates::getOnlineVersion() const
 
 void Updates::installUpdates()
 {
-    if (this->status_ != UpdateAvailable)
+    if (!this->canInstall())
     {
         assert(false);
         return;
     }
 
-    if (Version::instance().isNightly())
+#ifdef Q_OS_WIN
+    if (this->modes.isPortable)
     {
-        // Since Nightly builds can be installed in many different ways, we ask the user to download the update manually.
-        QDesktopServices::openUrl(
-            QUrl("https://github.com/leafyzito/leafyrino/releases"));
+        if (this->portableZip_.isEmpty())
+        {
+            // The release has no zip for this architecture
+            QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+            return;
+        }
+        const auto updater = Updates::portableUpdaterPath(this->paths);
+        if (!QFile::exists(updater))
+        {
+            this->setStatus_(MissingPortableUpdater);
+            return;
+        }
+
+        this->setStatus_(Downloading);
+        this->downloadVerified(this->portableZip_, this->portableZipName_,
+                               u"update.zip"_s,
+                               [this, updater](const QString &path) {
+                                   if (!startPortableUpdater(updater, path))
+                                   {
+                                       this->setStatus_(RunUpdaterFailed);
+                                       return;
+                                   }
+                                   QApplication::exit(0);
+                               });
         return;
     }
 
-#ifdef Q_OS_MACOS
-    QMessageBox *box = new QMessageBox(
-        QMessageBox::Information, "Chatterino Update",
-        "A link will open in your browser. Download and install to update.");
-    box->setAttribute(Qt::WA_DeleteOnClose);
-    box->open();
-    QDesktopServices::openUrl(this->updateExe_);
-#elif defined Q_OS_LINUX
-    QMessageBox *box =
-        new QMessageBox(QMessageBox::Information, "Chatterino Update",
-                        "Automatic updates are currently not available on "
-                        "Linux. Please redownload the app to update.");
-    box->setAttribute(Qt::WA_DeleteOnClose);
-    box->open();
-    QDesktopServices::openUrl(this->updateGuideLink_);
-#elif defined Q_OS_WIN
-    if (this->modes.isPortable)
+    if (this->updateExe_.isEmpty())
     {
-        QMessageBox *box =
-            new QMessageBox(QMessageBox::Information, "Chatterino Update",
-                            "Chatterino is downloading the update "
-                            "in the background and will run the "
-                            "updater once it is finished.");
-        box->setAttribute(Qt::WA_DeleteOnClose);
-        box->show();
-
-        NetworkRequest(this->updatePortable_)
-            .timeout(600000)
-            .followRedirects(true)
-            .onError([this](NetworkResult) {
-                this->setStatus_(DownloadFailed);
-
-                postToThread([] {
-                    QMessageBox *box = new QMessageBox(
-                        QMessageBox::Information, "Chatterino Update",
-                        "Failed while trying to download the update.");
-                    box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->show();
-                    box->raise();
-                });
-            })
-            .onSuccess([this](auto result) {
-                if (result.status() != 200)
-                {
-                    auto *box = new QMessageBox(
-                        QMessageBox::Information, "Chatterino Update",
-                        QStringLiteral("The update couldn't be downloaded "
-                                       "(Error: %1).")
-                            .arg(result.formatError()));
-                    box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->exec();
-                    return;
-                }
-
-                QByteArray object = result.getData();
-                auto filename =
-                    combinePath(this->paths.miscDirectory, "update.zip");
-
-                QFile file(filename);
-                if (!file.open(QIODevice::Truncate | QIODevice::WriteOnly))
-                {
-                    qCWarning(chatterinoUpdate)
-                        << "Failed to save update.zip" << file.errorString();
-                    this->setStatus_(WriteFileFailed);
-                    return;
-                }
-
-                if (file.write(object) == -1)
-                {
-                    this->setStatus_(WriteFileFailed);
-                    return;
-                }
-                file.flush();
-                file.close();
-
-                auto updaterPath = Updates::portableUpdaterPath(this->paths);
-                if (!QFile::exists(updaterPath))
-                {
-                    this->setStatus_(MissingPortableUpdater);
-                    return;
-                }
-                bool ok =
-                    QProcess::startDetached(updaterPath, {filename, "restart"});
-                if (!ok)
-                {
-                    this->setStatus_(RunUpdaterFailed);
-                    return;
-                }
-
-                QApplication::exit(0);
-            })
-            .execute();
-        this->setStatus_(Downloading);
+        // The release has no installer for this architecture
+        QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+        return;
     }
-    else
+
+    this->setStatus_(Downloading);
+    this->downloadVerified(
+        this->updateExe_, this->updateExeName_, u"Update.exe"_s,
+        [this](const QString &path) {
+            // The setup waits for this instance to close, installs into the
+            // folder this runs from and starts the new version when it's done
+            if (!QProcess::startDetached(
+                    path, {u"--update"_s, u"--dest"_s,
+                           QDir::toNativeSeparators(
+                               QCoreApplication::applicationDirPath())}))
+            {
+                this->setStatus_(RunUpdaterFailed);
+                return;
+            }
+            QApplication::exit(0);
+        });
+#elif defined(Q_OS_MACOS)
+    // The app bundle this runs from: <bundle>.app/Contents/MacOS/<binary>
+    QDir bundle(QCoreApplication::applicationDirPath());
+    bundle.cdUp();
+    bundle.cdUp();
+    const auto bundlePath = bundle.absolutePath();
+    const QFileInfo bundleParent(QFileInfo(bundlePath).absolutePath());
+    if (this->updateExe_.isEmpty() || !bundlePath.endsWith(u".app"_s) ||
+        !bundleParent.isWritable())
     {
-        QMessageBox *box =
-            new QMessageBox(QMessageBox::Information, "Chatterino Update",
-                            "Chatterino is downloading the update "
-                            "in the background and will run the "
-                            "updater once it is finished.");
-        box->setAttribute(Qt::WA_DeleteOnClose);
-        box->show();
-
-        NetworkRequest(this->updateExe_)
-            .timeout(600000)
-            .followRedirects(true)
-            .onError([this](NetworkResult) {
-                this->setStatus_(DownloadFailed);
-
-                QMessageBox *box = new QMessageBox(
-                    QMessageBox::Information, "Chatterino Update",
-                    "Failed to download the update. \n\nTry manually "
-                    "downloading the update.");
-                box->setAttribute(Qt::WA_DeleteOnClose);
-                box->exec();
-            })
-            .onSuccess([this](auto result) {
-                if (result.status() != 200)
-                {
-                    auto *box = new QMessageBox(
-                        QMessageBox::Information, "Chatterino Update",
-                        QStringLiteral("The update couldn't be downloaded "
-                                       "(Error: %1).")
-                            .arg(result.formatError()));
-                    box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->exec();
-                    return;
-                }
-
-                QByteArray object = result.getData();
-                auto filePath =
-                    combinePath(this->paths.miscDirectory, "Update.exe");
-
-                QFile file(filePath);
-
-                std::ignore =
-                    file.open(QIODevice::Truncate | QIODevice::WriteOnly);
-
-                if (file.write(object) == -1)
-                {
-                    this->setStatus_(WriteFileFailed);
-                    QMessageBox *box = new QMessageBox(
-                        QMessageBox::Information, "Chatterino Update",
-                        "Failed to save the update file. This could be due to "
-                        "window settings or antivirus software.\n\nTry "
-                        "manually "
-                        "downloading the update.");
-                    box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->exec();
-
-                    QDesktopServices::openUrl(this->updateExe_);
-                    return;
-                }
-                file.flush();
-                file.close();
-
-                if (QProcess::startDetached(filePath, {}))
-                {
-                    QApplication::exit(0);
-                }
-                else
-                {
-                    QMessageBox *box = new QMessageBox(
-                        QMessageBox::Information, "Chatterino Update",
-                        "Failed to execute update binary. This could be due to "
-                        "window "
-                        "settings or antivirus software.\n\nTry manually "
-                        "downloading "
-                        "the update.");
-                    box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->exec();
-
-                    QDesktopServices::openUrl(this->updateExe_);
-                }
-            })
-            .execute();
-        this->setStatus_(Downloading);
+        // Not replaceable from here: open the disk image to install by hand
+        QDesktopServices::openUrl(QUrl(this->updateExe_.isEmpty()
+                                           ? this->updateGuideLink_
+                                           : this->updateExe_));
+        return;
     }
+
+    this->setStatus_(Downloading);
+    this->downloadVerified(
+        this->updateExe_, this->updateExeName_, u"update.dmg"_s,
+        [this, bundlePath](const QString &dmgPath) {
+            const auto scriptPath =
+                combinePath(this->paths.miscDirectory, u"update.sh"_s);
+            QFile script(scriptPath);
+            if (!script.open(QIODevice::Truncate | QIODevice::WriteOnly) ||
+                script.write(MACOS_UPDATE_SCRIPT) == -1)
+            {
+                this->setStatus_(WriteFileFailed);
+                return;
+            }
+            script.close();
+
+            if (!QProcess::startDetached(
+                    u"/bin/bash"_s,
+                    {scriptPath,
+                     QString::number(QCoreApplication::applicationPid()),
+                     dmgPath, bundlePath}))
+            {
+                this->setStatus_(RunUpdaterFailed);
+                return;
+            }
+            QApplication::exit(0);
+        });
+#elif defined(Q_OS_LINUX)
+    if (Version::instance().isFlatpak())
+    {
+        if (this->flatpakBundle_.isEmpty())
+        {
+            QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+            return;
+        }
+        this->setStatus_(Downloading);
+        this->downloadVerified(this->flatpakBundle_, this->flatpakBundleName_,
+                               u"update.flatpak"_s,
+                               [this](const QString &path) {
+                                   this->installFlatpakBundle(path);
+                               });
+        return;
+    }
+
+    // An AppImage is one file that can be swapped while it runs; other
+    // installs (.deb) get the release page
+    const auto appImage = appImagePath();
+    if (this->updateExe_.isEmpty() || appImage.isEmpty() ||
+        !QFileInfo(QFileInfo(appImage).absolutePath()).isWritable())
+    {
+        QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
+        return;
+    }
+
+    this->setStatus_(Downloading);
+    this->downloadVerified(
+        this->updateExe_, this->updateExeName_, u"update.AppImage"_s,
+        [this, appImage](const QString &downloaded) {
+            // Next to the old one first, so the swap is a rename on the same
+            // file system
+            const auto next = appImage + u".update"_s;
+            QFile::remove(next);
+            if (!QFile::copy(downloaded, next) ||
+                !QFile::setPermissions(next,
+                                       QFile::ReadOwner | QFile::WriteOwner |
+                                           QFile::ExeOwner | QFile::ReadGroup |
+                                           QFile::ExeGroup | QFile::ReadOther |
+                                           QFile::ExeOther))
+            {
+                QFile::remove(next);
+                this->setStatus_(WriteFileFailed);
+                return;
+            }
+            QFile::remove(downloaded);
+
+            std::error_code error;
+            std::filesystem::rename(next.toStdString(), appImage.toStdString(),
+                                    error);
+            if (error)
+            {
+                qCWarning(chatterinoUpdate)
+                    << "Failed to replace the AppImage:"
+                    << QString::fromStdString(error.message());
+                QFile::remove(next);
+                this->setStatus_(WriteFileFailed);
+                return;
+            }
+
+            if (!QProcess::startDetached(appImage, {}))
+            {
+                this->setStatus_(RunUpdaterFailed);
+                return;
+            }
+            QApplication::exit(0);
+        });
+#else
+    QDesktopServices::openUrl(QUrl(this->updateGuideLink_));
 #endif
+}
+
+void Updates::installFlatpakBundle(const QString &bundlePath)
+{
+#ifdef Q_OS_LINUX
+    const auto instance = readFlatpakInstance();
+    if (!instance)
+    {
+        qCWarning(chatterinoUpdate) << "Failed to read /.flatpak-info";
+        this->setStatus_(RunUpdaterFailed);
+        return;
+    }
+
+    qCDebug(chatterinoUpdate) << "Installing the Flatpak bundle" << bundlePath;
+
+    auto *process = new QProcess;
+    process->setProcessChannelMode(QProcess::MergedChannels);
+
+    QObject::connect(process, &QProcess::errorOccurred, process,
+                     [this, process](QProcess::ProcessError error) {
+                         if (error != QProcess::FailedToStart)
+                         {
+                             return;
+                         }
+                         qCWarning(chatterinoUpdate)
+                             << "Failed to start flatpak-spawn:"
+                             << process->errorString();
+                         this->setStatus_(RunUpdaterFailed);
+                         process->deleteLater();
+                     });
+
+    QObject::connect(
+        process, &QProcess::finished, process,
+        [this, process, bundlePath, instance = *instance](
+            int exitCode, QProcess::ExitStatus exitStatus) {
+            process->deleteLater();
+            QFile::remove(bundlePath);
+
+            if (exitStatus != QProcess::NormalExit || exitCode != 0)
+            {
+                qCWarning(chatterinoUpdate)
+                    << "Installing the Flatpak bundle failed with exit code"
+                    << exitCode << process->readAll();
+                this->setStatus_(exitStatus == QProcess::NormalExit &&
+                                         exitCode == 3
+                                     ? FlatpakNotUpdated
+                                     : RunUpdaterFailed);
+                return;
+            }
+
+            if (!startFlatpakRestart(instance))
+            {
+                qCWarning(chatterinoUpdate)
+                    << "Failed to restart after the update";
+            }
+
+            QApplication::exit(0);
+        });
+
+    // The host gets the bundle as file descriptor 3, as the app's data
+    // directory isn't always at the same path there
+    auto bundle = std::make_shared<QFile>(bundlePath);
+    if (!bundle->open(QIODevice::ReadOnly))
+    {
+        qCWarning(chatterinoUpdate)
+            << "Failed to open" << bundlePath << bundle->errorString();
+        QFile::remove(bundlePath);
+        this->setStatus_(RunUpdaterFailed);
+        process->deleteLater();
+        return;
+    }
+    const int bundleFd = bundle->handle();
+    process->setChildProcessModifier([bundleFd] {
+        if (bundleFd == 3)
+        {
+            // dup2() keeps close-on-exec when it's the same descriptor
+            ::fcntl(3, F_SETFD, 0);
+        }
+        else
+        {
+            ::dup2(bundleFd, 3);
+        }
+    });
+    process->start(
+        u"flatpak-spawn"_s,
+        {u"--host"_s, u"--forward-fd=3"_s, u"sh"_s, u"-c"_s,
+         FLATPAK_INSTALL_SCRIPT, u"sh"_s, instance->appId, instance->branch,
+         instance->commit, instance->system ? u"--system"_s : u"--user"_s});
+    // open until flatpak-spawn has handed it to the host
+    QObject::connect(process, &QProcess::finished, process, [bundle] {
+        bundle->close();
+    });
+#else
+    (void)bundlePath;
+    this->setStatus_(RunUpdaterFailed);
+#endif
+}
+
+void Updates::downloadVerified(const QString &url, const QString &assetName,
+                               const QString &fileName,
+                               std::function<void(const QString &)> done)
+{
+    if (this->checksumsUrl_.isEmpty())
+    {
+        qCWarning(chatterinoUpdate) << "The release has no checksums";
+        this->setStatus_(VerifyFailed);
+        return;
+    }
+
+    NetworkRequest(this->checksumsUrl_)
+        .timeout(60000)
+        .followRedirects(true)
+        .onError([this](const NetworkResult &) {
+            this->setStatus_(DownloadFailed);
+        })
+        .onSuccess([this, url, assetName, fileName,
+                    done = std::move(done)](const NetworkResult &result) {
+            // Lines of sha256sum: "<hash>  <name>" (or "<hash> *<name>")
+            QString expected;
+            const auto lines = QString::fromUtf8(result.getData()).split(u'\n');
+            for (const auto &line : lines)
+            {
+                const auto parts = line.trimmed().split(
+                    QRegularExpression(u"\\s+"_s), Qt::SkipEmptyParts);
+                if (parts.size() == 2 &&
+                    (parts[1] == assetName || parts[1] == u'*' + assetName))
+                {
+                    expected = parts[0].toLower();
+                    break;
+                }
+            }
+            if (expected.isEmpty())
+            {
+                qCWarning(chatterinoUpdate)
+                    << "No checksum for" << assetName << "in the release";
+                this->setStatus_(VerifyFailed);
+                return;
+            }
+
+            NetworkRequest(url)
+                .timeout(600000)
+                .followRedirects(true)
+                .onError([this](const NetworkResult &) {
+                    this->setStatus_(DownloadFailed);
+                })
+                .onSuccess([this, expected, fileName,
+                            done](const NetworkResult &download) {
+                    const auto &data = download.getData();
+                    const auto actual =
+                        QString::fromLatin1(
+                            QCryptographicHash::hash(data,
+                                                     QCryptographicHash::Sha256)
+                                .toHex())
+                            .toLower();
+                    if (actual != expected)
+                    {
+                        qCWarning(chatterinoUpdate)
+                            << "Update checksum mismatch:" << actual
+                            << "expected" << expected;
+                        this->setStatus_(VerifyFailed);
+                        return;
+                    }
+
+                    const auto path =
+                        combinePath(this->paths.miscDirectory, fileName);
+                    QFile file(path);
+                    if (!file.open(QIODevice::Truncate |
+                                   QIODevice::WriteOnly) ||
+                        file.write(data) != data.size())
+                    {
+                        qCWarning(chatterinoUpdate)
+                            << "Failed to save" << path << file.errorString();
+                        this->setStatus_(WriteFileFailed);
+                        return;
+                    }
+                    file.close();
+                    done(path);
+                })
+                .execute();
+        })
+        .execute();
 }
 
 void Updates::checkForUpdates()
 {
 #ifndef CHATTERINO_DISABLE_UPDATER
-    this->setStatus_(NoUpdateAvailable);
-    return;
-
-    auto version = Version::instance();
+    const auto &version = Version::instance();
 
     if (!version.isSupportedOS())
     {
-        qCDebug(chatterinoUpdate)
-            << "Update checking disabled because OS doesn't appear to be one "
-               "of Windows, GNU/Linux or macOS.";
         return;
     }
 
-    if (version.isFlatpak())
+#    ifdef Q_OS_WIN
+    // What the setup put there (it leaves its uninstaller next to the
+    // program, earlier versions uninstall.ps1, the Inno Setup installer of
+    // older versions its unins000.exe) and
+    // portable packages update themselves. Plain zips are updated by hand.
+    const auto appDir = QCoreApplication::applicationDirPath();
+    if (!this->modes.isPortable &&
+        !QFile::exists(
+            combinePath(appDir, u"Uninstall JilChat Chatterino.exe"_s)) &&
+        !QFile::exists(combinePath(appDir, u"uninstall.ps1"_s)) &&
+        !QFile::exists(combinePath(appDir, u"unins000.exe"_s)))
+    {
+        qCDebug(chatterinoUpdate)
+            << "Update checking skipped: not installed by the installer";
+        return;
+    }
+#    endif
+
+    // Releases are matched by commit, so a build has to know its own. Builds
+    // made elsewhere than this repository aren't in it and get no updates.
+    const auto &commit = version.commitHash();
+    if (commit.isEmpty() || commit.startsWith(u"GIT-"_s))
+    {
+        qCDebug(chatterinoUpdate)
+            << "Update checking skipped: the build doesn't know its commit";
+        return;
+    }
+
+    if (this->status_ == Downloading || this->status_ == Searching)
     {
         return;
     }
-
-    // See https://github.com/SevenTV/SevenTV/issues/48#issue-2193272289
-    // for the proposed structure of the response.
-    auto onSuccess = [this](const NetworkResult &result) {
-        const auto object = result.parseJson();
-        if (object.empty())
-        {
-            return;
-        }
-
-        auto version = object["version"];
-        if (object["v2_version"_L1].isString())
-        {
-            version = object["v2_version"_L1].toString();
-        }
-
-        if (!version.isString())
-        {
-            this->setStatus_(SearchFailed);
-            qCDebug(chatterinoUpdate)
-                << "error checking version - missing 'version'" << object;
-            return;
-        }
-
-#    if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
-
-        auto updateExeUrl = getForArchitecture(object, u"updateexe"_s);
-        if (!updateExeUrl.isString())
-        {
-            this->setStatus_(SearchFailed);
-            qCDebug(chatterinoUpdate)
-                << "error checking version - missing 'updateexe'" << object;
-            return;
-        }
-
-        this->updateExe_ = updateExeUrl.toString();
-
-#        ifdef Q_OS_WIN
-
-        auto portableUrl = getForArchitecture(object, "portable_download");
-        if (!portableUrl.isString())
-        {
-            this->setStatus_(SearchFailed);
-            qCDebug(chatterinoUpdate)
-                << "error checking version - missing 'portable_download'"
-                << object;
-            return;
-        }
-        this->updatePortable_ = portableUrl.toString();
-#        endif
-
-#    elif defined(Q_OS_LINUX)
-        QJsonValue updateGuide = object.value("updateguide");
-        if (updateGuide.isString())
-        {
-            this->updateGuideLink_ = updateGuide.toString();
-        }
-#    else
-        return;
-#    endif
-
-        this->onlineVersion_ = version.toString();
-
-        if (this->currentVersion_ != this->onlineVersion_ &&
-            !Updates::isDowngradeOf(this->onlineVersion_,
-                                    this->currentVersion_))
-        {
-            this->setStatus_(UpdateAvailable);
-        }
-        else
-        {
-            this->setStatus_(NoUpdateAvailable);
-        }
-    };
-
-    auto apiVersion = std::make_shared<uint8_t>(3);
-    constexpr auto maxApiVersion = 3;
-    auto fmtUrl = [apiVersion]() -> QString {
-        return u"https://7tv.io/v" % QString::number(*apiVersion) %
-               "/chatterino/version/" % CHATTERINO_OS % "/" % currentBranch();
-    };
-
-    auto onError = std::make_shared<std::function<void(NetworkResult)>>();
-
-    auto makeRequest = [onSuccess,
-                        onErrorWeak = std::weak_ptr(onError)](auto url) {
-        auto onError = onErrorWeak.lock();
-        if (!onError)
-        {
-            return;
-        }
-        qCDebug(chatterinoUpdate) << "Requesting updates from" << url;
-        NetworkRequest(url)
-            .timeout(60000)
-            .followRedirects(true)
-            .onSuccess(onSuccess)
-            .onError(*onError)
-            .finally([onError]() {})
-            .execute();
-    };
-
-    *onError = [apiVersion, fmtUrl, makeRequest](const auto &) mutable {
-        if (*apiVersion >= maxApiVersion)
-        {
-            return;
-        }
-        (*apiVersion)++;
-        makeRequest(fmtUrl());
-    };
-    makeRequest(fmtUrl());
-
     this->setStatus_(Searching);
+
+    NetworkRequest(QUrl(RELEASES_API + u"/releases?per_page=30"_s))
+        .header("Accept", "application/vnd.github+json")
+        .timeout(60000)
+        .onError([this](const NetworkResult &result) {
+            qCDebug(chatterinoUpdate)
+                << "Failed to load releases:" << result.formatError();
+            this->setStatus_(None);
+        })
+        .onSuccess([this, commit](const NetworkResult &result) {
+            // The newest release, Latest only or also pre-releases with
+            // "Receive beta updates"
+            const bool beta = getSettings()->betaUpdates;
+            QJsonObject release;
+            const auto releases = result.parseJsonArray();
+            for (const auto &value : releases)
+            {
+                const auto o = value.toObject();
+                if (o["draft"_L1].toBool() ||
+                    (o["prerelease"_L1].toBool() && !beta))
+                {
+                    continue;
+                }
+                release = o;
+                break;
+            }
+            const auto tag = release["tag_name"_L1].toString();
+            if (tag.isEmpty())
+            {
+                this->setStatus_(NoUpdateAvailable);
+                return;
+            }
+
+            // Newer than this build when it comes after this build's commit
+            NetworkRequest(
+                QUrl(RELEASES_API + u"/compare/"_s + commit + u"..."_s + tag))
+                .header("Accept", "application/vnd.github+json")
+                .timeout(60000)
+                .onError([this](const NetworkResult &) {
+                    // e.g. this build's commit isn't in the repository
+                    this->setStatus_(NoUpdateAvailable);
+                })
+                .onSuccess([this, release](const NetworkResult &compare) {
+                    if (compare.parseJson().value("status"_L1).toString() !=
+                        u"ahead"_s)
+                    {
+                        this->setStatus_(NoUpdateAvailable);
+                        return;
+                    }
+                    this->takeRelease(release);
+                    this->setStatus_(UpdateAvailable);
+                })
+                .execute();
+        })
+        .execute();
 #endif
+}
+
+void Updates::takeRelease(const QJsonObject &release)
+{
+    // "Title, tag", or only one of them when the other is missing or the same
+    const auto name = release["name"_L1].toString().trimmed();
+    const auto tag = release["tag_name"_L1].toString().trimmed();
+    if (name.isEmpty() || name == tag)
+    {
+        this->onlineVersion_ = tag;
+    }
+    else if (tag.isEmpty())
+    {
+        this->onlineVersion_ = name;
+    }
+    else
+    {
+        this->onlineVersion_ = name + u", "_s + tag;
+    }
+    this->updateGuideLink_ = release["html_url"_L1].toString();
+    this->changes_ = Updates::parseChanges(release["body"_L1].toString());
+    this->updateExe_.clear();
+    this->updateExeName_.clear();
+    this->portableZip_.clear();
+    this->portableZipName_.clear();
+    this->flatpakBundle_.clear();
+    this->flatpakBundleName_.clear();
+    this->checksumsUrl_.clear();
+    this->hasRelease_ = true;
+
+    const auto assets = release.value("assets"_L1).toArray();
+    for (const auto &value : assets)
+    {
+        const auto asset = value.toObject();
+        const auto assetName = asset["name"_L1].toString();
+        const auto url = asset["browser_download_url"_L1].toString();
+        if (assetName == u"sha256-checksums.txt"_s)
+        {
+            this->checksumsUrl_ = url;
+            continue;
+        }
+
+#ifdef Q_OS_WIN
+        // ARM installers are marked as such, everything else is x64
+        const bool arm =
+            assetName.startsWith(u"Experimental-ARM64-"_s, Qt::CaseInsensitive);
+#    ifdef Q_PROCESSOR_ARM
+        const bool otherArchitecture = !arm;
+#    else
+        const bool otherArchitecture = arm;
+#    endif
+        if (!otherArchitecture &&
+            assetName.endsWith(u".Installer.exe"_s, Qt::CaseInsensitive))
+        {
+            this->updateExe_ = url;
+            this->updateExeName_ = assetName;
+        }
+
+        // The portable package, with the "modes" file and the portable
+        // updater: JilChatChatterino.Nightly.Portable.zip, with the
+        // "Experimental-ARM64-" prefix for ARM like the installer. The plain
+        // chatterino-windows-*.zip have neither, so they aren't used.
+        if (!otherArchitecture &&
+            assetName.endsWith(u".Portable.zip"_s, Qt::CaseInsensitive))
+        {
+            this->portableZip_ = url;
+            this->portableZipName_ = assetName;
+        }
+#elif defined(Q_OS_MACOS)
+        // one universal disk image for Intel and Apple silicon
+        if (assetName.endsWith(u".dmg"_s, Qt::CaseInsensitive))
+        {
+            this->updateExe_ = url;
+            this->updateExeName_ = assetName;
+        }
+#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_X86_64)
+        // AppImages and the Flatpak bundle are only built for x86_64
+        if (assetName.endsWith(u"x86_64.AppImage"_s, Qt::CaseInsensitive))
+        {
+            this->updateExe_ = url;
+            this->updateExeName_ = assetName;
+        }
+        if (assetName.endsWith(u".flatpak"_s, Qt::CaseInsensitive))
+        {
+            this->flatpakBundle_ = url;
+            this->flatpakBundleName_ = assetName;
+        }
+#endif
+    }
+}
+
+std::vector<Updates::Change> Updates::parseChanges(const QString &notes)
+{
+    static const QRegularExpression bullet(u"^\\s*[-*]\\s+(.+)$"_s);
+    static const QRegularExpression written(
+        u"^(New|Added|Add|Fixed|Fix|Removed|Remove|Changed|Change)\\b\\s*:?\\s*(.+)$"_s,
+        QRegularExpression::CaseInsensitiveOption);
+    // "- [2026-11-10] feat(raids): ..." as the release workflow writes them
+    static const QRegularExpression commit(
+        u"^(?:\\[[^\\]]*\\]\\s*)?([a-z]+)(?:\\([^)]*\\))?(!)?:\\s*(.+)$"_s);
+    static const QRegularExpression sentenceEnd(u"(?<=[.!?])\\s+"_s);
+
+    const auto capitalized = [](QString text) {
+        text = text.trimmed();
+        if (!text.isEmpty())
+        {
+            text[0] = text[0].toUpper();
+        }
+        return text;
+    };
+
+    std::vector<Change> fromNotes;
+    std::vector<Change> fromCommits;
+    const auto lines = notes.split(u'\n');
+    for (const auto &line : lines)
+    {
+        const auto item = bullet.match(line.trimmed());
+        if (!item.hasMatch())
+        {
+            continue;
+        }
+        const auto text = item.captured(1).trimmed();
+
+        if (const auto match = written.match(text); match.hasMatch())
+        {
+            const auto word = match.captured(1).toLower();
+            QString kind = u"changed"_s;
+            if (word.startsWith(u"add"_s) || word == u"new"_s)
+            {
+                kind = u"new"_s;
+            }
+            else if (word.startsWith(u"fix"_s))
+            {
+                kind = u"fixed"_s;
+            }
+            else if (word.startsWith(u"remove"_s))
+            {
+                kind = u"removed"_s;
+            }
+            const auto sentences =
+                match.captured(2).split(sentenceEnd, Qt::SkipEmptyParts);
+            auto title = capitalized(sentences.value(0));
+            if (title.endsWith(u'.') || title.endsWith(u'!'))
+            {
+                title.chop(1);
+            }
+            fromNotes.push_back({
+                .kind = kind,
+                .title = title,
+                .detail = sentences.mid(1).join(u' ').trimmed(),
+            });
+            continue;
+        }
+
+        if (const auto match = commit.match(text); match.hasMatch())
+        {
+            const auto type = match.captured(1);
+            QString kind;
+            if (type == u"feat"_s)
+            {
+                kind = u"new"_s;
+            }
+            else if (type == u"fix"_s)
+            {
+                kind = u"fixed"_s;
+            }
+            else if (type == u"perf"_s || type == u"revert"_s)
+            {
+                kind = u"changed"_s;
+            }
+            else
+            {
+                // ci, chore, docs, refactor, test, ...: nothing users notice
+                continue;
+            }
+            fromCommits.push_back({
+                .kind = kind,
+                .title = capitalized(match.captured(3)),
+                .detail = {},
+            });
+        }
+    }
+
+    // Every change is shown; the popup's list scrolls
+    return fromNotes.empty() ? fromCommits : fromNotes;
+}
+
+const std::vector<Updates::Change> &Updates::getChanges() const
+{
+    return this->changes_;
+}
+
+QString Updates::problemText() const
+{
+    switch (this->status_)
+    {
+        case SearchFailed:
+            return u"Failed to load version information."_s;
+        case DownloadFailed:
+            return u"Failed to download the update. Check your connection "
+                   "and try again."_s;
+        case WriteFileFailed:
+            return u"Failed to write the update to disk."_s;
+        case MissingPortableUpdater:
+            return u"The portable updater (expected in "_s +
+                   Updates::portableUpdaterPath(this->paths) +
+                   u") was not found."_s;
+        case RunUpdaterFailed:
+            return u"Failed to run the updater."_s;
+        case VerifyFailed:
+            return u"The update could not be verified against the checksums "
+                   "of its release, so it was not installed."_s;
+        case FlatpakNotUpdated:
+            return u"Flatpak installed the update, but the same version is "
+                   "still installed. Try again in a few minutes."_s;
+        default:
+            return {};
+    }
 }
 
 Updates::Status Updates::getStatus() const
@@ -501,11 +950,21 @@ bool Updates::shouldShowUpdateButton() const
         case Downloading:
         case DownloadFailed:
         case WriteFileFailed:
+        case VerifyFailed:
+        case MissingPortableUpdater:
+        case RunUpdaterFailed:
+        case FlatpakNotUpdated:
             return true;
 
         default:
             return false;
     }
+}
+
+bool Updates::canInstall() const
+{
+    return this->hasRelease_ && this->status_ != Downloading &&
+           this->status_ != Searching;
 }
 
 bool Updates::isError() const
@@ -517,6 +976,8 @@ bool Updates::isError() const
         case WriteFileFailed:
         case MissingPortableUpdater:
         case RunUpdaterFailed:
+        case VerifyFailed:
+        case FlatpakNotUpdated:
             return true;
 
         default:
@@ -529,40 +990,47 @@ bool Updates::isDowngrade() const
     return this->isDowngrade_;
 }
 
+bool Updates::installsItself() const
+{
+#if defined(Q_OS_WIN)
+    return !this->modes.isPortable ||
+           (!this->portableZip_.isEmpty() &&
+            QFile::exists(Updates::portableUpdaterPath(this->paths)));
+#elif defined(Q_OS_MACOS)
+    return true;
+#elif defined(Q_OS_LINUX)
+    return !appImagePath().isEmpty() ||
+           (Version::instance().isFlatpak() && !this->flatpakBundle_.isEmpty());
+#else
+    return false;
+#endif
+}
+
 QString Updates::buildUpdateAvailableText() const
 {
-    const auto &version = Version::instance();
-
-    if (version.isNightly())
+#if defined(Q_OS_WIN)
+    const bool installs =
+        !this->modes.isPortable ||
+        (!this->portableZip_.isEmpty() &&
+         QFile::exists(Updates::portableUpdaterPath(this->paths)));
+#elif defined(Q_OS_MACOS)
+    const bool installs = true;
+#elif defined(Q_OS_LINUX)
+    const bool installs =
+        !appImagePath().isEmpty() ||
+        (Version::instance().isFlatpak() && !this->flatpakBundle_.isEmpty());
+#else
+    const bool installs = false;
+#endif
+    if (installs)
     {
-        // Since Nightly builds can be installed in many different ways, we ask the user to download the update manually.
-        if (this->isDowngrade())
-        {
-            return QString(
-                       "The version online (%1) seems to be lower than the "
-                       "current (%2).\nEither a version was reverted or "
-                       "you are running a newer build.\n\nDo you want to "
-                       "head to github.com/leafyzito/leafyrino to download it?")
-                .arg(this->getOnlineVersion(), this->getCurrentVersion());
-        }
-
-        return QString(
-                   "An update (%1) is available.\n\nDo you want to head to "
-                   "github.com/leafyzito/leafyrino to download the new update?")
+        return QString("An update (%1) is available.\n\nDo you want to "
+                       "download and install it? JilChat Chatterino restarts "
+                       "afterwards.")
             .arg(this->getOnlineVersion());
     }
-
-    if (this->isDowngrade())
-    {
-        return QString("The version online (%1) seems to be lower than the "
-                       "current (%2).\nEither a version was reverted or "
-                       "you are running a newer build.\n\nDo you want to "
-                       "download and install it?")
-            .arg(this->getOnlineVersion(), this->getCurrentVersion());
-    }
-
-    return QString("An update (%1) is available.\n\nDo you want to "
-                   "download and install it?")
+    return QString("An update (%1) is available.\n\nDo you want to open "
+                   "the download?")
         .arg(this->getOnlineVersion());
 }
 

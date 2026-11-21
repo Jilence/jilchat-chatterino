@@ -19,20 +19,25 @@
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickChatServer.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/pronouns/Pronouns.hpp"
 #include "providers/seventv/SeventvAPI.hpp"
 #include "providers/seventv/SeventvEmotes.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/twitch/eventsub/Controller.hpp"
 #include "providers/twitch/TwitchBadges.hpp"
 #include "providers/youtube/YouTubeChatServer.hpp"
 #include "singletons/ImageUploader.hpp"
 #include "singletons/NativeMessaging.hpp"
+#include "singletons/UrlShortener.hpp"
 #include "util/MemoryReclaimer.hpp"
 #ifdef CHATTERINO_HAVE_PLUGINS
 #    include "controllers/plugins/PluginController.hpp"
 #endif
+#include "common/network/NetworkRequest.hpp"
+#include "common/network/NetworkResult.hpp"
 #include "controllers/emotes/EmoteController.hpp"
 #include "controllers/sound/MiniaudioBackend.hpp"
 #include "controllers/sound/NullBackend.hpp"
@@ -44,6 +49,7 @@
 #include "providers/badgehq/BadgeHQBadges.hpp"
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvLiveUpdates.hpp"
+#include "providers/chatlee/ChatleeBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
@@ -52,14 +58,18 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/jilchat/JilChatDailyQuote.hpp"
 #include "providers/limerino/LimerinoBadges.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
+#include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/potat/PotatCommands.hpp"
 #include "providers/repetitions/RepeatedMessageDetector.hpp"
 #include "providers/seventv/SeventvBadges.hpp"
 #include "providers/seventv/SeventvEventAPI.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
 #include "providers/seventv/SeventvPersonalEmotes.hpp"
+#include "providers/solrino/SolrinoBadges.hpp"
+#include "providers/streamnook/StreamNookBadges.hpp"
 #include "providers/supibot/SupibotCommands.hpp"
 #include "providers/twitch/ChannelPointReward.hpp"
 #include "providers/twitch/PubSubManager.hpp"
@@ -67,13 +77,11 @@
 #include "providers/twitch/TwitchChannel.hpp"
 #include "providers/twitch/TwitchIrcServer.hpp"
 #include "providers/twitch/TwitchUsers.hpp"
+#include "providers/wrapped/WrappedStats.hpp"
+#include "providers/wydios/WydiosBadges.hpp"
 #include "singletons/CrashHandler.hpp"
 #include "singletons/Fonts.hpp"
 #include "singletons/helper/LoggingChannel.hpp"
-// #include "providers/moltorino/MoltorinoPresence.hpp"
-#include "common/network/NetworkRequest.hpp"
-#include "common/network/NetworkResult.hpp"
-#include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "singletons/Logging.hpp"
 #include "singletons/Paths.hpp"
 #include "singletons/Settings.hpp"
@@ -83,7 +91,9 @@
 #include "singletons/Updates.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/Helpers.hpp"
+#include "util/MemoryReclaimer.hpp"
 #include "util/PostToThread.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/Window.hpp"
@@ -103,6 +113,9 @@ using namespace chatterino;
 
 const QString BTTV_LIVE_UPDATES_URL = "wss://sockets.betterttv.net/ws";
 const QString SEVENTV_EVENTAPI_URL = "wss://events.7tv.io/v3";
+
+// startup parses a lot of emote sets and message history that are freed again
+constexpr auto STARTUP_MEMORY_RELIEF_DELAY = std::chrono::seconds{30};
 
 std::atomic<bool> STOPPED{false};
 
@@ -207,6 +220,7 @@ Application::Application(Settings &_settings, const Paths &paths,
                                 *this->fonts))
     , toasts(new Toasts)
     , imageUploader(new ImageUploader)
+    , urlShortener(new UrlShortener)
     , seventvAPI(new SeventvAPI)
     , crashHandler(new CrashHandler(paths))
 
@@ -222,6 +236,10 @@ Application::Application(Settings &_settings, const Paths &paths,
     , folhinhaBadges(new FolhinhaBadges)
     , ffzApBadges(new FfzApBadges)
     , dankChatBadges(new DankChatBadges)
+    , solrinoBadges(new SolrinoBadges)
+    , wydiosBadges(new WydiosBadges)
+    , chatleeBadges(new ChatleeBadges)
+    , streamNookBadges(new StreamNookBadges)
     , chatsenBadges(new ChatsenBadges)
     , limerinoBadges(new LimerinoBadges)
     , badgeHQBadges(new BadgeHQBadges)
@@ -249,6 +267,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , spellChecker(new SpellChecker)
     , kickChatServer(new KickChatServer)
     , youTubeChatServer(new YouTubeChatServer)
+    , tikTokChatServer(new TikTokChatServer)
     , potatCommands(new PotatCommands)
     , supibotCommands(new SupibotCommands)
 #ifdef CHATTERINO_HAVE_PLUGINS
@@ -299,15 +318,20 @@ void Application::initialize(Settings &settings, const Paths &paths)
     this->bttvBadges->load();
     this->limerinoBadges->initialize();
     this->badgeHQBadges->initialize();
+    this->wydiosBadges->initialize();
     this->moltorinoSupporterBadges->initialize();
 
     this->bttvEmotes->loadEmotes();
     this->ffzEmotes->loadEmotes();
     this->seventvEmotes->loadGlobalEmotes();
+    Jiltv::instance().loadCatalog();
+    Jiltv::instance().loadGlobalEmotes();
+    JilChatDailyQuote::instance().start();
 
     this->twitch->initialize();
     this->kickChatServer->initialize();
     this->youTubeChatServer->initialize();
+    this->tikTokChatServer->initialize();
 
     this->notifications->initialize();
 
@@ -349,8 +373,6 @@ void Application::initialize(Settings &settings, const Paths &paths)
                                 this->seventvEventAPI.get());
 
     this->streamerMode->start();
-
-    // getMoltorinoPresence()->init();
 
     {
         auto &s = *getSettings();
@@ -437,6 +459,8 @@ void Application::connect()
 
 int Application::run()
 {
+    transitions::initializeAnimationEffects();
+    wrapped::WrappedStats::instance().start();
     this->connect();
 
     if (!this->args_.isFramelessEmbed)
@@ -445,6 +469,10 @@ int Application::run()
     }
 
     MoltorinoAuth::scheduleStartupRefresh();
+
+    QTimer::singleShot(STARTUP_MEMORY_RELIEF_DELAY, qApp, [] {
+        requestMemoryPressureRelief();
+    });
 
     return QApplication::exec();
 }
@@ -588,6 +616,30 @@ DankChatBadges *Application::getDankChatBadges()
     return this->dankChatBadges.get();
 }
 
+ChatleeBadges *Application::getChatleeBadges()
+{
+    assert(this->chatleeBadges);
+    return this->chatleeBadges.get();
+}
+
+WydiosBadges *Application::getWydiosBadges()
+{
+    assert(this->wydiosBadges);
+    return this->wydiosBadges.get();
+}
+
+SolrinoBadges *Application::getSolrinoBadges()
+{
+    assert(this->solrinoBadges);
+    return this->solrinoBadges.get();
+}
+
+StreamNookBadges *Application::getStreamNookBadges()
+{
+    assert(this->streamNookBadges);
+    return this->streamNookBadges.get();
+}
+
 ChatAutomationController *Application::getChatAutomations()
 {
     assertInGuiThread();
@@ -681,6 +733,14 @@ IChatterinoBadges *Application::getChatterinoBadges()
     assert(this->chatterinoBadges);
 
     return this->chatterinoBadges.get();
+}
+
+UrlShortener *Application::getUrlShortener()
+{
+    assertInGuiThread();
+    assert(this->urlShortener);
+
+    return this->urlShortener.get();
 }
 
 ImageUploader *Application::getImageUploader()
@@ -853,6 +913,14 @@ YouTubeChatServer *Application::getYouTubeChatServer()
     return this->youTubeChatServer.get();
 }
 
+TikTokChatServer *Application::getTikTokChatServer()
+{
+    assertInGuiThread();
+    assert(this->tikTokChatServer);
+
+    return this->tikTokChatServer.get();
+}
+
 PotatCommands *Application::getPotatCommands()
 {
     assert(this->potatCommands);
@@ -869,6 +937,7 @@ SupibotCommands *Application::getSupibotCommands()
 
 void Application::aboutToQuit()
 {
+    wrapped::WrappedStats::instance().save();
     ABOUT_TO_QUIT.store(true);
 
     this->accounts->desktopPresence().shutdown();
@@ -912,6 +981,9 @@ void Application::stop()
     this->homiesBadges.reset();
     this->ffzApBadges.reset();
     this->dankChatBadges.reset();
+    this->solrinoBadges.reset();
+    this->wydiosBadges.reset();
+    this->streamNookBadges.reset();
     this->chatsenBadges.reset();
     this->limerinoBadges.reset();
     this->badgeHQBadges.reset();
@@ -922,6 +994,7 @@ void Application::stop()
     this->chatAutomations.reset();
     this->commands.reset();
     this->potatCommands.reset();
+    this->tikTokChatServer.reset();
     this->supibotCommands.reset();
     this->crashHandler.reset();
     this->seventvAPI.reset();

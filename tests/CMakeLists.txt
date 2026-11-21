@@ -10,6 +10,7 @@ set(test_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/ChannelChatters.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/AccessGuard.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/NetworkCommon.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/NetworkConfigurationProvider.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/NetworkRequest.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/NetworkResult.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/ChatterSet.cpp
@@ -38,11 +39,13 @@ set(test_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/XDGHelper.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/XDGDirectory.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/Selection.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/SignalVector.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/TabHistory.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/NotebookTab.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/SplitInput.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/LinkInfo.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/MessageLayout.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/MemoryReclaimer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/MessageSimilarity.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/QMagicEnum.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/ModerationAction.cpp
@@ -73,12 +76,17 @@ set(test_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/UtilSerializeList.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/Aliases.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/Settings.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/SettingsTransfer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/HighlightSounds.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/HighlightCommon.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/HighlightOutcome.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/ChannelHelpers.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/ColorInput.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/BotCommandSuggestions.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/Helix.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/controllers/plugins/PluginTestApp.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/controllers/plugins/LuaUtilitiesTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/Contributors.cpp
     # Add your new file above this line!
 
     ${CMAKE_CURRENT_LIST_DIR}/src/lib/Snapshot.cpp
@@ -153,6 +161,7 @@ endif()
 set_target_properties(${PROJECT_NAME}
     PROPERTIES
     AUTORCC ON
+    AUTOMOC ON
     )
 
 if (CHATTERINO_STATIC_QT_BUILD)

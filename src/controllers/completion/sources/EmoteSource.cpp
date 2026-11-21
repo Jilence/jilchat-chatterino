@@ -13,6 +13,7 @@
 #include "providers/bttv/BttvPersonalEmotes.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/kick/KickAccount.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/kick/KickChatServer.hpp"
@@ -150,6 +151,17 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
             auto user = getApp()->getAccounts()->twitch.getCurrent();
             addEmotes(emotes, **user->accessEmotes(), "Twitch Emote");
 
+            // the own JilTV personal emotes, loaded for the next time when
+            // they aren't there yet
+            const auto login = user->getUserName();
+            if (auto jiltvPersonal = Jiltv::instance().personalEmotes(login))
+            {
+                addEmotes(emotes, *jiltvPersonal, "Personal JilTV");
+            }
+            else
+            {
+                Jiltv::instance().loadPersonalEmotes(login);
+            }
             for (const auto &map :
                  app->getSeventvPersonalEmotes()->getEmoteSetsForTwitchUser(
                      app->getAccounts()->twitch.getCurrent()->getUserId()))
@@ -174,6 +186,10 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
             if (auto seventv = tc->seventvEmotes())
             {
                 addEmotes(emotes, *seventv, "Channel 7TV");
+            }
+            if (auto jiltv = Jiltv::instance().channelEmotes(tc->roomId()))
+            {
+                addEmotes(emotes, *jiltv, "Channel JilTV");
             }
         }
     }
@@ -207,6 +223,10 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
         if (auto seventvG = app->getSeventvEmotes()->globalEmotes())
         {
             addEmotes(emotes, *seventvG, "Global 7TV");
+        }
+        if (auto jiltvG = Jiltv::instance().globalEmotes())
+        {
+            addEmotes(emotes, *jiltvG, "Global JilTV");
         }
     }
 

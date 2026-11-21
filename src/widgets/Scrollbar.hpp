@@ -73,6 +73,12 @@ public:
     bool shouldHandleMouseEvents() const;
 
     void offset(qreal value);
+
+    /// Moves the whole position by `value`, including a running smooth
+    /// scroll, so that what is shown stays where it is. For content added
+    /// above: offset() would only move where the animation ends, and the view
+    /// would slide through the new content.
+    void shiftPosition(qreal value);
     pajlada::Signals::NoArgSignal &getCurrentValueChanged();
     pajlada::Signals::NoArgSignal &getDesiredValueChanged();
     void setCurrentValue(qreal value);

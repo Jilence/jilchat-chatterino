@@ -18,7 +18,9 @@
 #include "singletons/helper/GifTimer.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/ThemeCustomization.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/DebugCount.hpp"
+#include "util/PaintVisiblePixels.hpp"
 
 #include <QCache>
 #include <QCoreApplication>
@@ -61,6 +63,51 @@ QRectF snapRectToDevicePixels(const QRectF &rect, const QPainter &painter)
                   std::max(1.0 / dpr, snap(rect.height())));
 }
 
+/// Draws `pixmap` over `target` pixel for pixel when it already has exactly
+/// the target's size on the screen: copied straight into device pixels
+/// instead of interpolating every pixel (with display scaling like 150% a
+/// scaled, smoothed draw costs several times as much). Returns false, and
+/// draws nothing, when the sizes don't match or the painter rotates.
+bool drawPixmapPixelExact(QPainter &painter, const QRectF &target,
+                          const QPixmap &pixmap, QRect part)
+{
+    // Where the target really lands: the painter's whole mapping, including
+    // the display scaling and the offset of the buffer it draws into
+    const auto toDevice = painter.deviceTransform();
+    if (toDevice.type() > QTransform::TxScale)
+    {
+        return false;
+    }
+    const auto device = toDevice.mapRect(target);
+    const QRect pixels(qRound(device.x()), qRound(device.y()),
+                       qRound(device.width()), qRound(device.height()));
+    if (pixels.size() != pixmap.size())
+    {
+        return false;
+    }
+    // The world transform that makes the painter's mapping the identity:
+    // deviceTransform = world * base, so world = base^-1
+    bool invertible = false;
+    const auto base = painter.worldTransform().inverted(&invertible) * toDevice;
+    if (!invertible)
+    {
+        return false;
+    }
+    const auto toPixels = base.inverted(&invertible);
+    if (!invertible)
+    {
+        return false;
+    }
+    painter.save();
+    painter.setWorldTransform(toPixels);
+    // An explicit target rect: drawing at a point would shrink the pixmap by
+    // its device pixel ratio
+    painter.drawPixmap(QRectF(part.translated(pixels.topLeft())), pixmap,
+                       QRectF(part));
+    painter.restore();
+    return true;
+}
+
 const QChar RTL_EMBED(0x202B);
 
 void alignRectBottomCenter(QRectF &rect, const QRectF &reference)
@@ -72,27 +119,22 @@ void alignRectBottomCenter(QRectF &rect, const QRectF &reference)
 
 void drawPixmapWithOptionalSmoothing(
     QPainter &painter, const QRectF &target, const QPixmap &pixmap,
-    chatterino::FlagsEnum<chatterino::MessageElementFlag> flags)
+    chatterino::FlagsEnum<chatterino::MessageElementFlag> /*flags*/)
 {
-    const bool smooth =
-        flags.hasAny(chatterino::MessageElementFlag::BadgeMoltorino,
-                     chatterino::MessageElementFlag::BadgeBluzyrino,
-                     chatterino::MessageElementFlag::BadgeJilChat);
     const bool wasSmooth =
         painter.testRenderHint(QPainter::SmoothPixmapTransform);
 
-    if (smooth && !wasSmooth)
-    {
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    }
+    // Always smooth, like the message buffers draw: animated images are
+    // drawn straight onto the chat with whatever the painter was left with,
+    // and an image switching between the two looked sharper, then blurrier,
+    // and shifted by a pixel (e.g. when the mouse moved in or out of the
+    // window)
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     painter.drawPixmap(snapRectToDevicePixels(target, painter), pixmap,
                        QRectF());
 
-    if (smooth && !wasSmooth)
-    {
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
-    }
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, wasSmooth);
 }
 
 /// One pixmap of an animated element and where it is drawn.
@@ -1024,10 +1066,20 @@ QRegion ImageLayoutElement::paintAnimated(QPainter &painter, qreal yOffset,
                 paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
             drawPixmapWithOptionalSmoothing(painter, drawRect, *pixmap,
                                             this->getFlags());
-            return QRegion(rect.toAlignedRect()) |
-                   QRegion(snapRectToDevicePixels(drawRect, painter)
-                               .toAlignedRect()) |
-                   shadowRegion;
+            auto region =
+                QRegion(rect.toAlignedRect()) |
+                QRegion(
+                    snapRectToDevicePixels(drawRect, painter).toAlignedRect()) |
+                shadowRegion;
+            if (auto *spots = animatedImageSpotSink())
+            {
+                spots->push_back({
+                    .rect = region.boundingRect(),
+                    .image = this->image_,
+                    .shown = pixmap->cacheKey(),
+                });
+            }
+            return region;
         }
     }
     return {};
@@ -1652,8 +1704,9 @@ void TextLayoutElement::paint(QPainter &painter,
 
     bool isNametag = this->getLink().type == chatterino::Link::UserInfo ||
                      this->getLink().type == chatterino::Link::UserWhisper;
-    bool drawPaint = isNametag && this->messageColor_ != MessageColor::System &&
-                     usernamePaintsEnabled();
+    bool drawPaint =
+        isNametag && usernamePaintsEnabled() &&
+        !this->getCreator().getFlags().has(MessageElementFlag::NoUsernamePaint);
     if (drawPaint)
     {
         auto paint = usernamePaint(this->getLink().value.toLower(),
@@ -1663,19 +1716,23 @@ void TextLayoutElement::paint(QPainter &painter,
         {
             if (paint->animated())
             {
+                // paintAnimated draws the name, also for names in the system
+                // color. Drawing the plain text here as well would put two
+                // names on top of each other.
                 return;
             }
 
-            // Some paints reach beyond the name, e.g. with an outline.
-            const auto overflow = paint->overflow();
-            auto paintPixmap = paint->getPixmap(
-                this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_, false, overflow);
-
-            painter.drawPixmap(
-                this->getRect().topLeft() - QPointF(overflow, overflow),
-                paintPixmap);
-            return;
+            if (this->messageColor_ != MessageColor::System)
+            {
+                // Some paints reach beyond the name, e.g. with an outline.
+                const auto margins = paint->overflowMargins(this->scale_);
+                const auto target = this->getRect() + margins;
+                const auto paintPixmap = paint->getNametagPixmap(
+                    this->getText(), font, this->color_, this->getRect().size(),
+                    this->scale_, this->dpr_, margins);
+                painter.drawPixmap(target.topLeft(), paintPixmap);
+                return;
+            }
         }
     }
 
@@ -1802,7 +1859,9 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     const bool isNametag =
         this->getLink().type == chatterino::Link::UserInfo ||
         this->getLink().type == chatterino::Link::UserWhisper;
-    const bool drawPaint = isNametag && usernamePaintsEnabled();
+    const bool drawPaint =
+        isNametag && usernamePaintsEnabled() &&
+        !this->getCreator().getFlags().has(MessageElementFlag::NoUsernamePaint);
     if (!drawPaint)
     {
         return {};
@@ -1815,14 +1874,17 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         return {};
     }
 
-    const auto overflow = paint->overflow();
-    const auto paintPixmap = paint->getPixmap(
+    const auto margins = paint->overflowMargins(this->scale_);
+    const auto paintPixmap = paint->getNametagPixmap(
         this->getText(), font, this->color_, this->getRect().size(),
-        this->scale_, this->dpr_, false, overflow);
+        this->scale_, this->dpr_, margins);
 
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
-    rect.adjust(-overflow, -overflow, overflow, overflow);
+    rect += margins;
+    // On whole pixels, so the name doesn't shift when the painter's smoothing
+    // changes (e.g. when the mouse moves in or out of the window)
+    rect = snapRectToDevicePixels(QRectF(rect), painter);
     QRegion paintedRegion;
     if (shadow != nullptr && shadow->opacity > 0)
     {
@@ -1833,15 +1895,52 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         const AnimatedShadowLayer layer{
             .pixmap = &paintPixmap,
             .target = QRectF(rect),
-            .cacheIdentity = paint->getPixmapCacheKey(
+            .cacheIdentity = paint->getNametagPixmapCacheKey(
                 this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_, false, overflow),
+                this->scale_, this->dpr_, margins),
         };
         paintedRegion +=
             paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
     }
-    painter.drawPixmap(rect, paintPixmap, QRectF());
+    {
+        // Only the part of the picture that shows: the glow room around the
+        // name is wide and mostly transparent
+        QRect part = paintPixmap.rect();
+        if (const auto it =
+                paintVisiblePixels().constFind(paintPixmap.cacheKey());
+            it != paintVisiblePixels().constEnd())
+        {
+            part = *it;
+        }
+        if (part.isEmpty())
+        {
+            // nothing shows
+        }
+        else if (!drawPixmapPixelExact(painter, QRectF(rect), paintPixmap,
+                                       part))
+        {
+            const auto scaleX = rect.width() / paintPixmap.width();
+            const auto scaleY = rect.height() / paintPixmap.height();
+            const QRectF target(rect.x() + (part.x() * scaleX),
+                                rect.y() + (part.y() * scaleY),
+                                part.width() * scaleX, part.height() * scaleY);
+            const bool wasSmooth =
+                painter.testRenderHint(QPainter::SmoothPixmapTransform);
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.drawPixmap(target, paintPixmap, QRectF(part));
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, wasSmooth);
+        }
+    }
     paintedRegion += rect.toAlignedRect();
+    // Paints made of images keep the GIF timer's pace; the others only
+    // change at the paints' own rate
+    if (auto *sink = paint->animatesWithImages()
+                         ? animatedImagePaintRegionSink()
+                         : animatedPaintRegionSink();
+        sink != nullptr)
+    {
+        *sink += paintedRegion;
+    }
     return paintedRegion;
 }
 

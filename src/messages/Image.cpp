@@ -22,6 +22,7 @@
 #include <boost/functional/hash.hpp>
 #include <pajlada/signals/scoped-connection.hpp>
 #include <QBuffer>
+#include <QCoreApplication>
 #include <QFile>
 #include <QImageReader>
 #include <QNetworkAccessManager>
@@ -38,7 +39,17 @@
 
 const auto IMAGE_POOL_CLEANUP_INTERVAL = std::chrono::minutes(1);
 
-const auto IMAGE_POOL_IMAGE_LIFETIME = std::chrono::minutes(10);
+const auto IMAGE_POOL_IMAGE_LIFETIME = std::chrono::minutes(2);
+
+// once decoded frames use more than IMAGE_POOL_MAX_BYTES, the least recently
+// used animated images are evicted until IMAGE_POOL_TARGET_BYTES are left,
+// instead of waiting for IMAGE_POOL_IMAGE_LIFETIME
+constexpr int64_t IMAGE_POOL_MAX_BYTES = 256LL * 1024 * 1024;
+constexpr int64_t IMAGE_POOL_TARGET_BYTES = 192LL * 1024 * 1024;
+// images painted this recently are still on screen, never evict them
+const auto IMAGE_POOL_ACTIVE_IMAGE_GRACE = std::chrono::seconds(5);
+// freeing less than this isn't worth asking the allocator to give memory back
+constexpr int64_t IMAGE_POOL_RELIEF_BYTES = 8LL * 1024 * 1024;
 
 namespace {
 
@@ -59,8 +70,8 @@ std::pair<QSize, bool> limitedAutoScaleSize(
         return {original, false};
     }
     return {
-        original.scaled({maxAutoScale, maxAutoScale},
-                        Qt::KeepAspectRatioByExpanding),
+        original.scaled({maxAutoScale, maxAutoScale}, Qt::KeepAspectRatio)
+            .expandedTo({1, 1}),
         true,
     };
 }
@@ -375,9 +386,53 @@ void assignFrames(std::weak_ptr<Image> weak, QList<Frame> parsed)
                 },
                 Qt::QueuedConnection);
         }
+
+#ifndef DISABLE_IMAGE_EXPIRATION_POOL
+        ImageExpirationPool::instance().requestBudgetCheck();
+#endif
     };
 
     postToGuiThread(cb);
+}
+
+std::vector<size_t> pickImageBudgetEvictions(
+    const std::vector<ImageBudgetEntry> &entries, int64_t maxBytes,
+    int64_t targetBytes)
+{
+    assert(targetBytes <= maxBytes);
+
+    int64_t totalBytes = 0;
+    std::vector<size_t> candidates;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        totalBytes += entries[i].bytes;
+        if (entries[i].evictable && entries[i].bytes > 0)
+        {
+            candidates.push_back(i);
+        }
+    }
+
+    if (totalBytes <= maxBytes)
+    {
+        return {};
+    }
+
+    std::ranges::stable_sort(candidates, [&](size_t left, size_t right) {
+        return entries[left].lastUsed < entries[right].lastUsed;
+    });
+
+    std::vector<size_t> evictions;
+    for (auto index : candidates)
+    {
+        if (totalBytes <= targetBytes)
+        {
+            break;
+        }
+        evictions.push_back(index);
+        totalBytes -= entries[index].bytes;
+    }
+
+    return evictions;
 }
 
 }  // namespace chatterino::detail
@@ -713,8 +768,9 @@ void Image::actuallyLoad()
             reader.setScaledSize(shared->expectedSize_);
         }
 
-        auto [limitedSize, needsLimit] =
-            limitedAutoScaleSize(size, shared->autoScale_);
+        auto [limitedSize, needsLimit] = limitedAutoScaleSize(
+            reader.scaledSize().isValid() ? reader.scaledSize() : size,
+            shared->autoScale_);
 
         // use "double" to prevent int overflows
         if (double(limitedSize.width()) * double(limitedSize.height()) *
@@ -813,9 +869,13 @@ ImageExpirationPool::ImageExpirationPool()
         }
     });
 
-    this->freeTimer_->start(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
+    // The pool is created wherever an image first needs it, which can be a
+    // worker thread without an event loop, where the timer would never fire
+    this->freeTimer_->moveToThread(QCoreApplication::instance()->thread());
+    QMetaObject::invokeMethod(this->freeTimer_, [timer = this->freeTimer_] {
+        timer->start(std::chrono::duration_cast<std::chrono::milliseconds>(
             IMAGE_POOL_CLEANUP_INTERVAL));
+    });
 }
 
 ImageExpirationPool &ImageExpirationPool::instance()
@@ -836,41 +896,53 @@ void ImageExpirationPool::removeImagePtr(Image *rawPtr)
     this->allImages_.erase(rawPtr);
 }
 
-void ImageExpirationPool::freeAll()
+std::vector<ImagePtr> ImageExpirationPool::snapshotImages()
 {
+    std::vector<ImagePtr> images;
+
+    std::lock_guard<std::mutex> lock(this->mutex_);
+    images.reserve(this->allImages_.size());
+    for (auto it = this->allImages_.begin(); it != this->allImages_.end();)
     {
-        std::lock_guard<std::mutex> lock(this->mutex_);
-        for (auto it = this->allImages_.begin(); it != this->allImages_.end();)
+        if (auto img = it->second.lock())
         {
-            auto img = it->second.lock();
-            img->expireFrames();
+            images.push_back(std::move(img));
+            ++it;
+        }
+        else
+        {
             it = this->allImages_.erase(it);
         }
+    }
+
+    return images;
+}
+
+void ImageExpirationPool::freeAll()
+{
+    assertInGuiThread();
+
+    for (const auto &img : this->snapshotImages())
+    {
+        img->expireFrames();
+        this->removeImagePtr(img.get());
     }
     this->freeOld();
 }
 
 void ImageExpirationPool::freeOld()
 {
-    std::lock_guard<std::mutex> lock(this->mutex_);
+    assertInGuiThread();
 
     size_t numExpired = 0;
     size_t eligible = 0;
-    int64_t releasedBytes = 0;
+    int64_t freedBytes = 0;
 
     auto now = std::chrono::steady_clock::now();
-    for (auto it = this->allImages_.begin(); it != this->allImages_.end();)
+    for (const auto &img : this->snapshotImages())
     {
-        auto img = it->second.lock();
-        if (!img)
-        {
-            it = this->allImages_.erase(it);
-            continue;
-        }
-
         if (img->frames_->empty())
         {
-            ++it;
             continue;
         }
 
@@ -888,14 +960,10 @@ void ImageExpirationPool::freeOld()
         if (diff > lifetime)
         {
             ++numExpired;
-            releasedBytes += img->frames_->memoryUsage();
+            freedBytes += img->frames_->memoryUsage();
             img->expireFrames();
-
-            it = this->allImages_.erase(it);
-            continue;
+            this->removeImagePtr(img.get());
         }
-
-        ++it;
     }
 
 #    ifndef NDEBUG
@@ -904,13 +972,99 @@ void ImageExpirationPool::freeOld()
 #    endif
     DebugCount::set(DebugObject::LastImageGcExpired, numExpired);
     DebugCount::set(DebugObject::LastImageGcEligible, eligible);
-    DebugCount::set(DebugObject::LastImageGcLeft, this->allImages_.size());
-
-    if (releasedBytes >= 8LL * 1024 * 1024)
     {
-        // that much is worth giving back to the system
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        DebugCount::set(DebugObject::LastImageGcLeft, this->allImages_.size());
+    }
+
+    if (freedBytes >= IMAGE_POOL_RELIEF_BYTES)
+    {
         requestMemoryPressureRelief();
     }
+}
+
+void ImageExpirationPool::requestBudgetCheck()
+{
+    assertInGuiThread();
+
+    if (this->budgetCheckQueued_ ||
+        DebugCount::get(DebugObject::BytesImageCurrent) <= IMAGE_POOL_MAX_BYTES)
+    {
+        return;
+    }
+
+    // images often load in bursts, check once they're all in
+    this->budgetCheckQueued_ = true;
+    QTimer::singleShot(0, qApp, [this] {
+        this->runBudgetCheck();
+    });
+}
+
+void ImageExpirationPool::runBudgetCheck()
+{
+    assertInGuiThread();
+
+    if (this->enforceBudget())
+    {
+        // whatever is left was in use, check again once it might not be
+        QTimer::singleShot(IMAGE_POOL_ACTIVE_IMAGE_GRACE, qApp, [this] {
+            this->runBudgetCheck();
+        });
+        return;
+    }
+
+    this->budgetCheckQueued_ = false;
+}
+
+bool ImageExpirationPool::enforceBudget()
+{
+    assertInGuiThread();
+
+    const auto images = this->snapshotImages();
+    const auto now = std::chrono::steady_clock::now();
+
+    std::vector<detail::ImageBudgetEntry> entries;
+    entries.reserve(images.size());
+    int64_t totalBytes = 0;
+    for (const auto &img : images)
+    {
+        const auto bytes = img->frames_->memoryUsage();
+        totalBytes += bytes;
+        entries.push_back({
+            .bytes = bytes,
+            .lastUsed = img->lastUsed_,
+            // static images are small and may still be drawn in a message
+            // buffer without being painted again, so leave them to freeOld()
+            .evictable = img->frames_->animated() &&
+                         now - img->lastUsed_ >= IMAGE_POOL_ACTIVE_IMAGE_GRACE,
+        });
+    }
+
+    const auto evictions = detail::pickImageBudgetEvictions(
+        entries, IMAGE_POOL_MAX_BYTES, IMAGE_POOL_TARGET_BYTES);
+
+    int64_t freedBytes = 0;
+    for (auto index : evictions)
+    {
+        const auto &img = images[index];
+        freedBytes += entries[index].bytes;
+        img->expireFrames();
+        this->removeImagePtr(img.get());
+    }
+
+    if (!evictions.empty())
+    {
+        qCDebug(chatterinoImage)
+            << "image budget evicted" << evictions.size() << "images,"
+            << freedBytes << "of" << totalBytes << "bytes";
+    }
+
+    if (freedBytes >= IMAGE_POOL_RELIEF_BYTES)
+    {
+        requestMemoryPressureRelief();
+    }
+
+    return totalBytes - freedBytes > IMAGE_POOL_MAX_BYTES;
 }
 
 std::vector<ImageExpirationPool::ProviderUsage>
@@ -982,26 +1136,16 @@ std::vector<ImageExpirationPool::ProviderUsage>
 
     std::map<QString, ProviderUsage> providers;
 
-    std::lock_guard<std::mutex> lock(this->mutex_);
-    for (auto it = this->allImages_.begin(); it != this->allImages_.end();)
+    for (const auto &img : this->snapshotImages())
     {
-        auto img = it->second.lock();
-        if (!img)
-        {
-            it = this->allImages_.erase(it);
-            continue;
-        }
-
         if (img->frames_->empty())
         {
-            ++it;
             continue;
         }
 
         const auto bytes = img->frames_->memoryUsage();
         if (bytes <= 0)
         {
-            ++it;
             continue;
         }
 
@@ -1014,8 +1158,6 @@ std::vector<ImageExpirationPool::ProviderUsage>
         {
             usage.animatedImages += 1;
         }
-
-        ++it;
     }
 
     std::vector<ProviderUsage> result;

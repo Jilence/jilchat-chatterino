@@ -24,6 +24,8 @@ QString platformKey(MessagePlatform platform)
             return QStringLiteral("youtube");
         case MessagePlatform::Kick:
             return QStringLiteral("kick");
+        case MessagePlatform::TikTok:
+            return QStringLiteral("tiktok");
         case MessagePlatform::AnyOrTwitch:
         default:
             return QStringLiteral("twitch");

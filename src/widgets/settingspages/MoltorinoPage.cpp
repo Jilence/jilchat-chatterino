@@ -29,6 +29,7 @@
 #include "providers/bttv/BttvEmotes.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
+#include "widgets/dialogs/WrappedDialog.hpp"
 
 #include <QAbstractItemView>
 #include <QCheckBox>
@@ -53,11 +54,9 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
-#include <QStackedWidget>
 #ifndef Q_OS_MACOS
 #    include <QSystemTrayIcon>
 #endif
-#include <QTabBar>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTabWidget>
@@ -149,39 +148,45 @@ QString formatTimestampStatus(const QString &isoTimestamp)
 
 namespace chatterino {
 
-MoltorinoPage::MoltorinoPage()
+MoltorinoPage::MoltorinoPage(GeneralPageView &pageView)
 {
-    auto *rootLayout = new QVBoxLayout;
-    rootLayout->setContentsMargins(9, 6, 9, 0);
-    rootLayout->setSpacing(4);
-
-    auto *tabBar = new QTabBar(this);
-    tabBar->setExpanding(false);
-    tabBar->setDocumentMode(true);
-    tabBar->setDrawBase(false);
-    rootLayout->addWidget(tabBar);
-
-    auto *stack = new QStackedWidget(this);
-    rootLayout->addWidget(stack);
-    this->setLayout(rootLayout);
-
-    auto *settingsTab = new QWidget(stack);
-    auto *settingsLayout = new QHBoxLayout(settingsTab);
-    settingsLayout->setContentsMargins(0, 0, 0, 0);
-    auto *view = GeneralPageView::withNavigation(settingsTab);
+    auto *view = &pageView;
     this->settingsView_ = view;
-    settingsLayout->addWidget(view);
-    stack->addWidget(settingsTab);
-    tabBar->addTab("Settings");
-
-    QObject::connect(tabBar, &QTabBar::currentChanged, stack,
-                     &QStackedWidget::setCurrentIndex);
 
     auto &s = *getSettings();
 
+    view->addTitle("JilChat Wrapped");
+    view->addDescription(
+        "Your month or year in chat: messages, top channels, time with chat "
+        "open, favorite emotes and more. Counted only on this computer; a new "
+        "one is ready on the 1st of every month. Also with /wrapped.");
+    {
+        auto *wrappedRow = new QWidget(view);
+        auto *wrappedLayout = new QHBoxLayout(wrappedRow);
+        wrappedLayout->setContentsMargins(0, 4, 0, 4);
+        wrappedLayout->setSpacing(8);
+        const std::pair<const char *, WrappedDialog::Period> choices[] = {
+            {"View last month", WrappedDialog::Period::LastMonth},
+            {"View this month", WrappedDialog::Period::ThisMonth},
+            {"View this year", WrappedDialog::Period::ThisYear},
+        };
+        for (const auto &[label, period] : choices)
+        {
+            auto *button = new QPushButton(label, wrappedRow);
+            QObject::connect(button, &QPushButton::clicked, wrappedRow,
+                             [period] {
+                                 WrappedDialog::showDialog(period);
+                             });
+            wrappedLayout->addWidget(button);
+        }
+        wrappedLayout->addStretch(1);
+        view->addWidget(wrappedRow,
+                        {"wrapped", "recap", "stats", "year", "month"});
+    }
+
     view->addTitle("Authentication");
     view->addDescription(
-        "Logging in enables Leafyrino features like pins, polls, "
+        "Logging in enables JilChat Chatterino features like pins, polls, "
         "predictions, and channel points.");
 
     auto *tokenControls = new QFrame(view);
@@ -195,7 +200,7 @@ MoltorinoPage::MoltorinoPage()
 
     this->addAuthAccountButton_ = new QPushButton("Log In", tokenControls);
     this->addAuthAccountButton_->setToolTip(
-        "Log in or manage saved Leafyrino accounts.");
+        "Log in or manage saved JilChat Chatterino accounts.");
     this->refreshAuthAccountsButton_ =
         new QPushButton("Refresh Accounts", tokenControls);
     this->refreshAuthAccountsButton_->setToolTip(
@@ -549,12 +554,13 @@ MoltorinoPage::MoltorinoPage()
     view->addDescription("Poll, prediction, and banner behavior options.");
 
     SettingWidget::checkbox("Show predictions", s.enablePredictions)
-        ->setTooltip(
-            "Show prediction banners and open prediction menus from Leafyrino.")
+        ->setTooltip("Show prediction banners and open prediction menus from "
+                     "JilChat Chatterino.")
         ->addTo(*view);
 
     SettingWidget::checkbox("Show polls", s.enablePolls)
-        ->setTooltip("Show poll banners and open poll menus from Leafyrino.")
+        ->setTooltip(
+            "Show poll banners and open poll menus from JilChat Chatterino.")
         ->addTo(*view);
 
     addBannerScaleDropdown("Prediction banner content scale",
@@ -688,6 +694,14 @@ MoltorinoPage::MoltorinoPage()
         ->setTooltip("Show your channel points next to the message input.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Claim bonus points automatically",
+                            s.autoClaimPointsBonus)
+        ->setTooltip(
+            "When a channel offers a \"Claim bonus\" chest, JilChat Chatterino "
+            "claims it for you. Twitch only offers the bonus while you're "
+            "watching the stream.")
+        ->addTo(*view);
+
     SettingWidget::checkbox("Open rewards menu from points balance",
                             s.openRewardsWithChannelPointsClick)
         ->setTooltip("When off, clicking the balance only refreshes points. "
@@ -717,10 +731,23 @@ MoltorinoPage::MoltorinoPage()
             "chat. The /gigantify command still works when this is off.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Show FFZ giant emotes (FFZ:GE) in chat",
+                            s.enableFfzGiantEmotes)
+        ->setTooltip("Enlarge the last emote of channel point redemptions "
+                     "whose reward has FFZ:GE in its title or prompt, like "
+                     "FrankerFaceZ does.")
+        ->addTo(*view);
+
     view->addDropdown<float>(
-            "Twitch GIF size", {"0.5x", "Default", "1x", "1.25x", "1.5x", "2x"},
+            "Twitch GIF size",
+            {"Emote size", "0.5x", "Default", "1x", "1.25x", "1.5x", "2x"},
             s.twitchGifScale,
             [](auto val) {
+                // 0 stands for "as tall as an emote"
+                if (val <= 0.0F)
+                {
+                    return QString("Emote size");
+                }
                 if (val == 0.75F)
                 {
                     return QString("Default");
@@ -728,9 +755,15 @@ MoltorinoPage::MoltorinoPage()
                 return QString::number(val) + "x";
             },
             [](auto args) {
+                if (args.value == "Emote size")
+                {
+                    return 0.0F;
+                }
                 return std::clamp(fuzzyToFloat(args.value, 0.75F), 0.5F, 2.0F);
             },
-            true, "Scale Twitch GIFs from 0.5x to 2x.")
+            true,
+            "Scale Twitch GIFs from 0.5x to 2x, or make them as tall as an "
+            "emote.")
         ->setToolTip("Scale Twitch GIFs from 0.5x to 2x.");
 
     view->addTitle("Input Box");
@@ -770,6 +803,40 @@ MoltorinoPage::MoltorinoPage()
 
     SettingWidget::checkbox("Show poll button", s.showPollButton)
         ->setTooltip("Show the poll button next to the message input.")
+        ->addTo(*view);
+
+    SettingWidget::checkbox("Show game button", s.showGameButton)
+        ->setTooltip("For moderators and the broadcaster: a button next to "
+                     "the message input with your saved games. Clicking one "
+                     "sends \"!game <category>\" to the channel, or the "
+                     "command set for that channel. A bot in the channel must "
+                     "support the command.")
+        ->addTo(*view);
+    SettingWidget::checkbox("Quick game bar", s.quickGameBar)
+        ->setTooltip("Small boxes by the chat box with your most used games, "
+                     "for moderators and the broadcaster. Clicking one sends "
+                     "\"!game <category>\" to the channel, or the command you "
+                     "set for that channel in the game popup. A bot in the "
+                     "channel must support the command.")
+        ->addTo(*view);
+    SettingWidget::dropdown(
+        "Quick game bar position", s.quickGameBarPosition,
+        {{"Above the chat box", "above"}, {"Below the chat box", "below"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+    SettingWidget::dropdown(
+        "Quick game bar alignment", s.quickGameBarAlign,
+        {{"Left", "left"}, {"Center", "center"}, {"Right", "right"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+    SettingWidget::dropdown("Quick game bar box size", s.quickGameBarSize,
+                            {{"Small", "small"}, {"Normal", "normal"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
+        ->addTo(*view);
+    SettingWidget::dropdown(
+        "Quick game bar games shown", s.quickGameBarCount,
+        {{"3", "3"}, {"5", "5"}, {"8", "8"}, {"10", "10"}, {"12", "12"}})
+        ->conditionallyEnabledBy(s.quickGameBar)
         ->addTo(*view);
 
     SettingWidget::checkbox("Hide emoji button", s.hideEmojiButton)
@@ -857,6 +924,20 @@ MoltorinoPage::MoltorinoPage()
 
     view->addTitle("Moderation");
     view->addDescription("Moderation tools and chat safety options.");
+
+    SettingWidget::checkbox("Shout out raiders automatically",
+                            s.autoShoutoutRaids)
+        ->setTooltip("When someone raids a channel you moderate, sends the "
+                     "command below right away. If another mod "
+                     "already shouted them out, it isn't sent twice.")
+        ->addTo(*view);
+    SettingWidget::lineEdit("Shoutout command", s.raidShoutoutCommand,
+                            "!so @{user}")
+        ->setTooltip("{user} becomes the raider's name. Use the command your "
+                     "channel's bot listens to. Twitch's own /shoutout is "
+                     "sent as well, in case there's no bot.")
+        ->conditionallyEnabledBy(s.autoShoutoutRaids)
+        ->addTo(*view);
 
     SettingWidget::checkbox("Show repeated-message counters",
                             s.enableRepeatedMessageDetector)
@@ -1290,7 +1371,8 @@ MoltorinoPage::MoltorinoPage()
                             s.loadOlderUsercardMessages)
         ->setTooltip(
             "Load older messages of a user on the usercard, beyond what is in "
-            "the chat. In channels your Moltorino login (Moltorino -> "
+            "the chat. In channels your JilChat Chatterino login (JilChat "
+            "Chatterino -> "
             "Authentication) can moderate they come from Twitch's moderator "
             "history, elsewhere from the public logs (needs \"Use "
             "public logs\" on the JilChat Chatterino page). When disabled, the "
@@ -1300,10 +1382,11 @@ MoltorinoPage::MoltorinoPage()
     SettingWidget::checkbox("Show load more messages button",
                             s.showUsercardLoadMoreMessagesButton)
         ->conditionallyEnabledBy(s.loadOlderUsercardMessages)
-        ->setTooltip("Show a usercard button for loading older messages: from "
-                     "the Twitch mod history in channels your Moltorino login "
-                     "(Moltorino -> Authentication) can moderate, otherwise "
-                     "from the public logs.")
+        ->setTooltip(
+            "Show a usercard button for loading older messages: from "
+            "the Twitch mod history in channels your JilChat Chatterino login "
+            "(JilChat Chatterino -> Authentication) can moderate, otherwise "
+            "from the public logs.")
         ->addKeywords({"usercard", "messages", "load", "button"})
         ->addTo(*view);
     SettingWidget::checkbox("Always load more messages when possible",
@@ -1348,8 +1431,8 @@ MoltorinoPage::MoltorinoPage()
 
 #ifndef Q_OS_MACOS
     view->addTitle("Tray");
-    view->addDescription(
-        "Keep Leafyrino running in the tray after closing the window.");
+    view->addDescription("Keep JilChat Chatterino running in the tray after "
+                         "closing the window.");
 
     const bool trayAvailable = QSystemTrayIcon::isSystemTrayAvailable();
     const bool notificationAvailable =
@@ -1368,10 +1451,11 @@ MoltorinoPage::MoltorinoPage()
     }
 
     auto *hideToTrayWidget =
-        SettingWidget::checkbox("Hide to tray when closing Leafyrino",
+        SettingWidget::checkbox("Hide to tray when closing JilChat Chatterino",
                                 s.trayHideOnClose)
-            ->setTooltip("Closing the main window hides Leafyrino to the "
-                         "system tray instead of disconnecting from chat.");
+            ->setTooltip(
+                "Closing the main window hides JilChat Chatterino to the "
+                "system tray instead of disconnecting from chat.");
     hideToTrayWidget->setEnabled(trayAvailable);
     hideToTrayWidget->addTo(*view);
 
@@ -1381,7 +1465,7 @@ MoltorinoPage::MoltorinoPage()
             s.trayNotifyOnSoundHighlights)
             ->setTooltip("Only highlight rules with Play sound enabled "
                          "will show a notification while "
-                         "Leafyrino is hidden.");
+                         "JilChat Chatterino is hidden.");
     notifyWidget->setEnabled(notificationAvailable);
     notifyWidget->addTo(*view);
 #endif
@@ -1536,6 +1620,12 @@ MoltorinoPage::MoltorinoPage()
             dialog.exec();
         });
 
+    SettingWidget::checkbox("Show quote of the day", s.showDailyQuote)
+        ->addKeywords({"quote", "daily", "zenquotes"})
+        ->setTooltip("Show a quote from zenquotes.io once in the "
+                     "selected chat when a new local day begins.")
+        ->addTo(*view);
+
     SettingWidget::intInput("Delay between /spam and /pyramid messages",
                             s.spamCommandIntervalMs,
                             {.min = 10,
@@ -1566,9 +1656,21 @@ MoltorinoPage::MoltorinoPage()
         ->addTo(*view);
     view->addDescription("Spam, pyramid, and playful chat command options.");
 
+    view->addTitle("Domain highlights");
+    SettingWidget::checkbox("Block domain highlights", s.blockDomainHighlights)
+        ->setTooltip("Prevent your own domain from triggering username mention "
+                     "highlights. Links remain clickable.")
+        ->addTo(*view);
+    SettingWidget::lineEdit("Your domain", s.yourDomain, "e.g. example.com")
+        ->setTooltip("Your domain, without https:// or a path. Subdomains are "
+                     "included automatically.")
+        ->conditionallyEnabledBy(s.blockDomainHighlights)
+        ->addTo(*view);
+
     view->addTitle("Miscellaneous");
     auto *miscDesc = new SignalLabel(this);
-    miscDesc->setText("General Leafyrino tweaks and interface adjustments.");
+    miscDesc->setText(
+        "General JilChat Chatterino tweaks and interface adjustments.");
     miscDesc->setWordWrap(true);
     miscDesc->setStyleSheet("QLabel { color: #9aa0a6; }");
     view->addWidget(miscDesc);
@@ -1611,6 +1713,13 @@ MoltorinoPage::MoltorinoPage()
                      "without a prompt.")
         ->addTo(*view);
 
+    SettingWidget::checkbox("Show the Shared Chat channel selector",
+                            s.showSharedChatChannelSelector)
+        ->setTooltip(
+            "Show a channel picker in the chat header when Shared Chat "
+            "includes more than one channel.")
+        ->addTo(*view);
+
     SettingWidget::checkbox("Hide mod actions on moderator usercards",
                             s.hideModActionsOnModUsercards)
         ->setTooltip(
@@ -1627,21 +1736,22 @@ MoltorinoPage::MoltorinoPage()
             "usercards stay hidden.")
         ->conditionallyEnabledBy(s.hideModActionsOnModUsercards)
         ->addTo(*view);
+    SettingWidget::checkbox("Show usercard banners", s.showUsercardBanners)
+        ->setTooltip("Show the user's profile banner on their usercard if they "
+                     "have one.")
+        ->addTo(*view);
+    const std::vector<std::pair<QString, QVariant>> bannerDisplayModes{
+        {"Above usercard", "above"}, {"Behind profile", "background"}};
+    SettingWidget::dropdown("Banner display", s.usercardBannerDisplayMode,
+                            bannerDisplayModes)
+        ->setTooltip("Choose where the user's profile banner is displayed.")
+        ->conditionallyEnabledBy(s.showUsercardBanners)
+        ->addTo(*view);
 
     view->addStretch();
 
     view->addWidget(this->botBadgeFrame_, {"Bot Badge", "Developer", "Verify",
                                            "Client ID", "Client Secret"});
-}
-
-bool MoltorinoPage::filterElements(const QString &query)
-{
-    if (this->settingsView_ == nullptr)
-    {
-        return query.isEmpty();
-    }
-
-    return this->settingsView_->filterElements(query) || query.isEmpty();
 }
 
 void MoltorinoPage::openAuthDialog()
@@ -2038,9 +2148,8 @@ void MoltorinoPage::verifyBotBadgeConfiguration()
         .execute();
 }
 
-void MoltorinoPage::hideEvent(QHideEvent *event)
+void MoltorinoPage::resetOnPageHide()
 {
-    SettingsPage::hideEvent(event);
     this->logoClickCount_ = 0;
     this->revealBotBadgeSettings(false);
 }

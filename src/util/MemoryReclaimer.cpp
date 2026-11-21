@@ -5,6 +5,7 @@
 #include "util/MemoryReclaimer.hpp"
 
 #include <QCoreApplication>
+#include <QMetaObject>
 #include <QThreadPool>
 #include <QTimer>
 
@@ -14,14 +15,16 @@
 
 #if defined(Q_OS_WIN) && defined(_MSC_VER)
 #    include <malloc.h>
+#    define CHATTERINO_HAS_MEMORY_RELIEF
 #elif defined(Q_OS_LINUX) && defined(__GLIBC__)
 #    include <malloc.h>
+#    define CHATTERINO_HAS_MEMORY_RELIEF
 #elif defined(Q_OS_MACOS)
 #    include <malloc/malloc.h>
+#    define CHATTERINO_HAS_MEMORY_RELIEF
 #endif
 
 #include <algorithm>
-#include <chrono>
 #include <utility>
 
 namespace chatterino {
@@ -44,9 +47,9 @@ MemoryReliefCoordinator::MemoryReliefCoordinator(Duration coalesceDelay,
 
 void MemoryReliefCoordinator::request()
 {
-    std::optional<Duration> delay;
+    Duration delay{};
     {
-        std::scoped_lock lock(this->mutex_);
+        std::lock_guard lock(this->mutex_);
         if (this->running_)
         {
             this->pending_ = true;
@@ -68,13 +71,13 @@ void MemoryReliefCoordinator::request()
         this->scheduled_ = true;
     }
 
-    this->scheduleAfter(*delay);
+    this->scheduleAfter(delay);
 }
 
 void MemoryReliefCoordinator::timerFired()
 {
     {
-        std::scoped_lock lock(this->mutex_);
+        std::lock_guard lock(this->mutex_);
         if (!this->scheduled_)
         {
             return;
@@ -98,12 +101,11 @@ void MemoryReliefCoordinator::workerFinished()
 {
     bool schedulePending = false;
     {
-        std::scoped_lock lock(this->mutex_);
+        std::lock_guard lock(this->mutex_);
         if (!this->running_)
         {
             return;
         }
-
         this->running_ = false;
         this->lastCompleted_ = this->now_();
         if (this->pending_)
@@ -129,19 +131,21 @@ void MemoryReliefCoordinator::scheduleAfter(Duration delay)
 
 }  // namespace detail
 
+#ifdef CHATTERINO_HAS_MEMORY_RELIEF
+
 namespace {
 
-#if (defined(Q_OS_WIN) && defined(_MSC_VER)) || \
-    (defined(Q_OS_LINUX) && defined(__GLIBC__)) || defined(Q_OS_MACOS)
-
+// many frees tend to come in bursts, wait for the burst to end
 constexpr auto COALESCE_DELAY = std::chrono::seconds{5};
+// trimming walks the whole heap, don't do it too often
 constexpr auto MINIMUM_INTERVAL = std::chrono::seconds{30};
 
 void releaseFreeAllocatorPages()
 {
-#    if defined(Q_OS_WIN) && defined(_MSC_VER)
+#    if defined(Q_OS_WIN)
+    // gives the free blocks of the CRT heap back to Windows
     _heapmin();
-#    elif defined(Q_OS_LINUX) && defined(__GLIBC__)
+#    elif defined(Q_OS_LINUX)
     malloc_trim(0);
 #    elif defined(Q_OS_MACOS)
     malloc_zone_pressure_relief(nullptr, 0);
@@ -150,56 +154,54 @@ void releaseFreeAllocatorPages()
 
 detail::MemoryReliefCoordinator &memoryReliefCoordinator()
 {
-    static detail::MemoryReliefCoordinator coordinator{
-        std::chrono::duration_cast<detail::MemoryReliefCoordinator::Duration>(
-            COALESCE_DELAY),
-        std::chrono::duration_cast<detail::MemoryReliefCoordinator::Duration>(
-            MINIMUM_INTERVAL),
+    using Coordinator = detail::MemoryReliefCoordinator;
+
+    // leaked on purpose, a relief might still run on a worker thread at exit
+    static auto *coordinator = new Coordinator{
+        std::chrono::duration_cast<Coordinator::Duration>(COALESCE_DELAY),
+        std::chrono::duration_cast<Coordinator::Duration>(MINIMUM_INTERVAL),
         [] {
-            return std::chrono::steady_clock::now();
+            return Coordinator::Clock::now();
         },
-        [](auto delay, auto task) {
-            auto *application = QCoreApplication::instance();
-            if (application == nullptr || QCoreApplication::closingDown())
+        [](Coordinator::Duration delay, Coordinator::Task task) {
+            auto *app = QCoreApplication::instance();
+            if (app == nullptr || QCoreApplication::closingDown())
             {
                 return;
             }
-            QTimer::singleShot(delay, application, std::move(task));
+            // this is also called from the worker thread, timers have to be
+            // started on the thread of their context
+            QMetaObject::invokeMethod(
+                app,
+                [delay, task = std::move(task)]() mutable {
+                    QTimer::singleShot(delay, QCoreApplication::instance(),
+                                       std::move(task));
+                },
+                Qt::QueuedConnection);
         },
-        [](auto task) {
+        [](Coordinator::Task task) {
             QThreadPool::globalInstance()->start(std::move(task));
         },
         [] {
             releaseFreeAllocatorPages();
-        }};
-    return coordinator;
+        },
+    };
+    return *coordinator;
 }
-
-#endif
 
 }  // namespace
 
+#endif
+
 void requestMemoryPressureRelief()
 {
-#if (defined(Q_OS_LINUX) && defined(__GLIBC__)) || defined(Q_OS_MACOS)
-    auto *application = QCoreApplication::instance();
-    if (application == nullptr || QCoreApplication::closingDown())
+#ifdef CHATTERINO_HAS_MEMORY_RELIEF
+    if (QCoreApplication::instance() == nullptr ||
+        QCoreApplication::closingDown())
     {
         return;
     }
-    memoryReliefCoordinator().request();
-#endif
-}
 
-void requestTransientMemoryPressureRelief()
-{
-#if (defined(Q_OS_WIN) && defined(_MSC_VER)) || \
-    (defined(Q_OS_LINUX) && defined(__GLIBC__)) || defined(Q_OS_MACOS)
-    auto *application = QCoreApplication::instance();
-    if (application == nullptr || QCoreApplication::closingDown())
-    {
-        return;
-    }
     memoryReliefCoordinator().request();
 #endif
 }

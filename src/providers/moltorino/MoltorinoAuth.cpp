@@ -1396,7 +1396,8 @@ MoltorinoAuthToken resolveModerationToken(const QString &channelId,
         {
             *errorMessage =
                 QString("No saved account has cached moderator access "
-                        "for #%1. Refresh accounts in Settings -> Moltorino -> "
+                        "for #%1. Refresh accounts in Settings -> JilChat "
+                        "Chatterino -> "
                         "Authentication or add the account that moderates this "
                         "channel.")
                     .arg(channelLogin);
@@ -1431,7 +1432,7 @@ MoltorinoAuthToken resolveSavedBroadcasterToken(const QString &channelId,
     {
         *errorMessage =
             QString("No saved broadcaster account matches #%1. Add the "
-                    "broadcaster account in Settings -> Moltorino -> "
+                    "broadcaster account in Settings -> JilChat Chatterino -> "
                     "Authentication.")
                 .arg(channelLogin);
     }
@@ -1461,7 +1462,8 @@ MoltorinoAuthToken resolveBroadcasterToken(const QString &channelId,
         {
             *errorMessage =
                 QString("No saved account matches #%1. Add the broadcaster "
-                        "account in Settings -> Moltorino -> Authentication.")
+                        "account in Settings -> JilChat Chatterino -> "
+                        "Authentication.")
                     .arg(channelLogin);
         }
         return {};
@@ -1494,7 +1496,8 @@ MoltorinoAuthToken resolveSelectedUserToken(QString *errorMessage)
     {
         *errorMessage =
             "Saved login for the current Twitch account was not found. "
-            "Add this account in Settings -> Moltorino -> Authentication.";
+            "Add this account in Settings -> JilChat Chatterino -> "
+            "Authentication.";
     }
     return {};
 }
@@ -1546,7 +1549,8 @@ MoltorinoAuthToken resolveCurrentUserToken(QString *errorMessage)
         {
             *errorMessage =
                 "Saved login for the current Twitch account was not found. "
-                "Add this account in Settings -> Moltorino -> Authentication.";
+                "Add this account in Settings -> JilChat Chatterino -> "
+                "Authentication.";
         }
         return {};
     }
@@ -1595,7 +1599,7 @@ QString authRequiredMessage(const QString &action)
 {
     return QString("Additional login required for %1. Add an account in "
                    "Settings -> "
-                   "Moltorino -> Authentication, then try again.")
+                   "JilChat Chatterino -> Authentication, then try again.")
         .arg(action);
 }
 
@@ -1603,7 +1607,7 @@ QString authExpiredMessage(const QString &action)
 {
     return QString("Your saved login is missing or may have expired. "
                    "Refresh accounts or add the account again in Settings -> "
-                   "Moltorino -> Authentication, then try %1 again.")
+                   "JilChat Chatterino -> Authentication, then try %1 again.")
         .arg(action);
 }
 

@@ -30,6 +30,8 @@ class QVBoxLayout;
 namespace chatterino {
 
 class MessageView;
+class Image;
+using ImagePtr = std::shared_ptr<Image>;
 class SvgButton;
 class Button;
 class TwitchChannel;
@@ -68,10 +70,16 @@ private:
         Bttv,
         BttvEffects,
         Moltorino,
+        Solrino,
+        Chatlee,
         JilChat,
         Bluzyrino,
+        DankChat,
         SevenTvBadges,
         SevenTvPaints,
+        JiltvPaints,
+        JiltvBadges,
+        JiltvFrames,
     };
 
     struct SevenTvPaint {
@@ -97,6 +105,14 @@ private:
     void loadMoltorinoBadges(bool force = false);
     void rebuildMoltorinoBadges();
     void selectMoltorino(const QString &badgeId);
+    void loadSolrinoBadges(bool force = false);
+    void rebuildSolrinoBadges();
+    /// Makes the Solrino badge `badgeId` the one worn; none if empty.
+    void selectSolrino(const QString &badgeId);
+    void loadChatleeBadges(bool force = false);
+    void rebuildChatleeBadges();
+    /// Makes the Chatlee badge `slug` the one worn; none if empty.
+    void selectChatlee(const QString &slug);
     void loadJilChatBadges(bool force = false);
     void rebuildJilChatBadges();
     /// Makes the badge with `slug` the one shown in chat; none if empty.
@@ -104,6 +120,19 @@ private:
     void rebuildBluzyrinoBadges();
     /// Makes the donor badge `badgeId` the one shown in chat.
     void selectBluzyrino(const QString &badgeId, const QString &title);
+
+    /// DankChat: signed in with the session cookie of dank.chat, which only
+    /// its site hands out
+    void loadDankChat(bool force);
+    void rebuildDankChat();
+    void connectDankChat();
+    void disconnectDankChat();
+    /// `choice` like the site sends it: automatic, hidden or a badge
+    void selectDankChat(const QJsonObject &choice, const QString &title);
+    void dankChatRequest(const std::optional<QJsonObject> &put,
+                         const std::function<void(const QJsonObject &)> &onData,
+                         const std::function<void(const QString &)> &onError);
+    void applyDankChatAccount(const QJsonObject &account);
     void loadBttv(bool force = false);
     void rebuildBttv();
     void connectBttv();
@@ -121,15 +150,29 @@ private:
                      const std::function<void(const QString &)> &onError);
     /// Asks for the token of the user's `service` account, which the
     /// `command` copies in the browser console on `site`.
+    /// Without `command`, `steps` say how to get the token and the button
+    /// only opens `site`.
     std::optional<QString> askForToken(const QString &service,
                                        const QString &command,
-                                       const QString &site);
+                                       const QString &site,
+                                       const QString &steps = {},
+                                       const QString &placeholder = {});
     void loadSevenTv(bool force = false);
     void rebuildSevenTv();
     void connectSevenTv();
     void disconnectSevenTv();
     void selectSevenTv(bool paint, const QString &id);
     void loadSevenTvPaintData();
+    void loadJiltv(bool force = false);
+    void rebuildJiltv();
+    void signInJiltv();
+    void signOutJiltv();
+    void selectJiltv(View kind, const QString &id);
+    /// The image of a JilTV frame, or nullptr for none
+    ImagePtr jiltvFrameImage(const QString &id) const;
+    /// The frame shown around the own profile picture in the preview
+    ImagePtr previewFrame() const;
+    void loadOwnAvatar();
     void sevenTvRequest(const QString &query, const QJsonObject &variables,
                         const std::function<void(const QJsonObject &)> &onData,
                         const std::function<void(const QString &)> &onError);
@@ -149,7 +192,9 @@ private:
     void updatePreview();
     [[nodiscard]] MessagePtr buildPreviewMessage() const;
     void applyPreviewDialogWidth(int contentPixelWidth);
-    [[nodiscard]] int badgeGridColumns() const;
+    /// How many tiles of `tileSize` fit next to each other; badge tiles
+    /// without it.
+    [[nodiscard]] int badgeGridColumns(int tileSize = 0) const;
 
     TwitchChannel *channel_{};
 
@@ -164,10 +209,16 @@ private:
     QPushButton *bttvTabButton_{};
     QPushButton *bttvEffectTabButton_{};
     QPushButton *moltorinoTabButton_{};
+    QPushButton *solrinoTabButton_{};
+    QPushButton *chatleeTabButton_{};
     QPushButton *jilChatTabButton_{};
     QPushButton *bluzyrinoTabButton_{};
+    QPushButton *dankChatTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
     QPushButton *sevenTvPaintTabButton_{};
+    QPushButton *jiltvPaintTabButton_{};
+    QPushButton *jiltvBadgeTabButton_{};
+    QPushButton *jiltvFrameTabButton_{};
     QWidget *searchRowWidget_{};
     QLineEdit *searchInput_{};
     Button *pinButton_{};
@@ -178,6 +229,9 @@ private:
     QLabel *statusLabel_{};
     QWidget *previewWidget_{};
     MessageView *previewView_{};
+    QWidget *previewAvatar_{};
+    /// The own profile picture, for the preview and the frames
+    ImagePtr ownAvatar_;
 
     View view_ = View::GlobalBadges;
     GqlChatSettingsBadges badges_;
@@ -202,6 +256,20 @@ private:
     bool moltorinoLoading_ = false;
     bool moltorinoLoaded_ = false;
 
+    /// The same for Solrino, whose server works like Moltorino's but takes
+    /// the Twitch login
+    QVector<MoltorinoBadgeOption> solrinoBadges_;
+    QJsonObject solrinoProfile_;
+    QString solrinoSelected_;
+    bool solrinoLoading_ = false;
+    bool solrinoLoaded_ = false;
+
+    /// The Chatlee badges the user owns. `badge.id` is the slug.
+    QVector<MoltorinoBadgeOption> chatleeBadges_;
+    QString chatleeSelected_;
+    bool chatleeLoading_ = false;
+    bool chatleeLoaded_ = false;
+
     /// A JilChat badge and whether the user owns it. `badge.id` is its slug.
     struct JilChatBadgeOption {
         GqlBadge badge;
@@ -217,6 +285,20 @@ private:
 
     /// The Bluzyrino donor badge just picked, until the registry lists it.
     QString bluzyrinoPending_;
+
+    struct DankChatBadgeOption {
+        QString id;
+        QString title;
+        QString url;
+    };
+    /// The value of the q_session cookie of dank.chat
+    QString dankChatCookie_;
+    bool dankChatCookieRead_ = false;
+    bool dankChatLoading_ = false;
+    bool dankChatLoaded_ = false;
+    QVector<DankChatBadgeOption> dankChatBadges_;
+    /// "automatic", "hidden" or "badge:<id>", like the site
+    QString dankChatChoice_;
 
     /// The user's BetterTTV token, kept in the system credential store.
     QString bttvToken_;
@@ -244,6 +326,17 @@ private:
     QString sevenTvActivePaint_;
     bool sevenTvLoading_ = false;
     bool sevenTvLoaded_ = false;
+
+    /// What the user owns on JilTV (signed in with JilTV, see JiltvAuth).
+    /// Frames are the avatar decorations.
+    QVector<SevenTvPaint> jiltvPaints_;
+    QVector<GqlBadge> jiltvBadges_;
+    QVector<GqlBadge> jiltvFrames_;
+    QString jiltvActivePaint_;
+    QString jiltvActiveBadge_;
+    QString jiltvActiveFrame_;
+    bool jiltvLoading_ = false;
+    bool jiltvLoaded_ = false;
 
     static std::vector<QPointer<TwitchBadgePickerDialog>> activeDialogs_;
 };

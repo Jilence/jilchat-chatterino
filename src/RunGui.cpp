@@ -19,6 +19,8 @@
 #include "util/SelfCheck.hpp"
 #include "util/UnixSignalHandler.hpp"
 #include "widgets/dialogs/LastRunCrashDialog.hpp"
+#include "widgets/dialogs/PortableWelcome.hpp"
+#include "widgets/dialogs/UpdatePrompt.hpp"
 
 #include <QApplication>
 #include <QCryptographicHash>
@@ -32,6 +34,7 @@
 #include <Qt>
 #include <QtConcurrent>
 
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <tuple>
@@ -90,16 +93,16 @@ std::unique_ptr<QLocalServer> createGuiActivationServer(const Paths &paths)
             QLocalServer::removeServer(serverName);
             if (!server->listen(serverName))
             {
-                qCWarning(chatterinoApp)
-                    << "Failed to listen for Leafyrino activation requests:"
-                    << server->errorString();
+                qCWarning(chatterinoApp) << "Failed to listen for JilChat "
+                                            "Chatterino activation requests:"
+                                         << server->errorString();
                 return nullptr;
             }
         }
         else
         {
             qCDebug(chatterinoApp)
-                << "Leafyrino activation server already exists.";
+                << "JilChat Chatterino activation server already exists.";
             return nullptr;
         }
     }
@@ -384,6 +387,18 @@ void runGui(QApplication &a, const Modes &modes, const Paths &paths,
     if (!args.isFramelessEmbed)
     {
         activationServer = createGuiActivationServer(paths);
+
+        // The update window comes up by itself when an update is found
+        std::ignore = updates.statusUpdated.connect([](auto status) {
+            if (status == Updates::UpdateAvailable)
+            {
+                UpdatePrompt::showIfNew();
+            }
+        });
+        // Once the main window is there
+        QTimer::singleShot(std::chrono::milliseconds(1200), qApp, [] {
+            PortableWelcome::showIfFirstStart();
+        });
     }
     app.run();
 

@@ -1,0 +1,4 @@
+- New Setup in the look of JilChat Chatterino. You choose where to install it and whether to get a desktop shortcut, and it installs the Visual C++ runtime when Windows needs it.
+- New Update window. It shows what's new, fixed and changed, then downloads the update, installs it and restarts.
+- New Welcome for portable copies. It shows the first time a portable copy starts.
+- Fixed Animated badges flickering when the mouse moved in or out of the window.

@@ -39,7 +39,7 @@ Version::Version()
     this->generateExtraString();
 
 #ifdef Q_OS_WIN
-    // keep in sync with .CI/chatterino-installer.iss
+    // keep in sync with .CI/installer/JilChatSetup.cs
     this->appUserModelID_ = L"Jilence.JilChatChatterino";
 #endif
 }

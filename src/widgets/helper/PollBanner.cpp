@@ -1,6 +1,7 @@
 #include "widgets/helper/PollBanner.hpp"
 
 #include "Application.hpp"
+#include "controllers/commands/CommandController.hpp"
 #include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "widgets/buttons/SvgButton.hpp"
@@ -283,6 +284,38 @@ PollBanner::PollBanner(Split *split, QWidget *parent)
 
     this->rootLayout_->addLayout(this->contentLayout_);
 
+    // Mods and the streamer get a button under a running poll to end it
+    this->endButton_ = new QPushButton("End poll", this);
+    this->endButton_->setCursor(Qt::PointingHandCursor);
+    this->endButton_->setToolTip("End the poll now and show the results");
+    this->endButton_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    this->endButton_->hide();
+    auto *endRow = new QHBoxLayout();
+    endRow->setContentsMargins(BASE_CONTENT_LEFT_MARGIN, 2, 0, 0);
+    endRow->addWidget(this->endButton_);
+    endRow->addStretch(1);
+    this->rootLayout_->addLayout(endRow);
+    QObject::connect(this->endButton_, &QPushButton::clicked, this, [this] {
+        if (this->split_ == nullptr)
+        {
+            return;
+        }
+        auto channel = this->split_->getChannel();
+        if (!channel)
+        {
+            return;
+        }
+        this->endButton_->setEnabled(false);
+        this->endButton_->setText("Ending...");
+        // The same as typing /endpoll, so it works the same way and reports
+        // any problem in chat
+        getApp()->getCommands()->execCommand("/endpoll", channel, false);
+        QTimer::singleShot(4000, this, [this] {
+            this->endButton_->setEnabled(true);
+            this->endButton_->setText("End poll");
+        });
+    });
+
     this->distributionBar_ = new QWidget(this);
     this->distributionBar_->setAttribute(Qt::WA_TransparentForMouseEvents);
     this->distributionBar_->setFixedHeight(BASE_BAR_HEIGHT);
@@ -335,6 +368,7 @@ void PollBanner::setPoll(const std::optional<TwitchChannel::PollEvent> &poll,
         this->summaryLabel_->clear();
         this->timerLabel_->clear();
         this->distributionBar_->hide();
+        this->endButton_->hide();
         this->updateTimer_->stop();
         this->anim_->stop();
         this->currentFractions_.clear();
@@ -414,6 +448,7 @@ void PollBanner::setPoll(const std::optional<TwitchChannel::PollEvent> &poll,
 
     this->updateLayout();
     this->updateTimer();
+    this->updateEndButton();
 
     if (pollIsActive(*poll))
     {
@@ -858,6 +893,29 @@ void PollBanner::updateLabelStyles()
             .arg(textColor.name()));
     this->summaryLabel_->setStyleSheet(
         QString("font-size: %1px;").arg(this->summaryFontSize_));
+    this->endButton_->setStyleSheet(
+        QString(
+            "QPushButton { font-size: %1px; font-weight: bold; color: #ffffff;"
+            " background: #c8102e; border: none; border-radius: 4px;"
+            " padding: 3px 12px; }"
+            "QPushButton:hover { background: #e3243f; }"
+            "QPushButton:disabled { background: rgba(200, 16, 46, 0.5);"
+            " color: rgba(255, 255, 255, 0.7); }")
+            .arg(this->summaryFontSize_));
+}
+
+void PollBanner::updateEndButton()
+{
+    const bool canEnd = this->poll_ && pollIsActive(*this->poll_) &&
+                        this->twitchChannel_ != nullptr &&
+                        (this->twitchChannel_->hasModRights() ||
+                         this->twitchChannel_->isBroadcaster());
+    this->endButton_->setVisible(canEnd);
+    if (!canEnd)
+    {
+        this->endButton_->setEnabled(true);
+        this->endButton_->setText("End poll");
+    }
 }
 
 void PollBanner::openPollDialog()

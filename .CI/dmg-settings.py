@@ -49,8 +49,9 @@ def icon_from_app(app_path):
 # Uncomment to override the output volume name
 # volume_name = 'Test'
 
-# Volume format (see hdiutil create -help)
-format = defines.get('format', 'UDBZ')
+# Volume format (see hdiutil create -help). LZFSE: dmgbuild 2 no longer
+# makes bzip2 images (UDBZ), which macOS stopped making in 10.15.
+format = defines.get('format', 'ULFO')
 
 # Volume size
 size = defines.get('size', None)

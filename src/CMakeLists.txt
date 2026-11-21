@@ -26,6 +26,8 @@ set(SOURCE_FILES
         common/ChatterinoSetting.hpp
         common/ChatterSet.cpp
         common/ChatterSet.hpp
+        common/AccountCredentials.cpp
+        common/AccountCredentials.hpp
         common/Credentials.cpp
         common/Credentials.hpp
         common/Env.cpp
@@ -450,6 +452,8 @@ set(SOURCE_FILES
         messages/search/BadgePredicate.hpp
         messages/search/ChannelPredicate.cpp
         messages/search/ChannelPredicate.hpp
+        messages/search/ClientPredicate.cpp
+        messages/search/ClientPredicate.hpp
         messages/search/LinkPredicate.cpp
         messages/search/LinkPredicate.hpp
         messages/search/MessageFlagsPredicate.cpp
@@ -489,6 +493,8 @@ set(SOURCE_FILES
         providers/bttv/liveupdates/BttvLiveUpdateSubscription.cpp
         providers/bttv/liveupdates/BttvLiveUpdateSubscription.hpp
 
+        providers/chatlee/ChatleeBadges.cpp
+        providers/chatlee/ChatleeBadges.hpp
         providers/chatterino/ChatterinoBadges.cpp
         providers/chatterino/ChatterinoBadges.hpp
 
@@ -503,6 +509,14 @@ set(SOURCE_FILES
 
         providers/dankchat/DankChatBadges.cpp
         providers/dankchat/DankChatBadges.hpp
+        providers/solrino/SolrinoBadges.cpp
+        providers/solrino/SolrinoBadges.hpp
+        providers/streamnook/StreamNookBadges.cpp
+        providers/wrapped/WrappedStats.cpp
+        providers/wrapped/WrappedStats.hpp
+        providers/wydios/WydiosBadges.cpp
+        providers/wydios/WydiosBadges.hpp
+        providers/streamnook/StreamNookBadges.hpp
 
         providers/chatsen/ChatsenBadges.cpp
         providers/chatsen/ChatsenBadges.hpp
@@ -512,8 +526,19 @@ set(SOURCE_FILES
 
         providers/jilchat/JilChatBadges.cpp
         providers/jilchat/JilChatBadges.hpp
+        providers/jilchat/JilChatDailyQuote.cpp
+        providers/jilchat/JilChatDailyQuote.hpp
         providers/jilchat/JilChatVoice.cpp
         providers/jilchat/JilChatVoice.hpp
+
+        providers/jiltv/Jiltv.cpp
+        providers/jiltv/Jiltv.hpp
+        providers/jiltv/JiltvAuth.cpp
+        providers/jiltv/JiltvAuth.hpp
+        providers/jiltv/JiltvPaint.cpp
+        providers/jiltv/JiltvPaint.hpp
+        providers/jiltv/JiltvStream.cpp
+        providers/jiltv/JiltvStream.hpp
 
         providers/limerino/LimerinoBadges.cpp
         providers/limerino/LimerinoBadges.hpp
@@ -565,6 +590,32 @@ set(SOURCE_FILES
         providers/youtube/YouTubeBadges.hpp
         providers/youtube/YouTubeChannel.cpp
         providers/youtube/YouTubeChannel.hpp
+        providers/tiktok/TikTokAccount.cpp
+        providers/tiktok/TikTokAccount.hpp
+        providers/tiktok/TikTokAccountManager.cpp
+        providers/tiktok/TikTokAccountManager.hpp
+        providers/tiktok/TikTokApi.cpp
+        providers/tiktok/TikTokApi.hpp
+        providers/tiktok/TikTokBadge.cpp
+        providers/tiktok/TikTokBadge.hpp
+        providers/tiktok/TikTokChannel.cpp
+        providers/tiktok/TikTokChannel.hpp
+        providers/tiktok/TikTokChatServer.cpp
+        providers/tiktok/TikTokChatServer.hpp
+        providers/tiktok/TikTokEmotes.cpp
+        providers/tiktok/TikTokEmotes.hpp
+        providers/tiktok/TikTokMessageBuilder.cpp
+        providers/tiktok/TikTokMessageBuilder.hpp
+        providers/tiktok/TikTokProtocol.cpp
+        providers/tiktok/TikTokProtocol.hpp
+        providers/tiktok/TikTokRequestSigning.cpp
+        providers/tiktok/TikTokRequestSigning.hpp
+        providers/tiktok/TikTokSession.cpp
+        providers/tiktok/TikTokSession.hpp
+        providers/tiktok/TikTokText.cpp
+        providers/tiktok/TikTokText.hpp
+        providers/tiktok/TikTokTypes.cpp
+        providers/tiktok/TikTokTypes.hpp
         providers/youtube/YouTubeChatServer.cpp
         providers/youtube/YouTubeChatServer.hpp
         providers/youtube/YouTubeMessageBuilder.cpp
@@ -574,16 +625,18 @@ set(SOURCE_FILES
         providers/kick/ws/KickPusherManager.cpp
         providers/kick/ws/KickWebSocketCommon.cpp
 
+        providers/links/EmoteLinkPreview.cpp
+        providers/links/EmoteLinkPreview.hpp
         providers/links/LinkInfo.cpp
         providers/links/LinkInfo.hpp
         providers/links/LinkResolver.cpp
+        providers/links/TikTokLinkResolver.cpp
+        providers/links/TikTokLinkResolver.hpp
         providers/links/LinkResolver.hpp
 
         providers/moltorino/MoltorinoAuth.cpp
         providers/moltorino/MoltorinoAuth.hpp
         providers/moltorino/MoltorinoFeatureFlags.hpp
-        # providers/moltorino/MoltorinoPresence.cpp
-        # providers/moltorino/MoltorinoPresence.hpp
         providers/moltorino/MoltorinoSupporterBadges.cpp
         providers/moltorino/MoltorinoSupporterBadges.hpp
 
@@ -637,6 +690,9 @@ set(SOURCE_FILES
         providers/seventv/SeventvEmotes.hpp
         providers/seventv/SeventvEventAPI.cpp
         providers/seventv/SeventvEventAPI.hpp
+        providers/seventv/SeventvHiddenPaint.hpp
+        providers/seventv/SeventvHiddenPaintModel.cpp
+        providers/seventv/SeventvHiddenPaintModel.hpp
         providers/seventv/SeventvPaints.cpp
         providers/seventv/SeventvPaints.hpp
         providers/seventv/SeventvPersonalEmotes.cpp
@@ -664,6 +720,8 @@ set(SOURCE_FILES
 
         providers/twitch/ChannelPointReward.cpp
         providers/twitch/ChannelPointReward.hpp
+        providers/twitch/ChatColorCycler.cpp
+        providers/twitch/ChatColorCycler.hpp
         providers/twitch/IrcMessageHandler.cpp
         providers/twitch/IrcMessageHandler.hpp
         providers/twitch/ModerationActionLogs.cpp
@@ -752,6 +810,8 @@ set(SOURCE_FILES
         singletons/Fonts.hpp
         singletons/ImageUploader.cpp
         singletons/ImageUploader.hpp
+        singletons/UrlShortener.cpp
+        singletons/UrlShortener.hpp
         singletons/Logging.cpp
         singletons/Logging.hpp
         singletons/NativeMessaging.cpp
@@ -791,6 +851,8 @@ set(SOURCE_FILES
         util/BoostJsonWrap.hpp
         util/CancellationToken.hpp
         util/ChannelHelpers.hpp
+        util/ChannelNamePaint.cpp
+        util/ChannelNamePaint.hpp
         util/Clipboard.cpp
         util/Clipboard.hpp
         util/CustomPlayer.cpp
@@ -817,6 +879,8 @@ set(SOURCE_FILES
         util/HttpServer.hpp
         util/ImageUploader.cpp
         util/ImageUploader.hpp
+        util/UrlShortener.cpp
+        util/UrlShortener.hpp
         util/IncognitoBrowser.cpp
         util/IncognitoBrowser.hpp
         util/IpcQueue.cpp
@@ -827,6 +891,8 @@ set(SOURCE_FILES
         util/LayoutHelper.hpp
         util/LoadPixmap.cpp
         util/LoadPixmap.hpp
+        util/MemoryReclaimer.cpp
+        util/MemoryReclaimer.hpp
         util/MultiChannel.cpp
         util/MultiChannel.hpp
         util/OnceFlag.cpp
@@ -842,11 +908,19 @@ set(SOURCE_FILES
         util/ReloadBadges.hpp
         util/RenameThread.cpp
         util/RenameThread.hpp
+        util/Restart.cpp
+        util/Restart.hpp
         util/SampleData.cpp
         util/SampleData.hpp
         util/SelfCheck.cpp
         util/SelfCheck.hpp
+        util/SettingsTransfer.cpp
+        util/SettingsTransfer.hpp
         util/SharedPtrElementLess.hpp
+        util/RaidShoutout.cpp
+        util/RaidShoutout.hpp
+        util/ShareWatchStreak.cpp
+        util/ShareWatchStreak.hpp
         util/SignalListener.hpp
         util/StreamLink.cpp
         util/StreamLink.hpp
@@ -888,6 +962,8 @@ set(SOURCE_FILES
         widgets/BaseWindow.hpp
         widgets/ChatterListWidget.cpp
         widgets/ChatterListWidget.hpp
+        widgets/FollowedChannelsWindow.cpp
+        widgets/FollowedChannelsWindow.hpp
         widgets/DraggablePopup.cpp
         widgets/DraggablePopup.hpp
         widgets/FramelessEmbedWindow.cpp
@@ -919,8 +995,6 @@ set(SOURCE_FILES
         widgets/buttons/FollowButton.hpp
         widgets/buttons/DrawnButton.cpp
         widgets/buttons/DrawnButton.hpp
-        # widgets/buttons/InitMoltorinoUpdateButton.cpp
-        # widgets/buttons/InitMoltorinoUpdateButton.hpp
         widgets/buttons/InitUpdateButton.cpp
         widgets/buttons/InitUpdateButton.hpp
         widgets/buttons/LabelButton.cpp
@@ -956,6 +1030,8 @@ set(SOURCE_FILES
         widgets/dialogs/ChannelPointsChartDialog.hpp
         widgets/dialogs/ChannelPointsChartView.cpp
         widgets/dialogs/ChannelPointsChartView.hpp
+        widgets/dialogs/ChatColorCycleDialog.cpp
+        widgets/dialogs/ChatColorCycleDialog.hpp
         widgets/dialogs/ColorPickerDialog.cpp
         widgets/dialogs/ColorPickerDialog.hpp
         widgets/dialogs/CrossBanDialog.cpp
@@ -966,6 +1042,8 @@ set(SOURCE_FILES
         widgets/dialogs/EditUserNotesDialog.hpp
         widgets/dialogs/EmotePopup.cpp
         widgets/dialogs/EmotePopup.hpp
+        widgets/dialogs/GameSelectorDialog.cpp
+        widgets/dialogs/GameSelectorDialog.hpp
         widgets/dialogs/GifPickerDialog.cpp
         widgets/dialogs/GifPickerDialog.hpp
         widgets/dialogs/HighlightChannelScopeDialog.cpp
@@ -990,6 +1068,8 @@ set(SOURCE_FILES
 
         widgets/dialogs/KickLoginPage.cpp
         widgets/dialogs/KickLoginPage.hpp
+        widgets/dialogs/HiddenSeventvPaintsDialog.cpp
+        widgets/dialogs/HiddenSeventvPaintsDialog.hpp
         widgets/dialogs/LastRunCrashDialog.cpp
         widgets/dialogs/LastRunCrashDialog.hpp
         widgets/dialogs/LoginDialog.cpp
@@ -1020,6 +1100,10 @@ set(SOURCE_FILES
         widgets/dialogs/TranslationProviderDialog.hpp
         widgets/dialogs/UpdateDialog.cpp
         widgets/dialogs/UpdateDialog.hpp
+        widgets/dialogs/UpdatePrompt.cpp
+        widgets/dialogs/UpdatePrompt.hpp
+        widgets/dialogs/PortableWelcome.cpp
+        widgets/dialogs/PortableWelcome.hpp
         widgets/dialogs/UserInfoPopup.cpp
         widgets/dialogs/UserInfoPopup.hpp
         widgets/dialogs/WelcomeDialog.cpp
@@ -1035,6 +1119,8 @@ set(SOURCE_FILES
         widgets/dialogs/switcher/SwitchSplitItem.cpp
         widgets/dialogs/switcher/SwitchSplitItem.hpp
 
+        widgets/helper/AvatarFrame.cpp
+        widgets/helper/AvatarFrame.hpp
         widgets/helper/color/AlphaSlider.cpp
         widgets/helper/color/AlphaSlider.hpp
         widgets/helper/color/Checkerboard.cpp
@@ -1074,6 +1160,8 @@ set(SOURCE_FILES
         widgets/helper/IconDelegate.hpp
         widgets/helper/InvisibleSizeGrip.cpp
         widgets/helper/InvisibleSizeGrip.hpp
+        widgets/helper/JilChatCard.cpp
+        widgets/helper/JilChatCard.hpp
         widgets/helper/KickAccountSwitchWidget.cpp
         widgets/helper/KickAccountSwitchWidget.hpp
         widgets/helper/LiveIndicator.cpp
@@ -1110,6 +1198,12 @@ set(SOURCE_FILES
         widgets/helper/SvgWidget.hpp
         widgets/helper/TableStyles.cpp
         widgets/helper/TableStyles.hpp
+        widgets/dialogs/WrappedDialog.cpp
+        widgets/dialogs/WrappedDialog.hpp
+        widgets/helper/Transitions.cpp
+        widgets/helper/Transitions.hpp
+        widgets/helper/TwitchChatDock.cpp
+        widgets/helper/TwitchChatDock.hpp
         widgets/helper/TrimRegExpValidator.cpp
         widgets/helper/TrimRegExpValidator.hpp
 
@@ -1129,6 +1223,8 @@ set(SOURCE_FILES
         widgets/settingspages/AboutPage.hpp
         widgets/settingspages/AccountsPage.cpp
         widgets/settingspages/AccountsPage.hpp
+        widgets/settingspages/BackupsPage.cpp
+        widgets/settingspages/BackupsPage.hpp
         widgets/settingspages/CommandPage.cpp
         widgets/settingspages/CommandPage.hpp
         widgets/settingspages/CustomWidgets.hpp
@@ -1172,8 +1268,6 @@ set(SOURCE_FILES
         widgets/settingspages/PluginsPage.hpp
         widgets/settingspages/SettingsPage.cpp
         widgets/settingspages/SettingsPage.hpp
-        widgets/settingspages/SettingsProfilePage.cpp
-        widgets/settingspages/SettingsProfilePage.hpp
         widgets/settingspages/SettingWidget.cpp
         widgets/settingspages/SettingWidget.hpp
 
@@ -1187,6 +1281,8 @@ set(SOURCE_FILES
         widgets/splits/InputCompletionPopup.hpp
         widgets/splits/InputHighlighter.cpp
         widgets/splits/InputHighlighter.hpp
+        widgets/splits/QuickGameBar.cpp
+        widgets/splits/QuickGameBar.hpp
         widgets/splits/Split.cpp
         widgets/splits/Split.hpp
         widgets/splits/SplitCommon.hpp
@@ -1460,7 +1556,7 @@ if (BUILD_APP)
         endif()
         get_filename_component(QT_BIN_DIR ${QT_CORE_LOC} DIRECTORY)
 
-        # This assumes the installed CRT is up-to-date (see .CI/deploy-crt.ps1)
+        # This assumes the installed CRT is up-to-date (see the "Prepare build dir (windows)" step in .github/workflows/build.yml)
         set(WINDEPLOYQT_COMMAND_ARGV
             "${WINDEPLOYQT_PATH}"
             "$<TARGET_FILE:${EXECUTABLE_PROJECT}>"
@@ -1474,18 +1570,6 @@ if (BUILD_APP)
             list(APPEND WINDEPLOYQT_COMMAND_ARGV --force-openssl)
         endif()
         string(REPLACE ";" " " WINDEPLOYQT_COMMAND "${WINDEPLOYQT_COMMAND_ARGV}")
-
-        set(MOLTORINO_SUPPORT_7ZIP_DIR "${CMAKE_SOURCE_DIR}/tools/support/7zip")
-        if (EXISTS "${MOLTORINO_SUPPORT_7ZIP_DIR}/7z.exe")
-            add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${MOLTORINO_SUPPORT_7ZIP_DIR}"
-                    "$<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>/support/7zip"
-                VERBATIM)
-
-            install(DIRECTORY "${MOLTORINO_SUPPORT_7ZIP_DIR}/"
-                DESTINATION support/7zip)
-        endif()
 
         install(TARGETS ${EXECUTABLE_PROJECT}
             RUNTIME_DEPENDENCIES
@@ -1525,7 +1609,8 @@ if (BUILD_APP)
                 DESTINATION share/applications
                 )
 
-        install(FILES ${CMAKE_SOURCE_DIR}/resources/icon.png
+        # the folder says 256x256, so the icon must be that size exactly
+        install(FILES ${CMAKE_SOURCE_DIR}/resources/icon-256.png
                 RENAME com.jilence.jilchatchatterino.png
                 DESTINATION share/icons/hicolor/256x256/apps
                 )

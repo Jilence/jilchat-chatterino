@@ -68,6 +68,8 @@ struct LiveUpdatesUpdateEmoteSetMessageTag {
 };
 struct ImageUploaderResultTag {
 };
+struct UrlShortenerResultTag {
+};
 
 const SystemMessageTag systemMessage{};
 const TimeoutMessageTag timeoutMessage{};
@@ -77,6 +79,7 @@ const LiveUpdatesAddEmoteMessageTag liveUpdatesAddEmoteMessage{};
 const LiveUpdatesUpdateEmoteSetMessageTag liveUpdatesUpdateEmoteSetMessage{};
 
 const ImageUploaderResultTag imageUploaderResultMessage{};
+const UrlShortenerResultTag urlShortenerResultMessage{};
 
 MessagePtr makeSystemMessage(const QString &text);
 MessagePtr makeSystemMessage(const QString &text, const QTime &time);
@@ -137,6 +140,9 @@ public:
     MessageBuilder(ImageUploaderResultTag, const QString &imageLink,
                    const QString &deletionLink, size_t imagesStillQueued = 0,
                    size_t secondsLeft = 0);
+
+    MessageBuilder(UrlShortenerResultTag, const QString &shortUrl,
+                   const QString &deletionLink);
 
     MessageBuilder(const MessageBuilder &) = delete;
     MessageBuilder(MessageBuilder &&) = delete;
@@ -211,6 +217,23 @@ public:
 
     // Messages in normal chat for channel stuff
     static MessagePtr makeOfflineSystemMessage(const HelixMinimalUser &channel);
+    /// Make a "CHANNEL_NAME changed title to "TITLE"" message
+    ///
+    /// An empty title makes a "CHANNEL_NAME cleared title" message
+    static MessagePtr makeStreamTitleChangedSystemMessage(
+        const HelixMinimalUser &channel, const QString &newTitle);
+    /// Make a "CHANNEL_NAME changed game to GAME" message
+    ///
+    /// An empty game makes a "CHANNEL_NAME cleared game" message
+    static MessagePtr makeStreamGameChangedSystemMessage(
+        const HelixMinimalUser &channel, const QString &newGame);
+    /// Make a "CHANNEL_NAME is in shared chat with USER1, USER2" message
+    static MessagePtr makeSharedChatSystemMessage(
+        const HelixMinimalUser &channel,
+        const std::vector<HelixMinimalUser> &participants);
+    /// Make a "CHANNEL_NAME is no longer in shared chat" message
+    static MessagePtr makeSharedChatEndedSystemMessage(
+        const HelixMinimalUser &channel);
     static MessagePtr makeHostingSystemMessage(const QString &channelName,
                                                bool hostOn);
     static MessagePtr makeDeletionMessageFromIRC(
@@ -285,6 +308,15 @@ public:
         const std::vector<BadgePreviewFallback> &badgeFallbacks);
 
 private:
+    /// Make a "CHANNEL_NAME ACTION" system message
+    static MessagePtr makeStreamActionSystemMessage(
+        const HelixMinimalUser &channel, const QString &action);
+    /// Add the timestamp, flags and name shared by stream system messages
+    ///
+    /// Returns the name as it was added to the message
+    static QString addStreamSystemMessageStart(MessageBuilder &builder,
+                                               const HelixMinimalUser &channel);
+
     struct TextState {
         TwitchChannel *twitchChannel = nullptr;
         QString userID;  // 7TV: used for personal emotes
@@ -382,11 +414,18 @@ private:
     void appendFolhinhaBadges(const QString &userID);
     void appendFfzApBadges(const QString &userID);
     void appendDankChatBadges(const QString &userID);
+    void appendSolrinoBadges(const QString &userID);
+    void appendChatleeBadges(const QString &userID);
+    void appendWydiosBadges(const QString &userID);
+    void appendStreamNookBadges(const QString &userID);
     void appendChatsenBadges(const QString &userID);
     void appendBadgeHQBadges(const QString &userID);
     void appendLimerinoBadges(const QString &userID);
     void appendMoltorinoBadges(const QString &userID);
     void appendJilChatBadges(const QString &userID);
+    /// The JilTV badge of the chatter `login` (by login, as JilTV looks
+    /// chatters up).
+    void appendJiltvBadges(const QString &login);
     void appendBluzyrinoBadges(const QString &userID);
 
     [[nodiscard]] static bool isIgnored(const QString &originalMessage,

@@ -123,6 +123,22 @@ QSizeF textElementSize(const QString &text, const QFontMetricsF &metrics,
     };
 }
 
+EmotePtr getTikTokBadge()
+{
+    static EmotePtr ptr = std::make_shared<const Emote>(Emote{
+        .name = {u"TikTok"_s},
+        .images =
+            ImageSet{
+                Image::fromUrl({u":/badges/platform-tiktok-18.webp"_s}, 1.0,
+                               {18, 18}),
+                Image::fromUrl({u":/badges/platform-tiktok-36.webp"_s}, .5,
+                               {36, 36}),
+            },
+        .tooltip = Tooltip{},
+    });
+    return ptr;
+}
+
 EmotePtr getKickBadge()
 {
     static EmotePtr ptr = std::make_shared<const Emote>(Emote{
@@ -359,11 +375,11 @@ std::string_view CircularImageElement::type() const
 // EMOTE
 EmoteElement::EmoteElement(const EmotePtr &emote, MessageElementFlags flags,
                            const MessageColor &textElementColor,
-                           bool gigantified)
+                           GiantEmoteKind giant)
     : MessageElement(flags)
     , textColor_(textElementColor)
     , emote_(emote)
-    , gigantified_(gigantified)
+    , giant_(giant)
 {
     this->setTooltip(emote->tooltip.string);
 }
@@ -375,7 +391,26 @@ EmotePtr EmoteElement::getEmote() const
 
 bool EmoteElement::isGigantified() const
 {
-    return this->gigantified_;
+    return this->giant_ != GiantEmoteKind::None;
+}
+
+void EmoteElement::setGiantEmoteKind(GiantEmoteKind giant)
+{
+    this->giant_ = giant;
+}
+
+bool EmoteElement::rendersGigantified() const
+{
+    switch (this->giant_)
+    {
+        case GiantEmoteKind::Twitch:
+            return getSettings()->enableGigantifyEmotes;
+        case GiantEmoteKind::Ffz:
+            return getSettings()->enableFfzGiantEmotes;
+        case GiantEmoteKind::None:
+            break;
+    }
+    return false;
 }
 
 namespace {
@@ -447,8 +482,7 @@ void EmoteElement::addToContainer(MessageLayoutContainer &container,
 
     if (ctx.flags.has(MessageElementFlag::EmoteImage))
     {
-        const bool renderGigantified =
-            this->gigantified_ && getSettings()->enableGigantifyEmotes;
+        const bool renderGigantified = this->rendersGigantified();
 
         ImagePtr image;
         if (renderGigantified)
@@ -489,11 +523,23 @@ void EmoteElement::addToContainer(MessageLayoutContainer &container,
                 container.breakLine();
             }
 
-            constexpr qreal gigantifiedLogicalSize = 112;
-            const auto logicalSize = std::min<qreal>(
-                gigantifiedLogicalSize * container.getScale(),
-                std::max<qreal>(1.0, container.remainingWidth()));
-            const auto size = QSizeF(logicalSize, logicalSize);
+            // fixed height for every provider, width follows the emote's
+            // aspect ratio and is shrunk (never stretched) to fit the line
+            constexpr qreal gigantifiedLogicalHeight = 112;
+            const auto imageSize = image->size();
+            const qreal aspectRatio =
+                imageSize.width() > 0 && imageSize.height() > 0
+                    ? imageSize.width() / imageSize.height()
+                    : 1.0;
+            auto size = QSizeF(
+                gigantifiedLogicalHeight * container.getScale() * aspectRatio,
+                gigantifiedLogicalHeight * container.getScale());
+            const auto maxWidth =
+                std::max<qreal>(1.0, container.remainingWidth());
+            if (size.width() > maxWidth)
+            {
+                size *= maxWidth / size.width();
+            }
             container.addElementNoLineBreak(
                 this->makeImageLayoutElement(image, size));
             return;
@@ -531,8 +577,8 @@ MessageLayoutElement *EmoteElement::makeImageLayoutElement(
 
 std::unique_ptr<MessageElement> EmoteElement::clone() const
 {
-    auto el = std::make_unique<EmoteElement>(
-        this->emote_, this->getFlags(), this->textColor_, this->gigantified_);
+    auto el = std::make_unique<EmoteElement>(this->emote_, this->getFlags(),
+                                             this->textColor_, this->giant_);
     el->cloneFrom(*this);
     return el;
 }
@@ -563,9 +609,9 @@ QJsonObject EmoteElement::toJson() const
     {
         base["text"_L1] = this->textElement_->toJson();
     }
-    if (this->gigantified_)
+    if (this->giant_ != GiantEmoteKind::None)
     {
-        base["gigantified"_L1] = true;
+        base["gigantified"_L1] = qmagicenum::enumNameString(this->giant_);
     }
 
     return base;
@@ -1269,6 +1315,9 @@ void TextElement::addToContainer(MessageLayoutContainer &container,
                     break;
                 case MessagePlatform::YouTube:
                     emote = getYouTubeBadge();
+                    break;
+                case MessagePlatform::TikTok:
+                    emote = getTikTokBadge();
                     break;
             }
         }
@@ -2189,10 +2238,9 @@ void TimestampElement::addToContainer(MessageLayoutContainer &container,
 
         if (getSettings()->showTimestampDateTooltip)
         {
-            if (ctx.message.serverReceivedTime.isValid())
+            if (ctx.message.timestamp.isValid())
             {
-                const auto localTime =
-                    ctx.message.serverReceivedTime.toLocalTime();
+                const auto localTime = ctx.message.timestamp.toLocalTime();
                 this->setTooltip(timestampTooltip(localTime, timestampFormat));
             }
             else
@@ -2522,6 +2570,12 @@ void LinebreakElement::addToContainer(MessageLayoutContainer &container,
 {
     if (this->matchesFlags(ctx.flags))
     {
+        // Twitch GIFs at "Emote size" sit in the text like an emote
+        if (this->getFlags().has(MessageElementFlag::TwitchGif) &&
+            !(getSettings()->twitchGifScale.getValue() > 0.0F))
+        {
+            return;
+        }
         container.breakLine();
     }
 }
@@ -2567,7 +2621,13 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
         // The 1x Giphy asset is about 100px, so boost quality with the box.
         static constexpr qreal twitchGifAssetSize = 100;
 
+        // Height of a 7TV, BTTV or FFZ emote at 1x, which most emotes in chat
+        // are (Twitch's own are 28)
+        static constexpr qreal emoteLogicalHeight = 32;
+
         auto gifScale = static_cast<qreal>(1);
+        // "Emote size": as tall as the emotes in chat, emote scale included
+        bool emoteSized = false;
         if (isTwitchGif)
         {
             gifScale =
@@ -2576,15 +2636,26 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
             {
                 gifScale = 0.75;
             }
+            emoteSized = gifScale <= 0;
             gifScale = std::clamp<qreal>(gifScale, 0.5, 2.0);
         }
 
-        const auto requestScale =
-            isTwitchGif ? container.getImageScale() *
-                              static_cast<float>(
-                                  (twitchGifLogicalSize / twitchGifAssetSize) *
-                                  gifScale)
-                        : container.getImageScale();
+        const auto emoteHeight =
+            emoteLogicalHeight * container.getEmoteScale() *
+            static_cast<qreal>(getSettings()->emoteScale.getValue());
+
+        float requestScale = container.getImageScale();
+        if (emoteSized)
+        {
+            requestScale *=
+                static_cast<float>(emoteLogicalHeight / twitchGifAssetSize *
+                                   getSettings()->emoteScale.getValue());
+        }
+        else if (isTwitchGif)
+        {
+            requestScale *= static_cast<float>(
+                (twitchGifLogicalSize / twitchGifAssetSize) * gifScale);
+        }
         const auto &image = this->images_.getImageOrLoaded(requestScale);
         if (image->isEmpty())
         {
@@ -2592,7 +2663,21 @@ void ScalingImageElement::addToContainer(MessageLayoutContainer &container,
         }
 
         QSizeF size;
-        if (isTwitchGif)
+        if (emoteSized)
+        {
+            const auto imgSize = image->size();
+            const auto aspect = imgSize.width() > 0 && imgSize.height() > 0
+                                    ? imgSize.width() / imgSize.height()
+                                    : 1.0;
+            size = QSizeF(emoteHeight * aspect, emoteHeight);
+            const auto maxWidth =
+                std::max<qreal>(1.0, container.remainingWidth());
+            if (size.width() > maxWidth)
+            {
+                size *= maxWidth / size.width();
+            }
+        }
+        else if (isTwitchGif)
         {
             const auto maxLogicalSize = std::min<qreal>(
                 twitchGifLogicalSize * container.getScale() * gifScale,
@@ -2655,6 +2740,51 @@ QJsonObject ScalingImageElement::toJson() const
 std::string_view ScalingImageElement::type() const
 {
     return std::remove_pointer_t<decltype(this)>::TYPE;
+}
+
+TwitchGifElement::TwitchGifElement(ImageSet images, QString copyText)
+    : ScalingImageElement(std::move(images), MessageElementFlag::TwitchGif,
+                          std::move(copyText))
+{
+}
+
+void TwitchGifElement::addToContainer(MessageLayoutContainer &container,
+                                      const MessageLayoutContext &ctx)
+{
+    if (!this->matchesFlags(ctx.flags))
+    {
+        return;
+    }
+
+    auto scale = getSettings()->twitchGifScale.getValue();
+    if (!(scale > 0.0F))
+    {
+        // "Emote size" is only handled by ScalingImageElement
+        scale = 0.75F;
+    }
+    const auto &image =
+        this->images().getImageOrLoaded(container.getImageScale() * scale);
+    if (image->isEmpty())
+    {
+        return;
+    }
+
+    auto size = image->size() * container.getScale() * scale;
+    // Scale down to fit within the split
+    if (size.width() > container.remainingWidth())
+    {
+        size *= container.remainingWidth() / size.width();
+    }
+
+    container.addElement(new ImageLayoutElement(*this, image, size));
+}
+
+std::unique_ptr<MessageElement> TwitchGifElement::clone() const
+{
+    auto elem =
+        std::make_unique<TwitchGifElement>(this->images(), this->copyText());
+    elem->cloneFrom(*this);
+    return elem;
 }
 
 ReplyCurveElement::ReplyCurveElement()

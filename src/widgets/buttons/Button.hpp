@@ -105,6 +105,8 @@ protected:
 
 private:
     void onMouseEffectTimeout();
+    /// Runs the effect timer until the hover and click effects are done
+    void startEffectTimer();
     void showMenu();
 
     void paintButton(QPainter &painter);

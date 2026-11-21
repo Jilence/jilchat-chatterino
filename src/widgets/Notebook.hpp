@@ -37,6 +37,8 @@ class Notebook : public BaseWidget
 {
     Q_OBJECT
 
+    friend class TwitchChatDock;
+
 public:
     explicit Notebook(QWidget *parent);
     ~Notebook() override = default;
@@ -44,16 +46,31 @@ public:
     NotebookTab *addPage(QWidget *page, QString title = QString(),
                          bool select = false);
 
+    /**
+     * @brief Adds a page to the Notebook at a given position.
+     *
+     * @param position if set to -1, adds the page to the end
+     **/
     NotebookTab *addPageAt(QWidget *page, int position,
                            QString title = QString(), bool select = false);
     void removePage(QWidget *page);
     void duplicatePage(QWidget *page);
     void removeCurrentPage();
 
+    /**
+     * @brief Returns index of page in Notebook, or -1 if not found.
+     **/
     int indexOf(QWidget *page) const;
 
+    /**
+     * @brief Returns the visible index of page in Notebook, or -1 if not found.
+     * Given page should be visible according to the set TabVisibilityFilter.
+     **/
     int visibleIndexOf(QWidget *page) const;
 
+    /**
+     * @brief Returns the number of visible tabs in Notebook. 
+     **/
     int getVisibleTabCount() const;
 
     /**
@@ -67,8 +84,19 @@ public:
     QWidget *getPreviousVisitedPage() const;
     std::vector<QWidget *> getVisitHistoryPages() const;
 
+    /**
+     * @brief Selects the Notebook tab at the given index. Ignores whether tabs
+     * are visible or not. 
+     **/
     void selectIndex(int index, bool focusPage = true);
 
+    /**
+     * @brief Selects the index'th visible tab in the Notebook.
+     * 
+     * For example, selecting the 0th visible tab selects the first tab in this 
+     * Notebook that is visible according to the TabVisibilityFilter. If no filter
+     * is set, equivalent to Notebook::selectIndex.
+     **/
     void selectVisibleIndex(int index, bool focusPage = true);
 
     /**
@@ -109,11 +137,12 @@ public:
 
     virtual void addNotebookActionsToMenu(QMenu *menu);
 
+    // Update layout and tab visibility
     void refresh();
 
 protected:
     bool getShowTabs() const;
-    void setShowTabs(bool value);
+    virtual void setShowTabs(bool value);
 
     void setGrowWrappedNotebookLines(bool value);
 
@@ -155,8 +184,18 @@ protected:
         return this->items_;
     }
 
+    /**
+     * @brief Apply the given tab visibility filter
+     *
+     * An empty function can be provided to denote that no filter will be applied
+     *
+     * Tabs will be redrawn after this function is called.
+     **/
     void setTabVisibilityFilter(TabVisibilityFilter filter);
 
+    /**
+     * @brief shouldShowTab has the final say whether a tab should be visible right now.
+     **/
     bool shouldShowTab(const NotebookTab *tab) const;
 
     void performLayout(bool animate = false);
@@ -184,8 +223,9 @@ private:
     void performHorizontalLayout(const LayoutContext &ctx, bool animated);
     void performVerticalLayout(const LayoutContext &ctx, bool animated);
 
-    void showTabVisibilityInfoPopup();
-
+    /**
+     * @brief Updates the visibility state of all tabs
+     **/
     void updateTabVisibility();
     void resizeAddButton();
 
@@ -197,6 +237,7 @@ private:
     static bool containsChild(const QObject *obj, const QObject *child);
     NotebookTab *getTabFromPage(QWidget *page);
 
+    // Returns the number of buttons in `customButtons_` that are visible
     size_t visibleButtonCount() const;
 
     QList<Item> items_;
@@ -223,17 +264,22 @@ private:
     QAction *lockNotebookLayoutAction_;
     QAction *toggleTopMostAction_;
 
+    // This filter, if set, is used to figure out the visibility of
+    // the tabs in this notebook.
     TabVisibilityFilter tabVisibilityFilter_;
 };
 
 class SplitNotebook : public Notebook
 {
+    /// Hides the tabs while docked over Twitch chat
+    friend class TwitchChatDock;
+
 public:
     SplitNotebook(Window *parent);
 
     SplitContainer *addPage(bool select = false);
     SplitContainer *getOrAddSelectedPage();
-
+    /// Returns `nullptr` when no page is selected.
     SplitContainer *getSelectedPage();
     void select(QWidget *page, bool focusPage = true,
                 bool recordInHistory = true) override;
@@ -243,6 +289,9 @@ public:
 
     void forEachSplit(const std::function<void(Split *)> &cb);
 
+    /**
+     * Toggles between the "Show all tabs" and "Hide all tabs" tab visibility states
+     */
     void toggleTabVisibility();
 
     QAction *showAllTabsAction;
@@ -251,6 +300,8 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+
+    void setShowTabs(bool value) override;
 
     void afterPageAdded() override;
     void afterPageRemoved() override;
@@ -264,10 +315,16 @@ private:
     pajlada::Signals::SignalHolder signalHolder_;
     boost::signals2::scoped_connection currentUserChangedConnection_;
 
+    // Main window on Windows has basically a duplicate of this in Window
     PixmapButton *streamerModeIcon_{};
     void updateStreamerModeIcon();
 
     void setLockNotebookLayout(bool value) override;
+
+    /**
+     * @brief Show a popup informing the user of some big tab visibility changes
+     **/
+    void showTabVisibilityInfoPopup();
 };
 
 }  // namespace chatterino

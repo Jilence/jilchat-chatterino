@@ -60,6 +60,7 @@ public:
         TwitchEnd,
         Kick,
         YouTube,
+        TikTok,
         /// Misc
         Misc,
         Multi,
@@ -93,6 +94,7 @@ public:
     bool isWatching() const;
     bool isKickChannel() const;
     bool isYouTubeChannel() const;
+    bool isTikTokChannel() const;
     bool isTwitchOrKickChannel() const;
     virtual bool isEmpty() const;
 
@@ -129,8 +131,9 @@ public:
     size_t messageLimit() const;
 
     void addSystemMessage(const QString &contents);
+    void addSystemMessage(const QString &contents, const QString &timeoutUser);
 
-    /// Inserts the given messages in order by Message::serverReceivedTime.
+    /// Inserts the given messages in order by Message::timestamp.
     void fillInMissingMessages(const std::vector<MessagePtr> &messages);
 
     void addOrReplaceTimeout(MessagePtr message, const QDateTime &now) final;
@@ -240,18 +243,11 @@ private:
     std::shared_ptr<Data> data_;
 };
 
-}  // namespace chatterino
-
-// NOLINTBEGIN(readability-identifier-naming)
-template <>
-constexpr magic_enum::customize::customize_t
-    magic_enum::customize::enum_name<chatterino::Channel::Type>(
-        chatterino::Channel::Type value) noexcept
+constexpr std::optional<std::string_view> qmagicenumSerializedName(
+    Channel::Type value) noexcept
 {
-    using Type = chatterino::Channel::Type;
+    using Type = Channel::Type;
 
-    // These names are used for encoding channels in the window layout settings.
-    // They need to be stable across Chatterino versions.
     switch (value)
     {
         case Type::Twitch:
@@ -272,14 +268,17 @@ constexpr magic_enum::customize::customize_t
             return "kick";
         case Type::YouTube:
             return "youtube";
+        case Type::TikTok:
+            return "tiktok";
         case Type::Multi:
             return "multi";
 
         case Type::None:
         case Type::Direct:
         case Type::TwitchEnd:
-            return default_tag;  // FIXME: Remove these (#5703)
+            return std::nullopt;  // FIXME: Remove these (#5703)
     }
-    return default_tag;
+    return std::nullopt;
 }
-// NOLINTEND(readability-identifier-naming)
+
+}  // namespace chatterino

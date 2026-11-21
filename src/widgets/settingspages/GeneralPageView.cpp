@@ -14,6 +14,10 @@
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
+
+#include <algorithm>
+#include <iterator>
 
 namespace {
 
@@ -180,6 +184,124 @@ ComboBox *GeneralPageView::addDropdown(const QString &text,
     this->groups_.back().widgets.push_back({label, {text}});
 
     return combo;
+}
+
+void GeneralPageView::arrangeGroups(const QStringList &order)
+{
+    // The content of each group: its title and everything up to the next
+    // title. Spaces between groups and stretches are made anew.
+    std::vector<std::vector<QLayoutItem *>> contents(this->groups_.size());
+    std::vector<QLayoutItem *> leading;
+    QSet<QWidget *> titles;
+    for (const auto &group : this->groups_)
+    {
+        titles.insert(group.title);
+    }
+
+    std::ptrdiff_t current = -1;
+    while (auto *item = this->contentLayout_->takeAt(0))
+    {
+        if (item->spacerItem() != nullptr)
+        {
+            delete item;
+            continue;
+        }
+        if (auto *widget = item->widget(); dynamic_cast<Space *>(widget))
+        {
+            widget->deleteLater();
+            delete item;
+            continue;
+        }
+        if (auto *widget = item->widget(); titles.contains(widget))
+        {
+            current = std::ranges::find_if(this->groups_,
+                                           [widget](const auto &group) {
+                                               return group.title == widget;
+                                           }) -
+                      this->groups_.begin();
+        }
+        (current < 0 ? leading : contents[current]).push_back(item);
+    }
+
+    // Titles and spaces were registered with the group before them
+    for (auto &group : this->groups_)
+    {
+        group.space = nullptr;
+        std::erase_if(group.widgets, [&titles](const auto &widget) {
+            return titles.contains(widget.element) ||
+                   dynamic_cast<Space *>(widget.element) != nullptr;
+        });
+    }
+
+    std::vector<size_t> sorted(this->groups_.size());
+    for (size_t i = 0; i < sorted.size(); ++i)
+    {
+        sorted[i] = i;
+    }
+    std::ranges::stable_sort(sorted, [&](size_t a, size_t b) {
+        auto rank = [&](size_t i) {
+            auto index = order.indexOf(this->groups_[i].name);
+            return index < 0 ? order.size() : index;
+        };
+        return rank(a) < rank(b);
+    });
+
+    std::vector<Group> arranged;
+    std::vector<std::vector<QLayoutItem *>> arrangedContents;
+    for (auto i : sorted)
+    {
+        auto &group = this->groups_[i];
+        auto same = std::ranges::find_if(arranged, [&](const auto &other) {
+            return other.name == group.name;
+        });
+        if (same == arranged.end())
+        {
+            arranged.push_back(std::move(group));
+            arrangedContents.push_back(std::move(contents[i]));
+            continue;
+        }
+
+        // the first item is the title, which the group already has
+        auto &target = arrangedContents[same - arranged.begin()];
+        for (size_t k = 1; k < contents[i].size(); ++k)
+        {
+            target.push_back(contents[i][k]);
+        }
+        delete contents[i].front();
+        group.title->deleteLater();
+        if (group.navigationLink != nullptr)
+        {
+            group.navigationLink->deleteLater();
+        }
+        std::ranges::move(group.widgets, std::back_inserter(same->widgets));
+    }
+
+    for (auto *item : leading)
+    {
+        this->contentLayout_->addItem(item);
+    }
+    for (size_t i = 0; i < arranged.size(); ++i)
+    {
+        if (i > 0)
+        {
+            auto *space = new Space;
+            this->contentLayout_->addWidget(space);
+            arranged[i - 1].space = space;
+        }
+        for (auto *item : arrangedContents[i])
+        {
+            this->contentLayout_->addItem(item);
+        }
+        if (this->navigationLayout_ != nullptr &&
+            arranged[i].navigationLink != nullptr)
+        {
+            this->navigationLayout_->removeWidget(arranged[i].navigationLink);
+            this->navigationLayout_->addWidget(arranged[i].navigationLink);
+        }
+    }
+
+    this->groups_ = std::move(arranged);
+    this->updateNavigationHighlighting();
 }
 
 void GeneralPageView::addNavigationSpacing()

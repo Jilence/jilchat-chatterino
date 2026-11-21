@@ -1,8 +1,8 @@
 #pragma once
 
-#include "widgets/settingspages/SettingsPage.hpp"
-
 #include <pajlada/signals/scoped-connection.hpp>
+#include <pajlada/signals/signalholder.hpp>
+#include <QWidget>
 
 class QFrame;
 class QLabel;
@@ -14,14 +14,16 @@ namespace chatterino {
 class GeneralPageView;
 class SignalLabel;
 
-class MoltorinoPage : public SettingsPage
+/// The settings that came from Moltorino, shown on the JilChat Chatterino page
+class MoltorinoPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    MoltorinoPage();
+    explicit MoltorinoPage(GeneralPageView &pageView);
 
-    bool filterElements(const QString &query) override;
+    /// Hides the bot badge setup again, when the page is hidden
+    void resetOnPageHide();
 
     /// Reveals the bot badge setup, which is hidden otherwise, and scrolls
     /// to it.
@@ -61,14 +63,13 @@ private:
     QPushButton *botBadgeAuthorizeButton_{};
     QPushButton *botBadgeVerifyButton_{};
     int logoClickCount_{0};
+
+    pajlada::Signals::SignalHolder managedConnections_;
     bool botBadgeUnlocked_{false};
     bool botBadgeIsValidating_{false};
     int botBadgeValidationGeneration_{0};
 
     pajlada::Signals::ScopedConnection chatAutomationRulesConnection_;
-
-protected:
-    void hideEvent(QHideEvent *event) override;
 };
 
 }  // namespace chatterino

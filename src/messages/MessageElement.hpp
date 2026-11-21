@@ -104,13 +104,23 @@ enum class MessageElementFlag : int64_t {
     BadgeBluzyrino = (1LL << 42),
     BadgeBadgeHQ = (1LL << 47),
     BadgeLimerino = (1LL << 48),
+    BadgeJiltv = (1LL << 49),
+    BadgeStreamNook = (1LL << 53),
+
+    /// A name that must not get a 7TV, BetterTTV or JilTV paint: those
+    /// are looked up by name, and TikTok names are not Twitch names
+    NoUsernamePaint = (1LL << 54),
+    BadgeSolrino = (1LL << 55),
+    BadgeWydios = (1LL << 56),
+    BadgeChatlee = (1LL << 57),
 
     Badges = BadgeGlobalAuthority | BadgePredictions | BadgeChannelAuthority |
              BadgeSubscription | BadgeVanity | BadgeChatterino | BadgeSevenTV |
              BadgeFfz | BadgeSharedChannel | BadgeBttv | BadgeHomiesSupporter |
              BadgeHomies | BadgeHomiesCustom | BadgeMoltorino | BadgeFolhinha |
              BadgeFfzAp | BadgeDankChat | BadgeJilChat | BadgeChatsen |
-             BadgeBluzyrino | BadgeBadgeHQ | BadgeLimerino,
+             BadgeBluzyrino | BadgeBadgeHQ | BadgeLimerino | BadgeJiltv |
+             BadgeStreamNook | BadgeSolrino | BadgeWydios | BadgeChatlee,
 
     ChannelName = (1LL << 20),
 
@@ -568,6 +578,15 @@ private:
     EmotePtr emote_;
 };
 
+/// What made an emote giant.
+enum class GiantEmoteKind : std::uint8_t {
+    None,
+    /// Twitch's "Gigantify an Emote" power-up
+    Twitch,
+    /// A channel point reward with FFZ:GE in its title or prompt
+    Ffz,
+};
+
 // contains emote data and will pick the emote based on :
 //   a) are images for the emote type enabled
 //   b) which size it wants
@@ -578,12 +597,15 @@ public:
 
     EmoteElement(const EmotePtr &data, MessageElementFlags flags_,
                  const MessageColor &textElementColor = MessageColor::Text,
-                 bool gigantified = false);
+                 GiantEmoteKind giant = GiantEmoteKind::None);
 
     void addToContainer(MessageLayoutContainer &container,
                         const MessageLayoutContext &ctx) override;
     EmotePtr getEmote() const;
     bool isGigantified() const;
+    void setGiantEmoteKind(GiantEmoteKind giant);
+    /// Whether this emote is giant and the setting for its kind is enabled.
+    bool rendersGigantified() const;
 
     std::unique_ptr<MessageElement> clone() const override;
 
@@ -602,7 +624,7 @@ private:
     bool usingFallbackColor_ = false;
 
     EmotePtr emote_;
-    bool gigantified_ = false;
+    GiantEmoteKind giant_ = GiantEmoteKind::None;
 };
 
 // A LayeredEmoteElement represents multiple Emotes layered on top of each other.
@@ -882,6 +904,17 @@ public:
 private:
     ImageSet images_;
     QString copyText_;
+};
+
+class TwitchGifElement : public ScalingImageElement
+{
+public:
+    TwitchGifElement(ImageSet images, QString copyText);
+
+    void addToContainer(MessageLayoutContainer &container,
+                        const MessageLayoutContext &ctx) override;
+
+    std::unique_ptr<MessageElement> clone() const override;
 };
 
 class ReplyCurveElement : public MessageElement

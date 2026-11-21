@@ -14,15 +14,21 @@
 namespace chatterino {
 
 NetworkResult::NetworkResult(NetworkError error, const QVariant &httpStatusCode,
-                             QByteArray data, QByteArray etag)
+                             QByteArray data, QByteArray etag, QUrl url)
     : data_(std::move(data))
     , etag_(std::move(etag))
+    , url_(std::move(url))
     , error_(error)
 {
     if (httpStatusCode.isValid())
     {
         this->status_ = httpStatusCode.toInt();
     }
+}
+
+const QUrl &NetworkResult::url() const
+{
+    return this->url_;
 }
 
 QJsonObject NetworkResult::parseJson() const

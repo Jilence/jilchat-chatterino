@@ -13,8 +13,10 @@
 #include "util/LayoutCreator.hpp"
 #include "widgets/BaseWindow.hpp"
 #include "widgets/helper/SettingsDialogTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/settingspages/AboutPage.hpp"
 #include "widgets/settingspages/AccountsPage.hpp"
+#include "widgets/settingspages/BackupsPage.hpp"
 #include "widgets/settingspages/CommandPage.hpp"
 #include "widgets/settingspages/CustomizationPage.hpp"
 #include "widgets/settingspages/ExternalToolsPage.hpp"
@@ -24,14 +26,10 @@
 #include "widgets/settingspages/IgnoresPage.hpp"
 #include "widgets/settingspages/JilChatPage.hpp"
 #include "widgets/settingspages/KeyboardSettingsPage.hpp"
-#include "widgets/settingspages/LeafyrinoPage.hpp"
 #include "widgets/settingspages/ModerationPage.hpp"
-#include "widgets/settingspages/MoltorinoPage.hpp"
 #include "widgets/settingspages/NicknamesPage.hpp"
 #include "widgets/settingspages/NotificationPage.hpp"
 #include "widgets/settingspages/PluginsPage.hpp"
-#include "widgets/settingspages/SettingsProfilePage.hpp"
-#include "widgets/settingspages/TechnorinoPage.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -241,27 +239,12 @@ void SettingsDialog::addTabs()
     this->ui_.tabContainer->setSpacing(0);
     this->ui_.tabContainer->setContentsMargins(0, 20, 0, 20);
 
-    QDate today = QDateTime::currentDateTime().date();
-    QString technorinoIconPath = ":/settings/technorino.png";
-
-    if (today.month() == 12 && today.day() == 25)
-    {
-        technorinoIconPath = ":/settings/technorino_christmas.png";
-    }
-    else if (today.month() == 10 && today.day() == 31)
-    {
-        technorinoIconPath = ":/settings/technorino_halloween.png";
-    }
     // Constructors are wrapped in std::function to remove some strain from first time loading.
 
     // clang-format off
     this->addTab([]{return new GeneralPage;},          "General",        ":/settings/about.svg", SettingsTabId::General);
     this->addTab([]{return new CustomizationPage;},    "Customization",  ":/settings/customization.svg", SettingsTabId::Customization);
-    this->addTab([]{return new SettingsProfilePage;},  "Import/Export",  ":/settings/commands.svg");
-    this->addTab([]{return new JilChatPage;},          "JilChat Chatterino", ":/settings/jilchat.svg");
-    this->addTab([]{return new LeafyrinoPage;},        "Leafyrino",      ":/settings/leafyrino.png", SettingsTabId::Leafyrino);
-    this->addTab([]{return new MoltorinoPage;},        "Moltorino",      ":/settings/moltorino.svg", SettingsTabId::Moltorino);
-    this->addTab([]{return new TechnorinoPage;},       "Technorino",     technorinoIconPath, SettingsTabId::Technorino);
+    this->addTab([]{return new JilChatPage;},          "JilChat Chatterino", ":/settings/jilchat.svg", SettingsTabId::JilChat);
     this->ui_.tabContainer->addSpacing(16);
     this->addTab([]{return new AccountsPage;},         "Accounts",       ":/settings/accounts.svg", SettingsTabId::Accounts);
     this->addTab([]{return new NicknamesPage;},        "Nicknames",      ":/settings/accounts.svg");
@@ -279,6 +262,7 @@ void SettingsDialog::addTabs()
     this->addTab([]{return new PluginsPage;},          "Plugins",        ":/settings/plugins.svg");
 #endif
     this->ui_.tabContainer->addStretch(1);
+    this->addTab([]{return new BackupsPage;},          "Backups",        ":/settings/backups.svg", SettingsTabId::None, Qt::AlignBottom);
     this->addTab([]{return new AboutPage;},            "About",          ":/settings/about.svg", SettingsTabId::About, Qt::AlignBottom);
     // clang-format on
 }
@@ -315,15 +299,39 @@ void SettingsDialog::selectTab(SettingsDialogTab *tab, bool byUser)
         this->ui_.pageStack->addWidget(tab->page());
     }();
 
+    if (byUser && this->selectedTab_ != nullptr && this->selectedTab_ != tab)
+    {
+        const auto position = [this](SettingsDialogTab *t) {
+            return std::ranges::find(this->tabs_, t) - this->tabs_.begin();
+        };
+        transitions::slidePages(this->ui_.pageStack->currentWidget(),
+                                tab->page(),
+                                position(tab) > position(this->selectedTab_)
+                                    ? transitions::PageDirection::Forward
+                                    : transitions::PageDirection::Backward,
+                                true);
+    }
+
     this->ui_.pageStack->setCurrentWidget(tab->page());
+
+    if (this->selectedTab_ == tab)
+    {
+        // Already selected (the search selects again on every key press):
+        // deselecting and selecting it would run its fade for no change
+        if (byUser)
+        {
+            this->lastSelectedByUser_ = tab;
+        }
+        return;
+    }
 
     if (this->selectedTab_ != nullptr)
     {
-        this->selectedTab_->setSelected(false);
+        this->selectedTab_->setSelected(false, byUser);
         this->selectedTab_->setStyleSheet("color: #FFF");
     }
 
-    tab->setSelected(true);
+    tab->setSelected(true, byUser);
     tab->setStyleSheet(
         "background: #222; color: #4FC3F7;"  // Should this be same as accent color?
         "/*border: 1px solid #555; border-right: none;*/");
@@ -394,10 +402,10 @@ void SettingsDialog::showDialog(QWidget *parent,
             break;
 
         case SettingsDialogPreference::BotBadge:
-            if (auto *tab = instance->tab(SettingsTabId::Moltorino))
+            if (auto *tab = instance->tab(SettingsTabId::JilChat))
             {
                 instance->selectTab(tab);
-                if (auto *page = dynamic_cast<MoltorinoPage *>(tab->page()))
+                if (auto *page = dynamic_cast<JilChatPage *>(tab->page()))
                 {
                     page->showBotBadgeSettings();
                 }

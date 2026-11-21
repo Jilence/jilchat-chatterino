@@ -371,6 +371,19 @@ void KickChannel::updateStreamData(const KickChannelInfo &info)
 {
     assert(info.userID == this->userID());
 
+    // the first poll only tells us the starting values, and the poll that
+    // changes the live status already posts a live or offline message
+    const bool announceChanges =
+        this->streamDataLoaded_ &&
+        this->streamData_.isLive == info.stream.isLive &&
+        getSettings()->showStreamChangeMessages;
+    this->streamDataLoaded_ = true;
+    const HelixMinimalUser user{
+        .id = QString::number(this->userID()),
+        .login = this->getDisplayName(),
+        .displayName = this->getDisplayName(),
+    };
+
     bool changed = false;
     if (this->streamData_.isLive != info.stream.isLive)
     {
@@ -406,11 +419,24 @@ void KickChannel::updateStreamData(const KickChannelInfo &info)
     {
         changed = true;
         this->streamData_.title = info.streamTitle;
+        if (announceChanges)
+        {
+            this->addMessage(
+                MessageBuilder::makeStreamTitleChangedSystemMessage(
+                    user, info.streamTitle),
+                MessageContext::Original);
+        }
     }
     if (this->streamData_.category != info.category.name)
     {
         changed = true;
         this->streamData_.category = info.category.name;
+        if (announceChanges)
+        {
+            this->addMessage(MessageBuilder::makeStreamGameChangedSystemMessage(
+                                 user, info.category.name),
+                             MessageContext::Original);
+        }
     }
 
     if (this->streamData_.isLive)
@@ -849,8 +875,8 @@ bool KickChannel::tryReplaceLastSeventvAddOrRemove(MessageFlag op,
 {
     auto now = QDateTime::currentDateTime();
     auto last = this->lastSeventvMessage_.lock();
-    if (!last || !last->flags.has(op) ||
-        last->serverReceivedTime < now.addSecs(-5) || last->loginName != actor)
+    if (!last || !last->flags.has(op) || last->timestamp < now.addSecs(-5) ||
+        last->loginName != actor)
     {
         return false;
     }

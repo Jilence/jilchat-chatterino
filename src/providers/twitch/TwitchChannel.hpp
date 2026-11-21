@@ -336,6 +336,9 @@ public:
     void refreshChannelPoints();
     void refreshChatters();
     void refreshChannelPointsIfStale(bool force = false);
+    /// Claims a waiting "Claim bonus" chest, if there is one
+    void checkForPointsBonus();
+    void claimPointsBonus(const QString &claimId);
     void handlePinnedChatUpdate(const QJsonObject &data);
     void tryEmitPinnedChatPinSystemMessage(const QJsonObject &innerData);
 
@@ -354,7 +357,8 @@ public:
     void tryEmitPollCreatedSystemMessage(const PollEvent &poll);
     qint64 channelPointBalance() const;
     bool isChannelPointsFetchInFlight() const;
-    bool shouldShowChannelPoints() const;
+    /// Broadcasters have no balance in their own channel and redeem for free.
+    bool hasUnlimitedChannelPoints() const;
     void setChannelPointBalance(qint64 balance);
     void handleChatWarningPubSub(const QJsonObject &payload);
     void handleChatWarningNotice();
@@ -410,6 +414,10 @@ public:
 
     /** Adds a 7TV channel emote to this channel. */
     void addSeventvEmote(const seventv::eventapi::EmoteAddDispatch &dispatch);
+    /// Says in chat that a JilTV emote was added or removed, combined with
+    /// the updates just before it like the 7TV and BetterTTV ones
+    void addJiltvEmoteUpdate(bool isEmoteAdd, const QString &actor,
+                             const LiveUpdateEmote &emote);
     /** Updates a 7TV channel emote's name in this channel */
     void updateSeventvEmote(
         const seventv::eventapi::EmoteUpdateDispatch &dispatch);
@@ -543,6 +551,9 @@ public:
                             bool isInitialUpdate);
     void updateStreamTitle(const QString &title);
     void updateStreamGame(const QString &gameName, const QString &gameId);
+    /// Update the game and post messages for the title or game changes since
+    /// the last channel poll
+    void updateChannelInfo(const HelixChannel &info);
 
     /**
      * Returns the display name of the user
@@ -651,6 +662,11 @@ private:
     void onLiveStatusChanged(bool isLive, bool isInitialUpdate);
 
     /**
+     * Post a message with the current shared chat session participants
+     **/
+    void announceSharedChatParticipants();
+
+    /**
      * Returns the localized name of the user
      **/
     const QString &getLocalizedName() const override;
@@ -714,6 +730,13 @@ private:
     QDateTime lastChatterRefreshAt_;
 
     UniqueAccess<StreamStatus> streamStatus_;
+    // updateStreamTitle & updateStreamGame also write to streamStatus_, so
+    // comparing against it would swallow changes they saw first
+    struct LastChannelInfo {
+        QString title;
+        QString gameId;
+    };
+    std::optional<LastChannelInfo> lastChannelInfo_;
     UniqueAccess<RoomModes> roomModes;
     UniqueAccess<std::optional<PinnedMessage>> currentPin_;
     std::atomic<int> pinnedMessageRefreshFailures_{0};
@@ -744,6 +767,10 @@ private:
     QDateTime lastChannelPointsRefreshAt_;
     QDateTime lastChannelPointsUpdateAt_;
     QString lastChannelPointsError_;
+    QString pointsBonusClaimInFlight_;
+    QString lastClaimedPointsBonus_;
+    bool pointsBonusCheckInFlight_{false};
+    QTimer pointsBonusTimer_;
     bool disconnected_{};
     std::optional<std::chrono::time_point<std::chrono::system_clock>>
         lastConnectedAt_{};

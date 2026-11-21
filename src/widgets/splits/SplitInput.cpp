@@ -50,6 +50,8 @@
 #    include "widgets/dialogs/ChannelPointsChartDialog.hpp"
 #    include "widgets/dialogs/ChannelPointsDialog.hpp"
 #endif
+#include "singletons/UrlShortener.hpp"
+#include "widgets/dialogs/GameSelectorDialog.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/CmdDeleteKeyFilter.hpp"
 #include "widgets/helper/MessageView.hpp"
@@ -58,6 +60,7 @@
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/InputCompletionPopup.hpp"
 #include "widgets/splits/InputHighlighter.hpp"
+#include "widgets/splits/QuickGameBar.hpp"
 #include "widgets/splits/Split.hpp"
 #include "widgets/splits/SplitContainer.hpp"
 
@@ -891,6 +894,10 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
         [this](const QMimeData *source) {
             this->handleImagePaste(source);
         });
+    std::ignore = this->ui_.textEdit->urlPasted.connect(
+        [this](const QString &url, const QTextCursor &cursor) {
+            this->handleUrlPaste(url, cursor);
+        });
 
     // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
     auto *spellChecker = getApp()->getSpellChecker();
@@ -940,6 +947,20 @@ SplitInput::SplitInput(QWidget *parent, Split *_chatWidget,
         this->managedConnections_);
     getSettings()->showPollButton.connect(
         [this](const auto &, auto) {
+            this->bindChannelPoints(dynamic_cast<TwitchChannel *>(
+                this->split_->getSelectedChannel().get()));
+        },
+        this->managedConnections_);
+    this->quickGames_ = new QuickGameBar(this->split_, this);
+    this->quickGames_->hide();
+    this->placeQuickGames();
+    getSettings()->quickGameBarPosition.connect(
+        [this](const auto &, const auto &) {
+            this->placeQuickGames();
+        },
+        this->managedConnections_);
+    getSettings()->showGameButton.connect(
+        [this](const auto &, const auto &) {
             this->bindChannelPoints(dynamic_cast<TwitchChannel *>(
                 this->split_->getSelectedChannel().get()));
         },
@@ -1109,11 +1130,11 @@ void SplitInput::handleImagePaste(const QMimeData *source)
     if (getSettings()->askOnImageUpload.getValue())
     {
         QMessageBox msgBox(this->window());
-        msgBox.setWindowTitle("Leafyrino");
+        msgBox.setWindowTitle("JilChat Chatterino");
         msgBox.setText("Image upload");
         msgBox.setInformativeText(
             "You are uploading an image to a 3rd party service not in "
-            "control of the Leafyrino team. You may not be able to "
+            "control of the JilChat Chatterino team. You may not be able to "
             "remove the image from the site. Are you okay with this?");
         auto *cancel = msgBox.addButton(QMessageBox::Cancel);
         auto *yes = msgBox.addButton(QMessageBox::Yes);
@@ -1150,6 +1171,64 @@ void SplitInput::handleImagePaste(const QMimeData *source)
 
     QPointer<ResizingTextEdit> edit = this->ui_.textEdit;
     imageUploader->upload(std::move(images), channel, edit);
+}
+
+void SplitInput::handleUrlPaste(const QString &url, QTextCursor cursor)
+{
+    if (!getSettings()->urlShortenerEnabled)
+    {
+        return;
+    }
+
+    auto channel = this->replyChannel_.lock();
+    if (!channel)
+    {
+        channel = this->split_->getSelectedChannel();
+    }
+
+    if (!channel)
+    {
+        return;
+    }
+
+    if (getSettings()->askOnUrlShorten.getValue())
+    {
+        QMessageBox msgBox(this->window());
+        msgBox.setWindowTitle("JilChat Chatterino");
+        msgBox.setText("URL Shortener");
+        msgBox.setInformativeText(
+            QString("You are about to shorten this URL using a 3rd party "
+                    "service not in control of the JilChat team.\n"
+                    "URL: %1\n"
+                    "The service may collect and store the URLs you submit. "
+                    "Are you okay with this?")
+                .arg(url.left(80) + (url.length() > 80 ? "..." : "")));
+
+        msgBox.addButton(QMessageBox::Cancel);
+        auto *yes = msgBox.addButton(QMessageBox::Yes);
+        auto *yesDontAskAgain =
+            msgBox.addButton("Yes, don't ask again", QMessageBox::YesRole);
+
+        msgBox.setDefaultButton(QMessageBox::Yes);
+
+        msgBox.exec();
+
+        auto *clickedButton = msgBox.clickedButton();
+
+        if (clickedButton == yesDontAskAgain)
+        {
+            getSettings()->askOnUrlShorten.setValue(false);
+        }
+        else if (clickedButton != yes)
+        {
+            // The URL is already in the text input
+            return;
+        }
+    }
+
+    QPointer<ResizingTextEdit> edit = this->ui_.textEdit;
+
+    getApp()->getUrlShortener()->shorten(url, channel, edit, std::move(cursor));
 }
 
 void SplitInput::initLayout()
@@ -1419,6 +1498,16 @@ void SplitInput::initLayout()
         this->ui_.pollButton->setToolTip("Open poll");
         this->ui_.pollButton->hide();
 
+        this->ui_.gameButton = new SvgButton(
+            {
+                .dark = ":/buttons/game-darkMode.svg",
+                .light = ":/buttons/game-lightMode.svg",
+            },
+            nullptr, QSize{3, 3});
+        this->ui_.gameButton->setToolTip("Change game");
+        this->ui_.gameButton->setAccessibleName("Change game");
+        this->ui_.gameButton->hide();
+
         this->ui_.badgeButton = new SvgButton(
             {
                 .dark = ":/buttons/badge-darkMode.svg",
@@ -1455,6 +1544,7 @@ void SplitInput::initLayout()
         buttonsRow->addWidget(this->ui_.channelPointsLabel, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.predictionButton, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.pollButton, 0, Qt::AlignBottom);
+        buttonsRow->addWidget(this->ui_.gameButton, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.badgeButton, 0, Qt::AlignBottom);
         buttonsRow->addWidget(this->ui_.outgoingTranslateButton, 0,
                               Qt::AlignBottom);
@@ -1504,6 +1594,15 @@ void SplitInput::initLayout()
             return;
         }
         PollDialog::showDialog(channel, this->split_);
+    });
+    QObject::connect(this->ui_.gameButton, &Button::leftClicked, this, [this] {
+        const auto channel = std::dynamic_pointer_cast<TwitchChannel>(
+            this->split_->getSelectedChannel());
+        if (channel == nullptr)
+        {
+            return;
+        }
+        GameSelectorDialog::showDialog(channel, this->split_);
     });
 
     QObject::connect(this->ui_.badgeButton, &Button::leftClicked, [this] {
@@ -1799,6 +1898,10 @@ void SplitInput::updateEmoteButton()
     {
         this->ui_.pollButton->setFixedSize(buttonSize, buttonSize);
     }
+    if (this->ui_.gameButton)
+    {
+        this->ui_.gameButton->setFixedSize(buttonSize, buttonSize);
+    }
     if (this->ui_.badgeButton)
     {
         this->ui_.badgeButton->setFixedSize(buttonSize, buttonSize);
@@ -1819,8 +1922,26 @@ void SplitInput::updateCancelReplyButton()
     this->ui_.cancelReplyButton->setFixedWidth(int(20 * scale));
 }
 
+void SplitInput::placeQuickGames()
+{
+    if (this->quickGames_ == nullptr)
+    {
+        return;
+    }
+    this->ui_.vbox->removeWidget(this->quickGames_);
+    const int input = this->ui_.vbox->indexOf(this->ui_.inputWrapper);
+    const bool below =
+        getSettings()->quickGameBarPosition.getValue() == "below";
+    this->ui_.vbox->insertWidget(below ? input + 1 : input, this->quickGames_);
+}
+
 void SplitInput::updateActionRowCompactness()
 {
+    if (this->quickGames_ != nullptr)
+    {
+        this->quickGames_->setAllowed(this->gameButtonWanted_);
+    }
+
     if (this->ui_.buttonsRow == nullptr || this->ui_.inputWrapper == nullptr)
     {
         return;
@@ -1899,6 +2020,8 @@ void SplitInput::updateActionRowCompactness()
         tryFit(this->ui_.predictionButton, this->predictionButtonWanted_);
     const bool showPollButton =
         tryFit(this->ui_.pollButton, this->pollButtonWanted_);
+    const bool showGameButton =
+        tryFit(this->ui_.gameButton, this->gameButtonWanted_);
     const bool showBadgeButton =
         tryFit(this->ui_.badgeButton, this->badgeButtonWanted_);
     const bool showSendWaitStatus =
@@ -1912,6 +2035,7 @@ void SplitInput::updateActionRowCompactness()
     changed |=
         setExplicitVisible(this->ui_.predictionButton, showPredictionButton);
     changed |= setExplicitVisible(this->ui_.pollButton, showPollButton);
+    changed |= setExplicitVisible(this->ui_.gameButton, showGameButton);
     changed |= setExplicitVisible(this->ui_.badgeButton, showBadgeButton);
     changed |= setExplicitVisible(this->ui_.textEditLength, showTextLength);
     changed |= setExplicitVisible(this->ui_.sendWaitStatus, showSendWaitStatus);
@@ -2655,7 +2779,7 @@ bool SplitInput::eventFilter(QObject *obj, QEvent *event)
     {
         if (auto *popup = this->inputCompletionPopup_.data())
         {
-            if (popup->isVisible())
+            if (popup->isVisible() && popup->hasCompletions())
             {
                 // Stop shortcut from triggering by saying we will handle it ourselves
                 event->accept();
@@ -2671,7 +2795,7 @@ bool SplitInput::eventFilter(QObject *obj, QEvent *event)
     {
         auto *tc = dynamic_cast<TwitchChannel *>(
             this->split_->getSelectedChannel().get());
-        if (!tc || !tc->shouldShowChannelPoints() ||
+        if (!tc || tc->hasUnlimitedChannelPoints() ||
             !this->channelPointsLabelWanted_)
         {
             return true;
@@ -2696,14 +2820,14 @@ bool SplitInput::eventFilter(QObject *obj, QEvent *event)
         {
             auto *tc = dynamic_cast<TwitchChannel *>(
                 this->split_->getSelectedChannel().get());
-            if (!tc || !tc->shouldShowChannelPoints() ||
-                !this->channelPointsLabelWanted_)
+            if (!tc || !this->channelPointsLabelWanted_)
             {
                 return true;
             }
 
 #if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
-            if (getSettings()->openRewardsWithChannelPointsClick)
+            if (tc->hasUnlimitedChannelPoints() ||
+                getSettings()->openRewardsWithChannelPointsClick)
             {
                 ChannelPointsDialog::showDialog(tc, this, this->split_);
                 return true;
@@ -3471,6 +3595,15 @@ void SplitInput::updateCompletionPopup()
     auto &edit = *this->ui_.textEdit;
     const auto text = edit.toPlainText();
     const auto cursorPosition = edit.textCursor().position();
+    // Potat channel records are only fetched once the user types in a channel.
+    if (!text.isEmpty() && channel != nullptr &&
+        channel->getType() == Channel::Type::Twitch)
+    {
+        if (auto *potat = getApp()->getPotatCommands())
+        {
+            potat->ensureChannel(channel->getName());
+        }
+    }
     this->updateCommandArgumentHint(text, cursorPosition);
     if (!showEmoteCompletion && !showUsernameCompletion &&
         !showCommandCompletion)
@@ -3541,10 +3674,6 @@ void SplitInput::updateCompletionPopup()
                 selectedChannel != nullptr &&
                 selectedChannel->getType() == Channel::Type::Twitch;
             auto *potat = potatChannel ? getApp()->getPotatCommands() : nullptr;
-            if (potat != nullptr)
-            {
-                potat->ensureChannel(selectedChannel->getName());
-            }
             const auto isBot =
                 queryPreview.startsWith('$') ||
                 (potatChannel &&
@@ -4209,6 +4338,40 @@ void SplitInput::insertText(const QString &text)
     this->ui_.textEdit->insertPlainText(text);
 }
 
+void SplitInput::setWhisperTarget(const QString &username) const
+{
+    auto cursor = this->ui_.textEdit->textCursor();
+    cursor.beginEditBlock();
+    cursor.movePosition(QTextCursor::Start);
+    const auto input = this->getInputText();
+    if (TWITCH_WHISPER_COMMANDS.contains(input.section(' ', 0, 0)))
+    {
+        auto prefixEnd = input.indexOf(' ');
+        if (prefixEnd < 0)
+        {
+            prefixEnd = input.size();
+        }
+        while (prefixEnd < input.size() && input[prefixEnd] == ' ')
+        {
+            ++prefixEnd;
+        }
+        while (prefixEnd < input.size() && input[prefixEnd] != ' ')
+        {
+            ++prefixEnd;
+        }
+        if (prefixEnd < input.size())
+        {
+            ++prefixEnd;
+        }
+        cursor.setPosition(static_cast<int>(prefixEnd),
+                           QTextCursor::KeepAnchor);
+    }
+    cursor.insertText("/w " + username + " ");
+    cursor.endEditBlock();
+    cursor.movePosition(QTextCursor::End);
+    this->ui_.textEdit->setTextCursor(cursor);
+}
+
 void SplitInput::hide()
 {
     if (this->isHidden())
@@ -4785,6 +4948,7 @@ void SplitInput::bindChannelPoints(TwitchChannel *channel)
                                   (canModerate || hasActivePoll);
         this->ui_.pollButton->setToolTip(hasActivePoll ? "Open poll"
                                                        : "Create poll");
+        this->gameButtonWanted_ = getSettings()->showGameButton && canModerate;
         this->badgeButtonWanted_ =
             getSettings()->showSelectBadgeButton && channel != nullptr;
         this->updateActionRowCompactness();
@@ -4795,6 +4959,7 @@ void SplitInput::bindChannelPoints(TwitchChannel *channel)
         this->clearChannelPointsDisplay();
         this->predictionButtonWanted_ = false;
         this->pollButtonWanted_ = false;
+        this->gameButtonWanted_ = false;
         this->badgeButtonWanted_ = false;
         this->updateActionRowCompactness();
         return;
@@ -4819,11 +4984,13 @@ void SplitInput::bindChannelPoints(TwitchChannel *channel)
         return;
     }
 
-    if (!channel->shouldShowChannelPoints())
+#if !MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+    if (channel->hasUnlimitedChannelPoints())
     {
         this->clearChannelPointsDisplay();
         return;
     }
+#endif
 
     this->channelPointsLabelWanted_ = true;
     if (this->ui_.channelPointsLabel->text().isEmpty())
@@ -4869,9 +5036,32 @@ void SplitInput::clearChannelPointsDisplay()
 
 void SplitInput::updateChannelPointsDisplay(TwitchChannel *channel)
 {
-    if (!channel || !channel->shouldShowChannelPoints())
+    if (!channel)
     {
         this->clearChannelPointsDisplay();
+        return;
+    }
+
+    if (channel->hasUnlimitedChannelPoints())
+    {
+#if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
+        this->channelPointsManualRefreshLoading_ = false;
+        const auto text = QStringLiteral("\u221E");
+        const auto tooltip =
+            QStringLiteral("Channel Points: unlimited in your own channel\n"
+                           "Click to open rewards");
+        if (this->ui_.channelPointsLabel->text() != text)
+        {
+            this->ui_.channelPointsLabel->setText(text);
+            this->updateActionRowCompactness();
+        }
+        if (this->ui_.channelPointsLabel->toolTip() != tooltip)
+        {
+            this->ui_.channelPointsLabel->setToolTip(tooltip);
+        }
+#else
+        this->clearChannelPointsDisplay();
+#endif
         return;
     }
 
@@ -5190,13 +5380,6 @@ void SplitInput::updateChannel()
         this->commandHintChannel_.reset();
         this->resolvedCommandHint_.reset();
         this->resolvedSupibotDescription_.clear();
-        if (selected->getType() == Channel::Type::Twitch)
-        {
-            if (auto *potat = getApp()->getPotatCommands())
-            {
-                potat->ensureChannel(selected->getName());
-            }
-        }
         this->updateCommandArgumentHint(
             this->ui_.textEdit->toPlainText(),
             this->ui_.textEdit->textCursor().position());

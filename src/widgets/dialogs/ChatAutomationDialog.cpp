@@ -2831,8 +2831,8 @@ void ChatAutomationDialog::refreshEditorState()
     this->botSetup_->setVisible(needsBotSetup);
     this->useBotBadge_->setToolTip(
         botConfigured
-            ? QStringLiteral(
-                  "Send through the bot badge account in Moltorino settings.")
+            ? QStringLiteral("Send through the bot badge account in JilChat "
+                             "Chatterino settings.")
             : QStringLiteral("This rule needs a bot badge account configured "
                              "before it can run."));
     this->response_->setPlaceholderText(
@@ -2866,9 +2866,9 @@ void ChatAutomationDialog::refreshEditorState()
                                      : QStringLiteral("Message preview"));
     if (needsBotSetup)
     {
-        this->responseHint_->setText(
-            QStringLiteral("Set up a bot badge account in Moltorino settings "
-                           "before this rule can run."));
+        this->responseHint_->setText(QStringLiteral(
+            "Set up a bot badge account in JilChat Chatterino settings "
+            "before this rule can run."));
     }
     const auto mode =
         static_cast<ChatAutomationMatch>(this->match_->currentData().toInt());

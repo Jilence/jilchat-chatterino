@@ -21,8 +21,9 @@ Button::Button(BaseWidget *parent)
     connect(&this->effectTimer_, &QTimer::timeout, this,
             &Button::onMouseEffectTimeout);
 
+    // Only runs while the hover or click effect changes, so the many buttons
+    // of a window don't wake the app up 50 times a second each
     this->effectTimer_.setInterval(20);
-    this->effectTimer_.start();
 
     this->setMouseTracking(true);
 }
@@ -178,6 +179,7 @@ void Button::enterEvent(QEvent *)
     if (!this->mouseOver_)
     {
         this->mouseOver_ = true;
+        this->startEffectTimer();
         this->update();
         this->mouseOverUpdated();
     }
@@ -188,6 +190,7 @@ void Button::leaveEvent(QEvent *)
     if (this->mouseOver_)
     {
         this->mouseOver_ = false;
+        this->startEffectTimer();
         this->update();
         this->mouseOverUpdated();
     }
@@ -216,6 +219,7 @@ void Button::mousePressEvent(QMouseEvent *event)
                 });
                 this->leftMouseButtonDown_ = false;
                 this->mouseOver_ = false;
+                this->startEffectTimer();
             }
         }
         break;
@@ -291,6 +295,15 @@ void Button::mouseMoveEvent(QMouseEvent *event)
 void Button::addClickEffect(QPoint position)
 {
     this->clickEffects_.emplace_back(position);
+    this->startEffectTimer();
+}
+
+void Button::startEffectTimer()
+{
+    if (!this->effectTimer_.isActive())
+    {
+        this->effectTimer_.start();
+    }
 }
 
 void Button::onMouseEffectTimeout()
@@ -339,6 +352,11 @@ void Button::onMouseEffectTimeout()
     if (performUpdate)
     {
         this->update();
+    }
+    else
+    {
+        // nothing left to animate
+        this->effectTimer_.stop();
     }
 }
 

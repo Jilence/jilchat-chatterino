@@ -96,6 +96,8 @@ private:
 
         QLineEdit *youtubeName;
 
+        QLineEdit *tiktokName;
+
         QListWidget *multiView;
         QComboBox *multiIndicatorMode;
         QCheckBox *multiTintByPlatform;
@@ -106,6 +108,7 @@ private:
         QWidget *twitchPage;
         QWidget *kickPage;
         QWidget *youtubePage;
+        QWidget *tiktokPage;
         QWidget *multiPage;
     } ui_{};
 

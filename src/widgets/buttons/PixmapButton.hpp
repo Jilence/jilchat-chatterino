@@ -21,6 +21,9 @@ public:
 
     void setMarginEnabled(bool enableMargin);
 
+    /// Shows the pixmap cut to a circle, e.g. a profile picture
+    void setRound(bool round);
+
 protected:
     void paintContent(QPainter &painter) override;
 
@@ -28,6 +31,7 @@ private:
     QPixmap pixmap_;
     QPixmap resizedPixmap_;
     bool marginEnabled_ = true;
+    bool round_ = false;
 };
 
 }  // namespace chatterino

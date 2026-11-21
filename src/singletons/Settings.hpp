@@ -22,6 +22,7 @@
 #include "controllers/nicknames/Nickname.hpp"
 #include "controllers/sound/ISoundController.hpp"
 #include "providers/emoji/EmojiStyle.hpp"
+#include "providers/seventv/SeventvHiddenPaint.hpp"
 #include "singletons/Toasts.hpp"
 #include "util/RapidJsonSerializeQString.hpp"  // IWYU pragma: keep
 #include "util/serialize/List.hpp"             // IWYU pragma: keep
@@ -44,6 +45,8 @@
 #endif
 
 using TimeoutButton = std::pair<QString, int>;
+
+class QJsonObject;
 
 namespace chatterino {
 
@@ -110,7 +113,9 @@ enum class TabStyle : std::uint8_t {
 enum class UsernamePaintSource : std::uint8_t {
     SevenTV,
     BetterTTV,
-    /// What the user has; the 7TV paint if it's both.
+    JilTV,
+    /// What the user has; with several, JilTV (when it comes first), then
+    /// 7TV, then BetterTTV.
     Automatic,
     Off,
 };
@@ -139,6 +144,12 @@ enum class SplitMpsWindow : std::uint8_t {
     Seconds3,
     Seconds5,
     Seconds10,
+};
+
+enum class ChatColorCycleMode : std::uint8_t {
+    InOrder,
+    Random,
+    Rainbow,
 };
 
 enum class TwitchReadConnectionMode : uint8_t {
@@ -220,6 +231,21 @@ constexpr std::optional<std::string_view> qmagicenumDisplayName(
     return {};
 }
 
+constexpr std::optional<std::string_view> qmagicenumDisplayName(
+    ChatColorCycleMode value) noexcept
+{
+    switch (value)
+    {
+        case ChatColorCycleMode::InOrder:
+            return "In order";
+        case ChatColorCycleMode::Random:
+            return "Random";
+        case ChatColorCycleMode::Rainbow:
+            return "Rainbow (Turbo/Prime)";
+    }
+    return {};
+}
+
 constexpr int splitMpsWindowSeconds(SplitMpsWindow window) noexcept
 {
     switch (window)
@@ -284,9 +310,14 @@ public:
     ///
     /// Returns the result from the save, or Skipped if disableSave has been called
     pajlada::Settings::SettingManager::SaveResult requestSave() const;
+    /// False when saving was turned off, e.g. by --safe-mode
+    bool isSaveEnabled() const;
 
     void saveSnapshot();
     void restoreSnapshot();
+
+    /// Returns the current value of every registered setting, keyed by path
+    QJsonObject registeredValues() const;
 
     void disableSave();
 
@@ -429,6 +460,13 @@ public:
     FloatSetting boldScale = {"/appearance/boldScale", 63};
     BoolSetting showTabCloseButton = {"/appearance/showTabCloseButton", true};
     BoolSetting showTabLive = {"/appearance/showTabLiveButton", true};
+    /// Channel names on tabs and in the channel bar in the broadcaster's
+    /// paint
+    BoolSetting channelNamePaints = {"/appearance/channelNamePaints", false};
+    /// Moving paints on channel names move on every tab, not only the
+    /// selected one
+    BoolSetting animateAllTabPaints = {"/appearance/animateAllTabPaints",
+                                       false};
     BoolSetting colorTabHighlightsByMessage = {
         "/appearance/tabs/colorHighlightsByMessage",
         false,
@@ -450,16 +488,35 @@ public:
         "/misc/displayBttvUsernameEffectOutlines", true};
     EnumStringSetting<UsernamePaintSource> usernamePaintSource = {
         "/misc/usernamePaintSource",
-        UsernamePaintSource::SevenTV,
+        UsernamePaintSource::Automatic,
     };
     BoolSetting showSevenTVPaintTooltip = {"/misc/showSevenTVPaintTooltip",
                                            false};
     BoolSetting displaySevenTVPaintShadows = {
         "/misc/displaySevenTVPaintShadows", true};
+
+    /// JilTV (jiltv.app): paints, badges and emotes.
+    BoolSetting enableJiltv = {"/jiltv/enabled", true};
+    BoolSetting enableJiltvEmotes = {"/jiltv/emotes", true};
+    /// JilTV paints and emotes win over 7TV, BetterTTV and FrankerFaceZ.
+    BoolSetting jiltvPriority = {"/jiltv/priority", true};
+    BoolSetting jiltvAnimatedPaints = {"/jiltv/animatedPaints", true};
+    /// Shadows and outlines of JilTV paints.
+    BoolSetting jiltvPaintShadows = {"/jiltv/paintShadows", true};
+    /// The frames around profile pictures in usercards
+    BoolSetting showJiltvFrames = {"/jiltv/frames", true};
+    /// Emotes still waiting for review on JilTV.
+    BoolSetting jiltvShowPendingEmotes = {"/jiltv/showPendingEmotes", false};
+    QStringSetting jiltvApiUrl = {"/jiltv/apiUrl", "https://api.jiltv.app"};
     BoolSetting largeSevenTVPaintShadows = {"/misc/largeSevenTVPaintShadows",
                                             true};
     BoolSetting boldUsernames = {"/appearance/messages/boldUsernames", true};
     BoolSetting colorUsernames = {"/appearance/messages/colorUsernames", true};
+    /// Mentions of your name inside your own domain (e.g. a link to it)
+    /// don't highlight
+    BoolSetting blockDomainHighlights = {"/client/blockDomainHighlights",
+                                         false};
+    QStringSetting yourDomain = {"/client/yourDomain", ""};
     BoolSetting findAllUsernames = {"/appearance/messages/findAllUsernames",
                                     false};
     // BoolSetting customizable splitheader
@@ -525,6 +582,17 @@ public:
     BoolSetting showBadgesFolhinha = {"/appearance/badges/folhinha", true};
     BoolSetting showBadgesFfzAp = {"/appearance/badges/ffzap", true};
     BoolSetting showBadgesDankChat = {"/appearance/badges/dankchat", true};
+    BoolSetting showBadgesChatlee = {"/appearance/badges/chatlee", true};
+    BoolSetting showBadgesSolrino = {"/appearance/badges/solrino", true};
+    /// Glide and fade tabs, pages, windows, splits and menus
+    BoolSetting smoothAnimations{"/appearance/smoothAnimations", true};
+    /// Dragging the main window onto Twitch chat in a browser docks it there
+    BoolSetting dockOverTwitchChat{"/appearance/dockOverTwitchChat", true};
+    /// The month ("yyyy-MM") whose Wrapped announcement was last shown
+    QStringSetting wrappedAnnouncedMonth = {"/jilchat/wrapped/announcedMonth",
+                                            ""};
+    BoolSetting showBadgesWydios = {"/appearance/badges/wydios", true};
+    BoolSetting showBadgesStreamNook = {"/appearance/badges/streamnook", true};
     BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
     BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
     BoolSetting showBadgesLimerino = {"/appearance/badges/limerino", true};
@@ -532,6 +600,7 @@ public:
     BoolSetting animateSevenTVBadges = {"/appearance/badges/animateSeventv",
                                         true};
     BoolSetting showBadgesJilChat = {"/appearance/badges/jilchat", true};
+    BoolSetting showBadgesJiltv = {"/appearance/badges/jiltv", true};
     BoolSetting showBadgesBluzyrino = {"/appearance/badges/bluzyrino", true};
     BoolSetting bluzyrinoFounderVisible = {"/bluzyrino/badges/founder/visible",
                                            true};
@@ -755,6 +824,8 @@ public:
     };
     BoolSetting streamerModeHideUsercardAvatars = {
         "/streamerMode/hideUsercardAvatars", true};
+    BoolSetting streamerModeHideUsercardBanners = {
+        "/streamerMode/hideUsercardBanners", true};
     BoolSetting streamerModeHideLinkThumbnails = {
         "/streamerMode/hideLinkThumbnails", true};
     BoolSetting streamerModeHideViewerCountAndDuration = {
@@ -866,6 +937,14 @@ public:
     QStringSetting imageUploaderDeletionLink = {
         "/external/imageUploader/deletionLink", ""};
 
+    /// URL Shortener
+    BoolSetting urlShortenerEnabled = {"/external/urlShortener/enabled", false};
+    QStringSetting urlShortenerUrl = {"/external/urlShortener/url", ""};
+    QStringSetting urlShortenerHeaders = {"/external/urlShortener/headers", ""};
+    QStringSetting urlShortenerLink = {"/external/urlShortener/link", ""};
+    QStringSetting urlShortenerDeletionLink = {
+        "/external/urlShortener/deletionLink", ""};
+
     /// Misc
     BoolSetting markdownParsing = {"/misc/markdownParsing", false};
     BoolSetting autoDetachLiveTab = {"/misc/autoDetachLiveTab", false};
@@ -873,6 +952,10 @@ public:
     BoolSetting useBotLimitsMessage = {"/misc/botLimitsMessage", false};
     BoolSetting useBotLimitsJoin = {"/misc/botLimitsJoin", false};
     BoolSetting betaUpdates = {"/misc/beta", false};
+    /// Show the update popup on start when a new version is out
+    BoolSetting showUpdatePrompt = {"/misc/showUpdatePrompt", true};
+    /// The version "Skip this version" was clicked for; no popup for it
+    QStringSetting skippedUpdateVersion = {"/misc/skippedUpdateVersion", ""};
     BoolSetting abnormalNonceDetection = {"/misc/abnormalNonceDetection",
                                           false};
     BoolSetting normalNonceDetection = {"/misc/normalNonceDetection", false};
@@ -883,11 +966,15 @@ public:
     QStringSetting mobileNewColor = {"/misc/mobileNewColor", "#3F25D300"};
     BoolSetting clientDetectionIcon = {"/misc/clientDetectionIcon", false};
     BoolSetting fakeWebChat = {"/misc/fakeWebChat", false};
+    BoolSetting searchFiltersPanelOpen = {"/misc/searchFiltersPanelOpen",
+                                          false};
 #ifdef Q_OS_LINUX
     BoolSetting useKeyring = {"/misc/useKeyring", true};
 #endif
 
     QStringSetting currentVersion = {"/misc/currentVersion", ""};
+    /// A portable copy shows its welcome once
+    BoolSetting portableWelcomeShown = {"/jilchat/portableWelcomeShown", false};
     IntSetting overlayKnowledgeLevel = {"/misc/overlayKnowledgeLevel", 0};
 
     BoolSetting loadTwitchMessageHistoryOnConnect = {
@@ -931,6 +1018,7 @@ public:
     BoolSetting attachExtensionToAnyProcess = {
         "/misc/attachExtensionToAnyProcess", false};
     BoolSetting askOnImageUpload = {"/misc/askOnImageUpload", true};
+    BoolSetting askOnUrlShorten = {"/misc/askOnUrlShorten", true};
     BoolSetting informOnTabVisibilityToggle = {"/misc/askOnTabVisibilityToggle",
                                                true};
     BoolSetting lockNotebookLayout = {"/misc/lockNotebookLayout", false};
@@ -939,6 +1027,10 @@ public:
                                              true};
     BoolSetting showUsercardCreatedDate = {"/usercard/showCreatedDate", true};
     BoolSetting showFollowButtonInUsercard{"/usercard/showFollowButton", true};
+    /// A quote from zenquotes.io, once a day in the selected chat
+    BoolSetting showDailyQuote{"/jilchat/dailyQuote/enabled", true};
+    QStringSetting dailyQuoteLastDate{"/jilchat/dailyQuote/lastShownDate", {}};
+    QStringSetting dailyQuoteLastLeadIn{"/jilchat/dailyQuote/lastLeadIn", {}};
     BoolSetting confirmUnfollowFromUsercard{"/usercard/confirmUnfollow", true};
     BoolSetting showUsercardFollowage = {"/usercard/showFollowage", true};
     BoolSetting showUsercardFollowageRelativeTime = {
@@ -961,6 +1053,9 @@ public:
                                              true};
     BoolSetting showUsercardNameHistoryButton = {
         "/usercard/showNameHistoryButton", true};
+    BoolSetting showUsercardBanners = {"/usercard/showBanners", false};
+    QStringSetting usercardBannerDisplayMode = {"/usercard/bannerDisplayMode",
+                                                "above"};
     BoolSetting showUsercardLoadMoreMessagesButton = {
         "/usercard/showLoadMoreMessagesButton", true};
     /// Where the user last moved a usercard to ("x,y") and the size they last
@@ -1005,6 +1100,10 @@ public:
     /// The same for "Search in all open channels".
     BoolSetting searchPublicLogsAllChannels = {
         "/misc/publicLogs/searchPopupAllChannels", false};
+    BoolSetting showStreamChangeMessages = {
+        "/leafyrino/showStreamChangeMessages",
+        true,
+    };
 
     /// UI
 
@@ -1166,7 +1265,34 @@ public:
     BoolSetting showPredictionButton{"/moltorino/predictions/showButton", true};
     BoolSetting showPollButton{"/moltorino/polls/showButton", true};
 
+    /// Changing game with a chat command (!game <name>)
+    BoolSetting showGameButton{"/jilchat/game/showButton", false};
+    BoolSetting gameSelectorPinned{"/jilchat/game/pinned", false};
+    /// The size the game popup was last given, unscaled; empty until resized
+    QSizeSetting gameSelectorPopupSize = {"/jilchat/game/popupSize", {}};
+    ChatterinoSetting<QStringList> gameSelectorGames = {
+        "/jilchat/game/savedGames", {}};
+    /// How often each game was sent, as "<game>\t<count>"
+    ChatterinoSetting<QStringList> gameUsage = {"/jilchat/game/usage", {}};
+    /// Each channel's own game command, as "<channel>\t<command>", for those
+    /// that don't use !game
+    ChatterinoSetting<QStringList> gameCommands = {"/jilchat/game/commands",
+                                                   {}};
+    BoolSetting quickGameBar{"/jilchat/gameBar/enabled", false};
+    QStringSetting quickGameBarPosition{"/jilchat/gameBar/position", "above"};
+    QStringSetting quickGameBarAlign{"/jilchat/gameBar/align", "left"};
+    QStringSetting quickGameBarSize{"/jilchat/gameBar/size", "small"};
+    QStringSetting quickGameBarCount{"/jilchat/gameBar/count", "5"};
+
     /// Channel Points and Rewards
+    /// Claim the "Claim bonus" chest of channel points while watching
+    /// Sends a shoutout command when someone raids a channel you moderate
+    BoolSetting autoShoutoutRaids{"/jilchat/raids/autoShoutout", false};
+    /// {user} becomes the raider's login
+    QStringSetting raidShoutoutCommand{"/jilchat/raids/shoutoutCommand",
+                                       "!so @{user}"};
+    BoolSetting autoClaimPointsBonus{"/moltorino/channelPoints/autoClaimBonus",
+                                     true};
     BoolSetting enableChannelPointsDisplay{
         "/moltorino/predictions/showChannelPoints", true};
     BoolSetting openRewardsWithChannelPointsClick{
@@ -1179,6 +1305,8 @@ public:
         "/moltorino/channelPoints/returnToListAfterRedeem", false};
     BoolSetting enableGigantifyEmotes{
         "/moltorino/channelPoints/enableGigantifyEmotes", true};
+    BoolSetting enableFfzGiantEmotes{
+        "/leafyrino/channelPoints/enableFfzGiantEmotes", true};
 
     /// Banner content text scales. These intentionally do not scale banner
     /// chrome, icons, timers, or progress bars.
@@ -1295,6 +1423,17 @@ public:
                                        true};
     BoolSetting showSupibotCommandAliases{
         "/leafyrino/showSupibotCommandAliases", true};
+    BoolSetting cycleChatColor{"/leafyrino/chatColorCycle/enabled", false};
+    EnumStringSetting<ChatColorCycleMode> chatColorCycleMode{
+        "/leafyrino/chatColorCycle/mode", ChatColorCycleMode::InOrder};
+    // twitch color names and custom hex colors, in cycle order. the default
+    // is every twitch color sorted by hue, which the colors dialog relies on
+    ChatterinoSetting<QStringList> chatColorCycleColors{
+        "/leafyrino/chatColorCycle/colors",
+        {"firebrick", "red", "coral", "orange_red", "chocolate", "golden_rod",
+         "yellow_green", "green", "sea_green", "spring_green", "cadet_blue",
+         "dodger_blue", "blue", "blue_violet", "hot_pink"},
+    };
     BoolSetting hideUnavailableModCommands{
         "/moltorino/hideUnavailableModCommands", true};
     /// The order the user wants their own badges in, see OwnBadgeLayout:
@@ -1304,6 +1443,10 @@ public:
     /// The keys of the own badges the user hides
     ChatterinoSetting<std::vector<QString>> ownBadgeHidden = {
         "/appearance/badges/ownHidden"};
+    /// Also sort the badges of everyone else's messages like the own ones.
+    /// Hiding stays for the own badges.
+    BoolSetting ownBadgeOrderForEveryone = {
+        "/appearance/badges/ownOrderForEveryone", false};
     /// Show messages held by AutoMod with all their actions in the chat,
     /// instead of the compact two lines with Allow and Deny
     BoolSetting advancedAutoModInChat{
@@ -1358,6 +1501,8 @@ public:
         "/moltorino/showEmoteTabCarouselNames", true};
     BoolSetting showFollowButtonInSplitHeader{
         "/moltorino/showFollowButtonInSplitHeader", true};
+    BoolSetting showSharedChatChannelSelector{
+        "/moltorino/showSharedChatChannelSelector", true};
     BoolSetting showFollowEventsInChat{"/moltorino/showFollowEventsInChat",
                                        false};
     BoolSetting confirmUnfollowFromSplitHeader{
@@ -1404,6 +1549,8 @@ private:
         {"/moderation/actions"};
     ChatterinoSetting<std::vector<ChannelLog>> loggedChannelsSetting = {
         "/logging/channels"};
+    ChatterinoSetting<std::vector<SeventvHiddenPaint>>
+        hiddenSevenTVPaintsSetting = {"/seventv/hiddenPaints"};
     SignalVector<QString> mutedChannels;
     SignalVector<QString> autoTranslateChannels;
 
@@ -1447,6 +1594,7 @@ public:
     SignalVector<Nickname> nicknames;
     SignalVector<ModerationAction> moderationActions;
     SignalVector<ChannelLog> loggedChannels;
+    SignalVector<SeventvHiddenPaint> hiddenSevenTVPaints;
 
     bool isEmoteModifierEnabled(const QString &name) const;
     bool isBlacklistedUser(const QString &username);
@@ -1496,6 +1644,9 @@ constexpr magic_enum::customize::customize_t
     {
         case chatterino::UsernamePaintSource::SevenTV:
             return "7TV";
+
+        case chatterino::UsernamePaintSource::JilTV:
+            return "JilTV";
 
         case chatterino::UsernamePaintSource::BetterTTV:
         case chatterino::UsernamePaintSource::Automatic:

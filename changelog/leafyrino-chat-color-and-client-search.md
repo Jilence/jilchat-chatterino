@@ -1,0 +1,3 @@
+- New Changing chat color. Changes your Twitch chat color after every message you send: in order, at random or around the color wheel (Settings > Leafyrino > Chat color).
+- New `client:` search filter. Finds the messages sent from a kind of client, e.g. `client:web`, `client:android`, `client:ios` or `client:mobile`.
+- Fixed Reopening after a Flatpak update. JilChat Chatterino starts again once the update is installed.

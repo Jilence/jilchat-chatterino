@@ -45,6 +45,7 @@ using MessagePtr = std::shared_ptr<const Message>;
 enum class MessagePlatform : uint8_t;
 class Label;
 class MarkdownLabel;
+class AvatarFrameOverlay;
 class EditUserNotesDialog;
 class ChannelView;
 class TooltipWidget;
@@ -52,6 +53,7 @@ class Image;
 using ImagePtr = std::shared_ptr<Image>;
 class UsercardLogsView;
 class UsercardRolesView;
+class UsercardBanner;
 class Split;
 struct HelixUser;
 struct IvrSubage;
@@ -82,6 +84,7 @@ public:
     void setData(const QString &name, const ChannelPtr &channel);
     void setData(const QString &name, const ChannelPtr &contextChannel,
                  const ChannelPtr &openingChannel);
+    Split *getSplit() const;
 
     void setYouTubeContext();
 
@@ -150,10 +153,12 @@ private:
     void resetNameHistory();
     bool applyCachedNameHistory();
     void updateNameHistoryButton();
+    void updateVanityButton();
     void updateBadgesButton();
+    void openBadgesDialog();
     /// Shows the badges of the user's newest message below their name.
     void updateUsercardBadges();
-    void openBadgesDialog();
+    void openVanityPage();
     void showNameHistoryMenu();
     void openNameHistoryMenu(const QString &statusText = {});
     void requestNameHistory();
@@ -162,6 +167,7 @@ private:
     void updateUsercardSubGiftRow(const IvrSubage &subageInfo);
     void hideUsercardSubGiftRow();
     void resetUsercardInfoRows();
+    void loadIvrBanner(const QString &bannerUrl);
     void applyIvrUserProfile(const IvrUserProfile &profile);
     void updateLiveIndicatorDisplay();
 
@@ -188,6 +194,8 @@ private:
     void updateAvatarUrl();
 
     void updateKickUserData();
+    void updateTikTokUserData();
+    void updateTikTokLatestMessages();
     void updateYouTubeUserData();
     void updateYouTubeLatestMessages();
     void loadYouTubeAvatar(const QString &url);
@@ -232,6 +240,8 @@ private:
     QString userName_;
     QString userId_;
     uint64_t userDataRequestGeneration_ = 0;
+    uint64_t ivrBannerRequestGeneration_ = 0;
+    QString ivrBannerUrl_;
     QString avatarUrl_;
     QString helixAvatarUrl_;
     QString seventvAvatarUrl_;
@@ -317,6 +327,8 @@ private:
     class TimeoutWidget;
     struct {
         PixmapButton *avatarButton = nullptr;
+        /// The JilTV frame around the profile picture
+        AvatarFrameOverlay *avatarFrame = nullptr;
         PixmapButton *localizedNameCopyButton = nullptr;
 
         Label *nameLabel = nullptr;
@@ -329,6 +341,7 @@ private:
         Label *lastLiveLabel = nullptr;
         Label *userIDLabel = nullptr;
         QLabel *bannedAvatarLabel = nullptr;
+        UsercardBanner *ivrBanner = nullptr;
         QWidget *followageRow = nullptr;
         QLabel *followageIcon = nullptr;
         Label *followageLabel = nullptr;
@@ -358,13 +371,16 @@ private:
         UsercardRolesView *rolesView = nullptr;
         LabelButton *rolesViewLabel = nullptr;
 
+        LabelButton *whisperLabel = nullptr;
         LabelButton *usercardLabel = nullptr;
         LabelButton *userlogsLabel = nullptr;
+        LabelButton *vanityLabel = nullptr;
         LabelButton *badgesLabel = nullptr;
         LabelButton *sevenTVUserLabel = nullptr;
         QLabel *seventvPaintPixmapLabel = nullptr;
         QWidget *seventvPaintRow = nullptr;
         QWidget *badgeStrip = nullptr;
+        LabelButton *seventvPaintHideButton = nullptr;
         LabelButton *rolesLabel = nullptr;
         LabelButton *switchAvatars = nullptr;
 
@@ -380,6 +396,9 @@ private:
     bool isKick_ = false;
     bool isYouTube_ = false;
     bool forceYouTube_ = false;
+    bool isTikTok_ = false;
+    QString tiktokHandle_;
+    QString tiktokUserId_;
     QString youtubeChannelId_;
     uint64_t kickUserID_ = 0;
     bool isUserLive_ = false;

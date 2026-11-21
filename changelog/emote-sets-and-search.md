@@ -1,0 +1,8 @@
+- New Emote sets in the right-click menu. Right-click a 7TV, JilTV or BTTV emote, or a link to one, to add it to your sets or the sets of channels you're an editor of, under its own name or one you choose. Ticked sets already have it; a click removes it there.
+- New Replacing an emote whose name is taken. When the name is already used in that set, you can swap that emote for this one.
+- New Skip version in the update popup, and a setting to turn the update popup off.
+- New Filters panel in the message search (from Leafyrino).
+- Changed User field in the search. It's always shown and is where users go; a typed from: moves there.
+- Changed Update popup. It lists every change instead of the first twelve.
+- Changed JilTV sign-in. It also asks to edit your emote sets now; sign in again to use the JilTV sets.
+- Fixed User links in YouTube timeout notices in multi splits (from Leafyrino).

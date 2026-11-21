@@ -40,7 +40,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Resolve Build workflow run
         id: resolve-build-run
@@ -75,7 +75,7 @@ jobs:
             return String(run.id);
 
       - name: Download artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.zip
           github-token: ${{ github.token }}
@@ -87,29 +87,214 @@ jobs:
         run: 7z e -spf chatterino-windows-${{ env.C2_ARCH }}-Qt-${{ matrix.qt-version }}.zip
         working-directory: build
 
-      - name: Install InnoSetup
-        run: choco install innosetup
-
-      - name: Add InnoSetup to path
-        run: echo "C:\Program Files (x86)\Inno Setup 6\" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
       - name: Enable Developer Command Prompt
         uses: Chatterino/msvc-dev-cmd@24444121cb2805a7adbd23d0f4455d0916af896b # v2.0.7
 
       - name: Build installer
         id: build-installer
         working-directory: build
-        run: ..\.CI\build-installer.ps1
+        run: |
+          # Packs the staging folder into a single self-contained setup
+          # (installer/JilChatSetup.cs). Uses only the C# compiler that ships with
+          # Windows, so it needs no extra tools.
+          if (Test-Path -PathType Container JilChatChatterino) {
+              $stagingDirName = "JilChatChatterino"
+          }
+          elseif (Test-Path -PathType Container Chatterino2) {
+              $stagingDirName = "Chatterino2"
+          }
+          else {
+              Write-Error "Couldn't find a staging folder called 'JilChatChatterino' or 'Chatterino2' in the current directory.";
+              exit 1
+          }
+
+          # Check if we're on a tag
+          $OldErrorActionPref = $ErrorActionPreference;
+          $ErrorActionPreference = 'Continue';
+          git describe --exact-match --match 'v*' *> $null;
+          $isTagged = $?;
+          $ErrorActionPreference = $OldErrorActionPref;
+
+          if ($isTagged) {
+              # This is a release.
+              # Make sure, any existing `modes` file is overwritten for the user,
+              # for example when updating from nightly to stable.
+              Write-Output "" | Out-File "$stagingDirName/modes" -Encoding ASCII;
+              $installerBaseName = "JilChatChatterino.Installer";
+          }
+          else {
+              Write-Output nightly | Out-File "$stagingDirName/modes" -Encoding ASCII;
+              $installerBaseName = "JilChatChatterino.Nightly.Installer";
+          }
+
+          $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower()
+          if ($architecture -eq 'arm64') {
+              $installerBaseName = "Experimental-ARM64-$installerBaseName"
+          }
+
+          if ($Env:GITHUB_OUTPUT) {
+              # This is used in CI when creating the artifact
+              "C2_INSTALLER_BASE_NAME=$installerBaseName" >> "$Env:GITHUB_OUTPUT"
+          }
+
+          $ErrorActionPreference = 'Stop'
+          $root = $Env:GITHUB_WORKSPACE
+          $sources = Join-Path $root '.CI\installer'
+          $work = Join-Path $pwd.Path 'installer-work'
+          $output = Join-Path $pwd.Path "$installerBaseName.exe"
+
+          $csc = Join-Path $Env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          if (-not (Test-Path $csc)) { $csc = Join-Path $Env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
+          if (-not (Test-Path $csc)) { Write-Error "The C# compiler of Windows wasn't found."; exit 1 }
+
+          if (Test-Path $work) { Remove-Item $work -Recurse -Force -Confirm:$false }
+          New-Item -ItemType Directory -Path $work | Out-Null
+
+          # The version in the file details Windows shows (Properties > Details).
+          # Programs without them look more suspicious to antivirus apps.
+          $cmakeLists = Get-Content (Join-Path $root 'CMakeLists.txt') -Raw
+          if ($cmakeLists -notmatch 'project\(chatterino\s+VERSION\s+([0-9.]+)') { Write-Error 'The version in CMakeLists.txt was not found.'; exit 1 }
+          $version = $Matches[1]
+          function Write-FileDetails([string]$path, [string]$title) {
+              $year = (Get-Date).Year
+              Set-Content $path -Encoding UTF8 -Value @"
+          using System.Reflection;
+          [assembly: AssemblyTitle("$title")]
+          [assembly: AssemblyDescription("$title")]
+          [assembly: AssemblyCompany("Jilence")]
+          [assembly: AssemblyProduct("JilChat Chatterino")]
+          [assembly: AssemblyCopyright("JilChat Chatterino contributors $year")]
+          [assembly: AssemblyVersion("$version.0")]
+          [assembly: AssemblyFileVersion("$version.0")]
+          [assembly: AssemblyInformationalVersion("$version")]
+          "@
+          }
+          $setupDetails = Join-Path $work 'SetupDetails.cs'
+          $uninstallDetails = Join-Path $work 'UninstallDetails.cs'
+          Write-FileDetails $setupDetails 'JilChat Chatterino Setup'
+          Write-FileDetails $uninstallDetails 'JilChat Chatterino Uninstall'
+
+          # The uninstaller the setup puts next to the program
+          $uninstaller = Join-Path $work 'uninstall.exe'
+          $result = & $csc '/nologo' '/optimize+' '/target:winexe' '/platform:anycpu' "/out:$uninstaller" `
+              "/win32icon:$(Join-Path $root 'resources\icon.ico')" `
+              "/win32manifest:$(Join-Path $sources 'uninstall.manifest')" `
+              '/r:System.dll' '/r:System.Windows.Forms.dll' $uninstallDetails (Join-Path $sources 'JilChatUninstall.cs') 2>&1
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $uninstaller)) {
+              $result | ForEach-Object { "$_" } | Select-Object -First 30
+              Write-Error 'Compiling the uninstaller failed.'
+              exit 1
+          }
+
+          # The folder's contents, not the folder itself
+          $zip = Join-Path $work 'app.zip'
+          7z a -tzip -mx=7 $zip ".\$stagingDirName\*" | Out-Null
+          if ($LASTEXITCODE -ne 0) { Write-Error "Packing $stagingDirName failed."; exit 1 }
+
+          if (Test-Path $output) { Remove-Item $output -Force -Confirm:$false }
+          $arguments = @(
+              '/nologo', '/optimize+', '/target:winexe', '/platform:anycpu',
+              "/out:$output",
+              "/win32icon:$(Join-Path $root 'resources\icon.ico')",
+              "/win32manifest:$(Join-Path $sources 'setup.manifest')",
+              "/resource:$zip,app.zip",
+              "/resource:$(Join-Path $root 'resources\icon.png'),logo.png",
+              "/resource:$uninstaller,uninstall.exe",
+              '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
+              '/r:System.IO.Compression.dll',
+              $setupDetails, (Join-Path $sources 'JilChatSetup.cs')
+          )
+          $result = & $csc @arguments 2>&1
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $output)) {
+              $result | ForEach-Object { "$_" } | Select-Object -First 30
+              Write-Error 'Compiling the setup failed.'
+              exit 1
+          }
+          Remove-Item $work -Recurse -Force -Confirm:$false
+          "Created $output ($([int]((Get-Item $output).Length / 1MB)) MB)"
         shell: powershell
 
       - name: Bundle portable
         id: bundle-portable
         working-directory: build
-        run: ..\.CI\bundle-portable.ps1
+        run: |
+          if (-not (Test-Path -PathType Container Chatterino2)) {
+              Write-Error "Couldn't find a folder called 'Chatterino2' in the current directory.";
+              exit 1
+          }
+          if (-not $Env:C2_PORTABLE_INSTALLER_VERSION -or -not $Env:C2_PORTABLE_INSTALLER_SHA256_X64 -or -not $Env:C2_PORTABLE_INSTALLER_SHA256_ARM64) {
+              Write-Error "C2_PORTABLE_INSTALLER_VERSION or C2_PORTABLE_INSTALLER_SHA256_{X64,ARM64} not defined.";
+              exit 1
+          }
+
+          function Remove-IfExists {
+              param (
+                  [string] $Path
+              )
+              if (Test-Path -PathType Container $Path) {
+                  Remove-Item $Path -Force -Recurse -Confirm:$false;
+              }
+              elseif (Test-Path -PathType Leaf $Path) {
+                  Remove-Item $Path -Force;
+              }
+          }
+
+          # Check if we're on a tag
+          $OldErrorActionPref = $ErrorActionPreference;
+          $ErrorActionPreference = 'Continue';
+          git describe --exact-match --match 'v*' *> $null;
+          $isTagged = $?;
+          $ErrorActionPreference = $OldErrorActionPref;
+
+          Write-Output portable | Out-File Chatterino2/modes -Encoding ASCII;
+          if ($isTagged) {
+              # This is a release.
+              # Make sure, any existing `modes` file is overwritten for the user,
+              # for example when updating from nightly to stable.
+              $bundleBaseName = "JilChatChatterino.Portable";
+          }
+          else {
+              Write-Output nightly | Out-File Chatterino2/modes -Append -Encoding ASCII;
+              $bundleBaseName = "JilChatChatterino.Nightly.Portable";
+          }
+
+          $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower()
+          if ($architecture -eq 'arm64') {
+              $bundleBaseName = "Experimental-ARM64-$bundleBaseName"
+              $updaterArch = "aarch64"
+              $expectedUpdaterHash = $Env:C2_PORTABLE_INSTALLER_SHA256_ARM64
+          }
+          else {
+              $updaterArch = "x86_64"
+              $expectedUpdaterHash = $Env:C2_PORTABLE_INSTALLER_SHA256_X64
+          }
+
+          if ($Env:GITHUB_OUTPUT) {
+              # This is used in CI when creating the artifact
+              "C2_PORTABLE_BASE_NAME=$bundleBaseName" >> "$Env:GITHUB_OUTPUT"
+          }
+
+          Remove-IfExists "Chatterino2/updater.1";
+          New-Item "Chatterino2/updater.1" -ItemType Directory;
+
+          Invoke-RestMethod "https://github.com/Nerixyz/c2-portable-updater/releases/download/$($Env:C2_PORTABLE_INSTALLER_VERSION)/c2-portable-updater-$updaterArch-pc-windows-msvc.zip" -OutFile _portable-installer.zip;
+          $updaterHash = (Get-FileHash _portable-installer.zip).Hash.ToLower();
+          if ($updaterHash -ne $expectedUpdaterHash) {
+              Write-Error "Hash mismatch: expected $expectedUpdaterHash - got: $updaterHash";
+              exit 1
+          }
+
+          7z e -y _portable-installer.zip c2-portable-updater.exe;
+          Move-Item c2-portable-updater.exe "Chatterino2/updater.1/ChatterinoUpdater.exe" -Force;
+          7z e -so _portable-installer.zip LICENSE-MIT > "Chatterino2/updater.1/LICENSE";
+          Remove-IfExists _portable-installer.zip;
+
+          Remove-IfExists "$bundleBaseName.zip";
+          7z a "$bundleBaseName.zip" Chatterino2/;
         shell: powershell
 
       - name: Upload installer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           path: build/${{ steps.build-installer.outputs.C2_INSTALLER_BASE_NAME }}.exe
           name: ${{ steps.build-installer.outputs.C2_INSTALLER_BASE_NAME }}.exe
@@ -207,6 +392,23 @@ jobs:
 
           cd release-files
           shopt -s nullglob
+
+          # The plain Windows zips are portable installs too, so they update
+          # themselves: they're the portable package (with the "modes" file
+          # and the portable updater) under their usual name
+          for zip in chatterino-windows-*-Qt-*.zip; do
+            case "$zip" in
+              chatterino-windows-arm-*) portable=(Experimental-ARM64-JilChatChatterino*.Portable.zip) ;;
+              *) portable=(JilChatChatterino*.Portable.zip) ;;
+            esac
+            if [ "${#portable[@]}" -ne 1 ]; then
+              echo "Expected one portable package for $zip, found ${#portable[@]}"
+              exit 1
+            fi
+            echo "$zip is now a copy of ${portable[0]}"
+            cp -- "${portable[0]}" "$zip"
+          done
+
           files=(*)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No release files found"
@@ -244,7 +446,23 @@ jobs:
             awk -F"|" 'tolower($2) != "dependabot[bot]"' |
             sort -s -t"|" -k1,1nr |
             cut -d"|" -f3- > changes.txt
+          # What the pull requests wrote for users in changelog/, the files
+          # added since the last release. The update window shows these.
+          if [ -n "$previous" ]; then
+            notes_files="$(git diff --name-only --diff-filter=A "$previous" "$RELEASE_SHA" -- changelog/ | grep -v '/README\.md$' || true)"
+          else
+            notes_files="$(git ls-tree -r --name-only "$RELEASE_SHA" -- changelog/ | grep -v '/README\.md$' || true)"
+          fi
+          : > highlights.txt
+          for file in $notes_files; do
+            git show "$RELEASE_SHA:$file" | grep -E '^\s*[-*]\s+' >> highlights.txt || true
+          done
           {
+            if [ -s highlights.txt ]; then
+              printf "### Highlights\n\n"
+              cat highlights.txt
+              printf "\n"
+            fi
             printf "### What's Changed\n\n"
             if [ ! -s changes.txt ]; then
               echo "No changes since last release."

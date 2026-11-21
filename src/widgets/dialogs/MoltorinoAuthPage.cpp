@@ -210,10 +210,11 @@ private:
         layout->setContentsMargins(8, 8, 8, 8);
         layout->setSpacing(8);
 
-        auto *description = new QLabel(
-            "Sign in with Device Login. Leafyrino will open Twitch Activate "
-            "and copy an 8-character code for you to paste there.",
-            tab);
+        auto *description =
+            new QLabel("Sign in with Device Login. JilChat Chatterino will "
+                       "open Twitch Activate "
+                       "and copy an 8-character code for you to paste there.",
+                       tab);
         description->setWordWrap(true);
         layout->addWidget(description);
 
@@ -489,7 +490,7 @@ private:
         if (!opened)
         {
             box.setInformativeText(
-                "Leafyrino could not open Twitch automatically. Open "
+                "JilChat Chatterino could not open Twitch automatically. Open "
                 "https://www.twitch.tv/ yourself, then follow the same steps.");
         }
         box.exec();
@@ -601,8 +602,8 @@ private:
                                        Qt::WindowStaysOnTopHint);
                     box.setWindowTitle("Browser Error");
                     box.setIcon(QMessageBox::Warning);
-                    box.setText(
-                        "Leafyrino could not open your browser automatically.");
+                    box.setText("JilChat Chatterino could not open your "
+                                "browser automatically.");
                     box.setInformativeText("Please go to " + verificationUri +
                                            " and enter the code displayed.");
                     box.exec();
@@ -715,9 +716,10 @@ private:
         if (error == "slow_down" || message == "slow_down")
         {
             this->devicePollIntervalMs_ += 5000;
-            setLabelStatus(this->deviceStatusLabel_,
-                           "Twitch asked Leafyrino to poll more slowly. "
-                           "Still waiting for approval...");
+            setLabelStatus(
+                this->deviceStatusLabel_,
+                "Twitch asked JilChat Chatterino to poll more slowly. "
+                "Still waiting for approval...");
             this->devicePollTimer_->start(this->devicePollIntervalMs_);
             return;
         }

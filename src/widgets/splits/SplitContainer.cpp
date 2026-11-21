@@ -11,11 +11,13 @@
 #include "debug/AssertInGuiThread.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
 #include "singletons/Fonts.hpp"
+#include "singletons/Settings.hpp"
 #include "singletons/Theme.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/QMagicEnum.hpp"
 #include "widgets/helper/ChannelView.hpp"
 #include "widgets/helper/NotebookTab.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/splits/ClosedSplits.hpp"
 #include "widgets/splits/DraggedSplit.hpp"
@@ -142,6 +144,8 @@ Split *SplitContainer::appendNewSplit(bool openChannelNameDialog)
 
 void SplitContainer::insertSplit(Split *split, InsertOptions &&options)
 {
+    transitions::fadeChange(this);
+
     // Queue up save because: Split added
     getApp()->getWindows()->queueSave();
 
@@ -321,6 +325,13 @@ void SplitContainer::setSelected(Split *split)
         this->focusSplitRecursive(node);
         this->setPreferedTargetRecursive(node);
     }
+
+    // A tab with a name of its own shows the selected channel's paint
+    if (this->tab_ != nullptr && getSettings()->channelNamePaints)
+    {
+        // NotebookTab's own update() is protected; QWidget's is the same
+        this->tab_->QWidget::update();
+    }
 }
 
 void SplitContainer::setPreferedTargetRecursive(Node *node)
@@ -369,6 +380,8 @@ SplitContainer::Position SplitContainer::deleteSplit(Split *split)
 
     assertInGuiThread();
     assert(split != nullptr);
+
+    transitions::fadeChange(this);
 
     split->deleteLater();
     return this->releaseSplit(split);

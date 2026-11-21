@@ -22,10 +22,12 @@
 #include "util/Helpers.hpp"
 #include "util/IncognitoBrowser.hpp"
 #include "widgets/BaseWindow.hpp"
+#include "widgets/dialogs/HiddenSeventvPaintsDialog.hpp"
 #include "widgets/helper/FontSettingWidget.hpp"
 #include "widgets/settingspages/GeneralPageView.hpp"
 #include "widgets/settingspages/SettingWidget.hpp"
 
+#include <QCompleter>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
@@ -317,13 +319,26 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             removeTabShortcut + ".")
         ->addTo(layout);
 
+    SettingWidget::checkbox("Paints on channel names", s.channelNamePaints)
+        ->setTooltip(
+            "Draws a channel's name on its tab and in the channel bar in the "
+            "streamer's username paint. For 7TV paints of streamers who "
+            "haven't chatted, each channel's paint is asked from 7TV once.")
+        ->addTo(layout);
+
+    SettingWidget::checkbox("Animate paints on all tabs", s.animateAllTabPaints)
+        ->setTooltip("Moving paints on channel names move on every tab. Off: "
+                     "only on the selected tab and in the channel bar. Uses "
+                     "a little more CPU.")
+        ->addTo(layout);
+
     SettingWidget::checkbox("Always on top", s.windowTopMost)
-        ->setTooltip("Always keep Leafyrino as the top window.")
+        ->setTooltip("Always keep JilChat Chatterino as the top window.")
         ->addTo(layout);
 
 #ifdef USEWINSDK
     SettingWidget::checkbox("Start with Windows", s.autorun)
-        ->setTooltip("Start Leafyrino when your computer starts.")
+        ->setTooltip("Start JilChat Chatterino when your computer starts.")
         ->addTo(layout);
 #endif
     if (!BaseWindow::supportsCustomWindowFrame())
@@ -449,7 +464,8 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             return static_cast<MessageOverflow>(args.index);
         },
         false,
-        "Specify how Leafyrino will handle messages that exceed Twitch "
+        "Specify how JilChat Chatterino will handle messages that exceed "
+        "Twitch "
         "message limits");
     layout.addDropdown<std::underlying_type_t<UsernameRightClickBehavior>>(
         "Username right-click behavior",
@@ -466,7 +482,8 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             return static_cast<UsernameRightClickBehavior>(args.index);
         },
         false,
-        "Specify how Leafyrino will handle right-clicking a username in "
+        "Specify how JilChat Chatterino will handle right-clicking a username "
+        "in "
         "chat when not holding the modifier.");
     layout.addDropdown<std::underlying_type_t<UsernameRightClickBehavior>>(
         "Username right-click with modifier behavior",
@@ -483,7 +500,8 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             return static_cast<UsernameRightClickBehavior>(args.index);
         },
         false,
-        "Specify how Leafyrino will handle right-clicking a username in "
+        "Specify how JilChat Chatterino will handle right-clicking a username "
+        "in "
         "chat when holding down the modifier.");
     layout.addDropdown<std::underlying_type_t<Qt::KeyboardModifier>>(
         "Modifier for alternate right-click action",
@@ -552,9 +570,9 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::checkbox("Reduce opacity of message history",
                             s.fadeMessageHistory)
-        ->setTooltip(
-            "Reduce opacity of messages that were posted before Leafyrino "
-            "was started or while re-connecting.")
+        ->setTooltip("Reduce opacity of messages that were posted before "
+                     "JilChat Chatterino "
+                     "was started or while re-connecting.")
         ->addTo(layout);
 
     SettingWidget::checkbox("Hide deleted messages", s.hideModerated)
@@ -571,7 +589,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                      "match the width of Twitch web chat.")
         ->addTo(layout);
 
-    layout.addDropdown<QString>(
+    auto *timestampFormatDropdown = layout.addDropdown<QString>(
         "Message timestamp format",
         {"Disable", "h:mm", "hh:mm", "h:mm a", "hh:mm a", "h:mm:ss", "hh:mm:ss",
          "h:mm:ss a", "hh:mm:ss a", "h:mm:ss.zzz", "h:mm:ss.zzz a",
@@ -589,6 +607,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                                    : args.value;
         },
         true, "a = am/pm, zzz = milliseconds");
+    timestampFormatDropdown->completer()->setCaseSensitivity(Qt::CaseSensitive);
 
     SettingWidget::checkbox("Show header timestamps", s.showHeaderTimestamps)
         ->addTo(layout);
@@ -641,7 +660,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                             "switching applications.",
                             s.showLastMessageIndicator)
         ->setTooltip("Adds an underline below the most recent message "
-                     "sent before you tabbed out of Leafyrino.")
+                     "sent before you tabbed out of JilChat Chatterino.")
         ->addTo(layout);
 
     SettingWidget::dropdown("Line style", s.lastMessagePattern)->addTo(layout);
@@ -654,7 +673,7 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
     SettingWidget::checkbox("Animate", s.animateEmotes)->addTo(layout);
 
-    SettingWidget::checkbox("Animate only when Leafyrino is focused",
+    SettingWidget::checkbox("Animate only when JilChat Chatterino is focused",
                             s.animationsWhenFocused)
         ->addTo(layout);
 
@@ -751,11 +770,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"bttv"})
         ->addTo(layout);
     SettingWidget::checkbox("Send activity to BetterTTV", s.sendBTTVActivity)
-        ->setTooltip(
-            "When enabled, Leafyrino will signal an activity to BetterTTV "
-            "when you send a chat message. This is used for badges, "
-            " and personal emotes. When disabled, no activity "
-            "is sent and others won't see your cosmetics.")
+        ->setTooltip("When enabled, JilChat Chatterino will signal an activity "
+                     "to BetterTTV "
+                     "when you send a chat message. This is used for badges, "
+                     " and personal emotes. When disabled, no activity "
+                     "is sent and others won't see your cosmetics.")
         ->addKeywords({"bttv"})
         ->addTo(layout);
 
@@ -789,16 +808,18 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                      "(badges/paints/personal emotes) will get updated.")
         ->addTo(layout);
     SettingWidget::checkbox("Send activity to 7TV", s.sendSevenTVActivity)
-        ->setTooltip("When enabled, Leafyrino will signal an activity to 7TV "
-                     "when you send a chat message. This is used for badges, "
-                     "paints, and personal emotes. When disabled, no activity "
-                     "is sent and others won't see your cosmetics.")
+        ->setTooltip(
+            "When enabled, JilChat Chatterino will signal an activity to 7TV "
+            "when you send a chat message. This is used for badges, "
+            "paints, and personal emotes. When disabled, no activity "
+            "is sent and others won't see your cosmetics.")
         ->addKeywords({"seventv"})
         ->addTo(layout);
 
     layout.addTitle("Streamer Mode");
     layout.addDescription(
-        "Leafyrino can automatically change behavior if it detects that any "
+        "JilChat Chatterino can automatically change behavior if it detects "
+        "that any "
         "streaming software is running.\nSelect which things you want to "
         "change while streaming");
 
@@ -808,6 +829,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
     SettingWidget::checkbox("Hide usercard avatars",
                             s.streamerModeHideUsercardAvatars)
         ->setTooltip("Prevent potentially explicit avatars from showing.")
+        ->addTo(layout);
+
+    SettingWidget::checkbox("Hide usercard banners",
+                            s.streamerModeHideUsercardBanners)
+        ->setTooltip("Prevent potentially explicit banners from showing.")
         ->addTo(layout);
 
     SettingWidget::checkbox("Hide link thumbnails",
@@ -964,6 +990,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
 
         SettingWidget::checkbox("Receive beta updates", s.betaUpdates)
             ->addTo(layout);
+        SettingWidget::checkbox("Show a popup when an update is out",
+                                s.showUpdatePrompt)
+            ->setTooltip("Off: no popup on start. Checking for updates by "
+                         "hand still shows it.")
+            ->addTo(layout);
     }
     else
     {
@@ -1009,15 +1040,18 @@ void GeneralPage::initLayout(GeneralPageView &layout)
             "to point your browser extension to this copy of Chatterino. "
             "You may manually register it below.");
         layout.addButton("Register browser integration", [this] {
-            if (registerNmHost(getApp()->getPaths()))
+            const auto result = registerNmHost(getApp()->getPaths());
+            if (result)
             {
                 QMessageBox::information(this, "Registration Successful",
                                          "Browser integration registered.");
             }
             else
             {
-                QMessageBox::warning(this, "Registration Failed",
-                                     "Failed to register browser integration.");
+                QMessageBox::warning(
+                    this, "Registration Failed",
+                    "Failed to register browser integration:\n" +
+                        result.error());
             }
         });
     }
@@ -1051,6 +1085,33 @@ void GeneralPage::initLayout(GeneralPageView &layout)
                                 "Extension;IDs;separated;by;semicolons")
             ->addTo(layout, form);
     }
+
+#ifndef Q_OS_WIN
+    {
+        auto *note = layout.addDescription(
+            "A path to write the native messaging manifest to. The manifest is "
+            "already automatically created for Firefox and Google Chrome if "
+            "they are installed."
+#    ifdef Q_OS_LINUX
+            "\nYou may use $XDG_CONFIG_HOME or $XDG_DATA_HOME in the path."
+#    endif
+        );
+        note->setWordWrap(true);
+        note->setStyleSheet("color: #bbb");
+        layout.addWidget(note);
+
+        auto *form = new QFormLayout();
+        layout.addLayout(form);
+        SettingWidget::lineEdit("Custom manifest path",
+                                s.customNativeMessagingManifestPath,
+                                "/full/path/to/native/messaging/manifest.json")
+            ->addTo(layout, form);
+
+        SettingWidget::dropdown("Custom manifest format",
+                                s.customNativeMessagingManifestFormat)
+            ->addTo(layout);
+    }
+#endif
 
     layout.addTitle("AppData & Cache");
 
@@ -1267,6 +1328,58 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"bluzyrino", "founder", "donor", "supporter"})
         ->setTooltip(
             "Badges for Bluzyrino founders, donors, and special badges")
+        ->addTo(layout);
+    // The same switches as under JilChat Chatterino, so all badges can be
+    // turned on and off in one place
+    SettingWidget::checkbox("Folhinha", s.showBadgesFolhinha)
+        ->addKeywords({"folhinha", "folhinhabot"})
+        ->setTooltip("Developer, admin, and Plus badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("FFZ:AP", s.showBadgesFfzAp)
+        ->addKeywords({"ffz", "ffzap", "frankerfacez"})
+        ->setTooltip("Developer, helper, and supporter badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("DankChat", s.showBadgesDankChat)
+        ->addKeywords({"dankchat", "dank"})
+        ->setTooltip("Dev/contributor, QA, and supporter badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Chatlee", s.showBadgesChatlee)
+        ->addKeywords({"chatlee"})
+        ->setTooltip("The badge a Chatlee user picked to wear. Nothing is "
+                     "requested from Chatlee while this is off.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Solrino", s.showBadgesSolrino)
+        ->addKeywords({"solrino"})
+        ->setTooltip("The badge a Solrino user picked to wear.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Wydios", s.showBadgesWydios)
+        ->addKeywords({"wydios"})
+        ->setTooltip("The badge of a Wydios user, looked up per chatter.")
+        ->addTo(layout);
+    SettingWidget::checkbox("StreamNook", s.showBadgesStreamNook)
+        ->addKeywords({"streamnook", "nook"})
+        ->setTooltip("The badge a StreamNook member wears: member, supporter, "
+                     "subscriber and event badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Chatsen", s.showBadgesChatsen)
+        ->addKeywords({"chatsen"})
+        ->setTooltip("Developer, supporter, artist, and Patreon badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
+        ->addKeywords({"jilchat", "jil"})
+        ->setTooltip("JilChat badges")
+        ->addTo(layout);
+    SettingWidget::checkbox("JilTV", s.showBadgesJiltv)
+        ->addKeywords({"jiltv"})
+        ->setTooltip("The JilTV badge a chatter wears, next to their name.")
+        ->addTo(layout);
+    SettingWidget::checkbox("BadgeHQ", s.showBadgesBadgeHQ)
+        ->addKeywords({"badgehq", "badge hq", "supporter", "founder"})
+        ->setTooltip("Founder and supporter badges.")
+        ->addTo(layout);
+    SettingWidget::checkbox("Limerino", s.showBadgesLimerino)
+        ->addKeywords({"limerino"})
+        ->setTooltip("Founder and event badges.")
         ->addTo(layout);
     layout.addSeparator();
     SettingWidget::checkbox("Use custom FrankerFaceZ moderator badges",
@@ -1509,9 +1622,9 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->addTo(layout);
 
     SettingWidget::dropdown("Username paints", s.usernamePaintSource)
-        ->setTooltip("Whether names are drawn with their 7TV Paint or with "
-                     "their BetterTTV username effect. Automatic takes what "
-                     "a user has, and the 7TV Paint if it's both.")
+        ->setTooltip("Whether names are drawn with their JilTV or 7TV Paint "
+                     "or with their BetterTTV username effect. Automatic takes "
+                     "what a user has, a JilTV paint first.")
         ->addTo(layout);
     SettingWidget::checkbox("Show the paint's name when hovering a name",
                             s.showSevenTVPaintTooltip)
@@ -1530,6 +1643,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
     SettingWidget::checkbox("Display BetterTTV username effect outlines",
                             s.displayBttvUsernameEffectOutlines)
         ->addTo(layout);
+    layout.addButton("Manage hidden 7TV paints...", [this] {
+        auto *dialog = new HiddenSeventvPaintsDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
     {
         auto cb = [] {
             getApp()->getWindows()->invalidateChannelViewBuffers();

@@ -41,7 +41,6 @@ I will be using `2.3.4-beta.1` as the example release in this document.
         </release>
   ```
 
-- [ ] Updated version code in `.CI/chatterino-installer.iss`  
        This can only be "whole versions", so we have to "round it" to the next stable release.
 
   ```diff

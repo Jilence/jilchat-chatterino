@@ -108,7 +108,7 @@ protected:
 
 QDate messageDay(const MessagePtr &message)
 {
-    return message->serverReceivedTime.toLocalTime().date();
+    return message->timestamp.toLocalTime().date();
 }
 
 }  // namespace

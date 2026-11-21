@@ -32,6 +32,7 @@
 #include "providers/folhinha/FolhinhaBadges.hpp"
 #include "providers/homies/HomiesBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
+#include "providers/jiltv/Jiltv.hpp"
 #include "providers/moltorino/MoltorinoAuth.hpp"
 #include "providers/moltorino/MoltorinoSupporterBadges.hpp"
 #include "providers/publiclogs/PublicLogs.hpp"
@@ -567,8 +568,9 @@ bool isWarningAcknowledgeNotice(const QString &text)
 QString chatWarningAuthFallbackText(const QString &channelName)
 {
     return QString("You have an active warning in this channel. "
-                   "Authenticate in Settings -> Moltorino -> Authentication to "
-                   "view and acknowledge it in Leafyrino, or open "
+                   "Authenticate in Settings -> JilChat Chatterino -> "
+                   "Authentication to "
+                   "view and acknowledge it in JilChat Chatterino, or open "
                    "https://www.twitch.tv/%1 in your browser.")
         .arg(channelName);
 }
@@ -577,7 +579,8 @@ QString chatWarningMissingDetailsText(const QString &channelName)
 {
     return QString(
                "Your message was blocked because of an active warning, but "
-               "Leafyrino could not load the warning details yet. Try again in "
+               "JilChat Chatterino could not load the warning details yet. Try "
+               "again in "
                "a moment, or open https://www.twitch.tv/%1 in your browser to "
                "acknowledge it.")
         .arg(channelName);
@@ -602,7 +605,8 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
 {
     const auto reason = sanitizeChatWarningReason(warning.reason);
     const auto text =
-        QStringLiteral("Leafyrino: You received a warning: \"%1\" Acknowledge")
+        QStringLiteral(
+            "JilChat Chatterino: You received a warning: \"%1\" Acknowledge")
             .arg(reason);
     const auto timestamp = warning.createdAt.isValid()
                                ? warning.createdAt.toLocalTime().time()
@@ -612,12 +616,12 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
     builder.message().id = chatWarningMessageId(warning);
     builder.message().channelName = channel.getName();
     builder.message().loginName = QStringLiteral("leafyrino");
-    builder.message().displayName = QStringLiteral("Leafyrino");
-    builder.message().localizedName = QStringLiteral("Leafyrino");
+    builder.message().displayName = QStringLiteral("JilChat Chatterino");
+    builder.message().localizedName = QStringLiteral("JilChat Chatterino");
     builder.message().usernameColor = QColor("#FFA500");
-    builder.message().serverReceivedTime =
-        warning.createdAt.isValid() ? warning.createdAt
-                                    : QDateTime::currentDateTimeUtc();
+    builder.message().timestamp = warning.createdAt.isValid()
+                                      ? warning.createdAt
+                                      : QDateTime::currentDateTimeUtc();
     builder.message().messageText = text;
     builder.message().searchText = text;
     builder.message().flags.set(MessageFlag::System);
@@ -626,9 +630,9 @@ MessagePtr makeChatWarningMessage(const TwitchChannel &channel,
     builder.message().flags.set(MessageFlag::DoNotTriggerNotification);
 
     builder.emplace<TimestampElement>(timestamp);
-    builder.emplace<TextElement>("Leafyrino:", MessageElementFlag::Text,
-                                 MessageColor(QColor("#FFA500")),
-                                 FontStyle::ChatMediumBold);
+    builder.emplace<TextElement>(
+        "JilChat Chatterino:", MessageElementFlag::Text,
+        MessageColor(QColor("#FFA500")), FontStyle::ChatMediumBold);
     builder.emplace<TextElement>("You received a warning:",
                                  MessageElementFlag::Text, MessageColor::Text);
     builder.emplace<TextElement>(u"\"" % reason % u"\"",
@@ -905,6 +909,15 @@ TwitchChannel::TwitchChannel(const QString &name, bool anonymous)
                 });
             }
         });
+
+    // Twitch's bonus notice can be missed (for example while reconnecting),
+    // so live channels also check for a waiting bonus now and then
+    this->pointsBonusTimer_.setInterval(5 * 60 * 1000);
+    QObject::connect(&this->pointsBonusTimer_, &QTimer::timeout,
+                     &this->lifetimeGuard_, [this] {
+                         this->checkForPointsBonus();
+                     });
+    this->pointsBonusTimer_.start();
 
     QObject::connect(&this->sendWaitTimer_, &QTimer::timeout,
                      &this->lifetimeGuard_, [this] {
@@ -1459,6 +1472,63 @@ void TwitchChannel::onLiveStatusChanged(bool isLive, bool isInitialUpdate)
     }
 };
 
+void TwitchChannel::updateChannelInfo(const HelixChannel &info)
+{
+    this->updateStreamGame(info.gameName, info.gameId);
+
+    const auto previous = this->lastChannelInfo_;
+    this->lastChannelInfo_ = {
+        .title = info.title,
+        .gameId = info.gameId,
+    };
+
+    // the first poll only tells us the starting values
+    if (!previous || !getSettings()->showStreamChangeMessages)
+    {
+        return;
+    }
+
+    const HelixMinimalUser channel{
+        .id = this->roomId(),
+        .login = this->getName(),
+        .displayName = this->nameOptions.actualDisplayName,
+    };
+
+    if (info.title != previous->title)
+    {
+        this->addMessage(MessageBuilder::makeStreamTitleChangedSystemMessage(
+                             channel, info.title),
+                         MessageContext::Original);
+    }
+    if (info.gameId != previous->gameId)
+    {
+        this->addMessage(MessageBuilder::makeStreamGameChangedSystemMessage(
+                             channel, info.gameName),
+                         MessageContext::Original);
+    }
+}
+
+void TwitchChannel::announceSharedChatParticipants()
+{
+    if (!getSettings()->showStreamChangeMessages)
+    {
+        return;
+    }
+
+    const HelixMinimalUser channel{
+        .id = this->roomId(),
+        .login = this->getName(),
+        .displayName = this->nameOptions.actualDisplayName,
+    };
+
+    this->addMessage(
+        this->sharedChatSessionParticipants_.empty()
+            ? MessageBuilder::makeSharedChatEndedSystemMessage(channel)
+            : MessageBuilder::makeSharedChatSystemMessage(
+                  channel, this->sharedChatSessionParticipants_),
+        MessageContext::Original);
+}
+
 void TwitchChannel::updateStreamTitle(const QString &title)
 {
     {
@@ -1570,6 +1640,7 @@ void TwitchChannel::roomIdChanged()
     this->refreshFFZChannelEmotes(false);
     this->refreshBTTVChannelEmotes(false);
     this->refreshSevenTVChannelEmotes(false);
+    Jiltv::instance().loadChannelEmotes(roomId);
     this->refreshPinnedMessage();
 }
 
@@ -2996,6 +3067,12 @@ void TwitchChannel::addSeventvEmote(
                                            LiveUpdateEmote{*emote});
 }
 
+void TwitchChannel::addJiltvEmoteUpdate(bool isEmoteAdd, const QString &actor,
+                                        const LiveUpdateEmote &emote)
+{
+    this->addOrReplaceLiveUpdatesAddRemove(isEmoteAdd, "JilTV", actor, emote);
+}
+
 void TwitchChannel::updateSeventvEmote(
     const seventv::eventapi::EmoteUpdateDispatch &dispatch)
 {
@@ -3153,8 +3230,8 @@ bool TwitchChannel::tryReplaceLastLiveUpdateAddOrRemove(
         return false;
     }
     auto last = this->lastLiveUpdateMessage_.lock();
-    if (!last || !last->flags.has(op) ||
-        last->serverReceivedTime < now.addSecs(-5) || last->loginName != actor)
+    if (!last || !last->flags.has(op) || last->timestamp < now.addSecs(-5) ||
+        last->loginName != actor)
     {
         return false;
     }
@@ -3340,7 +3417,7 @@ bool TwitchChannel::loadOlderMessagesFromLogs()
     MessagePtr oldestShown;
     for (const auto &message : this->getMessageSnapshot())
     {
-        if (message->serverReceivedTime.isValid() && !message->id.isEmpty())
+        if (message->timestamp.isValid() && !message->id.isEmpty())
         {
             oldestShown = message;
             break;
@@ -3350,7 +3427,7 @@ bool TwitchChannel::loadOlderMessagesFromLogs()
     if (anchorId != state.anchorId || !state.cursor.isValid())
     {
         state.anchorId = anchorId;
-        state.cursor = oldestShown ? oldestShown->serverReceivedTime.toUTC()
+        state.cursor = oldestShown ? oldestShown->timestamp.toUTC()
                                    : QDateTime::currentDateTimeUtc();
         state.doneFrom = {};
         state.exhausted = false;
@@ -3495,8 +3572,8 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
 
             // Day separators between days, like the recent messages have...
             const auto localDay = [](const MessagePtr &message) {
-                return message->serverReceivedTime.isValid()
-                           ? message->serverReceivedTime.toLocalTime().date()
+                return message->timestamp.isValid()
+                           ? message->timestamp.toLocalTime().date()
                            : QDate();
             };
             std::vector<MessagePtr> messages;
@@ -3534,7 +3611,7 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
                 }
                 const bool startsWithSeparator =
                     first->flags.has(MessageFlag::System) &&
-                    !first->serverReceivedTime.isValid();
+                    !first->timestamp.isValid();
                 if (shownDay.isValid() && shownDay != previousDay &&
                     !startsWithSeparator)
                 {
@@ -3555,8 +3632,7 @@ void TwitchChannel::fetchOlderLogPage(int pagesLeft, int wanted)
             // The oldest shown message changed; keep paging from the cursor.
             for (const auto &message : messages)
             {
-                if (message->serverReceivedTime.isValid() &&
-                    !message->id.isEmpty())
+                if (message->timestamp.isValid() && !message->id.isEmpty())
                 {
                     state.anchorId = message->id;
                     break;
@@ -3727,7 +3803,8 @@ void TwitchChannel::refreshPubSub()
                     authUserId, auth.token);
             }
 
-            if (getSettings()->enableChannelPointsDisplay)
+            if (getSettings()->enableChannelPointsDisplay ||
+                getSettings()->autoClaimPointsBonus)
             {
                 getApp()->getTwitchPubSub()->listenToUserChannelPoints(
                     authUserId, auth.token);
@@ -5433,6 +5510,21 @@ void TwitchChannel::handleUserPointsUpdate(const QJsonObject &payload)
 
     const QString type = payload.value("type").toString();
 
+    if (type == "claim-available")
+    {
+        const auto claimId = payload.value("data")
+                                 .toObject()
+                                 .value("claim")
+                                 .toObject()
+                                 .value("id")
+                                 .toString();
+        if (!claimId.isEmpty())
+        {
+            this->claimPointsBonus(claimId);
+        }
+        return;
+    }
+
     if (type != "points-earned" && type != "points-spent")
     {
         return;
@@ -6201,6 +6293,8 @@ void TwitchChannel::refreshChannelPoints()
                                                       points);
                 channel->lastChannelPointsError_.clear();
                 channel->channelPointsChanged.invoke();
+                // A bonus may already be waiting from before the chat was open
+                channel->checkForPointsBonus();
             });
         },
         [weak, requestToken](const QString &error) {
@@ -6235,6 +6329,109 @@ void TwitchChannel::refreshChannelPoints()
         });
 }
 
+void TwitchChannel::checkForPointsBonus()
+{
+    assertInGuiThread();
+
+    if (!getSettings()->autoClaimPointsBonus || this->roomId().isEmpty() ||
+        !this->isLive() || this->pointsBonusCheckInFlight_ ||
+        !this->pointsBonusClaimInFlight_.isEmpty())
+    {
+        return;
+    }
+
+    const auto auth = MoltorinoAuth::resolveCurrentUserToken();
+    if (!auth.hasToken() || authTokenBelongsToChannel(auth, *this))
+    {
+        return;
+    }
+
+    this->pointsBonusCheckInFlight_ = true;
+    const auto weak = this->weak_from_this();
+    auto done = [weak](const QString &claimId) {
+        runInGuiThread([weak, claimId] {
+            auto shared = std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+            if (!shared)
+            {
+                return;
+            }
+            shared->pointsBonusCheckInFlight_ = false;
+            if (!claimId.isEmpty())
+            {
+                shared->claimPointsBonus(claimId);
+            }
+        });
+    };
+
+    TwitchGql::getAvailablePointsBonus(
+        this->getName(), auth.token, done,
+        [done, name = this->getName()](const QString &error) {
+            qCDebug(chatterinoTwitch)
+                << "[Points] Couldn't check for a bonus in" << name << ':'
+                << error;
+            done({});
+        });
+}
+
+void TwitchChannel::claimPointsBonus(const QString &claimId)
+{
+    assertInGuiThread();
+
+    if (!getSettings()->autoClaimPointsBonus || claimId.isEmpty() ||
+        claimId == this->pointsBonusClaimInFlight_ ||
+        claimId == this->lastClaimedPointsBonus_ || this->roomId().isEmpty())
+    {
+        return;
+    }
+
+    const auto auth = MoltorinoAuth::resolveCurrentUserToken();
+    if (!auth.hasToken() || authTokenBelongsToChannel(auth, *this))
+    {
+        return;
+    }
+
+    this->pointsBonusClaimInFlight_ = claimId;
+    const auto weak = this->weak_from_this();
+
+    TwitchGql::claimPointsBonus(
+        this->roomId(), claimId, auth.token,
+        [weak, claimId](qint64 earned) {
+            runInGuiThread([weak, claimId, earned] {
+                auto shared =
+                    std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+                if (!shared)
+                {
+                    return;
+                }
+                shared->pointsBonusClaimInFlight_.clear();
+                shared->lastClaimedPointsBonus_ = claimId;
+                qCDebug(chatterinoTwitch)
+                    << "[Points] Claimed a bonus of" << earned << "in"
+                    << shared->getName();
+                shared->addSystemMessage(
+                    earned > 0 ? QString("Claimed %1 bonus channel points.")
+                                     .arg(QLocale().toString(earned))
+                               : QString("Claimed your bonus channel points."));
+                // The balance next to the chat box catches up straight away
+                shared->refreshChannelPointsIfStale(true);
+            });
+        },
+        [weak, claimId](const QString &error) {
+            runInGuiThread([weak, claimId, error] {
+                auto shared =
+                    std::dynamic_pointer_cast<TwitchChannel>(weak.lock());
+                if (!shared)
+                {
+                    return;
+                }
+                shared->pointsBonusClaimInFlight_.clear();
+                qCWarning(chatterinoTwitch)
+                    << "[Points] Couldn't claim the bonus in"
+                    << shared->getName() << ':' << error;
+            });
+        });
+}
+
 qint64 TwitchChannel::channelPointBalance() const
 {
     return this->channelPoints_.load();
@@ -6245,15 +6442,15 @@ bool TwitchChannel::isChannelPointsFetchInFlight() const
     return this->channelPointsFetchInFlight_.load();
 }
 
-bool TwitchChannel::shouldShowChannelPoints() const
+bool TwitchChannel::hasUnlimitedChannelPoints() const
 {
     const auto auth = MoltorinoAuth::resolveCurrentUserToken();
     if (auth.hasToken() && authTokenHasKnownIdentity(auth))
     {
-        return !authTokenBelongsToChannel(auth, *this);
+        return authTokenBelongsToChannel(auth, *this);
     }
 
-    return !this->isBroadcaster();
+    return this->isBroadcaster();
 }
 
 void TwitchChannel::setChannelPointBalance(qint64 balance)
@@ -6310,8 +6507,16 @@ void TwitchChannel::refreshSharedChatSessionState()
                     QDateTime::currentDateTime();
                 this->nextSharedChatSessionUpdateTimer_.stop();
 
+                const bool wasInSession =
+                    !this->sharedChatSessionParticipantIds_.isEmpty();
+
                 this->sharedChatSessionParticipants_.clear();
                 this->sharedChatSessionParticipantIds_.clear();
+
+                if (wasInSession)
+                {
+                    this->announceSharedChatParticipants();
+                }
 
                 this->sharedChatStatusChanged.invoke({});
 
@@ -6353,6 +6558,9 @@ void TwitchChannel::refreshSharedChatSessionState()
                         return;
                     }
 
+                    const auto previousIds =
+                        this->sharedChatSessionParticipantIds_;
+
                     this->sharedChatSessionParticipants_.clear();
                     this->sharedChatSessionParticipantIds_.clear();
 
@@ -6368,6 +6576,11 @@ void TwitchChannel::refreshSharedChatSessionState()
                     }
 
                     this->nextSharedChatSessionUpdateTimer_.start();
+
+                    if (this->sharedChatSessionParticipantIds_ != previousIds)
+                    {
+                        this->announceSharedChatParticipants();
+                    }
 
                     this->sharedChatStatusChanged.invoke(
                         this->sharedChatSessionParticipants_);

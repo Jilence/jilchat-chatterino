@@ -206,6 +206,30 @@ public:
         return nullptr;
     }
 
+    ChatleeBadges *getChatleeBadges() override
+    {
+        assert(!"getChatleeBadges was called without being initialized");
+        return nullptr;
+    }
+
+    WydiosBadges *getWydiosBadges() override
+    {
+        assert(!"getWydiosBadges was called without being initialized");
+        return nullptr;
+    }
+
+    SolrinoBadges *getSolrinoBadges() override
+    {
+        assert(!"getSolrinoBadges was called without being initialized");
+        return nullptr;
+    }
+
+    StreamNookBadges *getStreamNookBadges() override
+    {
+        assert(!"getStreamNookBadges was called without being initialized");
+        return nullptr;
+    }
+
     ChatAutomationController *getChatAutomations() override
     {
         return nullptr;
@@ -280,6 +304,13 @@ public:
     {
         assert(false && "EmptyApplication::getSeventvPaints was called "
                         "without being initialized");
+        return nullptr;
+    }
+
+    UrlShortener *getUrlShortener() override
+    {
+        assert(false && "EmptyApplication::getUrlShortener was called without "
+                        "being initialized");
         return nullptr;
     }
 
@@ -390,6 +421,13 @@ public:
         assert(false &&
                "EmptyApplication::getKickChatServer was called without "
                "being initialized");
+        return nullptr;
+    }
+
+    TikTokChatServer *getTikTokChatServer() override
+    {
+        assert(false && "EmptyApplication::getTikTokChatServer was called "
+                        "without being initialized");
         return nullptr;
     }
 

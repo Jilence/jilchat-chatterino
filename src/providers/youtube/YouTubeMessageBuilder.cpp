@@ -253,7 +253,7 @@ YouTubeMessageBuilder::YouTubeMessageBuilder(YouTubeChannel *channel,
     : channel_(channel)
 {
     this->message().platform = MessagePlatform::YouTube;
-    this->message().serverReceivedTime = time;
+    this->message().timestamp = time;
 }
 
 std::pair<MessagePtrMut, HighlightAlert> YouTubeMessageBuilder::makeChatMessage(

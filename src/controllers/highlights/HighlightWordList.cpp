@@ -462,7 +462,7 @@ bool HighlightWordList::appliesToPlatform(MessagePlatform platform) const
         case HighlightWordListPlatform::Kick:
             return platform == MessagePlatform::Kick;
         case HighlightWordListPlatform::TikTok:
-            return false;
+            return platform == MessagePlatform::TikTok;
     }
     return true;
 }

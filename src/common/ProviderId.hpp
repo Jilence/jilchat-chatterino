@@ -9,6 +9,7 @@ namespace chatterino {
 enum class ProviderId {
     Twitch,
     Kick,
+    TikTok,
 };
 
 }

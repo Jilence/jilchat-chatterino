@@ -15,6 +15,7 @@
 #include "widgets/buttons/LabelButton.hpp"
 #include "widgets/buttons/TitlebarButton.hpp"
 #include "widgets/buttons/TitlebarButtons.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Label.hpp"
 #include "widgets/Window.hpp"
 
@@ -26,6 +27,10 @@
 #include <QWindow>
 
 #include <functional>
+
+#ifdef Q_OS_MACOS
+#    include "util/MacOsHelpers.h"
+#endif
 
 #ifdef USEWINSDK
 // clang-format off
@@ -424,12 +429,18 @@ void BaseWindow::setTopMost(bool topMost)
         this->tryApplyTopMost();
     }
 #else
-    auto isVisible = this->isVisible();
-    this->setWindowFlag(Qt::WindowStaysOnTopHint, topMost);
-    if (isVisible)
+    auto flags = this->windowFlags();
+    flags.setFlag(Qt::WindowStaysOnTopHint, topMost);
+    this->overrideWindowFlags(flags);
+
+    if (auto *window = this->windowHandle())
     {
-        this->show();
+        window->setFlag(Qt::WindowStaysOnTopHint, topMost);
     }
+#endif
+
+#ifdef Q_OS_MACOS
+    this->setMacOSWindowManagedIfTopMost(topMost);
 #endif
 
     this->topMostChanged(this->isTopMost_);
@@ -454,6 +465,20 @@ void BaseWindow::tryApplyTopMost()
 
     ::SetWindowPos(*hwnd, this->isTopMost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0,
                    0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+#endif
+
+#ifdef Q_OS_MACOS
+void BaseWindow::setMacOSWindowManagedIfTopMost(bool topMost)
+{
+    // If a window is elevated to the top, it will stop showing up in
+    // things like Mission Control. This manually tells macOS that
+    // we want this window to still be managed.
+
+    if (topMost)
+    {
+        setMacOSWindowManaged(*this);
+    }
 }
 #endif
 
@@ -783,11 +808,26 @@ void BaseWindow::moveEvent(QMoveEvent *event)
 
 void BaseWindow::closeEvent(QCloseEvent *)
 {
+    if (this->flags_.has(DisableLayoutSave) && !this->flags_.has(DontFocus))
+    {
+        transitions::fadeOutWindow(this);
+    }
     this->closing.invoke();
 }
 
-void BaseWindow::showEvent(QShowEvent *)
+void BaseWindow::showEvent(QShowEvent *event)
 {
+    if (!event->spontaneous() && !this->flags_.has(DontFocus))
+    {
+        // Main windows remember their position, so only others glide
+        transitions::fadeInWindow(this,
+                                  this->flags_.has(DisableLayoutSave) ? 14 : 0);
+    }
+
+#ifdef Q_OS_MACOS
+    this->setMacOSWindowManagedIfTopMost(this->isTopMost());
+#endif
+
 #ifdef Q_OS_WIN
     if (this->flags_.has(BoundsCheckOnShow))
     {

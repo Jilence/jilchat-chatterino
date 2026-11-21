@@ -6,6 +6,9 @@
 
 #include "Application.hpp"
 #include "common/Common.hpp"
+#include "common/Credentials.hpp"
+#include "common/network/NetworkRequest.hpp"
+#include "common/network/NetworkResult.hpp"
 #include "common/QLogging.hpp"
 #include "controllers/accounts/AccountController.hpp"
 #include "controllers/automod/AutoModReviewController.hpp"
@@ -28,13 +31,17 @@
 #include "providers/colors/ColorProvider.hpp"
 #include "providers/emoji/Emojis.hpp"
 #include "providers/jilchat/JilChatVoice.hpp"
+#include "providers/jiltv/JiltvAuth.hpp"
 #include "providers/kick/KickApi.hpp"
 #include "providers/kick/KickChannel.hpp"
 #include "providers/kick/KickChatServer.hpp"
+#include "providers/links/EmoteLinkPreview.hpp"
 #include "providers/links/LinkInfo.hpp"
 #include "providers/links/LinkResolver.hpp"
 #include "providers/seventv/paints/Paint.hpp"
 #include "providers/seventv/SeventvPaints.hpp"
+#include "providers/tiktok/TikTokChannel.hpp"
+#include "providers/tiktok/TikTokChatServer.hpp"
 #include "providers/translation/Translator.hpp"
 #include "providers/twitch/TwitchAccount.hpp"
 #include "providers/twitch/TwitchChannel.hpp"
@@ -51,6 +58,7 @@
 #    include "singletons/ThemeVideoDecoder.hpp"
 #endif
 #include "singletons/WindowManager.hpp"
+#include "util/AnimatedPaintTick.hpp"
 #include "util/Clipboard.hpp"
 #include "util/DistanceBetweenPoints.hpp"
 #include "util/Helpers.hpp"
@@ -65,6 +73,7 @@
 #include "widgets/dialogs/UserInfoPopup.hpp"
 #include "widgets/helper/ScrollbarHighlight.hpp"
 #include "widgets/helper/SearchPopup.hpp"
+#include "widgets/helper/Transitions.hpp"
 #include "widgets/Notebook.hpp"
 #include "widgets/Scrollbar.hpp"
 #include "widgets/splits/Split.hpp"
@@ -90,12 +99,18 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
+#include <QRegularExpression>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QSet>
 #include <QSlider>
@@ -846,7 +861,7 @@ QMenu *addEmoteContextMenuItems(QMenu *menu, const Emote &emote,
                 crossPlatformCopy(url.string);
             });
             openMenu->addAction("&" + factor + "x link", [url = image->url()] {
-                QDesktopServices::openUrl(QUrl(url.string));
+                openWebUrl(QUrl(url.string));
             });
         }
     };
@@ -903,9 +918,1279 @@ QMenu *addEmoteContextMenuItems(QMenu *menu, const Emote &emote,
     return openMenu;
 }
 
+/// Where an emote set lives
+enum class SetProvider : std::uint8_t { SevenTv, Jiltv, Bttv };
+
+QString providerName(SetProvider provider)
+{
+    switch (provider)
+    {
+        case SetProvider::SevenTv:
+            return QStringLiteral("7TV");
+        case SetProvider::Jiltv:
+            return QStringLiteral("JilTV");
+        case SetProvider::Bttv:
+            return QStringLiteral("BTTV");
+    }
+    return {};
+}
+
+/// An emote set the signed-in user may add emotes to
+struct EditableEmoteSet {
+    QString id;
+    QString name;
+    /// Empty for the user's own sets, else whose set it is
+    QString owner;
+    /// BTTV: the BetterTTV user ID of the set's owner
+    QString ownerId;
+    /// BTTV: the Twitch user ID of the set's owner
+    QString ownerTwitchId;
+    /// The Twitch channel whose chat shows this set live, when it is the
+    /// active one there; that chat announces changes itself
+    QString liveIn;
+};
+
+/// The sets a provider's login may change: the user's own and those of the
+/// channels they're an editor of. Loaded once and kept for a few minutes.
+struct EditableEmoteSets {
+    QString twitchUserId;
+    /// 7TV and BTTV: the token from the badge picker
+    QString token;
+    /// BTTV: your BetterTTV user ID
+    QString bttvUserId;
+    std::vector<EditableEmoteSet> sets;
+    QDateTime loadedAt;
+    bool loading = false;
+    /// Set when the last load failed or there is no login
+    QString problem;
+    std::vector<std::function<void()>> waiting;
+};
+
+EditableEmoteSets &editableSets(SetProvider provider)
+{
+    static std::array<EditableEmoteSets, 3> cache;
+    return cache.at(static_cast<size_t>(provider));
+}
+
+void sevenTvGql(
+    const QString &token, const QString &query, const QJsonObject &variables,
+    const std::function<void(const QJsonObject &, const QString &)> &done)
+{
+    NetworkRequest(QStringLiteral("https://api.7tv.app/v4/gql"),
+                   NetworkRequestType::Post)
+        .header("Authorization", "Bearer " + token.toUtf8())
+        .json(QJsonObject{{"query", query}, {"variables", variables}})
+        .timeout(15000)
+        .onSuccess([done](const NetworkResult &result) {
+            const auto json = result.parseJson();
+            const auto errors = json.value(QStringLiteral("errors")).toArray();
+            done(json.value(QStringLiteral("data")).toObject(),
+                 errors.isEmpty()
+                     ? QString()
+                     : errors.first().toObject().value("message").toString(
+                           QStringLiteral("not allowed")));
+        })
+        .onError([done](const NetworkResult &result) {
+            if (result.status() == 401)
+            {
+                done({}, QStringLiteral("7TV login expired, connect it again "
+                                        "in the badge picker"));
+                return;
+            }
+            done({},
+                 QStringLiteral("couldn't reach 7TV: ") + result.formatError());
+        })
+        .execute();
+}
+
+/// A request to the BetterTTV API with the token from the badge picker.
+/// `done` gets the answer, or an error to show.
+void bttvRequest(
+    NetworkRequestType type, const QString &path,
+    const std::optional<QJsonObject> &body,
+    const std::function<void(const QJsonValue &, const QString &)> &done)
+{
+    auto request =
+        NetworkRequest(
+            QUrl(QStringLiteral("https://api.betterttv.net/3/") + path), type)
+            .header("Authorization",
+                    "Bearer " + editableSets(SetProvider::Bttv).token.toUtf8())
+            .header("Accept", "application/json")
+            .timeout(15000);
+    if (body)
+    {
+        request = std::move(request).json(*body);
+    }
+    std::move(request)
+        .onSuccess([done](const NetworkResult &result) {
+            done(result.parseJsonValue(), {});
+        })
+        .onError([done](const NetworkResult &result) {
+            if (result.status() == 401)
+            {
+                done({}, QStringLiteral("BTTV login expired, connect it "
+                                        "again in the badge picker"));
+                return;
+            }
+            const auto message =
+                result.parseJson().value(QStringLiteral("message")).toString();
+            done({}, message.isEmpty()
+                         ? QStringLiteral("couldn't reach BTTV: ") +
+                               result.formatError()
+                         : message);
+        })
+        .execute();
+}
+
+void fetchBttvSets(const std::function<void(std::vector<EditableEmoteSet>,
+                                            const QString &)> &finish)
+{
+    const auto userId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+    // The badge picker keeps the BetterTTV login under this name
+    Credentials::instance().get(
+        QStringLiteral("bttv"), userId, qApp, [finish](const QString &token) {
+            editableSets(SetProvider::Bttv).token = token;
+            if (token.isEmpty())
+            {
+                finish({}, QStringLiteral("Connect BTTV in the badge picker "
+                                          "first"));
+                return;
+            }
+            // You, then the channels you may manage (your dashboards)
+            bttvRequest(
+                NetworkRequestType::Get, QStringLiteral("account"),
+                std::nullopt,
+                [finish](const QJsonValue &account, const QString &error) {
+                    const auto me = account.toObject();
+                    if (!error.isEmpty() || me.value("id").toString().isEmpty())
+                    {
+                        finish({}, error.isEmpty()
+                                       ? QStringLiteral("BTTV didn't accept "
+                                                        "the login")
+                                       : error);
+                        return;
+                    }
+                    editableSets(SetProvider::Bttv).bttvUserId =
+                        me.value("id").toString();
+                    bttvRequest(
+                        NetworkRequestType::Get,
+                        QStringLiteral("account/dashboards"), std::nullopt,
+                        [finish, me](const QJsonValue &value, const QString &) {
+                            // Each user whose sets you may change
+                            struct Owner {
+                                QString id;
+                                QString login;
+                                QString name;
+                                QString twitchId;
+                            };
+                            std::vector<Owner> owners{{
+                                me.value("id").toString(),
+                                me.value("name").toString(),
+                                {},
+                                me.value("providerId").toString(),
+                            }};
+                            const auto dashboardList = value.toArray();
+                            for (const auto &dashboard : dashboardList)
+                            {
+                                const auto d = dashboard.toObject();
+                                const auto id = d.value("id").toString();
+                                if (id.isEmpty() || id == owners.front().id)
+                                {
+                                    continue;
+                                }
+                                owners.push_back({
+                                    id,
+                                    d.value("name").toString(),
+                                    d.value("displayName")
+                                        .toString(d.value("name").toString()),
+                                    d.value("providerId").toString(),
+                                });
+                            }
+                            // Their sets and which one is live in their chat
+                            auto sets = std::make_shared<
+                                std::vector<EditableEmoteSet>>();
+                            auto left =
+                                std::make_shared<size_t>(owners.size() * 2);
+                            auto primary =
+                                std::make_shared<QHash<QString, QString>>();
+                            auto lastError = std::make_shared<QString>();
+                            auto ownerSets = std::make_shared<
+                                std::vector<std::vector<EditableEmoteSet>>>(
+                                owners.size());
+                            const auto oneDone = [=] {
+                                if (--*left != 0)
+                                {
+                                    return;
+                                }
+                                for (size_t i = 0; i < owners.size(); ++i)
+                                {
+                                    // Everyone has the default set, the
+                                    // channel's own emotes, which BTTV
+                                    // names by the user's ID and doesn't
+                                    // list among the sets
+                                    if (lastError->isEmpty())
+                                    {
+                                        (*ownerSets)[i].insert(
+                                            (*ownerSets)[i].begin(),
+                                            {
+                                                .id = owners[i].id,
+                                                .name =
+                                                    QStringLiteral("Default"),
+                                                .owner = owners[i].name,
+                                                .ownerId = owners[i].id,
+                                                .ownerTwitchId =
+                                                    owners[i].twitchId,
+                                                .liveIn = {},
+                                            });
+                                    }
+                                    for (const auto &ownerSet : (*ownerSets)[i])
+                                    {
+                                        auto set = ownerSet;
+                                        // No primary set: the default one
+                                        // is shown
+                                        auto live =
+                                            primary->value(owners[i].id);
+                                        if (live.isEmpty())
+                                        {
+                                            live = owners[i].id;
+                                        }
+                                        if (live == set.id)
+                                        {
+                                            set.liveIn = owners[i].login;
+                                        }
+                                        sets->push_back(set);
+                                    }
+                                }
+                                finish(std::move(*sets),
+                                       sets->empty() ? *lastError : QString());
+                            };
+                            for (size_t i = 0; i < owners.size(); ++i)
+                            {
+                                const auto &owner = owners[i];
+                                bttvRequest(
+                                    NetworkRequestType::Get,
+                                    QStringLiteral("users/%1/emote_sets")
+                                        .arg(owner.id),
+                                    std::nullopt,
+                                    [=](const QJsonValue &list,
+                                        const QString &error) {
+                                        if (!error.isEmpty())
+                                        {
+                                            *lastError = error;
+                                        }
+                                        // A list, or one wrapped in an object
+                                        auto array = list.toArray();
+                                        for (const auto *key :
+                                             {"emoteSets", "emote_sets",
+                                              "data"})
+                                        {
+                                            if (array.isEmpty())
+                                            {
+                                                array = list.toObject()
+                                                            .value(key)
+                                                            .toArray();
+                                            }
+                                        }
+                                        for (const auto &set :
+                                             std::as_const(array))
+                                        {
+                                            const auto o = set.toObject();
+                                            (*ownerSets)[i].push_back({
+                                                .id = o.value("id").toString(),
+                                                .name =
+                                                    o.value("name").toString(),
+                                                .owner = owner.name,
+                                                .ownerId = owner.id,
+                                                .ownerTwitchId = owner.twitchId,
+                                                .liveIn = {},
+                                            });
+                                        }
+                                        oneDone();
+                                    });
+                                bttvRequest(
+                                    NetworkRequestType::Get,
+                                    QStringLiteral("users/%1").arg(owner.id),
+                                    std::nullopt,
+                                    [=](const QJsonValue &user,
+                                        const QString &) {
+                                        primary->insert(
+                                            owner.id,
+                                            user.toObject()
+                                                .value("primaryEmoteSetId")
+                                                .toString());
+                                        oneDone();
+                                    });
+                            }
+                        });
+                });
+        });
+}
+
+/// A GraphQL request to the provider with the user's login
+void setsRequest(
+    SetProvider provider, const QString &query, const QJsonObject &variables,
+    const std::function<void(const QJsonObject &, const QString &)> &done)
+{
+    if (provider == SetProvider::SevenTv)
+    {
+        sevenTvGql(editableSets(provider).token, query, variables, done);
+        return;
+    }
+    JiltvAuth::instance().graphql(
+        query, variables,
+        [done](const QJsonObject &data) {
+            done(data, {});
+        },
+        [done](const QString &error) {
+            done({}, error);
+        });
+}
+
+void fetchSevenTvSets(const std::function<void(std::vector<EditableEmoteSet>,
+                                               const QString &)> &finish)
+{
+    const auto userId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+    // The badge picker keeps the 7TV login under this name
+    Credentials::instance().get(
+        QStringLiteral("7tv"), userId, qApp, [finish](const QString &token) {
+            editableSets(SetProvider::SevenTv).token = token;
+            if (token.isEmpty())
+            {
+                finish({}, QStringLiteral("Connect 7TV in the badge picker "
+                                          "first"));
+                return;
+            }
+            static const auto query = QStringLiteral(R"(
+query EditableSets {
+  users { me {
+    mainConnection { platformUsername }
+    style { activeEmoteSetId }
+    ownedEmoteSets { id name kind }
+    editorFor {
+      state
+      permissions { emoteSet { manage } }
+      user {
+        mainConnection { platformUsername platformDisplayName }
+        style { activeEmoteSetId }
+        ownedEmoteSets { id name kind }
+      }
+    }
+  } }
+})");
+            sevenTvGql(
+                token, query, {},
+                [finish](const QJsonObject &data, const QString &error) {
+                    const auto me =
+                        data.value("users").toObject().value("me").toObject();
+                    if (me.isEmpty())
+                    {
+                        finish({}, error.isEmpty()
+                                       ? QStringLiteral(
+                                             "7TV didn't accept the login, "
+                                             "connect it again in the badge "
+                                             "picker")
+                                       : error);
+                        return;
+                    }
+                    std::vector<EditableEmoteSet> sets;
+                    const auto addSets = [&sets](const QJsonObject &user,
+                                                 const QString &owner) {
+                        const auto active = user.value("style")
+                                                .toObject()
+                                                .value("activeEmoteSetId")
+                                                .toString();
+                        const auto login = user.value("mainConnection")
+                                               .toObject()
+                                               .value("platformUsername")
+                                               .toString();
+                        const auto valueList =
+                            user.value("ownedEmoteSets").toArray();
+                        for (const auto &value : valueList)
+                        {
+                            const auto set = value.toObject();
+                            const auto kind = set.value("kind").toString();
+                            if (kind != "NORMAL" && kind != "PERSONAL")
+                            {
+                                continue;
+                            }
+                            const auto id = set.value("id").toString();
+                            sets.push_back({
+                                .id = id,
+                                .name = set.value("name").toString(),
+                                .owner = owner,
+                                .liveIn = id == active ? login : QString(),
+                            });
+                        }
+                    };
+                    addSets(me, {});
+                    const auto valueList = me.value("editorFor").toArray();
+                    for (const auto &value : valueList)
+                    {
+                        const auto editor = value.toObject();
+                        if (editor.value("state").toString() != "ACCEPTED" ||
+                            !editor.value("permissions")
+                                 .toObject()
+                                 .value("emoteSet")
+                                 .toObject()
+                                 .value("manage")
+                                 .toBool())
+                        {
+                            continue;
+                        }
+                        const auto user = editor.value("user").toObject();
+                        auto owner = user.value("mainConnection")
+                                         .toObject()
+                                         .value("platformDisplayName")
+                                         .toString();
+                        if (owner.isEmpty())
+                        {
+                            owner = QStringLiteral("Someone");
+                        }
+                        addSets(user, owner);
+                    }
+                    finish(std::move(sets), {});
+                });
+        });
+}
+
+void fetchJiltvSets(const std::function<void(std::vector<EditableEmoteSet>,
+                                             const QString &)> &finish)
+{
+    JiltvAuth::instance().load(qApp, [finish] {
+        if (!JiltvAuth::instance().signedIn())
+        {
+            finish({}, QStringLiteral("Sign in to JilTV in the badge picker "
+                                      "first"));
+            return;
+        }
+        static const auto query = QStringLiteral(R"(
+query EditableSets {
+  viewer {
+    user { id }
+    editableSets {
+      id name kind
+      owner {
+        id displayName
+        channels { platform displayName activeSet { id } }
+      }
+    }
+  }
+})");
+        JiltvAuth::instance().graphql(
+            query, {},
+            [finish](const QJsonObject &data) {
+                const auto viewer = data.value("viewer").toObject();
+                const auto me =
+                    viewer.value("user").toObject().value("id").toString();
+                std::vector<EditableEmoteSet> sets;
+                const auto valueList = viewer.value("editableSets").toArray();
+                for (const auto &value : valueList)
+                {
+                    const auto set = value.toObject();
+                    if (set.value("kind").toString() == "GLOBAL")
+                    {
+                        continue;
+                    }
+                    const auto id = set.value("id").toString();
+                    const auto owner = set.value("owner").toObject();
+                    QString liveIn;
+                    const auto channelList = owner.value("channels").toArray();
+                    for (const auto &channel : channelList)
+                    {
+                        const auto c = channel.toObject();
+                        if (c.value("platform").toString() == "TWITCH" &&
+                            c.value("activeSet")
+                                    .toObject()
+                                    .value("id")
+                                    .toString() == id)
+                        {
+                            liveIn = c.value("displayName").toString();
+                        }
+                    }
+                    sets.push_back({
+                        .id = id,
+                        .name = set.value("name").toString(),
+                        .owner = owner.value("id").toString() == me
+                                     ? QString()
+                                     : owner.value("displayName")
+                                           .toString(QStringLiteral("Someone")),
+                        .liveIn = liveIn,
+                    });
+                }
+                // Your own sets first, then each channel's
+                std::ranges::stable_sort(
+                    sets, [](const auto &a, const auto &b) {
+                        return a.owner.isEmpty() && !b.owner.isEmpty();
+                    });
+                finish(std::move(sets), {});
+            },
+            [finish](const QString &error) {
+                finish({}, error);
+            });
+    });
+}
+
+/// Loads the editable sets if they aren't fresh, then calls `then`
+void loadEditableSets(SetProvider provider, std::function<void()> then)
+{
+    auto &cache = editableSets(provider);
+    const auto userId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+    if (cache.twitchUserId == userId && cache.problem.isEmpty() &&
+        cache.loadedAt.isValid() &&
+        cache.loadedAt.secsTo(QDateTime::currentDateTime()) < 300)
+    {
+        then();
+        return;
+    }
+    cache.waiting.push_back(std::move(then));
+    if (cache.loading && cache.twitchUserId == userId)
+    {
+        return;
+    }
+    cache.loading = true;
+    cache.twitchUserId = userId;
+
+    auto finish = [provider, userId](std::vector<EditableEmoteSet> sets,
+                                     const QString &problem) {
+        auto &cache = editableSets(provider);
+        if (cache.twitchUserId != userId)
+        {
+            return;
+        }
+        cache.loading = false;
+        cache.sets = std::move(sets);
+        cache.problem = problem;
+        cache.loadedAt = QDateTime::currentDateTime();
+        auto waiting = std::move(cache.waiting);
+        cache.waiting.clear();
+        for (auto &fn : waiting)
+        {
+            fn();
+        }
+    };
+    switch (provider)
+    {
+        case SetProvider::SevenTv:
+            fetchSevenTvSets(finish);
+            break;
+        case SetProvider::Jiltv:
+            fetchJiltvSets(finish);
+            break;
+        case SetProvider::Bttv:
+            fetchBttvSets(finish);
+            break;
+    }
+}
+
+/// Says in `reportTo` how adding or removing `alias` went
+void reportSetEdit(SetProvider provider, const EditableEmoteSet &set,
+                   const QString &alias, bool add, const QString &error,
+                   const ChannelPtr &reportTo, bool replaced = false)
+{
+    const auto name = providerName(provider);
+    if (!error.isEmpty())
+    {
+        reportTo->addSystemMessage(
+            QStringLiteral("%1 didn't %2 %3: %4")
+                .arg(name,
+                     add ? QStringLiteral("add") : QStringLiteral("remove"),
+                     alias, error));
+        return;
+    }
+    // The chat where this set is live announces it itself
+    if (!set.liveIn.isEmpty() &&
+        reportTo->getName().compare(set.liveIn, Qt::CaseInsensitive) == 0)
+    {
+        return;
+    }
+    QString text = QStringLiteral("Removed %1 from the %2 set %3.");
+    if (replaced)
+    {
+        text = QStringLiteral("Replaced %1 in the %2 set %3.");
+    }
+    else if (add)
+    {
+        text = QStringLiteral("Added %1 to the %2 set %3.");
+    }
+    reportTo->addSystemMessage(text.arg(alias, name, set.name));
+}
+
+/// BTTV: shares the emote into the set (renamed to `alias` when that differs
+/// from its own name), or takes it out again
+void editBttvSet(const EditableEmoteSet &set, const QString &emoteId,
+                 const QString &ownName, const QString &alias, bool add,
+                 const ChannelPtr &reportTo, bool replaced = false)
+{
+    const auto me = editableSets(SetProvider::Bttv).bttvUserId;
+    const auto path =
+        QStringLiteral("emotes/%1/shared/%2/%3").arg(emoteId, me, set.id);
+    if (!add)
+    {
+        bttvRequest(
+            NetworkRequestType::Delete, path, std::nullopt,
+            [set, alias, reportTo](const QJsonValue &, const QString &error) {
+                reportSetEdit(SetProvider::Bttv, set, alias, false, error,
+                              reportTo);
+            });
+        return;
+    }
+    bttvRequest(NetworkRequestType::Put, path, std::nullopt,
+                [set, path, ownName, alias, reportTo, replaced](
+                    const QJsonValue &, const QString &error) {
+                    if (!error.isEmpty() || alias == ownName)
+                    {
+                        reportSetEdit(SetProvider::Bttv, set, alias, true,
+                                      error, reportTo, replaced);
+                        return;
+                    }
+                    // Then give it the chosen name
+                    bttvRequest(
+                        NetworkRequestType::Put, path + QStringLiteral("/code"),
+                        QJsonObject{{"code", alias}},
+                        [set, ownName, alias, reportTo, replaced](
+                            const QJsonValue &, const QString &error) {
+                            reportSetEdit(
+                                SetProvider::Bttv, set, alias, true,
+                                error.isEmpty()
+                                    ? QString()
+                                    : QStringLiteral("added as %1, but not "
+                                                     "renamed (%2)")
+                                          .arg(ownName, error),
+                                reportTo, replaced);
+                        });
+                });
+}
+
+/// Adds the emote to a set under `alias`, or removes it (`alias` is then the
+/// name it has there), and says how it went in `reportTo`
+void editEmoteSet(SetProvider provider, const EditableEmoteSet &set,
+                  const QString &emoteId, const QString &alias, bool add,
+                  const ChannelPtr &reportTo, bool replaced = false)
+{
+    static const auto sevenTvAdd = QStringLiteral(R"(
+mutation AddEmote($set: Id!, $emote: Id!, $alias: String) {
+  emoteSets { emoteSet(id: $set) { addEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
+})");
+    static const auto sevenTvRemove = QStringLiteral(R"(
+mutation RemoveEmote($set: Id!, $emote: Id!, $alias: String) {
+  emoteSets { emoteSet(id: $set) { removeEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
+})");
+    static const auto jiltvAdd = QStringLiteral(R"(
+mutation AddEmote($set: ID!, $emote: ID!, $alias: String) {
+  addEmoteToSet(setId: $set, emoteId: $emote, alias: $alias) { id }
+})");
+    static const auto jiltvRemove = QStringLiteral(R"(
+mutation RemoveEmote($set: ID!, $emote: ID!) {
+  removeEmoteFromSet(setId: $set, emoteId: $emote) { id }
+})");
+    const bool sevenTv = provider == SetProvider::SevenTv;
+    QJsonObject variables{{"set", set.id}, {"emote", emoteId}};
+    if (add || sevenTv)
+    {
+        variables.insert("alias", alias);
+    }
+    QString mutation;
+    if (add)
+    {
+        mutation = sevenTv ? sevenTvAdd : jiltvAdd;
+    }
+    else
+    {
+        mutation = sevenTv ? sevenTvRemove : jiltvRemove;
+    }
+    setsRequest(provider, mutation, variables,
+                [provider, set, alias, add, reportTo, replaced](
+                    const QJsonObject &, const QString &error) {
+                    reportSetEdit(provider, set, alias, add, error, reportTo,
+                                  replaced);
+                });
+}
+
+/// Looks in the set for an emote called `alias`; `done` gets its ID, or
+/// nothing when the name is free
+void findNameInSet(SetProvider provider, const EditableEmoteSet &set,
+                   const QString &alias,
+                   const std::function<void(QString)> &done)
+{
+    if (provider == SetProvider::SevenTv)
+    {
+        static const auto query = QStringLiteral(R"(
+query NameInSet($set: Id!, $name: String!) {
+  emoteSets { emoteSet(id: $set) {
+    emotes(query: $name, perPage: 50) { items { id alias } }
+  } }
+})");
+        sevenTvGql(editableSets(provider).token, query,
+                   {{"set", set.id}, {"name", alias}},
+                   [alias, done](const QJsonObject &data, const QString &) {
+                       const auto valueList = data.value("emoteSets")
+                                                  .toObject()
+                                                  .value("emoteSet")
+                                                  .toObject()
+                                                  .value("emotes")
+                                                  .toObject()
+                                                  .value("items")
+                                                  .toArray();
+                       for (const auto &value : valueList)
+                       {
+                           const auto item = value.toObject();
+                           if (item.value("alias").toString() == alias)
+                           {
+                               done(item.value("id").toString());
+                               return;
+                           }
+                       }
+                       done({});
+                   });
+        return;
+    }
+    if (provider == SetProvider::Jiltv)
+    {
+        static const auto query = QStringLiteral(R"(
+query NameInSet($set: ID!) { emoteSet(id: $set) { emotes { name emote { id } } } })");
+        setsRequest(
+            provider, query, {{"set", set.id}},
+            [alias, done](const QJsonObject &data, const QString &) {
+                const auto valueList =
+                    data.value("emoteSet").toObject().value("emotes").toArray();
+                for (const auto &value : valueList)
+                {
+                    const auto entry = value.toObject();
+                    if (entry.value("name").toString() == alias)
+                    {
+                        done(entry.value("emote")
+                                 .toObject()
+                                 .value("id")
+                                 .toString());
+                        return;
+                    }
+                }
+                done({});
+            });
+        return;
+    }
+    // BTTV: the default set is the channel's emotes, the others are sets
+    const bool isDefault = set.id == set.ownerId;
+    if (isDefault && set.ownerTwitchId.isEmpty())
+    {
+        done({});
+        return;
+    }
+    bttvRequest(
+        NetworkRequestType::Get,
+        isDefault
+            ? QStringLiteral("cached/users/twitch/%1").arg(set.ownerTwitchId)
+            : QStringLiteral("emote_sets/%1").arg(set.id),
+        std::nullopt, [alias, done](const QJsonValue &value, const QString &) {
+            const auto object = value.toObject();
+            for (const auto *key : {"channelEmotes", "sharedEmotes", "emotes"})
+            {
+                const auto itemList = object.value(key).toArray();
+                for (const auto &item : itemList)
+                {
+                    const auto entry = item.toObject();
+                    // Either the emote itself or an entry holding it
+                    const auto emote = entry.value("emote").isObject()
+                                           ? entry.value("emote").toObject()
+                                           : entry;
+                    const auto code = entry.value("code").toString(
+                        emote.value("code").toString());
+                    if (code == alias)
+                    {
+                        done(emote.value("id").toString());
+                        return;
+                    }
+                }
+            }
+            done({});
+        });
+}
+
+/// Takes the emote `emoteId` out of the set without a message; `done` gets
+/// an error, or nothing when it worked
+void removeFromSetQuietly(SetProvider provider, const EditableEmoteSet &set,
+                          const QString &emoteId, const QString &alias,
+                          const std::function<void(QString)> &done)
+{
+    if (provider == SetProvider::Bttv)
+    {
+        bttvRequest(
+            NetworkRequestType::Delete,
+            QStringLiteral("emotes/%1/shared/%2/%3")
+                .arg(emoteId, editableSets(provider).bttvUserId, set.id),
+            std::nullopt, [done](const QJsonValue &, const QString &error) {
+                done(error);
+            });
+        return;
+    }
+    const bool sevenTv = provider == SetProvider::SevenTv;
+    QJsonObject variables{{"set", set.id}, {"emote", emoteId}};
+    if (sevenTv)
+    {
+        variables.insert("alias", alias);
+    }
+    setsRequest(provider,
+                sevenTv ? QStringLiteral(R"(
+mutation RemoveEmote($set: Id!, $emote: Id!, $alias: String) {
+  emoteSets { emoteSet(id: $set) { removeEmote(id: { emoteId: $emote, alias: $alias }) { id } } }
+})")
+                        : QStringLiteral(R"(
+mutation RemoveEmote($set: ID!, $emote: ID!) {
+  removeEmoteFromSet(setId: $set, emoteId: $emote) { id }
+})"),
+                variables, [done](const QJsonObject &, const QString &error) {
+                    done(error);
+                });
+}
+
+/// Adds the emote as `alias`. When another emote already has that name in
+/// the set, asks whether to replace it, and if so takes that one out first.
+void addToSetOrReplace(SetProvider provider, const EditableEmoteSet &set,
+                       const QString &emoteId, const QString &name,
+                       const QString &alias, const ChannelPtr &reportTo)
+{
+    const auto add = [provider, set, emoteId, name, alias,
+                      reportTo](bool replaced) {
+        if (provider == SetProvider::Bttv)
+        {
+            editBttvSet(set, emoteId, name, alias, true, reportTo, replaced);
+        }
+        else
+        {
+            editEmoteSet(provider, set, emoteId, alias, true, reportTo,
+                         replaced);
+        }
+    };
+    findNameInSet(
+        provider, set, alias,
+        [provider, set, emoteId, alias, reportTo, add](const QString &other) {
+            if (other.isEmpty() || other == emoteId)
+            {
+                add(false);
+                return;
+            }
+            const auto answer = QMessageBox::question(
+                nullptr,
+                QStringLiteral("Add to %1 set").arg(providerName(provider)),
+                QStringLiteral("%1 already has an emote called %2.\n\n"
+                               "Replace it with this one?")
+                    .arg(set.name, alias),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (answer != QMessageBox::Yes)
+            {
+                return;
+            }
+            removeFromSetQuietly(
+                provider, set, other, alias,
+                [provider, alias, reportTo, add](const QString &error) {
+                    if (!error.isEmpty())
+                    {
+                        reportTo->addSystemMessage(
+                            QStringLiteral("%1 didn't remove the old %2: %3")
+                                .arg(providerName(provider), alias, error));
+                        return;
+                    }
+                    add(true);
+                });
+        });
+}
+
+struct EmoteSetMenuEntry {
+    EditableEmoteSet set;
+    QPointer<QAction> action;
+};
+
+/// Asks for the name to add the emote under, with `ownName` filled in
+QString askEmoteName(SetProvider provider, const EditableEmoteSet &set,
+                     const QString &ownName, bool &ok)
+{
+    return QInputDialog::getText(
+               nullptr,
+               QStringLiteral("Add to %1 set").arg(providerName(provider)),
+               QStringLiteral("Name in %1:").arg(set.name), QLineEdit::Normal,
+               ownName, &ok)
+        .trimmed();
+}
+
+/// BTTV: the emote's name and, per set, whether it's in there
+void fillBttvSetsMenu(const QPointer<QMenu> &menu,
+                      const std::vector<EmoteSetMenuEntry> &entries,
+                      const QString &emoteId, const ChannelPtr &reportTo)
+{
+    bttvRequest(
+        NetworkRequestType::Get, QStringLiteral("emotes/%1").arg(emoteId),
+        std::nullopt,
+        [menu, entries, emoteId, reportTo](const QJsonValue &emote,
+                                           const QString &error) {
+            const auto name = emote.toObject().value("code").toString();
+            if (!menu)
+            {
+                return;
+            }
+            if (name.isEmpty())
+            {
+                menu->clear();
+                menu->addAction(error.isEmpty()
+                                    ? QStringLiteral("BTTV doesn't know this "
+                                                     "emote")
+                                    : error)
+                    ->setEnabled(false);
+                return;
+            }
+            // BTTV says per owner which of their sets have the emote, or why
+            // it can't go in
+            QStringList owners;
+            for (const auto &entry : entries)
+            {
+                if (!owners.contains(entry.set.ownerId))
+                {
+                    owners.append(entry.set.ownerId);
+                }
+            }
+            auto states = std::make_shared<QHash<QString, QJsonObject>>();
+            auto left = std::make_shared<qsizetype>(owners.size());
+            for (const auto &owner : std::as_const(owners))
+            {
+                bttvRequest(
+                    NetworkRequestType::Get,
+                    QStringLiteral("emotes/%1/availability?userId=%2")
+                        .arg(emoteId, owner),
+                    std::nullopt,
+                    [=](const QJsonValue &value, const QString &) {
+                        const auto object = value.toObject();
+                        for (auto it = object.begin(); it != object.end(); ++it)
+                        {
+                            states->insert(it.key(), it.value().toObject());
+                        }
+                        if (--*left != 0 || !menu)
+                        {
+                            return;
+                        }
+                        for (const auto &entry : entries)
+                        {
+                            if (!entry.action)
+                            {
+                                continue;
+                            }
+                            const auto state = states->value(entry.set.id);
+                            const auto restriction =
+                                state.value("restriction").toString();
+                            const bool inSet =
+                                restriction == QStringLiteral("ALREADY_ADDED");
+                            entry.action->setChecked(inSet);
+                            // Sets BTTV says nothing about stay usable
+                            if (!inSet && state.contains("canAdd") &&
+                                !state.value("canAdd").toBool())
+                            {
+                                // e.g. the set is full
+                                if (!restriction.isEmpty())
+                                {
+                                    entry.action->setText(
+                                        entry.action->text() +
+                                        QStringLiteral(" (%1)").arg(
+                                            restriction.toLower().replace(
+                                                u'_', u' ')));
+                                }
+                                continue;
+                            }
+                            QObject::connect(
+                                entry.action, &QAction::triggered, entry.action,
+                                [set = entry.set, emoteId, name, inSet,
+                                 reportTo] {
+                                    if (inSet)
+                                    {
+                                        editBttvSet(set, emoteId, name, name,
+                                                    false, reportTo);
+                                        return;
+                                    }
+                                    bool ok = false;
+                                    const auto alias = askEmoteName(
+                                        SetProvider::Bttv, set, name, ok);
+                                    if (ok && !alias.isEmpty())
+                                    {
+                                        addToSetOrReplace(SetProvider::Bttv,
+                                                          set, emoteId, name,
+                                                          alias, reportTo);
+                                    }
+                                });
+                            entry.action->setEnabled(true);
+                        }
+                    });
+            }
+        });
+}
+
+/// Fills `menu` with the sets you may change. A set that has the emote is
+/// ticked and a click removes it; otherwise a click asks for the name to add
+/// it under, with the emote's own name filled in.
+void fillEmoteSetsMenu(const QPointer<QMenu> &menu, SetProvider provider,
+                       const QString &emoteId, const ChannelPtr &reportTo)
+{
+    if (!menu)
+    {
+        return;
+    }
+    menu->clear();
+    const auto &cache = editableSets(provider);
+    if (cache.loading)
+    {
+        menu->addAction(QStringLiteral("Loading..."))->setEnabled(false);
+        return;
+    }
+    if (!cache.problem.isEmpty() || cache.sets.empty())
+    {
+        menu->addAction(cache.problem.isEmpty()
+                            ? QStringLiteral("No %1 sets you can change")
+                                  .arg(providerName(provider))
+                            : cache.problem)
+            ->setEnabled(false);
+        return;
+    }
+
+    QString lastOwner;
+    std::vector<EmoteSetMenuEntry> entries;
+    entries.reserve(cache.sets.size());
+    for (const auto &set : cache.sets)
+    {
+        if (entries.empty() || set.owner != lastOwner)
+        {
+            menu->addSection(set.owner.isEmpty()
+                                 ? QStringLiteral("Your sets")
+                                 : QStringLiteral("%1's sets").arg(set.owner));
+            lastOwner = set.owner;
+        }
+        auto *action = menu->addAction(
+            set.liveIn.isEmpty() ? set.name
+                                 : set.name + QStringLiteral(" (active)"));
+        action->setCheckable(true);
+        // Waits for the emote's name and the sets that have it
+        action->setEnabled(false);
+        entries.push_back({set, action});
+    }
+
+    if (provider == SetProvider::Bttv)
+    {
+        fillBttvSetsMenu(menu, entries, emoteId, reportTo);
+        return;
+    }
+
+    // One request: the emote's own name and which of the sets have it
+    QString query;
+    QJsonObject variables{{"id", emoteId}};
+    if (provider == SetProvider::SevenTv)
+    {
+        QJsonArray ids;
+        for (const auto &entry : entries)
+        {
+            ids.append(entry.set.id);
+        }
+        variables.insert("sets", ids);
+        query = QStringLiteral(R"(
+query EmoteInSets($id: Id!, $sets: [Id!]!) {
+  emotes { emote(id: $id) {
+    defaultName
+    inEmoteSets(emoteSetIds: $sets) { emoteSetId emote { alias } }
+  } }
+})");
+    }
+    else
+    {
+        query = QStringLiteral("query EmoteInSets($id: ID!) {\n"
+                               "  emote(id: $id) { name }\n");
+        static const QRegularExpression safeId(
+            QStringLiteral("^[A-Za-z0-9_-]+$"));
+        for (size_t i = 0; i < entries.size(); ++i)
+        {
+            const auto &id = entries[i].set.id;
+            if (safeId.match(id).hasMatch())
+            {
+                query += QStringLiteral("  s%1: emoteSet(id: \"%2\") { id "
+                                        "emotes { name emote { id } } }\n")
+                             .arg(i)
+                             .arg(id);
+            }
+        }
+        query += u'}';
+    }
+
+    setsRequest(
+        provider, query, variables,
+        [menu, entries, provider, emoteId, reportTo](const QJsonObject &data,
+                                                     const QString &error) {
+            if (!menu)
+            {
+                return;
+            }
+            QString name;
+            // The name the emote has in each set that has it
+            QHash<QString, QString> aliasInSet;
+            if (provider == SetProvider::SevenTv)
+            {
+                const auto emote =
+                    data.value("emotes").toObject().value("emote").toObject();
+                name = emote.value("defaultName").toString();
+                const auto valueList = emote.value("inEmoteSets").toArray();
+                for (const auto &value : valueList)
+                {
+                    const auto inSet = value.toObject();
+                    const auto entry = inSet.value("emote").toObject();
+                    if (!entry.isEmpty())
+                    {
+                        aliasInSet.insert(inSet.value("emoteSetId").toString(),
+                                          entry.value("alias").toString(name));
+                    }
+                }
+            }
+            else
+            {
+                name = data.value("emote").toObject().value("name").toString();
+                for (auto it = data.begin(); it != data.end(); ++it)
+                {
+                    const auto set = it.value().toObject();
+                    if (!it.key().startsWith(u's') || set.isEmpty())
+                    {
+                        continue;
+                    }
+                    const auto valueList = set.value("emotes").toArray();
+                    for (const auto &value : valueList)
+                    {
+                        const auto entry = value.toObject();
+                        if (entry.value("emote")
+                                .toObject()
+                                .value("id")
+                                .toString() == emoteId)
+                        {
+                            aliasInSet.insert(set.value("id").toString(),
+                                              entry.value("name").toString());
+                        }
+                    }
+                }
+            }
+            if (name.isEmpty())
+            {
+                menu->clear();
+                menu->addAction(error.isEmpty()
+                                    ? QStringLiteral("%1 doesn't know this "
+                                                     "emote")
+                                          .arg(providerName(provider))
+                                    : error)
+                    ->setEnabled(false);
+                return;
+            }
+            for (const auto &entry : entries)
+            {
+                if (!entry.action)
+                {
+                    continue;
+                }
+                const auto alias = aliasInSet.value(entry.set.id);
+                const bool inSet = aliasInSet.contains(entry.set.id);
+                entry.action->setChecked(inSet);
+                if (inSet && alias != name)
+                {
+                    entry.action->setText(entry.action->text() +
+                                          QStringLiteral(" as ") + alias);
+                }
+                QObject::connect(
+                    entry.action, &QAction::triggered, entry.action,
+                    [provider, set = entry.set, emoteId, name, alias, inSet,
+                     reportTo] {
+                        if (inSet)
+                        {
+                            editEmoteSet(provider, set, emoteId, alias, false,
+                                         reportTo);
+                            return;
+                        }
+                        bool ok = false;
+                        const auto newName =
+                            QInputDialog::getText(
+                                nullptr,
+                                QStringLiteral("Add to %1 set")
+                                    .arg(providerName(provider)),
+                                QStringLiteral("Name in %1:").arg(set.name),
+                                QLineEdit::Normal, name, &ok)
+                                .trimmed();
+                        if (ok && !newName.isEmpty())
+                        {
+                            addToSetOrReplace(provider, set, emoteId, name,
+                                              newName, reportTo);
+                        }
+                    });
+                entry.action->setEnabled(true);
+            }
+        });
+}
+
+/// The provider and emote ID of a 7TV, JilTV or BTTV emote page
+std::optional<std::pair<SetProvider, QString>> emoteSetTarget(
+    const QString &url)
+{
+    static const QRegularExpression sevenTv(
+        QStringLiteral("7tv\\.app/emotes/([A-Za-z0-9]+)"));
+    static const QRegularExpression jiltv(
+        QStringLiteral("jiltv\\.app/emotes/([A-Za-z0-9_-]+)"));
+    if (const auto match = sevenTv.match(url); match.hasMatch())
+    {
+        return std::make_pair(SetProvider::SevenTv, match.captured(1));
+    }
+    if (const auto match = jiltv.match(url); match.hasMatch())
+    {
+        return std::make_pair(SetProvider::Jiltv, match.captured(1));
+    }
+    static const QRegularExpression bttv(
+        QStringLiteral("betterttv\\.com/emotes/([A-Za-z0-9]+)"));
+    if (const auto match = bttv.match(url); match.hasMatch())
+    {
+        // Newer links carry the ID as a short code
+        const auto id = bttvEmoteIdFromLink(match.captured(1));
+        if (!id.isEmpty())
+        {
+            return std::make_pair(SetProvider::Bttv, id);
+        }
+    }
+    return std::nullopt;
+}
+
+/// "Add to 7TV set..." or "Add to JilTV set..." for an emote page (an emote
+/// in chat or a link): your own sets and those of the channels you're an
+/// editor of, in every channel, whatever your Twitch role there. The
+/// provider decides what you may change.
+void addEmoteSetsMenu(QMenu *menu, const QString &url,
+                      const ChannelPtr &reportTo)
+{
+    const auto target = emoteSetTarget(url);
+    if (!target || reportTo == nullptr ||
+        getApp()->getAccounts()->twitch.getCurrent()->isAnon())
+    {
+        return;
+    }
+    const auto provider = target->first;
+    const auto emoteId = target->second;
+    menu->addSeparator();
+    auto *setsMenu = menu->addMenu(
+        QStringLiteral("%1 emote sets").arg(providerName(provider)));
+    QPointer<QMenu> guard(setsMenu);
+    QObject::connect(
+        setsMenu, &QMenu::aboutToShow, setsMenu,
+        [guard, provider, emoteId, reportTo] {
+            // Filled right away when the list is fresh
+            guard->clear();
+            guard->addAction(QStringLiteral("Loading..."))->setEnabled(false);
+            loadEditableSets(provider, [guard, provider, emoteId, reportTo] {
+                fillEmoteSetsMenu(guard, provider, emoteId, reportTo);
+            });
+        });
+    // Start early so the list is often ready on hover
+    loadEditableSets(provider, [] {});
+}
+
 void addImageContextMenuItems(QMenu *menu,
                               const MessageLayoutElement *hoveredElement,
-                              const TwitchChannel *twitchChannel)
+                              const TwitchChannel *twitchChannel,
+                              const ChannelPtr &reportTo)
 {
     if (hoveredElement == nullptr)
     {
@@ -947,6 +2232,9 @@ void addImageContextMenuItems(QMenu *menu,
                 dynamic_cast<const EmoteElement *>(&creator))
         {
             addEmoteContextMenuItems(menu, *emoteElement->getEmote(), u"emote");
+
+            addEmoteSetsMenu(menu, emoteElement->getEmote()->homePage.string,
+                             reportTo);
         }
         else if (const auto *layeredElement =
                      dynamic_cast<const LayeredEmoteElement *>(&creator))
@@ -958,6 +2246,8 @@ void addImageContextMenuItems(QMenu *menu,
                 auto *emoteMenu = new QMenu(menu);
                 emoteAction->setMenu(emoteMenu);
                 addEmoteContextMenuItems(emoteMenu, *emote.ptr, u"emote");
+                addEmoteSetsMenu(emoteMenu, emote.ptr->homePage.string,
+                                 reportTo);
             }
         }
     }
@@ -1084,6 +2374,11 @@ void addLinkContextMenuItems(QMenu *menu,
     menu->addAction("&Copy link", [url] {
         crossPlatformCopy(url);
     });
+
+    // Links to a 7TV or JilTV emote can go into your sets too
+    addEmoteSetsMenu(menu, url,
+                     view->underlyingChannel() ? view->underlyingChannel()
+                                               : view->channel());
 
     menu->addSeparator();
 }
@@ -1457,12 +2752,66 @@ void ChannelView::initializeSignals()
 
     this->signalHolder_.managedConnect(
         getApp()->getWindows()->gifRepaintRequested, [&] {
-            if (!this->isVisible() || this->animationRegion_.isEmpty())
+            // A tab switch is gliding over this. The next tick after it
+            // catches up.
+            if (!this->isVisible() || this->animationRegion_.isEmpty() ||
+                transitions::pageTransitionRunning())
             {
                 return;
             }
 
-            this->update(this->animationRegion_);
+            // Names with an animated paint change only when the paints have
+            // a new picture; everything else animated (GIFs) on every tick.
+            // Animated images only once they show another picture;
+            // everything else animated on every tick
+            QRegion dirty =
+                this->animationRegion_.subtracted(this->animationPaintRegion_)
+                    .subtracted(this->animationImageRegion_) +
+                this->animationImagePaintRegion_;
+            for (const auto &spot : this->animationImageSpots_)
+            {
+                const auto picture = spot.image->pixmapOrLoad();
+                if (!picture || picture->cacheKey() != spot.shown)
+                {
+                    dirty += spot.rect;
+                }
+            }
+            const auto tick = animatedPaintTick();
+            if (tick != this->lastAnimatedPaintTick_)
+            {
+                this->lastAnimatedPaintTick_ = tick;
+                dirty += this->animationPaintRegion_;
+            }
+            if (!dirty.isEmpty())
+            {
+                // Few wide rectangles instead of many small ones: Qt clips
+                // every draw against each rectangle of the region, so many
+                // small ones (one per changed badge) cost more than the
+                // little extra area of joining the ones of a line
+                std::vector<QRect> rects(dirty.begin(), dirty.end());
+                std::ranges::sort(rects, {}, &QRect::top);
+                QRegion joined;
+                QRect band;
+                for (const auto &rect : rects)
+                {
+                    if (!band.isNull() && rect.top() <= band.bottom())
+                    {
+                        band = band.united(rect);
+                        continue;
+                    }
+                    if (!band.isNull())
+                    {
+                        joined += band;
+                    }
+                    band = rect;
+                }
+                if (!band.isNull())
+                {
+                    joined += band;
+                }
+                dirty = joined;
+                this->update(dirty);
+            }
         });
 
     this->signalHolder_.managedConnect(
@@ -1507,11 +2856,25 @@ Split *ChannelView::findParentSplit() const
     }
 
     auto *searchPopup = dynamic_cast<SearchPopup *>(this->parentWidget());
-    if (!searchPopup)
+    if (searchPopup)
     {
-        return nullptr;
+        return dynamic_cast<Split *>(searchPopup->parentWidget());
     }
-    return dynamic_cast<Split *>(searchPopup->parentWidget());
+
+    if (this->parentWidget() != nullptr)
+    {
+        if (this->parentWidget()->parentWidget() != nullptr)
+        {
+            auto *userInfoPopup = dynamic_cast<UserInfoPopup *>(
+                this->parentWidget()->parentWidget()->parentWidget());
+            if (userInfoPopup != nullptr)
+            {
+                split = userInfoPopup->getSplit();
+            }
+        }
+    }
+
+    return split;
 }
 
 bool ChannelView::pausable() const
@@ -2110,22 +3473,8 @@ void ChannelView::layoutVisibleMessages(
             const auto &message = messages[i];
 
             redrawRequired |= message->layout(
-                {
-                    .messageColors = this->messageColors_,
-                    .flags = layoutFlags,
-                    .width = layoutWidth,
-                    .scale = this->scale(),
-                    .imageScale = this->overrideImageScale_.value_or(
-                        this->scale() *
-                        static_cast<float>(this->devicePixelRatio())),
-                    .emoteScale =
-                        this->overrideEmoteScale_.value_or(this->scale()),
-                    .badgeScale =
-                        this->overrideBadgeScale_.value_or(this->scale()),
-                    .centerBadges = this->centerBadges_,
-                    .selectedChannel = selectedChannel,
-                    .message = *message->getMessage(),
-                },
+                this->makeLayoutContext(*message->getMessage(), layoutFlags,
+                                        selectedChannel, layoutWidth),
                 this->bufferInvalidationQueued_);
 
             y += message->getHeight();
@@ -2166,22 +3515,8 @@ void ChannelView::updateScrollbar(const std::vector<MessageLayoutPtr> &messages,
     {
         auto *message = messages[i].get();
 
-        message->layout(
-            {
-                .messageColors = this->messageColors_,
-                .flags = flags,
-                .width = layoutWidth,
-                .scale = this->scale(),
-                .imageScale = this->overrideImageScale_.value_or(
-                    this->scale() *
-                    static_cast<float>(this->devicePixelRatio())),
-                .emoteScale = this->overrideEmoteScale_.value_or(this->scale()),
-                .badgeScale = this->overrideBadgeScale_.value_or(this->scale()),
-                .centerBadges = this->centerBadges_,
-                .selectedChannel = selectedChannel,
-                .message = *message->getMessage(),
-            },
-            false);
+        message->layoutForMeasurement(this->makeLayoutContext(
+            *message->getMessage(), flags, selectedChannel, layoutWidth));
 
         h -= message->getHeight();
 
@@ -2273,6 +3608,13 @@ QString ChannelView::getSelectedText()
     for (auto msg = indexStart; msg <= indexEnd; msg++)
     {
         MessageLayoutPtr layout = messagesSnapshot[msg];
+        // messages that left the screen don't keep their elements around
+        const bool hadCache = layout->hasCache();
+        if (!hadCache)
+        {
+            this->relayoutMessage(*layout);
+        }
+
         auto from = msg == selection.selectionMin.messageIndex
                         ? selection.selectionMin.charIndex
                         : 0;
@@ -2281,6 +3623,11 @@ QString ChannelView::getSelectedText()
                       : layout->getLastCharacterIndex() + 1;
 
         layout->addSelectionText(result, from, to);
+
+        if (!hadCache)
+        {
+            layout->deleteCache();
+        }
 
         if (msg != indexEnd)
         {
@@ -2466,7 +3813,13 @@ std::pair<Channel *, MessageElementFlags> ChannelView::getMultiChannelInfo()
 {
     Channel *selectedChannel = this->underlyingChannel_.get();
     MessageElementFlags flags{};
-    if (auto *mc = dynamic_cast<MultiChannel *>(selectedChannel))
+    auto *mc = dynamic_cast<MultiChannel *>(selectedChannel);
+    if (!mc)
+    {
+        // Views like the search popup show copies of a multi-channel's messages
+        mc = dynamic_cast<MultiChannel *>(this->sourceChannel_.get());
+    }
+    if (mc)
     {
         const auto *active = mc->activeChannel();
         if (active)
@@ -2778,6 +4131,13 @@ void ChannelView::setChannel(const ChannelPtr &underlyingChannel)
                     this->liveStatusChanged.invoke();
                 });
         }
+        else if (auto *tiktokChannel = dynamic_cast<TikTokChannel *>(chan))
+        {
+            this->channelConnections_.managedConnect(
+                tiktokChannel->liveStatusChanged, [this] {
+                    this->liveStatusChanged.invoke();
+                });
+        }
     };
 
     if (mc)
@@ -2995,7 +4355,9 @@ void ChannelView::messageAddedAtStart(std::vector<MessagePtr> &messages)
         }
         else
         {
-            this->scrollBar_->offset(qreal(addedMessages.size()));
+            // Keep showing the same messages, also while scrolling with
+            // momentum (e.g. a trackpad) when older messages come in
+            this->scrollBar_->shiftPosition(qreal(addedMessages.size()));
         }
     }
 
@@ -3506,6 +4868,11 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     if (start >= messagesSnapshot.size())
     {
         this->animationRegion_ = {};
+        this->animationPaintRegion_ = {};
+        this->animationImageSpots_.clear();
+        this->animationImageRegion_ = {};
+        this->animationImagePaintRegion_ = {};
+        this->clearMessageCaches();
         return;
     }
 
@@ -3561,6 +4928,19 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     bool showLastMessageIndicator = getSettings()->showLastMessageIndicator;
 
     QRegion animationRegion;
+    // Names with an animated paint report themselves here while drawing
+    QRegion animationPaintRegion;
+    animatedPaintRegionSink() = &animationPaintRegion;
+    // ... and animated images, with the picture they show
+    std::vector<AnimatedImageSpot> animationImageSpots;
+    animatedImageSpotSink() = &animationImageSpots;
+    QRegion animationImagePaintRegion;
+    animatedImagePaintRegionSink() = &animationImagePaintRegion;
+    const auto stopCollecting = qScopeGuard([] {
+        animatedPaintRegionSink() = nullptr;
+        animatedImageSpotSink() = nullptr;
+        animatedImagePaintRegionSink() = nullptr;
+    });
 
     for (; ctx.messageIndex < messagesSnapshot.size(); ++ctx.messageIndex)
     {
@@ -3573,6 +4953,13 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
         else
         {
             ctx.isLastReadMessage = false;
+        }
+
+        if (!layout->hasCache())
+        {
+            // visible messages are laid out before painting, this only
+            // catches paths that paint a freed message without doing so
+            this->relayoutMessage(*layout);
         }
 
         const QRect messageRect{0, ctx.y, layout->getWidth(),
@@ -3630,6 +5017,30 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     this->animationRegion_ =
         (this->animationRegion_.subtracted(area) + animationRegion)
             .intersected(this->rect());
+    this->animationPaintRegion_ =
+        (this->animationPaintRegion_.subtracted(area) + animationPaintRegion)
+            .intersected(this->rect());
+    // Images drawn now replace those that were in the repainted area
+    std::erase_if(this->animationImageSpots_, [&](const auto &spot) {
+        return area.intersects(spot.rect) ||
+               !this->rect().intersects(spot.rect);
+    });
+    for (auto &spot : animationImageSpots)
+    {
+        if (this->rect().intersects(spot.rect))
+        {
+            this->animationImageSpots_.push_back(std::move(spot));
+        }
+    }
+    this->animationImagePaintRegion_ =
+        (this->animationImagePaintRegion_.subtracted(area) +
+         animationImagePaintRegion)
+            .intersected(this->rect());
+    this->animationImageRegion_ = {};
+    for (const auto &spot : this->animationImageSpots_)
+    {
+        this->animationImageRegion_ += spot.rect;
+    }
 #ifdef FOURTF
     if (!QRegion(this->rect()).subtracted(area).isEmpty())
     {
@@ -3647,7 +5058,7 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
     }
 
     // remove messages that are on screen
-    // the messages that are left at the end get their buffers reset
+    // the messages that are left at the end get their caches freed
     for (size_t i = start; i < messagesSnapshot.size(); ++i)
     {
         auto it = this->messagesOnScreen_.find(messagesSnapshot[i]);
@@ -3655,15 +5066,16 @@ void ChannelView::drawMessages(QPainter &painter, const QRegion &area)
         {
             this->messagesOnScreen_.erase(it);
         }
+
+        // stop at the last visible message, so messages that scrolled out
+        // at the bottom are freed too
+        if (messagesSnapshot[i].get() == end)
+        {
+            break;
+        }
     }
 
-    // delete the message buffers that aren't on screen
-    for (const std::shared_ptr<MessageLayout> &item : this->messagesOnScreen_)
-    {
-        item->deleteBuffer();
-    }
-
-    this->messagesOnScreen_.clear();
+    this->clearMessageCaches();
 
     // add all messages on screen to the map
     for (size_t i = start; i < messagesSnapshot.size(); ++i)
@@ -3736,24 +5148,10 @@ void ChannelView::wheelEvent(QWheelEvent *event)
                 }
                 else
                 {
-                    snapshot[i - 1]->layout(
-                        {
-                            .messageColors = this->messageColors_,
-                            .flags = flags,
-                            .width = this->getLayoutWidth(),
-                            .scale = this->scale(),
-                            .imageScale = this->overrideImageScale_.value_or(
-                                this->scale() *
-                                static_cast<float>(this->devicePixelRatio())),
-                            .emoteScale = this->overrideEmoteScale_.value_or(
-                                this->scale()),
-                            .badgeScale = this->overrideBadgeScale_.value_or(
-                                this->scale()),
-                            .centerBadges = this->centerBadges_,
-                            .selectedChannel = selectedChannel,
-                            .message = *snapshot[i - 1]->getMessage(),
-                        },
-                        false);
+                    snapshot[i - 1]->layoutForMeasurement(
+                        this->makeLayoutContext(*snapshot[i - 1]->getMessage(),
+                                                flags, selectedChannel,
+                                                this->getLayoutWidth()));
                     scrollFactor = 1;
                     currentScrollLeft = snapshot[i - 1]->getHeight();
                 }
@@ -3786,24 +5184,10 @@ void ChannelView::wheelEvent(QWheelEvent *event)
                 }
                 else
                 {
-                    snapshot[i + 1]->layout(
-                        {
-                            .messageColors = this->messageColors_,
-                            .flags = flags,
-                            .width = this->getLayoutWidth(),
-                            .scale = this->scale(),
-                            .imageScale = this->overrideImageScale_.value_or(
-                                this->scale() *
-                                static_cast<float>(this->devicePixelRatio())),
-                            .emoteScale = this->overrideEmoteScale_.value_or(
-                                this->scale()),
-                            .badgeScale = this->overrideBadgeScale_.value_or(
-                                this->scale()),
-                            .centerBadges = this->centerBadges_,
-                            .selectedChannel = selectedChannel,
-                            .message = *snapshot[i + 1]->getMessage(),
-                        },
-                        false);
+                    snapshot[i + 1]->layoutForMeasurement(
+                        this->makeLayoutContext(*snapshot[i + 1]->getMessage(),
+                                                flags, selectedChannel,
+                                                this->getLayoutWidth()));
 
                     scrollFactor = 1;
                     currentScrollLeft = snapshot[i + 1]->getHeight();
@@ -3979,8 +5363,13 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
         dynamic_cast<const EmoteLinkElement *>(element);
     const auto *layeredEmoteElement =
         dynamic_cast<const LayeredEmoteElement *>(element);
-    bool isNotEmote = emoteElement == nullptr && emoteLinkElement == nullptr &&
-                      layeredEmoteElement == nullptr;
+    const auto *scalingImageElement =
+        dynamic_cast<const ScalingImageElement *>(element);
+    bool isEmoteOrTwitchGif =
+        emoteElement != nullptr || emoteLinkElement != nullptr ||
+        layeredEmoteElement != nullptr ||
+        (scalingImageElement != nullptr &&
+         element->getFlags().has(MessageElementFlag::TwitchGif));
 
     QString paintTooltip;
     this->paintTooltipSource_ = nullptr;
@@ -4039,7 +5428,8 @@ void ChannelView::mouseMoveEvent(QMouseEvent *event)
         this->tooltipWidget_->show();
     }
     else if (element->getTooltip().isEmpty() ||
-             (isLinkValid && isNotEmote && !getSettings()->linkInfoTooltip))
+             (isLinkValid && !isEmoteOrTwitchGif &&
+              !getSettings()->linkInfoTooltip))
     {
         this->tooltipWidget_->hide();
     }
@@ -4462,6 +5852,10 @@ void ChannelView::mouseReleaseEvent(QMouseEvent *event)
                         {
                             platform = MessagePlatform::Kick;
                         }
+                        else if (source->isTikTokChannel())
+                        {
+                            platform = MessagePlatform::TikTok;
+                        }
                         UserInfoPopup::openUserChannelAction(
                             userName, platform, source->getName(), channelId);
                         break;
@@ -4683,7 +6077,11 @@ void ChannelView::addContextMenuItems(
     // Add image options if the element clicked contains an image (e.g. a badge or an emote)
     const auto *twitchChannel =
         dynamic_cast<TwitchChannel *>(this->underlyingChannel().get());
-    addImageContextMenuItems(menu, hoveredElement, twitchChannel);
+    // The real channel, so 7TV's answer lands in the chat itself
+    addImageContextMenuItems(menu, hoveredElement, twitchChannel,
+                             this->underlyingChannel()
+                                 ? this->underlyingChannel()
+                                 : this->channel());
 
     // Add link options if the element clicked contains a link
     addLinkContextMenuItems(menu, hoveredElement, this);
@@ -4722,21 +6120,23 @@ void ChannelView::addMessageContextMenuItems(QMenu *menu,
         });
     }
 
-    menu->addAction("Copy &message", [layout] {
-        QString copyString;
-        layout->addSelectionText(copyString, 0, INT_MAX,
-                                 CopyMode::OnlyTextAndEmotes);
+    // build the text now, the message may have left the screen and freed its
+    // elements by the time an action is picked
+    QString messageCopyString;
+    layout->addSelectionText(messageCopyString, 0, INT_MAX,
+                             CopyMode::OnlyTextAndEmotes);
+    menu->addAction("Copy &message",
+                    [copyString = std::move(messageCopyString)] {
+                        crossPlatformCopy(copyString);
+                    });
 
-        crossPlatformCopy(copyString);
-    });
-
-    menu->addAction("Copy &full message", [layout] {
-        QString copyString;
-        layout->addSelectionText(copyString, 0, INT_MAX,
-                                 CopyMode::EverythingButReplies);
-
-        crossPlatformCopy(copyString);
-    });
+    QString fullMessageCopyString;
+    layout->addSelectionText(fullMessageCopyString, 0, INT_MAX,
+                             CopyMode::EverythingButReplies);
+    menu->addAction("Copy &full message",
+                    [copyString = std::move(fullMessageCopyString)] {
+                        crossPlatformCopy(copyString);
+                    });
 
     auto contextMessage = layout->getMessagePtr();
     if (contextMessage->translatedFrom != nullptr)
@@ -4990,20 +6390,19 @@ void ChannelView::addMessageContextMenuItems(QMenu *menu,
     const auto msg = layout->getMessage();
     if (!msg->channelName.isEmpty())
     {
-        menu->addAction(
-            "Open in &logs",
-            [messageID = msg->id, channelName = msg->channelName,
-             dateTime = QDateTime(msg->serverReceivedTime).toUTC()] {
-                QString logsDate = dateTime.toString("yyyy-MM-dd");
-                QString logsJumpHash =
-                    messageID.isEmpty()
-                        ? dateTime.toString("yyyy-MM-ddTHH:mm:ssZ")
-                        : messageID;
+        menu->addAction("Open in &logs",
+                        [messageID = msg->id, channelName = msg->channelName,
+                         dateTime = QDateTime(msg->timestamp).toUTC()] {
+                            QString logsDate = dateTime.toString("yyyy-MM-dd");
+                            QString logsJumpHash =
+                                messageID.isEmpty()
+                                    ? dateTime.toString("yyyy-MM-ddTHH:mm:ssZ")
+                                    : messageID;
 
-                QDesktopServices::openUrl(
-                    QUrl(u"https://lurkology.com/logs?c=" % channelName %
-                         u"&d=" % logsDate % u"#" % logsJumpHash));
-            });
+                            QDesktopServices::openUrl(QUrl(
+                                u"https://lurkology.com/logs?c=" % channelName %
+                                u"&d=" % logsDate % u"#" % logsJumpHash));
+                        });
     }
 }
 
@@ -5258,12 +6657,28 @@ void ChannelView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void ChannelView::hideEvent(QHideEvent * /*event*/)
 {
+    this->clearMessageCaches();
+    // showEvent lays the visible messages out again
+    this->layoutQueued_ = true;
+}
+
+void ChannelView::clearMessageCaches()
+{
     for (const auto &layout : this->messagesOnScreen_)
     {
-        layout->deleteBuffer();
+        layout->deleteCache();
     }
 
     this->messagesOnScreen_.clear();
+}
+
+void ChannelView::relayoutMessage(MessageLayout &layout)
+{
+    auto [selectedChannel, mcFlags] = this->getMultiChannelInfo();
+    layout.layout(this->makeLayoutContext(
+                      *layout.getMessage(), this->getFlags() | mcFlags,
+                      selectedChannel, this->getLayoutWidth()),
+                  false);
 }
 
 void ChannelView::showUserInfoPopup(const QString &userName,
@@ -5288,6 +6703,20 @@ void ChannelView::showUserInfoPopup(const QString &userName,
         userPopup->setYouTubeContext();
         contextChannel = getApp()->getYouTubeChatServer()->findByName(
             alternativePopoutChannel);
+        if (!contextChannel)
+        {
+            contextChannel = Channel::getEmpty();
+        }
+    }
+    else if (platform == MessagePlatform::TikTok)
+    {
+        contextChannel = getApp()->getTikTokChatServer()->findByHandle(
+            alternativePopoutChannel);
+        if (!contextChannel && openingChannel &&
+            openingChannel->isTikTokChannel())
+        {
+            contextChannel = openingChannel;
+        }
         if (!contextChannel)
         {
             contextChannel = Channel::getEmpty();
@@ -5552,6 +6981,11 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
             {
                 searchName = searchName.sliced(sizeof(":kick:") - 1);
             }
+            bool searchTikTokChannel = link.value.startsWith(u":tiktok:");
+            if (searchTikTokChannel)
+            {
+                searchName = searchName.sliced(sizeof(":tiktok:") - 1);
+            }
 
             for (auto *page : openPages)
             {
@@ -5560,10 +6994,13 @@ void ChannelView::handleLinkClick(QMouseEvent *event, const Link &link,
                 // Search for channel matching link in page/split container
                 // TODO(zneix): Consider opening a channel if it's closed (?)
                 auto it = std::ranges::find_if(
-                    splits, [searchName, searchKickChannel](Split *split) {
+                    splits, [searchName, searchKickChannel,
+                             searchTikTokChannel](Split *split) {
                         return split->getChannel()->getName() == searchName &&
                                split->getChannel()->isKickChannel() ==
-                                   searchKickChannel;
+                                   searchKickChannel &&
+                               split->getChannel()->isTikTokChannel() ==
+                                   searchTikTokChannel;
                     });
 
                 if (it != splits.end())
@@ -6330,6 +7767,26 @@ int ChannelView::getLayoutWidth() const
     }
 
     return this->width();
+}
+
+MessageLayoutContext ChannelView::makeLayoutContext(const Message &message,
+                                                    MessageElementFlags flags,
+                                                    Channel *selectedChannel,
+                                                    int width) const
+{
+    return {
+        .messageColors = this->messageColors_,
+        .flags = flags,
+        .width = width,
+        .scale = this->scale(),
+        .imageScale = this->overrideImageScale_.value_or(
+            this->scale() * static_cast<float>(this->devicePixelRatio())),
+        .emoteScale = this->overrideEmoteScale_.value_or(this->scale()),
+        .badgeScale = this->overrideBadgeScale_.value_or(this->scale()),
+        .centerBadges = this->centerBadges_,
+        .selectedChannel = selectedChannel,
+        .message = message,
+    };
 }
 
 void ChannelView::selectWholeMessage(MessageLayout *layout, int &messageIndex)

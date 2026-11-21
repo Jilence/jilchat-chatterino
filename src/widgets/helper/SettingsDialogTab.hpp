@@ -21,12 +21,10 @@ enum class SettingsTabId {
     None,
     General,
     Customization,
-    Moltorino,
-    Leafyrino,
+    JilChat,
     Accounts,
     Moderation,
     About,
-    Technorino
 };
 
 class SettingsDialogTab : public BaseWidget
@@ -39,7 +37,9 @@ public:
                       const QString &name, QString imageFileName,
                       SettingsTabId id);
 
-    void setSelected(bool selected_);
+    /// @param animate Fade to the new look. Off for the search, which
+    /// changes the selection while typing.
+    void setSelected(bool _selected, bool animate = true);
     SettingsPage *page();
     SettingsPage *createdPage() const;
     SettingsTabId id() const;

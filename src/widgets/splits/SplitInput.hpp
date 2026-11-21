@@ -35,6 +35,7 @@ namespace chatterino {
 
 class Split;
 class EmotePopup;
+class QuickGameBar;
 class InputCompletionPopup;
 class EmoteTabCompletionCarousel;
 class InputHighlighter;
@@ -64,6 +65,7 @@ public:
     bool isEditFirstWord() const;
     QString getInputText() const;
     void insertText(const QString &text);
+    void setWhisperTarget(const QString &username) const;
 
     void setReply(MessagePtr target, std::weak_ptr<Channel> channel);
     void setPlaceholderText(const QString &text);
@@ -261,6 +263,7 @@ protected:
         QLabel *channelPointsLabel;
         SvgButton *predictionButton;
         SvgButton *pollButton;
+        SvgButton *gameButton;
         SvgButton *badgeButton;
         SvgButton *outgoingTranslateButton;
         SvgButton *emoteButton;
@@ -324,6 +327,9 @@ protected:
     qint64 lastManualChannelPointsRefreshMs_ = 0;
     bool predictionButtonWanted_ = false;
     bool pollButtonWanted_ = false;
+    bool gameButtonWanted_ = false;
+    QuickGameBar *quickGames_{};
+    void placeQuickGames();
     bool badgeButtonWanted_ = false;
 #if MOLTORINO_ENABLE_CHANNEL_POINT_REWARDS
     bool channelPointRewardPromptRequiresText_ = false;
@@ -364,6 +370,7 @@ protected:
 
 private:
     void handleImagePaste(const QMimeData *source);
+    void handleUrlPaste(const QString &url, QTextCursor cursor);
 
     void startHistorySearch(bool backwards, bool loop);
     void stopHistorySearchIfNecessary();

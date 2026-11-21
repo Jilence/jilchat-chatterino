@@ -16,6 +16,7 @@
 #include <vector>
 
 class QDateTime;
+class QUrl;
 
 namespace chatterino {
 
@@ -254,5 +255,11 @@ std::pair<QByteArrayView, QByteArrayView> splitOnce(
 /// `{haystack, {}}` is returned.
 std::pair<QByteArrayView, QByteArrayView> splitOnce(QByteArrayView haystack,
                                                     char needle) noexcept;
+
+/// Opens `url` in the browser, but only if it's an http(s) link.
+/// For links that come from a server: anything else (file:, UNC paths, other
+/// schemes) could start a program instead of showing a page.
+/// Returns false if the link was refused or couldn't be opened.
+bool openWebUrl(const QUrl &url);
 
 }  // namespace chatterino
