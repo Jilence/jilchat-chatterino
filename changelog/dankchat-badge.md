@@ -1,0 +1,1 @@
+New: A DankChat tab in the badge picker to choose your DankChat badge or hide it for everyone.

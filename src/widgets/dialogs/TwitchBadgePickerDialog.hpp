@@ -74,6 +74,7 @@ private:
         Chatlee,
         JilChat,
         Bluzyrino,
+        DankChat,
         SevenTvBadges,
         SevenTvPaints,
         JiltvPaints,
@@ -119,6 +120,19 @@ private:
     void rebuildBluzyrinoBadges();
     /// Makes the donor badge `badgeId` the one shown in chat.
     void selectBluzyrino(const QString &badgeId, const QString &title);
+
+    /// DankChat: signed in with the session cookie of dank.chat, which only
+    /// its site hands out
+    void loadDankChat(bool force);
+    void rebuildDankChat();
+    void connectDankChat();
+    void disconnectDankChat();
+    /// `choice` like the site sends it: automatic, hidden or a badge
+    void selectDankChat(const QJsonObject &choice, const QString &title);
+    void dankChatRequest(const std::optional<QJsonObject> &put,
+                         const std::function<void(const QJsonObject &)> &onData,
+                         const std::function<void(const QString &)> &onError);
+    void applyDankChatAccount(const QJsonObject &account);
     void loadBttv(bool force = false);
     void rebuildBttv();
     void connectBttv();
@@ -136,9 +150,13 @@ private:
                      const std::function<void(const QString &)> &onError);
     /// Asks for the token of the user's `service` account, which the
     /// `command` copies in the browser console on `site`.
+    /// Without `command`, `steps` say how to get the token and the button
+    /// only opens `site`.
     std::optional<QString> askForToken(const QString &service,
                                        const QString &command,
-                                       const QString &site);
+                                       const QString &site,
+                                       const QString &steps = {},
+                                       const QString &placeholder = {});
     void loadSevenTv(bool force = false);
     void rebuildSevenTv();
     void connectSevenTv();
@@ -195,6 +213,7 @@ private:
     QPushButton *chatleeTabButton_{};
     QPushButton *jilChatTabButton_{};
     QPushButton *bluzyrinoTabButton_{};
+    QPushButton *dankChatTabButton_{};
     QPushButton *sevenTvBadgeTabButton_{};
     QPushButton *sevenTvPaintTabButton_{};
     QPushButton *jiltvPaintTabButton_{};
@@ -266,6 +285,20 @@ private:
 
     /// The Bluzyrino donor badge just picked, until the registry lists it.
     QString bluzyrinoPending_;
+
+    struct DankChatBadgeOption {
+        QString id;
+        QString title;
+        QString url;
+    };
+    /// The value of the q_session cookie of dank.chat
+    QString dankChatCookie_;
+    bool dankChatCookieRead_ = false;
+    bool dankChatLoading_ = false;
+    bool dankChatLoaded_ = false;
+    QVector<DankChatBadgeOption> dankChatBadges_;
+    /// "automatic", "hidden" or "badge:<id>", like the site
+    QString dankChatChoice_;
 
     /// The user's BetterTTV token, kept in the system credential store.
     QString bttvToken_;

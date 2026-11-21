@@ -19,6 +19,7 @@
 #include "providers/bluzyrino/BluzyrinoBadges.hpp"
 #include "providers/bttv/BttvUsernameEffects.hpp"
 #include "providers/chatlee/ChatleeBadges.hpp"
+#include "providers/dankchat/DankChatBadges.hpp"
 #include "providers/jilchat/JilChatBadges.hpp"
 #include "providers/jiltv/Jiltv.hpp"
 #include "providers/jiltv/JiltvAuth.hpp"
@@ -130,6 +131,11 @@ constexpr auto BTTV_TOKEN_COMMAND =
     "(()=>{copy(JSON.parse(localStorage.getItem('USER_TOKEN')));"
     "return 'BetterTTV token copied.'})()";
 constexpr auto BTTV_EFFECT_PATH = "account/subscription/username_effect";
+/// The account of the dank.chat site, as its own page uses it
+constexpr auto DANKCHAT_ACCOUNT_URL = "https://dank.chat/api/me";
+constexpr auto DANKCHAT_BADGE_URL = "https://dank.chat/api/me/badge";
+constexpr auto DANKCHAT_SITE_URL = "https://dank.chat/account";
+constexpr auto DANKCHAT_CREDENTIAL_PROVIDER = "dankchat";
 constexpr auto SEVENTV_GQL_URL = "https://api.7tv.app/v4/gql";
 /// Has the paint definitions in the format SeventvPaints reads.
 constexpr auto SEVENTV_V3_GQL_URL = "https://7tv.io/v3/gql";
@@ -2106,6 +2112,7 @@ TwitchBadgePickerDialog::TwitchBadgePickerDialog(TwitchChannel *channel,
     this->bluzyrinoTabButton_ =
         makeTab(paintTabRow, "Bluzyrino", View::Bluzyrino);
     this->jilChatTabButton_ = makeTab(paintTabRow, "JilChat", View::JilChat);
+    this->dankChatTabButton_ = makeTab(paintTabRow, "DankChat", View::DankChat);
     this->sevenTvPaintTabButton_ =
         makeTab(paintTabRow, "7TV Paint", View::SevenTvPaints);
     tabRows->addLayout(paintTabRow);
@@ -2367,7 +2374,8 @@ void TwitchBadgePickerDialog::rebuildContent()
         this->view_ != View::Bttv && this->view_ != View::BttvEffects &&
         this->view_ != View::Moltorino && this->view_ != View::Solrino &&
         this->view_ != View::Chatlee && this->view_ != View::JilChat &&
-        this->view_ != View::Bluzyrino && this->view_ != View::SevenTvBadges &&
+        this->view_ != View::Bluzyrino && this->view_ != View::DankChat &&
+        this->view_ != View::SevenTvBadges &&
         this->view_ != View::SevenTvPaints && this->view_ != View::Order &&
         this->view_ != View::JiltvPaints && this->view_ != View::JiltvBadges &&
         this->view_ != View::JiltvFrames)
@@ -2404,6 +2412,10 @@ void TwitchBadgePickerDialog::rebuildContent()
     else if (this->view_ == View::JilChat)
     {
         this->rebuildJilChatBadges();
+    }
+    else if (this->view_ == View::DankChat)
+    {
+        this->rebuildDankChat();
     }
     else if (this->view_ == View::Bluzyrino)
     {
@@ -2921,6 +2933,7 @@ void TwitchBadgePickerDialog::switchView(View view)
     this->chatleeTabButton_->setChecked(view == View::Chatlee);
     this->jilChatTabButton_->setChecked(view == View::JilChat);
     this->bluzyrinoTabButton_->setChecked(view == View::Bluzyrino);
+    this->dankChatTabButton_->setChecked(view == View::DankChat);
     this->sevenTvBadgeTabButton_->setChecked(view == View::SevenTvBadges);
     this->sevenTvPaintTabButton_->setChecked(view == View::SevenTvPaints);
     this->jiltvPaintTabButton_->setChecked(view == View::JiltvPaints);
@@ -2952,6 +2965,10 @@ void TwitchBadgePickerDialog::switchView(View view)
     {
         this->loadBttv(false);
     }
+    else if (view == View::DankChat)
+    {
+        this->loadDankChat(false);
+    }
     else if (view == View::SevenTvBadges || view == View::SevenTvPaints)
     {
         this->loadSevenTv(false);
@@ -2969,9 +2986,9 @@ void TwitchBadgePickerDialog::updateSearchVisibility()
 {
     if (this->searchRowWidget_ != nullptr)
     {
-        this->searchRowWidget_->setVisible(this->view_ != View::Color &&
-                                           this->view_ != View::Bttv &&
-                                           this->view_ != View::Order);
+        this->searchRowWidget_->setVisible(
+            this->view_ != View::Color && this->view_ != View::Bttv &&
+            this->view_ != View::DankChat && this->view_ != View::Order);
     }
 }
 
@@ -5721,7 +5738,8 @@ void TwitchBadgePickerDialog::rebuildSevenTv()
 }
 
 std::optional<QString> TwitchBadgePickerDialog::askForToken(
-    const QString &service, const QString &command, const QString &site)
+    const QString &service, const QString &command, const QString &site,
+    const QString &steps, const QString &placeholder)
 {
     // The popup deletes itself when it loses focus, which the connect window
     // takes. Keep it open while the connect window is shown.
@@ -5733,27 +5751,37 @@ std::optional<QString> TwitchBadgePickerDialog::askForToken(
     dialog.setWindowTitle(QStringLiteral("Connect %1").arg(service));
     auto *layout = new QVBoxLayout(&dialog);
     auto *intro = new QLabel(
-        QStringLiteral(
-            "1. Click \"Copy command\" and open %1 while signed in.\n"
-            "2. Run the copied command in its browser console (F12).\n"
-            "3. Paste the copied token below.\n\n"
-            "Your %1 token stays on this device.")
-            .arg(service),
+        !steps.isEmpty()
+            ? steps
+            : QStringLiteral(
+                  "1. Click \"Copy command\" and open %1 while signed in.\n"
+                  "2. Run the copied command in its browser console (F12).\n"
+                  "3. Paste the copied token below.\n\n"
+                  "Your %1 token stays on this device.")
+                  .arg(service),
         &dialog);
     intro->setWordWrap(true);
     layout->addWidget(intro);
 
     auto *copyButton = new QPushButton(
-        QStringLiteral("Copy command and open %1").arg(service), &dialog);
+        command.isEmpty()
+            ? QStringLiteral("Open %1").arg(service)
+            : QStringLiteral("Copy command and open %1").arg(service),
+        &dialog);
     QObject::connect(copyButton, &QPushButton::clicked, &dialog,
                      [command, site] {
-                         crossPlatformCopy(command);
+                         if (!command.isEmpty())
+                         {
+                             crossPlatformCopy(command);
+                         }
                          QDesktopServices::openUrl(QUrl(site));
                      });
     layout->addWidget(copyButton);
 
     auto *tokenInput = new QLineEdit(&dialog);
-    tokenInput->setPlaceholderText(QStringLiteral("%1 token").arg(service));
+    tokenInput->setPlaceholderText(placeholder.isEmpty()
+                                       ? QStringLiteral("%1 token").arg(service)
+                                       : placeholder);
     tokenInput->setEchoMode(QLineEdit::Password);
     layout->addWidget(tokenInput);
 
@@ -6527,6 +6555,366 @@ void TwitchBadgePickerDialog::selectJiltv(View kind, const QString &id)
                 self->jiltvLoaded_ = false;
             }
             self->setStatus(error, true);
+            self->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::dankChatRequest(
+    const std::optional<QJsonObject> &put,
+    const std::function<void(const QJsonObject &)> &onData,
+    const std::function<void(const QString &)> &onError)
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    auto request =
+        NetworkRequest(QUrl(QString::fromLatin1(put ? DANKCHAT_BADGE_URL
+                                                    : DANKCHAT_ACCOUNT_URL)),
+                       put ? NetworkRequestType::Put : NetworkRequestType::Get)
+            .header("Cookie", "q_session=" + this->dankChatCookie_.toUtf8())
+            // the site's own requests send this; without it a signed out
+            // request is sent to the Twitch login instead of being refused
+            .header("X-Requested-With", "JavaScript")
+            .header("Accept", "application/json")
+            .timeout(15000);
+    if (put)
+    {
+        request = std::move(request).json(*put);
+    }
+    std::move(request)
+        .onSuccess([self, onData, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            const auto account = result.parseJson();
+            if (!account.contains(QStringLiteral("twitchId")))
+            {
+                // the login page instead of the account
+                onError(QStringLiteral(
+                    "Your DankChat login expired. Connect it again."));
+                return;
+            }
+            onData(account);
+        })
+        .onError([self, onError](const NetworkResult &result) {
+            if (!self)
+            {
+                return;
+            }
+            if (result.status() == 401 || result.status() == 499)
+            {
+                onError(QStringLiteral(
+                    "Your DankChat login expired. Connect it again."));
+                return;
+            }
+            const auto message = result.parseJson().value("message").toString();
+            onError(message.isEmpty() ? result.formatError() : message);
+        })
+        .execute();
+}
+
+void TwitchBadgePickerDialog::applyDankChatAccount(const QJsonObject &account)
+{
+    this->dankChatBadges_.clear();
+    const auto badges = account.value(QStringLiteral("badges")).toArray();
+    for (const auto &value : badges)
+    {
+        const auto badge = value.toObject();
+        this->dankChatBadges_.push_back({
+            .id = badge.value(QStringLiteral("id")).toString(),
+            .title = badge.value(QStringLiteral("title")).toString(),
+            .url = badge.value(QStringLiteral("url")).toString(),
+        });
+    }
+    const auto choice = account.value(QStringLiteral("choice")).toObject();
+    const auto type = choice.value(QStringLiteral("type")).toString();
+    if (type == u"badge")
+    {
+        this->dankChatChoice_ = QStringLiteral("badge:") +
+                                choice.value(QStringLiteral("id")).toString();
+    }
+    else if (type == u"hidden")
+    {
+        this->dankChatChoice_ = QStringLiteral("hidden");
+    }
+    else
+    {
+        this->dankChatChoice_ = QStringLiteral("automatic");
+    }
+    this->dankChatLoaded_ = true;
+}
+
+void TwitchBadgePickerDialog::loadDankChat(bool force)
+{
+    if (this->dankChatLoading_ || (this->dankChatLoaded_ && !force))
+    {
+        return;
+    }
+
+    const auto twitchUserId =
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId();
+
+    // The cookie is read from the credential store once.
+    if (!this->dankChatCookieRead_)
+    {
+        this->dankChatLoading_ = true;
+        this->setStatus("Loading DankChat...");
+        this->rebuildContent();
+        Credentials::instance().get(
+            QString::fromLatin1(DANKCHAT_CREDENTIAL_PROVIDER), twitchUserId,
+            this, [this](const QString &cookie) {
+                this->dankChatCookieRead_ = true;
+                this->dankChatCookie_ = cookie;
+                this->dankChatLoading_ = false;
+                this->setStatus({});
+                this->loadDankChat(true);
+            });
+        return;
+    }
+
+    if (this->dankChatCookie_.isEmpty())
+    {
+        this->rebuildContent();
+        return;
+    }
+
+    this->dankChatLoading_ = true;
+    this->setStatus("Loading DankChat badges...");
+    this->rebuildContent();
+    this->dankChatRequest(
+        std::nullopt,
+        [this](const QJsonObject &account) {
+            this->dankChatLoading_ = false;
+            this->applyDankChatAccount(account);
+            this->setStatus({});
+            this->rebuildContent();
+        },
+        [this](const QString &error) {
+            this->dankChatLoading_ = false;
+            this->dankChatLoaded_ = false;
+            this->setStatus(error, true);
+            this->rebuildContent();
+        });
+}
+
+void TwitchBadgePickerDialog::rebuildDankChat()
+{
+    const bool connected = !this->dankChatCookie_.isEmpty();
+
+    // Title, hint and the connect button, like for BTTV.
+    auto *headerRow = new QWidget(this->contentWidget_);
+    auto *header = new QHBoxLayout(headerRow);
+    header->setContentsMargins(0, 0, 0, 0);
+    auto *texts = new QVBoxLayout();
+    texts->setSpacing(0);
+    auto *title = new QLabel("DankChat badge", this->contentWidget_);
+    title->setObjectName("TwitchBadgePickerSectionLabel");
+    texts->addWidget(title);
+    auto *hint = new QLabel(
+        connected ? "Choose the badge everyone sees. Automatic shows your "
+                    "first one."
+                  : "Connect DankChat to choose your badge.",
+        this->contentWidget_);
+    hint->setWordWrap(true);
+    texts->addWidget(hint);
+    header->addLayout(texts, 1);
+    auto *connectButton =
+        new QPushButton(connected ? "Disconnect" : "Connect", headerRow);
+    connectButton->setCursor(Qt::PointingHandCursor);
+    connectButton->setEnabled(!this->dankChatLoading_ &&
+                              !this->actionInFlight_);
+    QObject::connect(connectButton, &QPushButton::clicked, this,
+                     [this, connected] {
+                         // Later: both rebuild the content, which deletes this
+                         // button.
+                         QTimer::singleShot(0, this, [this, connected] {
+                             if (connected)
+                             {
+                                 this->disconnectDankChat();
+                             }
+                             else
+                             {
+                                 this->connectDankChat();
+                             }
+                         });
+                     });
+    header->addWidget(connectButton, 0, Qt::AlignTop);
+    this->contentLayout_->addWidget(headerRow);
+
+    if (!connected || this->dankChatLoading_ || !this->dankChatLoaded_)
+    {
+        return;
+    }
+    if (this->dankChatBadges_.isEmpty())
+    {
+        this->contentLayout_->addWidget(
+            makeEmptyListLabel(QStringLiteral("You have no DankChat badges."),
+                               this->contentWidget_));
+        return;
+    }
+
+    auto *gridWidget = new QWidget(this->contentWidget_);
+    auto *grid = new QGridLayout(gridWidget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(BADGE_GRID_SPACING);
+    const int columns = this->badgeGridColumns();
+    int index = 0;
+    const auto place = [&](QWidget *tile) {
+        grid->addWidget(tile, index / columns, index % columns);
+        ++index;
+    };
+    const auto tileOf = [&](const DankChatBadgeOption &badge,
+                            const QString &tooltip) {
+        GqlBadge tileBadge;
+        tileBadge.id = badge.id;
+        tileBadge.setID = badge.id;
+        tileBadge.title = tooltip;
+        tileBadge.image1x = badge.url;
+        tileBadge.image2x = badge.url;
+        tileBadge.image4x = badge.url;
+        return new BadgeTileButton(tileBadge, gridWidget);
+    };
+
+    // Wearing no badge
+    auto *noneTile = new NoBadgeTileButton(gridWidget);
+    noneTile->setToolTip(QStringLiteral("No DankChat badge"));
+    noneTile->setSelected(this->dankChatChoice_ == u"hidden");
+    noneTile->setEnabled(!this->actionInFlight_);
+    if (this->dankChatChoice_ != u"hidden")
+    {
+        QObject::connect(noneTile, &QPushButton::clicked, this, [this] {
+            this->selectDankChat(QJsonObject{{"type", "hidden"}},
+                                 QStringLiteral("No DankChat badge"));
+        });
+    }
+    place(noneTile);
+
+    // The site's "Automatic": the first badge, chosen by DankChat
+    auto *automaticTile = tileOf(this->dankChatBadges_.front(),
+                                 QStringLiteral("Automatic (%1)")
+                                     .arg(this->dankChatBadges_.front().title));
+    automaticTile->setSelected(this->dankChatChoice_ == u"automatic");
+    automaticTile->setEnabled(!this->actionInFlight_);
+    if (this->dankChatChoice_ != u"automatic")
+    {
+        QObject::connect(automaticTile, &QPushButton::clicked, this, [this] {
+            this->selectDankChat(QJsonObject{{"type", "automatic"}},
+                                 QStringLiteral("Automatic"));
+        });
+    }
+    place(automaticTile);
+
+    for (const auto &badge : std::as_const(this->dankChatBadges_))
+    {
+        const auto key = QStringLiteral("badge:") + badge.id;
+        auto *tile = tileOf(badge, badge.title);
+        tile->setSelected(this->dankChatChoice_ == key);
+        tile->setEnabled(!this->actionInFlight_);
+        if (this->dankChatChoice_ != key)
+        {
+            QObject::connect(tile, &QPushButton::clicked, this,
+                             [this, id = badge.id, name = badge.title] {
+                                 this->selectDankChat(
+                                     QJsonObject{{"type", "badge"}, {"id", id}},
+                                     name);
+                             });
+        }
+        place(tile);
+    }
+    this->contentLayout_->addWidget(gridWidget);
+}
+
+void TwitchBadgePickerDialog::connectDankChat()
+{
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    const auto cookie = this->askForToken(
+        QStringLiteral("DankChat"), {}, QString::fromLatin1(DANKCHAT_SITE_URL),
+        QStringLiteral(
+            "1. Click \"Open DankChat\" and sign in there with Twitch.\n"
+            "2. Open the developer tools (F12) and go to Application, then "
+            "Cookies, then https://dank.chat.\n"
+            "3. Copy the value of q_session and paste it below.\n\n"
+            "It stays on this device. DankChat signs you out after about 30 "
+            "days; then connect it again."),
+        QStringLiteral("Value of q_session"));
+    if (!self || !cookie)
+    {
+        return;
+    }
+
+    auto value = *cookie;
+    // pasted together with its name
+    if (value.startsWith(QStringLiteral("q_session=")))
+    {
+        value = value.mid(QStringLiteral("q_session=").size());
+    }
+    this->dankChatCookie_ = value;
+    this->dankChatCookieRead_ = true;
+    Credentials::instance().set(
+        QString::fromLatin1(DANKCHAT_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId(), value);
+    this->setStatus({});
+    this->loadDankChat(true);
+}
+
+void TwitchBadgePickerDialog::disconnectDankChat()
+{
+    Credentials::instance().erase(
+        QString::fromLatin1(DANKCHAT_CREDENTIAL_PROVIDER),
+        getApp()->getAccounts()->twitch.getCurrent()->getUserId());
+    this->dankChatCookie_.clear();
+    this->dankChatLoaded_ = false;
+    this->dankChatBadges_.clear();
+    this->dankChatChoice_.clear();
+    this->setStatus({});
+    this->rebuildContent();
+}
+
+void TwitchBadgePickerDialog::selectDankChat(const QJsonObject &choice,
+                                             const QString &title)
+{
+    if (this->actionInFlight_)
+    {
+        return;
+    }
+    this->actionInFlight_ = true;
+    this->setStatus({});
+    this->rebuildContent();
+
+    const QPointer<TwitchBadgePickerDialog> self = this;
+    this->dankChatRequest(
+        choice,
+        [self, title](const QJsonObject &account) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->applyDankChatAccount(account);
+            self->channel_->addSystemMessage(
+                QStringLiteral("DankChat badge set to: %1").arg(title));
+            // the chat shows the new badge once DankChat's list has it
+            if (auto *badges = getApp()->getDankChatBadges())
+            {
+                badges->load(
+                    [userId = account.value("twitchId").toString()](bool ok) {
+                        if (ok)
+                        {
+                            WindowManager::notifyBadgesUpdated(userId);
+                        }
+                    });
+            }
+            self->rebuildContent();
+        },
+        [self](const QString &error) {
+            if (!self)
+            {
+                return;
+            }
+            self->actionInFlight_ = false;
+            self->setStatus(
+                QStringLiteral("Could not change the DankChat badge: %1")
+                    .arg(error),
+                true);
             self->rebuildContent();
         });
 }
