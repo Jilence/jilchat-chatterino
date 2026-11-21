@@ -64,7 +64,6 @@ JilChatPage::JilChatPage()
         "Voice messages",
         "JilChat Desktop Presence",
         "Public logs",
-        "Badges",
         "Chat",
         "Domain highlights",
         "Input Box",
