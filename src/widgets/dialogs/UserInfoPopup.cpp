@@ -103,6 +103,7 @@
 #include <QMessageBox>
 #include <QMetaEnum>
 #include <QMouseEvent>
+#include <QBuffer>
 #include <QMovie>
 #include <QMutex>
 #include <QMutexLocker>
@@ -1372,6 +1373,11 @@ public:
         this->update();
     }
 
+    bool hasPixmap() const
+    {
+        return !this->pixmap_.isNull();
+    }
+
 protected:
     void paintEvent(QPaintEvent * /*event*/) override
     {
@@ -1410,6 +1416,206 @@ protected:
 
 private:
     QPixmap pixmap_;
+};
+
+/// The user's JilTV profile banner (Supporter perk): 5:2, a 600×240
+/// animated WebP, shown whole at the top of the usercard. Who has one is
+/// looked up in the background, so the source is asked again every second;
+/// the widget hides itself while there is none. Played with QMovie, which
+/// decodes frame by frame: a banner of up to 15 s has far more frames than
+/// Image keeps in memory (20 MB decoded).
+class JiltvUsercardBanner : public QWidget
+{
+public:
+    explicit JiltvUsercardBanner(QWidget *parent)
+        : QWidget(parent)
+    {
+        // A strip across the top of the header, behind the picture and the
+        // first lines of details (like Twitch banners in background mode);
+        // never makes the usercard taller
+        this->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        this->hide();
+        this->timer_.setInterval(1000);
+        QObject::connect(&this->timer_, &QTimer::timeout, this, [this] {
+            this->refresh();
+        });
+    }
+
+    QSize sizeHint() const override
+    {
+        return {0, 0};
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return {0, 0};
+    }
+
+protected:
+    void resizeEvent(QResizeEvent * /*event*/) override
+    {
+        // About 4:1 of the usercard's width, within sensible bounds; the
+        // 5:2 image is cut to it from the middle
+        const int h = std::clamp(qRound(this->width() / 4.0), 90, 150);
+        if (this->height() != h)
+        {
+            this->setFixedHeight(h);
+        }
+    }
+
+public:
+    /// Gets whether the banner is shown (the header pads its content then).
+    void setOnHeight(std::function<void(int)> onHeight)
+    {
+        this->onHeight_ = std::move(onHeight);
+    }
+
+    /// `source` gives the banner URL (empty: none); `onChanged` gets whether
+    /// a banner is shown now.
+    void setSource(std::function<QString()> source,
+                   std::function<void(bool)> onChanged)
+    {
+        this->source_ = std::move(source);
+        this->onChanged_ = std::move(onChanged);
+        this->url_.clear();
+        this->refresh();
+        this->timer_.start();
+    }
+
+protected:
+    void paintEvent(QPaintEvent * /*event*/) override
+    {
+        if (!this->movie_)
+        {
+            return;
+        }
+        const auto pixmap = this->movie_->currentPixmap();
+        if (pixmap.isNull())
+        {
+            return;
+        }
+        // Drawn into a layer first, so its lower part can fade out into the
+        // usercard whatever the theme's background is
+        const auto dpr = this->devicePixelRatioF();
+        QPixmap layer(this->size() * dpr);
+        layer.setDevicePixelRatio(dpr);
+        layer.fill(Qt::transparent);
+        {
+            QPainter p(&layer);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+            QPainterPath clip;
+            clip.addRoundedRect(QRectF(this->rect()), 8, 8);
+            p.setClipPath(clip);
+            const auto size = pixmap.size().scaled(
+                this->size(), Qt::KeepAspectRatioByExpanding);
+            QRect target(QPoint(0, 0), size);
+            target.moveCenter(this->rect().center());
+            p.drawPixmap(target, pixmap);
+            // Dimmed so the name and details on top stay readable
+            p.fillRect(this->rect(), QColor(0, 0, 0, 110));
+            // Fades out over the lower half
+            p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+            QLinearGradient fade(0, 0, 0, this->height());
+            fade.setColorAt(0.0, QColor(0, 0, 0, 255));
+            fade.setColorAt(0.45, QColor(0, 0, 0, 255));
+            fade.setColorAt(1.0, QColor(0, 0, 0, 0));
+            p.fillRect(this->rect(), fade);
+        }
+        QPainter painter(this);
+        painter.drawPixmap(0, 0, layer);
+    }
+
+private:
+    void refresh()
+    {
+        const auto url = this->source_ ? this->source_() : QString{};
+        if (url == this->url_)
+        {
+            return;
+        }
+        this->url_ = url;
+        this->clear();
+        if (url.isEmpty())
+        {
+            return;
+        }
+        // Banners are at most 1.5 MB; anything far bigger isn't loaded
+        constexpr qint64 maxBytes = qint64{4} * 1024 * 1024;
+        QPointer<JiltvUsercardBanner> self(this);
+        NetworkRequest(QUrl(url))
+            .timeout(20000)
+            .onSuccess([self, url](const NetworkResult &result) {
+                if (!self || self->url_ != url ||
+                    result.getData().size() > maxBytes)
+                {
+                    return;
+                }
+                self->play(result.getData());
+            })
+            .execute();
+    }
+
+    void play(const QByteArray &data)
+    {
+        this->clear();
+        this->buffer_ = new QBuffer(this);
+        this->buffer_->setData(data);
+        this->buffer_->open(QIODevice::ReadOnly);
+        this->movie_ = new QMovie(this->buffer_, "webp", this);
+        if (!this->movie_->isValid())
+        {
+            this->clear();
+            return;
+        }
+        this->movie_->setCacheMode(QMovie::CacheNone);
+        QObject::connect(this->movie_, &QMovie::frameChanged, this, [this] {
+            this->update();
+        });
+        this->movie_->start();
+        this->show();
+        if (this->onHeight_)
+        {
+            this->onHeight_(1);
+        }
+        if (this->onChanged_)
+        {
+            this->onChanged_(true);
+        }
+    }
+
+    void clear()
+    {
+        const bool had = this->movie_ != nullptr;
+        if (this->movie_)
+        {
+            this->movie_->stop();
+            this->movie_->deleteLater();
+            this->movie_ = nullptr;
+        }
+        if (this->buffer_)
+        {
+            this->buffer_->deleteLater();
+            this->buffer_ = nullptr;
+        }
+        this->hide();
+        if (had && this->onHeight_)
+        {
+            this->onHeight_(0);
+        }
+        if (had && this->onChanged_)
+        {
+            this->onChanged_(false);
+        }
+    }
+
+    std::function<QString()> source_;
+    std::function<void(bool)> onChanged_;
+    std::function<void(int)> onHeight_;
+    QString url_;
+    QBuffer *buffer_ = nullptr;
+    QMovie *movie_ = nullptr;
+    QTimer timer_;
 };
 
 UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
@@ -1578,10 +1784,22 @@ UserInfoPopup::UserInfoPopup(bool closeAutomatically, Split *split)
         headerLayout->addWidget(this->ui_.ivrBanner, 0, 0, Qt::AlignTop);
     }
 
+    // JilTV profile banner (in place of the Twitch one), behind the whole
+    // header: picture and details lie on it, the usercard keeps its height.
+    // Created first so it paints below them.
+    this->ui_.jiltvBanner = new JiltvUsercardBanner(this);
+    this->ui_.jiltvBanner->setFixedHeight(100);
+    headerLayout->addWidget(this->ui_.jiltvBanner, 0, 0, Qt::AlignTop);
+
     // first line
     auto *headLayout = new QHBoxLayout;
     headLayout->setContentsMargins(0, 0, 0, 0);
     headerLayout->addLayout(headLayout, 0, 0);
+    // On a banner the picture and details keep off its rounded edges
+    this->ui_.jiltvBanner->setOnHeight([headLayout](int shown) {
+        const int pad = shown > 0 ? 10 : 0;
+        headLayout->setContentsMargins(pad, pad, pad, pad);
+    });
 
     auto head = LayoutCreator<QHBoxLayout>(headLayout);
     {
@@ -4286,6 +4504,17 @@ void UserInfoPopup::updateUserData()
         this->maybeStartUsercardMessageAutoLoad();
         this->helixAvatarUrl_ = user.profileImageUrl;
         this->updateAvatarUrl();
+        this->ui_.jiltvBanner->setSource(
+            [login = user.login] {
+                return Jiltv::instance().bannerUrl(login);
+            },
+            [this](bool shown) {
+                if (this->ui_.ivrBanner != nullptr)
+                {
+                    this->ui_.ivrBanner->setVisible(
+                        !shown && this->ui_.ivrBanner->hasPixmap());
+                }
+            });
         this->ui_.avatarFrame->setSource(
             [login = user.login] {
                 return Jiltv::instance().frame(login);
@@ -5725,7 +5954,9 @@ void UserInfoPopup::loadIvrBanner(const QString &bannerUrl)
             }
 
             this->ui_.ivrBanner->setPixmap(std::move(pixmap));
-            this->ui_.ivrBanner->show();
+            // A JilTV banner wins over the Twitch one
+            this->ui_.ivrBanner->setVisible(this->ui_.jiltvBanner == nullptr ||
+                                            this->ui_.jiltvBanner->isHidden());
         });
 }
 

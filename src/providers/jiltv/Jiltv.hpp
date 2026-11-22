@@ -57,15 +57,21 @@ public:
     /// The frame (avatar decoration) `login` wears around their profile
     /// picture, or nullptr (looked up like paint()).
     ImagePtr frame(const QString &login);
+    /// URL of the profile banner of `login` for usercards (5:2, 600×240,
+    /// animated WebP), or empty (looked up like paint()). Only Supporters
+    /// have one, and only once a moderator approved it. A URL rather than an
+    /// Image: banners have more frames than Image keeps in memory.
+    QString bannerUrl(const QString &login);
     /// A paint from the catalog, or nullptr
     std::shared_ptr<Paint> paintById(const QString &id) const;
     /// A frame from the catalog, or nullptr
     ImagePtr frameById(const QString &id) const;
     /// Remembers what `login` wears and redraws when it changed. Without
-    /// `frame` the frame stays as it was.
+    /// `frame` (or `banner`) it stays as it was.
     void setWorn(const QString &login, const QString &paint,
                  const QString &badge,
-                 const std::optional<QString> &frame = std::nullopt);
+                 const std::optional<QString> &frame = std::nullopt,
+                 const std::optional<QString> &banner = std::nullopt);
     /// Asks for what `login` wears ahead of drawing it, e.g. when their
     /// message arrives.
     void prefetch(const QString &login);
@@ -119,6 +125,8 @@ private:
         QString badge;
         QDateTime fetched;
         QString frame;
+        /// Profile banner ID: {cdn}/banners/{id}/card.webp
+        QString banner;
     };
 
     /// Returns the cached answer for `login`, and queues a lookup when there
@@ -132,6 +140,8 @@ private:
     std::unordered_map<QString, std::shared_ptr<Paint>> paints_;
     std::unordered_map<QString, EmotePtr> badges_;
     std::unordered_map<QString, ImagePtr> frames_;
+    /// Where catalog files live (from the catalog)
+    QString cdn_;
     std::unordered_map<QString, Worn> worn_;
     QSet<QString> pending_;
     QSet<QString> inFlight_;

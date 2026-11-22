@@ -52,6 +52,11 @@ void LeafyrinoPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"jiltv", "frames", "decorations", "avatar"})
         ->setTooltip("The frames around profile pictures in usercards.")
         ->addTo(layout);
+    SettingWidget::checkbox("Show JilTV profile banners", s.showJiltvBanners)
+        ->addKeywords({"jiltv", "banner", "usercard", "profile"})
+        ->setTooltip("The JilTV banner of a Supporter at the top of their "
+                     "usercard, in place of their Twitch banner.")
+        ->addTo(layout);
     SettingWidget::checkbox("Animate JilTV paints", s.jiltvAnimatedPaints)
         ->addKeywords({"jiltv", "paints", "animation"})
         ->setTooltip("Off: paints stand still on their first frame.")

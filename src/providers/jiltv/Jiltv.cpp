@@ -287,6 +287,7 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         this->paints_ = std::move(paints);
         this->badges_ = std::move(badges);
         this->frames_ = std::move(frames);
+        this->cdn_ = cdn;
     }
     getApp()->getWindows()->invalidateChannelViewBuffers();
     WindowManager::notifyBadgesUpdated();
@@ -371,10 +372,11 @@ void Jiltv::flushLookups()
                     .badge = u.value("b").toString(),
                     .fetched = now,
                     .frame = u.value("d").toString(),
+                    .banner = u.value("bn").toString(),
                 };
                 auto &slot = this->worn_[login];
                 changed |= slot.paint != w.paint || slot.badge != w.badge ||
-                           slot.frame != w.frame;
+                           slot.frame != w.frame || slot.banner != w.banner;
                 slot = w;
             }
         }
@@ -426,6 +428,26 @@ ImagePtr Jiltv::frame(const QString &login)
         return nullptr;
     }
     return this->frameById(w->frame);
+}
+
+QString Jiltv::bannerUrl(const QString &login)
+{
+    if (!getSettings()->showJiltvBanners)
+    {
+        return {};
+    }
+    const auto w = this->worn(login);
+    if (!w || w->banner.isEmpty())
+    {
+        return {};
+    }
+    const std::scoped_lock lock(this->mutex_);
+    if (this->cdn_.isEmpty())
+    {
+        return {};  // the catalog isn't there yet
+    }
+    return this->cdn_ + QStringLiteral("/banners/") + w->banner +
+           QStringLiteral("/card.webp");
 }
 
 ImagePtr Jiltv::frameById(const QString &id) const
@@ -819,7 +841,8 @@ void Jiltv::followCosmetics()
             {
                 this->setWorn(
                     data.value("login").toString(), data.value("p").toString(),
-                    data.value("b").toString(), data.value("d").toString());
+                    data.value("b").toString(), data.value("d").toString(),
+                    data.value("bn").toString());
             }
             else if (type == u"user.personal_emotes")
             {
@@ -841,7 +864,8 @@ void Jiltv::followCosmetics()
 }
 
 void Jiltv::setWorn(const QString &login, const QString &paint,
-                    const QString &badge, const std::optional<QString> &frame)
+                    const QString &badge, const std::optional<QString> &frame,
+                    const std::optional<QString> &banner)
 {
     if (login.isEmpty())
     {
@@ -852,13 +876,15 @@ void Jiltv::setWorn(const QString &login, const QString &paint,
         const std::scoped_lock lock(this->mutex_);
         auto &slot = this->worn_[login.toLower()];
         const auto newFrame = frame.value_or(slot.frame);
+        const auto newBanner = banner.value_or(slot.banner);
         changed = slot.paint != paint || slot.badge != badge ||
-                  slot.frame != newFrame;
+                  slot.frame != newFrame || slot.banner != newBanner;
         slot = {
             .paint = paint,
             .badge = badge,
             .fetched = QDateTime::currentDateTimeUtc(),
             .frame = newFrame,
+            .banner = newBanner,
         };
     }
     if (changed)
@@ -878,7 +904,8 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         const auto cosmetics = data.value("cosmetics").toObject();
         this->setWorn(login, cosmetics.value("p").toString(),
                       cosmetics.value("b").toString(),
-                      cosmetics.value("d").toString());
+                      cosmetics.value("d").toString(),
+                      cosmetics.value("bn").toString());
         if (!login.isEmpty() && data.contains("personal_emotes"))
         {
             const auto key = login.toLower();

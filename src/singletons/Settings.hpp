@@ -505,6 +505,8 @@ public:
     BoolSetting jiltvPaintShadows = {"/jiltv/paintShadows", true};
     /// The frames around profile pictures in usercards
     BoolSetting showJiltvFrames = {"/jiltv/frames", true};
+    /// JilTV profile banners (Supporter perk) at the top of usercards
+    BoolSetting showJiltvBanners = {"/jiltv/banners", true};
     /// Emotes still waiting for review on JilTV.
     BoolSetting jiltvShowPendingEmotes = {"/jiltv/showPendingEmotes", false};
     QStringSetting jiltvApiUrl = {"/jiltv/apiUrl", "https://api.jiltv.app"};

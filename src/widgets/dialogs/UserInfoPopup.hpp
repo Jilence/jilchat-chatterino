@@ -54,6 +54,7 @@ using ImagePtr = std::shared_ptr<Image>;
 class UsercardLogsView;
 class UsercardRolesView;
 class UsercardBanner;
+class JiltvUsercardBanner;
 class Split;
 struct HelixUser;
 struct IvrSubage;
@@ -342,6 +343,8 @@ private:
         Label *userIDLabel = nullptr;
         QLabel *bannedAvatarLabel = nullptr;
         UsercardBanner *ivrBanner = nullptr;
+        /// JilTV profile banner; replaces the Twitch one while shown
+        JiltvUsercardBanner *jiltvBanner = nullptr;
         QWidget *followageRow = nullptr;
         QLabel *followageIcon = nullptr;
         Label *followageLabel = nullptr;
