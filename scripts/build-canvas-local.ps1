@@ -10,7 +10,7 @@ $env:INCLUDE = "$taskMsvc/include;$taskSdk/Include/$taskSdkVersion/ucrt;$taskSdk
 $env:LIB = "$taskMsvc/lib/x64;$taskSdk/Lib/$taskSdkVersion/ucrt/x64;$taskSdk/Lib/$taskSdkVersion/um/x64"
 
 
-$taskQt = "$taskRoot/build-dev/qt-sdk/6.11.2/msvc2022_64"
+$taskQt = "$taskRoot/build-dev/qt-sdk/6.12.0/msvc2022_64"
 $taskBuild = "$taskRoot/build-canvas"
 if (-not (Test-Path "$taskQt/lib/cmake/Qt6CanvasPainter/Qt6CanvasPainterConfig.cmake")) {
     throw 'Run scripts/install-qt-canvas-local.py to install the local Qt SDK first.'
@@ -27,6 +27,6 @@ Get-ChildItem "$taskRoot/build-dev/bin/*.dll" | Where-Object { $_.Name -notlike 
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & "$PSScriptRoot/build-canvas-runtime.ps1"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Copy-Item -LiteralPath "$taskRoot/build-dev/qtcanvaspainter-build/bin/Qt6CanvasPainter.dll" -Destination "$taskBuild/bin/Qt6CanvasPainter.dll" -Force
+Copy-Item -LiteralPath "$taskRoot/build-dev/qtcanvaspainter-build-6.12.0/bin/Qt6CanvasPainter.dll" -Destination "$taskBuild/bin/Qt6CanvasPainter.dll" -Force
 exit 0
 

@@ -37,12 +37,12 @@ function Get-PinnedSource([string]$Name, [string]$Url, [string]$Revision) {
 # Match the locally tested SDK and patch contexts exactly. Do not silently apply
 # these renderer fixes to another Qt version.
 $taskQtConfig = Join-Path $QtRoot 'lib/cmake/Qt6Core/Qt6CoreConfigVersionImpl.cmake'
-if ((Get-Content $taskQtConfig -Raw) -notmatch 'set\(PACKAGE_VERSION "6\.11\.2"\)') {
-    throw 'The patched Canvas runtime requires Qt 6.11.2.'
+if ((Get-Content $taskQtConfig -Raw) -notmatch 'set\(PACKAGE_VERSION "6\.12\.0"\)') {
+    throw 'The patched Canvas runtime requires Qt 6.12.0.'
 }
-$taskCanvas = Get-PinnedSource qtcanvaspainter https://github.com/qt/qtcanvaspainter.git ec6199e71187c76debcc0a68aa37e3e54f19c25e
+$taskCanvas = Get-PinnedSource qtcanvaspainter https://github.com/qt/qtcanvaspainter.git ab0866ae00c50cfc959b7a82cdfe643a7e5c2f3e
 $taskMimalloc = Get-PinnedSource mimalloc https://github.com/microsoft/mimalloc.git dfa50c37d951128b1e77167dd9291081aa88eea4
-foreach ($name in @('qtcanvaspainter-texture-lifetime.patch', 'qtcanvaspainter-widgetonly.patch')) {
+foreach ($name in @('qtcanvaspainter-texture-lifetime.patch')) {
     $patch = Join-Path $taskRoot ".patches/$name"
     & git -C $taskCanvas apply --reverse --check $patch 2>$null
     if ($LASTEXITCODE -ne 0) {

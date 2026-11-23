@@ -158,6 +158,19 @@ public:
         return this->croppedNametagPixmap(text, font, userColor, textSize,
                                           scale, dpr, margins);
     }
+    std::optional<NametagLayers> getNametagLayers(
+        const QString &text, const QFont &font, QColor userColor,
+        QSizeF textSize, float scale, float dpr,
+        QMarginsF margins) const override
+    {
+        const auto room = this->overflow(scale);
+        if (margins != QMarginsF(room, room, room, room))
+        {
+            return std::nullopt;
+        }
+        return this->layers(text, font, userColor, textSize, scale, dpr,
+                            false, room);
+    }
     QString sourceName() const override;
 
     /// The paint's plain color, for places that can only show one.
@@ -181,6 +194,12 @@ private:
                       double cssPx) const;
     QImage renderLayer(const jiltv::Layer &l, const jiltv::Doc &doc, QSize px,
                        double cssPx) const;
+    /// The name's picture at this moment as glow and letters. Every frame
+    /// of the loop is drawn once and then kept, so a running animation only
+    /// looks its pictures up.
+    NametagLayers layers(const QString &text, const QFont &font,
+                         QColor userColor, QSizeF size, float scale, float dpr,
+                         bool centerVertically, qreal padding) const;
 
     jiltv::Doc doc_;
     /// Only local effects need timeline evaluation when the CDN texture is used.

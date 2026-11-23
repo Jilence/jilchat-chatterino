@@ -5,10 +5,34 @@
 #include <QBrush>
 #include <QFont>
 #include <QMarginsF>
+#include <QPixmap>
 
+#include <optional>
 #include <vector>
 
 namespace chatterino {
+
+/// A name in chat as two pictures: the glow around it and the painted
+/// letters. The glow keeps its picture while only the paint moves, so an
+/// animation frame changes (and uploads) just the small letters. `glow`
+/// drawn first and `name` over it give exactly what getNametagPixmap gives.
+struct NametagLayers {
+    /// The shadows, the whole picture's size; null without shadows.
+    QPixmap glow;
+    /// The part of `glow` that shows, in its pixels.
+    QRect glowPart;
+    /// The letters (with stroke and colon).
+    QPixmap name;
+    /// Where `name` lies in the whole picture, in its pixels.
+    QPoint nameOffset;
+    /// The whole picture's size in pixels.
+    QSize size;
+    /// Whether only the letters change from frame to frame: the glow (and
+    /// a shadow cast from the letters' outline) keeps its picture, so an
+    /// animation tick needs to repaint just the letters' small rect, not
+    /// the wide glow room around them.
+    bool glowStill = false;
+};
 
 class Paint
 {
@@ -52,6 +76,15 @@ public:
                                      QColor userColor, QSizeF textSize,
                                      float scale, float dpr,
                                      QMarginsF margins) const;
+    /// What getNametagPixmap draws, split into glow and letters; nothing for
+    /// paints that don't split (the chat then uses getNametagPixmap).
+    virtual std::optional<NametagLayers> getNametagLayers(
+        const QString & /*text*/, const QFont & /*font*/,
+        QColor /*userColor*/, QSizeF /*textSize*/, float /*scale*/,
+        float /*dpr*/, QMarginsF /*margins*/) const
+    {
+        return std::nullopt;
+    }
     QString getNametagPixmapCacheKey(const QString &text, const QFont &font,
                                      QColor userColor, QSizeF textSize,
                                      float scale, float dpr,

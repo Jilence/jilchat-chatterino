@@ -9,34 +9,42 @@ $env:INCLUDE = "$taskMsvc/include;$taskSdk/Include/$taskSdkVersion/ucrt;$taskSdk
 $env:LIB = "$taskMsvc/lib/x64;$taskSdk/Lib/$taskSdkVersion/ucrt/x64;$taskSdk/Lib/$taskSdkVersion/um/x64"
 
 Set-Location $taskRoot
-$taskSource = "$taskRoot/build-dev/qtcanvaspainter-src"
+# Per Qt version: the runtime must match the SDK it is built against.
+$taskQtVersion = '6.12.0'
+$taskSource = "$taskRoot/build-dev/qtcanvaspainter-src-$taskQtVersion"
+$taskBuild = "$taskRoot/build-dev/qtcanvaspainter-build-$taskQtVersion"
 if (-not (Test-Path "$taskSource/CMakeLists.txt")) {
-    & git clone --depth 1 --branch v6.11.2 https://github.com/qt/qtcanvaspainter.git $taskSource
+    & git clone --depth 1 --branch "v$taskQtVersion" https://github.com/qt/qtcanvaspainter.git $taskSource
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
-foreach ($taskPatchName in @('qtcanvaspainter-texture-lifetime.patch', 'qtcanvaspainter-widgetonly.patch')) {
+foreach ($taskPatchName in @('qtcanvaspainter-texture-lifetime.patch')) {
     $taskPatch = "$taskRoot/.patches/$taskPatchName"
+    # Windows PowerShell turns the expected stderr of this probe into a
+    # terminating error under 'Stop'; only the exit code matters here.
+    $ErrorActionPreference = 'Continue'
     & git -C $taskSource apply --reverse --check $taskPatch 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $taskApplied = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = 'Stop'
+    if (-not $taskApplied) {
         & git -C $taskSource apply --check $taskPatch
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & git -C $taskSource apply $taskPatch
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 }
-$taskQt = "$taskRoot/build-dev/qt-sdk/6.11.2/msvc2022_64"
-& $taskCmake -S "$taskRoot/build-dev/qtcanvaspainter-src" -B "$taskRoot/build-dev/qtcanvaspainter-build" -G Ninja '-DCMAKE_CXX_COMPILER=C:/Program Files/LLVM/bin/clang-cl.exe' '-DCMAKE_C_COMPILER=C:/Program Files/LLVM/bin/clang-cl.exe' '-DCMAKE_LINKER=C:/Program Files/LLVM/bin/lld-link.exe' '-DCMAKE_RC_COMPILER=C:/Program Files/LLVM/bin/llvm-rc.exe' '-DCMAKE_MAKE_PROGRAM=C:/Users/powww/AppData/Local/Python/pythoncore-3.14-64/Scripts/ninja.exe' -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$taskQt" "-DQt6_DIR=$taskQt/lib/cmake/Qt6" -DCMAKE_DISABLE_FIND_PACKAGE_Qt6Quick=TRUE -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DQT_BUILD_DOCS=OFF -DQT_BUILD_BENCHMARKS=OFF
+$taskQt = "$taskRoot/build-dev/qt-sdk/$taskQtVersion/msvc2022_64"
+& $taskCmake -S $taskSource -B $taskBuild -G Ninja '-DCMAKE_CXX_COMPILER=C:/Program Files/LLVM/bin/clang-cl.exe' '-DCMAKE_C_COMPILER=C:/Program Files/LLVM/bin/clang-cl.exe' '-DCMAKE_LINKER=C:/Program Files/LLVM/bin/lld-link.exe' '-DCMAKE_RC_COMPILER=C:/Program Files/LLVM/bin/llvm-rc.exe' '-DCMAKE_MAKE_PROGRAM=C:/Users/powww/AppData/Local/Python/pythoncore-3.14-64/Scripts/ninja.exe' -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$taskQt" "-DQt6_DIR=$taskQt/lib/cmake/Qt6" -DCMAKE_DISABLE_FIND_PACKAGE_Qt6Quick=TRUE -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DQT_BUILD_DOCS=OFF -DQT_BUILD_BENCHMARKS=OFF
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # Use the official matching host tool: the local clang-cl/lld tool executable
 # receives an invalid UAC manifest from Qt's tool-build configuration.
-& $taskCmake --build "$taskRoot/build-dev/qtcanvaspainter-build" --target qcshadergen -j 12
+& $taskCmake --build $taskBuild --target qcshadergen -j 12
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$taskHostTool = "$taskRoot/build-dev/qtcanvaspainter-build/bin/qcshadergen.exe"
+$taskHostTool = "$taskBuild/bin/qcshadergen.exe"
 if ((Get-FileHash "$taskQt/bin/qcshadergen.exe").Hash -ne (Get-FileHash $taskHostTool).Hash) {
     Copy-Item -LiteralPath "$taskQt/bin/qcshadergen.exe" -Destination $taskHostTool -Force
     (Get-Item $taskHostTool).LastWriteTimeUtc = [DateTime]::UtcNow
 }
-& $taskCmake --build "$taskRoot/build-dev/qtcanvaspainter-build" --target CanvasPainter -j 12
+& $taskCmake --build $taskBuild --target CanvasPainter -j 12
 exit $LASTEXITCODE
 
 

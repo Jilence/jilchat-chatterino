@@ -16,6 +16,7 @@
 #include <QFontMetricsF>
 #include <QHashFunctions>
 #include <QJsonArray>
+#include <QPair>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -1296,20 +1297,17 @@ namespace {
 /// them (the blur) is the costly part, but it depends only on the outline of
 /// the name and where the shadows lie, not on the colors that move.
 struct ShadowCache {
-    /// The alpha of the name they were cast from.
+    /// The alpha of the letters they were cast from, and where those lay.
     QByteArray alpha;
-    qint64 mask = 0;
+    QRect crop;
     /// Offset, blur and opacity of each shadow, in order.
     std::vector<std::array<double, 4>> shapes;
     /// Each shadow's blurred alpha, as it lies under the name.
     std::vector<QByteArray> spread;
-    /// The colors `under` was made with.
+    /// The colors the glow was tinted with.
     std::vector<QRgb> colors;
-    /// All shadows over each other, to draw the name on.
-    QImage under;
-    /// The part of the name's picture that shows with these shadows; found
-    /// again only when they are cast anew (it depends on the shapes, not on
-    /// the colors).
+    /// The part of the glow that shows; found again only when the shadows
+    /// are cast anew (it depends on the shapes, not on the colors).
     QRect visible;
     bool visibleValid = false;
 };
@@ -1321,13 +1319,7 @@ struct NameState {
     NameState &operator=(const NameState &) = delete;
     NameState(NameState &&) = delete;
     NameState &operator=(NameState &&) = delete;
-    ~NameState()
-    {
-        if (this->pixmap.cacheKey() != 0)
-        {
-            paintVisiblePixels().remove(this->pixmap.cacheKey());
-        }
-    }
+    ~NameState() = default;
 
     /// The stroke width the mask was made for; -1 without stroke.
     double maskStroke = -2;
@@ -1343,11 +1335,14 @@ struct NameState {
     /// The fills above, clipped; null for those that move.
     std::vector<QImage> clipped;
 
-    ShadowCache shadows;
+    /// A baked texture frame scaled to one tile of the name's height, and
+    /// the frame it was made from.
+    qint64 tileSource = 0;
+    QPixmap tile;
 
-    qint64 step = -2;
-    qint64 textureFrame = 0;
-    QPixmap pixmap;
+    ShadowCache shadows;
+    /// The glow in its current colors.
+    QPixmap glow;
 };
 
 /// Shared by all paints, in KiB; keyed by a number made of what shapes the
@@ -1355,6 +1350,41 @@ struct NameState {
 QCache<size_t, NameState> &nameStates()
 {
     static QCache<size_t, NameState> cache(qsizetype{32} * 1024);
+    return cache;
+}
+
+/// Every finished picture of every name, in KiB, keyed by the name and the
+/// moment of the loop. A loop repeats, so once a name's animation has gone
+/// round once its frames are only looked up: no drawing, and on the GPU no
+/// uploads either, since the same pixmaps keep their textures.
+QCache<size_t, NametagLayers> &paintFrames()
+{
+    static QCache<size_t, NametagLayers> cache(qsizetype{48} * 1024);
+    return cache;
+}
+
+/// getPixmap's picture, glow and letters in one, for callers outside the
+/// chat. It tells the chat which part of it shows while it lives.
+struct ComposedName {
+    ComposedName() = default;
+    ComposedName(const ComposedName &) = delete;
+    ComposedName &operator=(const ComposedName &) = delete;
+    ComposedName(ComposedName &&) = delete;
+    ComposedName &operator=(ComposedName &&) = delete;
+    ~ComposedName()
+    {
+        if (this->pixmap.cacheKey() != 0)
+        {
+            paintVisiblePixels().remove(this->pixmap.cacheKey());
+        }
+    }
+    QPixmap pixmap;
+};
+
+QCache<QPair<qint64, qint64>, ComposedName> &composedNames()
+{
+    static QCache<QPair<qint64, qint64>, ComposedName> cache(qsizetype{8} *
+                                                             1024);
     return cache;
 }
 
@@ -1398,6 +1428,14 @@ void clipTo(QImage &img, const QImage &mask)
     QPainter p(&img);
     p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
     p.drawImage(0, 0, mask);
+}
+
+/// Draws `pixmap` with its pixels at `topLeft` of an image without a device
+/// pixel ratio (drawing at a point would shrink it by its own ratio).
+void drawPixels(QPainter &p, QPoint topLeft, const QPixmap &pixmap)
+{
+    p.drawPixmap(QRectF(QPointF(topLeft), QSizeF(pixmap.size())), pixmap,
+                 QRectF(pixmap.rect()));
 }
 
 }  // namespace
@@ -1465,10 +1503,10 @@ QImage JiltvPaint::renderFill(const Fill &fill, const Doc &doc, QSize px,
     return img;
 }
 
-QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
-                              QColor userColor, QSizeF size, float scale,
-                              float dpr, bool centerVertically,
-                              qreal padding) const
+NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
+                                 QColor userColor, QSizeF size, float scale,
+                                 float dpr, bool centerVertically,
+                                 qreal padding) const
 {
     const bool animate = getSettings()->jiltvAnimatedPaints;
     const bool effects = this->shadowsEnabled();
@@ -1498,8 +1536,22 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             ? animatedPaintTick() % framesPerLoop
             : -1;
 
+    // The pictures the name is made of besides the loop's moment: the baked
+    // texture, or the shader loops, which step with the GIF timer.
+    size_t images = qHash(textureKey);
+    if (!baked)
+    {
+        for (const auto &[id, loop] : this->loops_)
+        {
+            const auto frame = loop->pixmapOrLoad();
+            images = qHashMulti(images, frame && !frame->isNull()
+                                            ? frame->cacheKey()
+                                            : qint64{0});
+        }
+    }
+
     // The chat gives the name `padding` (overflow()) on every side for the
-    // glow and draws the pixmap over that larger rect, so the pixmap must
+    // glow and draws the picture over that larger rect, so the picture must
     // include it, centered or not; otherwise the name gets stretched.
     padding = std::max<qreal>(0, padding);
     // A number, not a text: this runs for every animated name on every
@@ -1508,15 +1560,20 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                                   size.height(), scale, dpr, centerVertically,
                                   padding, effects, userColor.rgba());
 
-    // Everything of the name that stays the same between frames is kept, so
-    // a frame only draws what moves: the animated layers, and the shadows
-    // in their current colors.
-    auto &states = nameStates();
-    NameState *state = states.object(key);
-    if (state != nullptr && state->step == step &&
-        state->textureFrame == textureKey && !state->pixmap.isNull())
+    auto nametag = text;
+    const bool colon = nametag.endsWith(u':');
+    if (colon)
     {
-        return state->pixmap;
+        nametag.chop(1);
+    }
+    const QColor colonColor =
+        colon ? getApp()->getThemes()->messages.textColors.regular : QColor();
+
+    auto &frames = paintFrames();
+    const size_t frameKey = qHashMulti(key, step, images, colonColor.rgba());
+    if (const auto *frame = frames.object(frameKey))
+    {
+        return *frame;
     }
 
     const double t = step < 0 ? 0
@@ -1524,13 +1581,6 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                                     static_cast<double>(framesPerLoop);
     const Doc doc = (baked ? this->effectsDoc_ : this->doc_)
                         .frameAt(std::clamp(t, 0.0, 1.0));
-
-    auto nametag = text;
-    const bool colon = nametag.endsWith(u':');
-    if (colon)
-    {
-        nametag.chop(1);
-    }
 
     const QSizeF drawSize = size + QSizeF(2 * padding, 2 * padding);
     const QSize devSize = (drawSize * dpr).toSize().expandedTo({1, 1});
@@ -1555,21 +1605,21 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     const auto base = userColor.isValid() ? userColor : this->fallbackColor();
     const auto fills = baked ? std::vector<Fill>{} : this->fills(doc, base);
 
+    auto &states = nameStates();
+    NameState *state = states.object(key);
     if (state == nullptr)
     {
         // Fills and masks only cover the name, not the much larger glow
-        // margin. Overcharging every fill at frame size evicts visible names
-        // and makes their shadows get rebuilt on every animation tick.
+        // margin; the glow and its cast shadows do.
         const qint64 frameBytes =
             static_cast<qint64>(devSize.width()) * devSize.height() * 4;
         const qint64 fillBytes =
             static_cast<qint64>(fillSize.width()) * fillSize.height() * 4;
         const auto cost = static_cast<qsizetype>(
-            (frameBytes * (effects ? 2 : 1) +
-             fillBytes * static_cast<qint64>(fills.size() + 2) +
-             (effects
-                  ? frameBytes / 4 * static_cast<qint64>(doc.shadows.size() + 1)
-                  : 0) +
+            (fillBytes * static_cast<qint64>(fills.size() + 3) +
+             (effects ? frameBytes + (frameBytes / 4 *
+                                      static_cast<qint64>(doc.shadows.size()))
+                      : 0) +
              1023) /
             1024);
         if (states.insert(key, new NameState, std::max<qsizetype>(1, cost)))
@@ -1660,16 +1710,39 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
         s.fillsValid = true;
     }
 
-    // A moving texture over an opaque base leaves the glyph shape unchanged.
-    // Start with the cached glow and draw only the small name over it, avoiding
-    // a second full-size transparent surface and a second composition pass.
-    const bool reuseShadowUnder =
-        baked && effects && base.alpha() == 255 && !stroked &&
-        this->effectsDoc_.tracks.empty() && s.textureFrame != 0 &&
-        s.shadows.mask == s.mask.cacheKey() && !s.shadows.under.isNull();
-    QImage img = reuseShadowUnder ? s.shadows.under.copy() : blank(devSize);
+    // The letters get a picture of their own, just big enough for them,
+    // their stroke and the colon: only that changes from frame to frame,
+    // never the wide, mostly transparent glow room around them.
+    const int filterMargin =
+        stroked ? static_cast<int>(std::ceil(doc.stroke->x * cssPx)) + 2 : 0;
+    QRect crop = QRect(origin, fillSize)
+                     .adjusted(-filterMargin, -filterMargin, filterMargin,
+                               filterMargin);
+    if (colon)
     {
-        QPainter p(&img);
+        const double colonLeft = nameBox.right();
+        const double colonRight =
+            colonLeft + metrics.horizontalAdvance(QStringLiteral(":"));
+        crop |= QRect(
+            QPoint(static_cast<int>(std::floor(colonLeft * dpr)) - 1,
+                   static_cast<int>(
+                       std::floor((baseline - metrics.ascent()) * dpr)) -
+                       1),
+            QPoint(static_cast<int>(std::ceil(colonRight * dpr)) + 1,
+                   static_cast<int>(
+                       std::ceil((baseline + metrics.descent()) * dpr)) +
+                       1));
+    }
+    crop = crop.intersected(QRect(QPoint(0, 0), devSize));
+    if (crop.isEmpty())
+    {
+        crop = QRect(0, 0, 1, 1);
+    }
+
+    QImage letters = blank(crop.size());
+    {
+        QPainter p(&letters);
+        p.translate(-crop.topLeft());
         if (baked)
         {
             // The texture already contains all blends, filters and animation.
@@ -1681,13 +1754,22 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                 pp.setRenderHint(QPainter::SmoothPixmapTransform);
                 if (this->textureTiles_)
                 {
-                    const auto tileWidth = std::max(
-                        1, qRound(static_cast<double>(textureFrame->width()) *
-                                  fillSize.height() / textureFrame->height()));
-                    const auto tile = textureFrame->scaled(
-                        tileWidth, fillSize.height(), Qt::IgnoreAspectRatio,
-                        Qt::SmoothTransformation);
-                    pp.fillRect(painted.rect(), QBrush(tile));
+                    // Scaled once per texture frame, not once per name and
+                    // repaint.
+                    if (s.tileSource != textureKey ||
+                        s.tile.height() != fillSize.height())
+                    {
+                        const auto tileWidth = std::max(
+                            1, qRound(static_cast<double>(
+                                          textureFrame->width()) *
+                                      fillSize.height() /
+                                      textureFrame->height()));
+                        s.tile = textureFrame->scaled(
+                            tileWidth, fillSize.height(), Qt::IgnoreAspectRatio,
+                            Qt::SmoothTransformation);
+                        s.tileSource = textureKey;
+                    }
+                    pp.fillRect(painted.rect(), QBrush(s.tile));
                 }
                 else
                 {
@@ -1736,20 +1818,17 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             p.fillPath(s.strokeOutline, color);
         }
     }
-    // Filters precede drop shadows. Only the letters and stroke have pixels
-    // here; scanning the large transparent glow margin wastes most of the work.
-    const int filterMargin =
-        stroked ? static_cast<int>(std::ceil(doc.stroke->x * cssPx)) + 2 : 0;
+    // Filters precede drop shadows.
     if (!baked)
     {
-        applyFilters(img, doc.hue, doc.saturate, doc.brightness,
-                     QRect(origin, fillSize)
+        applyFilters(letters, doc.hue, doc.saturate, doc.brightness,
+                     QRect(origin - crop.topLeft(), fillSize)
                          .adjusted(-filterMargin, -filterMargin, filterMargin,
                                    filterMargin));
     }
 
     std::vector<const Shadow *> shadows;
-    if (effects && !reuseShadowUnder)
+    if (effects)
     {
         for (const auto &shadow : doc.shadows)
         {
@@ -1759,6 +1838,8 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
             }
         }
     }
+    QPixmap glow;
+    QRect glowPart;
     if (!shadows.empty())
     {
         // CSS `filter: drop-shadow(a) drop-shadow(b)` chains: each shadow is
@@ -1776,21 +1857,19 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                               toQColor(shadow->color).alphaF()});
             colors.push_back(toQColor(shadow->color).rgba());
         }
-        // With an opaque name color and no stroke, a baked texture cannot
-        // change the glyph alpha. Reuse it without reading the entire glow
-        // surface on every frame. Translucent colors/strokes still compare
-        // the actual pixels so animated opacity remains correct.
-        auto alpha =
-            baked && s.textureFrame != 0 && cache.mask == s.mask.cacheKey() &&
-                    base.alpha() == 255 && !stroked && !cache.alpha.isEmpty()
-                ? cache.alpha
-                : alphaOf(img);
-        if (alpha != cache.alpha || shapes != cache.shapes)
+        // Only the small picture of the letters is read, not the glow room.
+        auto alpha = alphaOf(letters);
+        if (alpha != cache.alpha || crop != cache.crop ||
+            shapes != cache.shapes)
         {
             cache.spread.clear();
             cache.colors.clear();
             cache.visibleValid = false;
-            QImage cast = img;
+            QImage cast = blank(devSize);
+            {
+                QPainter cp(&cast);
+                cp.drawImage(crop.topLeft(), letters);
+            }
             for (const auto *shadow : shadows)
             {
                 const auto shadowColor = toQColor(shadow->color);
@@ -1814,73 +1893,127 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                 cast.swap(layer);
             }
             cache.alpha = std::move(alpha);
-            cache.mask = s.mask.cacheKey();
+            cache.crop = crop;
             cache.shapes = std::move(shapes);
         }
-        if (colors != cache.colors)
+        if (colors != cache.colors || s.glow.isNull())
         {
             // The first shadow lies on top of the second, and so on.
-            cache.under = blank(devSize);
-            QPainter up(&cache.under);
-            for (size_t i = cache.spread.size(); i-- > 0;)
+            QImage under = blank(devSize);
             {
-                up.drawImage(0, 0,
-                             colored(cache.spread[i], devSize, colors[i]));
+                QPainter up(&under);
+                for (size_t i = cache.spread.size(); i-- > 0;)
+                {
+                    up.drawImage(0, 0,
+                                 colored(cache.spread[i], devSize, colors[i]));
+                }
             }
             cache.colors = std::move(colors);
+            // Only the part that shows is drawn in the chat. Finding it
+            // means reading every pixel, so it is kept while the glow keeps
+            // its shape.
+            if (!cache.visibleValid)
+            {
+                cache.visible = visibleBounds(under);
+                cache.visibleValid = true;
+            }
+            s.glow = QPixmap::fromImage(std::move(under));
+            s.glow.setDevicePixelRatio(dpr);
         }
-        QImage out = cache.under.copy();
-        {
-            QPainter op(&out);
-            op.drawImage(0, 0, img);
-        }
-        img.swap(out);
+        glow = s.glow;
+        glowPart = cache.visible;
     }
 
     if (colon)
     {
-        QPainter p(&img);
+        QPainter p(&letters);
+        p.translate(-crop.topLeft());
         p.scale(dpr, dpr);
-        p.setPen(getApp()->getThemes()->messages.textColors.regular);
+        p.setPen(colonColor);
         p.setFont(font);
         p.drawText(QPointF(nameBox.right(), baseline), QStringLiteral(":"));
     }
 
-    // Only the part that shows is drawn in the chat. Finding it means
-    // reading every pixel, so it is kept while the glow keeps its shape;
-    // without room for a glow the whole picture shows.
-    QRect visible;
-    const bool hasGlow = effects && !s.shadows.spread.empty();
-    if (hasGlow && s.shadows.visibleValid)
+    NametagLayers out;
+    out.glow = std::move(glow);
+    out.glowPart = glowPart;
+    out.name = QPixmap::fromImage(std::move(letters));
+    out.name.setDevicePixelRatio(dpr);
+    out.nameOffset = crop.topLeft();
+    out.size = devSize;
+    // The letters' outline stays put when the base under the paint is opaque
+    // (their alpha is then the mask's) and nothing animates the shadows or
+    // the stroke: every frame differs only inside the letters.
+    out.glowStill =
+        base.alpha() == 255 &&
+        std::ranges::none_of(this->doc_.tracks, [](const Track &track) {
+            return track.target.startsWith(u"shadow:") ||
+                   track.target.startsWith(u"stroke:");
+        });
+
+    // A glow whose colors move is a picture of its own per frame; a still
+    // one is shared by all frames and counted with the name's state.
+    const bool glowMoves =
+        !out.glow.isNull() &&
+        std::ranges::any_of(this->effectsDoc_.tracks, [](const Track &track) {
+            return track.target.startsWith(u"shadow:");
+        });
+    const qint64 bytes =
+        (static_cast<qint64>(out.name.width()) * out.name.height() * 4) +
+        (glowMoves ? static_cast<qint64>(out.glow.width()) *
+                         out.glow.height() * 4
+                   : 0);
+    frames.insert(frameKey, new NametagLayers(out),
+                  std::max<qsizetype>(1, static_cast<qsizetype>(
+                                             (bytes + 1023) / 1024)));
+    return out;
+}
+
+QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
+                              QColor userColor, QSizeF size, float scale,
+                              float dpr, bool centerVertically,
+                              qreal padding) const
+{
+    const auto l = this->layers(text, font, userColor, size, scale, dpr,
+                                centerVertically, padding);
+    if (l.glow.isNull() && l.nameOffset.isNull() && l.name.size() == l.size)
     {
-        visible = s.shadows.visible;
+        return l.name;
     }
-    else if (padding <= 0)
+
+    // Outside the chat (popups, previews) the name is one picture: glow
+    // and letters put together once per frame.
+    auto &composed = composedNames();
+    const QPair<qint64, qint64> id{l.glow.cacheKey(), l.name.cacheKey()};
+    if (const auto *hit = composed.object(id))
     {
-        visible = QRect(QPoint(0, 0), img.size());
+        return hit->pixmap;
     }
-    else
+    QImage img = blank(l.size);
     {
-        visible = visibleBounds(img);
-        if (hasGlow)
+        QPainter p(&img);
+        if (!l.glow.isNull())
         {
-            s.shadows.visible = visible;
-            s.shadows.visibleValid = true;
+            drawPixels(p, {0, 0}, l.glow);
         }
+        drawPixels(p, l.nameOffset, l.name);
     }
-    auto pixmap = QPixmap::fromImage(std::move(img));
-    pixmap.setDevicePixelRatio(dpr);
-    if (!s.pixmap.isNull())
-    {
-        paintVisiblePixels().remove(s.pixmap.cacheKey());
-    }
-    if (&s != &uncached)
-    {
-        paintVisiblePixels().insert(pixmap.cacheKey(), visible);
-    }
-    s.step = step;
-    s.textureFrame = textureKey;
-    s.pixmap = pixmap;
+    auto *entry = new ComposedName;
+    entry->pixmap = QPixmap::fromImage(std::move(img));
+    entry->pixmap.setDevicePixelRatio(dpr);
+    const QRect nameRect(l.nameOffset, l.name.size());
+    paintVisiblePixels().insert(entry->pixmap.cacheKey(),
+                                l.glow.isNull()
+                                    ? nameRect
+                                    : l.glowPart.united(nameRect));
+    const auto pixmap = entry->pixmap;
+    composed.insert(
+        id, entry,
+        std::max<qsizetype>(
+            1, static_cast<qsizetype>(
+                   (static_cast<qint64>(l.size.width()) * l.size.height() * 4 +
+                    1023) /
+                   1024)));
     return pixmap;
 }
 

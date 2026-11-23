@@ -1,30 +1,21 @@
 diff --git a/src/canvaspainter/engine/qcpainterrhirenderer.cpp b/src/canvaspainter/engine/qcpainterrhirenderer.cpp
-index 2dbde89..7d154b5 100644
+index 4472647..81dd9df 100644
 --- a/src/canvaspainter/engine/qcpainterrhirenderer.cpp
 +++ b/src/canvaspainter/engine/qcpainterrhirenderer.cpp
-@@ -898,8 +898,20 @@ bool QCPainterRhiRenderer::renderDeleteTexture(int image)
-         if (tex->id == image) {
+@@ -930,9 +930,10 @@ bool QCPainterRhiRenderer::renderDeleteTexture(int image)
+             }
+ 
              // Delete QRhiTexture (unless not owned), but leave QCRHITexture
-             // to be reused.
-+            // Bindings retain native resource views and pointers to this
-+            // texture. Retire them with the texture instead of keeping stale
-+            // bindings in the per-image cache until the painter is destroyed.
-+            for (auto it = rhiCtx->srbs.begin(); it != rhiCtx->srbs.end(); ) {
-+                if (it.key().imageId == image || it.key().fontId == image) {
-+                    if (it.value())
-+                        it.value()->deleteLater();
-+                    it = rhiCtx->srbs.erase(it);
-+                } else {
-+                    ++it;
-+                }
-+            }
-             if (!tex->flags.testFlag(QCanvasPainter::ImageFlag::NativeTexture))
+-            // to be reused.
++            // to be reused. Deferred: a frame being recorded may still
++            // refer to it (D3D11 keeps raw views in its command list).
+             if (tex->own)
 -                delete tex->tex;
 +                tex->tex->deleteLater();
              tex->tex = nullptr;
              tex->id = 0;
              return true;
-@@ -2268,6 +2280,11 @@ void QCPainterRhiRenderer::renderDelete()
+@@ -2824,6 +2825,11 @@ void QCPainterRhiRenderer::renderDelete()
      if (!rhiCtx)
          return;
  
@@ -34,5 +25,5 @@ index 2dbde89..7d154b5 100644
 +    rhiCtx->srbs.clear();
 +
      for (int i = 0; i < rhiCtx->texturesCount; i++) {
-         if (rhiCtx->textures[i].tex
-             && !(rhiCtx->textures[i].flags.testFlag(QCanvasPainter::ImageFlag::NativeTexture)))
+         if (rhiCtx->textures[i].own)
+             delete rhiCtx->textures[i].tex;

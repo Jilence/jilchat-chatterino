@@ -9,7 +9,7 @@ $env:INCLUDE = "$taskMsvc/include;$taskSdk/Include/$taskSdkVersion/ucrt;$taskSdk
 $env:LIB = "$taskMsvc/lib/x64;$taskSdk/Lib/$taskSdkVersion/ucrt/x64;$taskSdk/Lib/$taskSdkVersion/um/x64"
 
 Set-Location $taskRoot
-$taskQt = "$taskRoot/build-dev/qt-sdk/6.11.2/msvc2022_64"
+$taskQt = "$taskRoot/build-dev/qt-sdk/6.12.0/msvc2022_64"
 $env:PATH = "$taskQt/bin;$env:PATH"
 & 'C:/Program Files/LLVM/bin/clang-cl.exe' /nologo /std:c++20 /Zc:__cplusplus /MD /EHsc /DQT_NO_DEBUG /I src "/I$taskQt/include" "/I$taskQt/include/QtCore" src/util/RatelimitBucket.cpp prototypes/canvas-chat-smoke/join-queue.cpp /Fe:build-dev/canvas-smoke/join-queue.exe /Fo:build-dev/canvas-smoke/ /link "$taskQt/lib/Qt6Core.lib"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -58,7 +58,8 @@ private:
     void loadSource();
 
     Src source_;
-    QSvgRenderer *svg_;
+    /// Shared with all buttons showing the same file (not owned).
+    QSvgRenderer *svg_ = nullptr;
     QSize padding_;
     std::optional<QColor> color_;
 };

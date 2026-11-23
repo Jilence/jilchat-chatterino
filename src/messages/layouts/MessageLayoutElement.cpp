@@ -1875,9 +1875,18 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     }
 
     const auto margins = paint->overflowMargins(this->scale_);
-    const auto paintPixmap = paint->getNametagPixmap(
+    // Glow and letters apart where the paint offers it: the glow keeps its
+    // picture (and on the GPU its texture) while the letters move.
+    const auto layers = paint->getNametagLayers(
         this->getText(), font, this->color_, this->getRect().size(),
         this->scale_, this->dpr_, margins);
+    QPixmap paintPixmap;
+    if (!layers)
+    {
+        paintPixmap = paint->getNametagPixmap(
+            this->getText(), font, this->color_, this->getRect().size(),
+            this->scale_, this->dpr_, margins);
+    }
 
     auto rect = this->getRect();
     rect.moveTop(rect.y() + yOffset);
@@ -1885,6 +1894,39 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     // On whole pixels, so the name doesn't shift when the painter's smoothing
     // changes (e.g. when the mouse moves in or out of the window)
     rect = snapRectToDevicePixels(QRectF(rect), painter);
+
+    // Where a piece of the whole picture (`full` pixels) lands in `rect`.
+    const QSize full = layers ? layers->size : paintPixmap.size();
+    const auto scaleX = full.width() > 0 ? rect.width() / full.width() : 1.0;
+    const auto scaleY = full.height() > 0 ? rect.height() / full.height() : 1.0;
+    const auto pieceTarget = [&](QPoint offset, QSize size) {
+        return QRectF(rect.x() + (offset.x() * scaleX),
+                      rect.y() + (offset.y() * scaleY), size.width() * scaleX,
+                      size.height() * scaleY);
+    };
+    // Only the part of a picture that shows: the glow room around the name
+    // is wide and mostly transparent
+    const auto drawPiece = [&](const QPixmap &pixmap, QPoint offset,
+                               QRect part) {
+        if (pixmap.isNull() || part.isEmpty())
+        {
+            return;
+        }
+        const auto target = pieceTarget(offset, pixmap.size());
+        if (drawPixmapPixelExact(painter, target, pixmap, part))
+        {
+            return;
+        }
+        const QRectF partTarget(target.x() + (part.x() * scaleX),
+                                target.y() + (part.y() * scaleY),
+                                part.width() * scaleX, part.height() * scaleY);
+        const bool wasSmooth =
+            painter.testRenderHint(QPainter::SmoothPixmapTransform);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        painter.drawPixmap(partTarget, pixmap, QRectF(part));
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, wasSmooth);
+    };
+
     QRegion paintedRegion;
     if (shadow != nullptr && shadow->opacity > 0)
     {
@@ -1892,19 +1934,44 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         // they get the theme's shadow here. The key names the shape of the
         // pixmap: with a gradient only the colors move, so the shadow is made
         // once; with an animated image it is made per frame.
-        const AnimatedShadowLayer layer{
-            .pixmap = &paintPixmap,
-            .target = QRectF(rect),
-            .cacheIdentity = paint->getNametagPixmapCacheKey(
-                this->getText(), font, this->color_, this->getRect().size(),
-                this->scale_, this->dpr_, margins),
-        };
-        paintedRegion +=
-            paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
+        const auto identity = paint->getNametagPixmapCacheKey(
+            this->getText(), font, this->color_, this->getRect().size(),
+            this->scale_, this->dpr_, margins);
+        if (layers)
+        {
+            std::array<AnimatedShadowLayer, 2> pieces{
+                AnimatedShadowLayer{
+                    .pixmap = &layers->glow,
+                    .target = pieceTarget({0, 0}, layers->glow.size()),
+                    .cacheIdentity = identity + u"/glow",
+                },
+                AnimatedShadowLayer{
+                    .pixmap = &layers->name,
+                    .target = pieceTarget(layers->nameOffset,
+                                          layers->name.size()),
+                    .cacheIdentity = identity,
+                },
+            };
+            paintedRegion += paintAnimatedShadow(painter, pieces, shadow);
+        }
+        else
+        {
+            const AnimatedShadowLayer layer{
+                .pixmap = &paintPixmap,
+                .target = QRectF(rect),
+                .cacheIdentity = identity,
+            };
+            paintedRegion +=
+                paintAnimatedShadow(painter, std::span(&layer, 1), shadow);
+        }
     }
+    if (layers)
     {
-        // Only the part of the picture that shows: the glow room around the
-        // name is wide and mostly transparent
+        drawPiece(layers->glow, {0, 0}, layers->glowPart);
+        drawPiece(layers->name, layers->nameOffset, layers->name.rect());
+    }
+    else
+    {
         QRect part = paintPixmap.rect();
         if (const auto it =
                 paintVisiblePixels().constFind(paintPixmap.cacheKey());
@@ -1912,26 +1979,21 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
         {
             part = *it;
         }
-        if (part.isEmpty())
-        {
-            // nothing shows
-        }
-        else if (!drawPixmapPixelExact(painter, QRectF(rect), paintPixmap,
-                                       part))
-        {
-            const auto scaleX = rect.width() / paintPixmap.width();
-            const auto scaleY = rect.height() / paintPixmap.height();
-            const QRectF target(rect.x() + (part.x() * scaleX),
-                                rect.y() + (part.y() * scaleY),
-                                part.width() * scaleX, part.height() * scaleY);
-            const bool wasSmooth =
-                painter.testRenderHint(QPainter::SmoothPixmapTransform);
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-            painter.drawPixmap(target, paintPixmap, QRectF(part));
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, wasSmooth);
-        }
+        drawPiece(paintPixmap, {0, 0}, part);
     }
-    paintedRegion += rect.toAlignedRect();
+    if (layers && layers->glowStill)
+    {
+        // Glow and shadow keep their pictures: only the letters need a
+        // repaint on each tick, not the glow room spanning several lines.
+        // A pixel of room: a scaled draw blends into its neighbours.
+        paintedRegion = pieceTarget(layers->nameOffset, layers->name.size())
+                            .toAlignedRect()
+                            .adjusted(-1, -1, 1, 1);
+    }
+    else
+    {
+        paintedRegion += rect.toAlignedRect();
+    }
     // Paints made of images keep the GIF timer's pace; the others only
     // change at the paints' own rate
     if (auto *sink = paint->animatesWithImages()

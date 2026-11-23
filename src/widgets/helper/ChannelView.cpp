@@ -2632,6 +2632,10 @@ ChannelView::ChannelView(InternalCtor /*tag*/, QWidget *parent, Split *split,
     this->initializeSignals();
 #ifdef CHATTERINO_CANVAS_PAINTER
     if (this->context_ == Context::None && tryGetApp() && !getApp()->isTest() &&
+        // Opt-in: a GPU surface makes Qt composite the whole window on the
+        // GPU and upload the rest of the (raster) UI every frame, which
+        // measured at about three times the CPU and 1.6 times the memory of
+        // drawing the cached message pictures on the CPU.
         qEnvironmentVariableIntValue("JILCHAT_ENABLE_CANVAS") &&
         !qEnvironmentVariableIntValue("JILCHAT_DISABLE_CANVAS"))
     {
@@ -4843,10 +4847,22 @@ void ChannelView::paintEvent(QPaintEvent *event)
 void ChannelView::paintChat(QPainter &painter, const QRegion &area)
 {
     const bool rounded = this->ensureChatFramePaths();
+#ifdef CHATTERINO_CANVAS_PAINTER
+    const bool onCanvas = this->canvasSurface_ != nullptr;
+#else
+    const bool onCanvas = false;
+#endif
     if (rounded)
     {
         painter.save();
-        painter.setClipPath(this->chatFrameContentPath_, Qt::IntersectClip);
+        // On the GPU a rounded clip would become one clip rectangle per
+        // pixel row of the corners, and every draw would be repeated for
+        // each; the corners are cut out once at the end instead.
+        if (!onCanvas)
+        {
+            painter.setClipPath(this->chatFrameContentPath_,
+                                Qt::IntersectClip);
+        }
     }
 
     // Clip painting strictly to the widget's bounds to hide wrapped text when collapsed
@@ -4906,6 +4922,14 @@ void ChannelView::paintChat(QPainter &painter, const QRegion &area)
 
     if (rounded)
     {
+        if (onCanvas)
+        {
+            // Exactly what the rounded clip keeps: erase what lies outside.
+            painter.setClipRect(this->rect(), Qt::IntersectClip);
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+            painter.fillPath(this->chatFrameOutsidePath_, Qt::black);
+        }
         painter.restore();
     }
 

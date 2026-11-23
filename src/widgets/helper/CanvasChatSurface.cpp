@@ -1,17 +1,23 @@
 #include "widgets/helper/CanvasChatSurface.hpp"
 
 #include <QCanvasImage>
+#include <QCanvasLinearGradient>
 #include <QCanvasPainter>
+#include <QCanvasRadialGradient>
 #include <QHideEvent>
+#include <QLinearGradient>
 #include <QPaintDevice>
 #include <QPaintEngine>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRadialGradient>
 #include <QRegion>
 #include <QTextItem>
 
+#include <cmath>
 #include <list>
 #include <unordered_map>
+#include <vector>
 
 namespace chatterino {
 namespace {
@@ -27,7 +33,10 @@ struct TextureCache {
     std::list<qint64> ages;
     qsizetype bytes = 0;
     uint64_t frame = 0;
-    static constexpr qsizetype budget = 8 * 1024 * 1024;
+    // Every frame of a running paint loop stays resident, so a loop that
+    // went round once never uploads again; message buffers fit beside them.
+    static constexpr qsizetype budget = qsizetype{64} * 1024 * 1024;
+    static constexpr size_t maxEntries = 4096;
 
     void clear()
     {
@@ -44,7 +53,7 @@ struct TextureCache {
         ++frame;
         // Evict before recording a frame, never invalidate a texture used by
         // an earlier draw in the same frame. GPU resource deletion is deferred by Qt.
-        while (!ages.empty() && (bytes > budget || entries.size() > 256))
+        while (!ages.empty() && (bytes > budget || entries.size() > maxEntries))
         {
             auto it = entries.find(ages.back());
             // Keep the active working set even on HiDPI screens; a smaller
@@ -106,19 +115,47 @@ public:
     {
         return User;
     }
-    void updateState(const QPaintEngineState &) override
+    void updateState(const QPaintEngineState &changed) override
     {
+        if (changed.state() &
+            (QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipRegion |
+             QPaintEngine::DirtyClipEnabled))
+        {
+            this->clipDirty_ = true;
+        }
     }
 
     template <typename Draw>
     void clipped(Draw draw)
     {
-        const auto *qp = painter();
-        // The retained canvas uses physical pixels; QPainter already includes
-        // the device pixel ratio in its engine transform.
-        const auto transform = state->transform();
+        // The clip in device pixels, worked out once per change of the clip
+        // instead of once per draw: resolving QPainter's clip into a region
+        // is costly, and draws come by the hundred per frame.
+        if (this->clipDirty_)
+        {
+            this->clipDirty_ = false;
+            this->clipRects_.clear();
+            this->clipping_ = painter()->hasClipping();
+            if (this->clipping_)
+            {
+                // Qt resolves intersected paths/regions in logical
+                // coordinates; the engine transform maps them to the
+                // physical pixels of the retained canvas (it includes the
+                // device pixel ratio).
+                const auto toDevice = state->transform();
+                for (const auto &rect : painter()->clipRegion())
+                {
+                    // Whole pixels, outward: exactly what prePaint
+                    // cleared. A scissor only covers whole pixels, so an
+                    // edge between two pixels (fractional scaling) would
+                    // leave a half-cleared, undrawn line around the area.
+                    this->clipRects_.emplace_back(
+                        toDevice.mapRect(QRectF(rect)).toAlignedRect());
+                }
+            }
+        }
+
         canvas_->save();
-        canvas_->setTransform(transform);
         canvas_->setGlobalAlpha(state->opacity());
         using Op = QCanvasPainter::CompositeOperation;
         const auto composition = state->compositionMode();
@@ -127,23 +164,95 @@ public:
             : composition == QPainter::CompositionMode_DestinationOut
                 ? Op::DestinationOut
                 : Op::SourceOver);
-        if (qp->hasClipping())
+        const auto transform = state->transform();
+        if (this->clipping_)
         {
-            // Qt resolves intersected paths/regions in logical coordinates.
-            // Preserve disjoint dirty rectangles rather than clipping their union bounds.
-            const auto region = qp->clipRegion();
-            for (const auto &rect : region)
+            // Disjoint dirty rectangles stay apart rather than clipping to
+            // their union. Set without a transform, the clip is a plain GPU
+            // scissor instead of a per-fragment test.
+            for (const auto &rect : this->clipRects_)
             {
-                canvas_->setClipRect(QRectF(rect));
+                canvas_->resetTransform();
+                canvas_->setClipRect(rect);
+                canvas_->setTransform(transform);
                 draw();
             }
         }
         else
         {
             canvas_->resetClipping();
+            canvas_->setTransform(transform);
             draw();
         }
         canvas_->restore();
+    }
+
+    /// Fills with `brush` on the GPU: plain colors and linear and radial
+    /// gradients as they are, anything else in its first color.
+    void setFill(const QBrush &brush)
+    {
+        const auto *gradient = brush.gradient();
+        if (gradient == nullptr ||
+            gradient->coordinateMode() != QGradient::LogicalMode ||
+            gradient->spread() != QGradient::PadSpread ||
+            gradient->stops().isEmpty())
+        {
+            canvas_->setFillStyle(
+                gradient != nullptr && !gradient->stops().isEmpty()
+                    ? gradient->stops().constFirst().second
+                    : brush.color());
+            return;
+        }
+        // The canvas has no brush transform: a moved or scaled brush moves
+        // the gradient's own points; anything else keeps its first color.
+        const auto transform = brush.transform();
+        if (transform.type() > QTransform::TxScale)
+        {
+            canvas_->setFillStyle(gradient->stops().constFirst().second);
+            return;
+        }
+        QCanvasGradientStops stops;
+        stops.reserve(gradient->stops().size());
+        for (const auto &[position, color] : gradient->stops())
+        {
+            stops.append({static_cast<float>(position), color});
+        }
+        if (gradient->type() == QGradient::LinearGradient)
+        {
+            const auto *linear = static_cast<const QLinearGradient *>(gradient);
+            QCanvasLinearGradient fill(transform.map(linear->start()),
+                                       transform.map(linear->finalStop()));
+            fill.setStops(stops);
+            canvas_->setFillStyle(fill);
+        }
+        else if (gradient->type() == QGradient::RadialGradient &&
+                 qFuzzyCompare(std::abs(transform.m11()),
+                               std::abs(transform.m22())))
+        {
+            const auto *radial = static_cast<const QRadialGradient *>(gradient);
+            const auto scale = std::abs(transform.m11());
+            QCanvasRadialGradient fill(transform.map(radial->center()),
+                                       radial->radius() * scale,
+                                       radial->focalRadius() * scale);
+            fill.setStops(stops);
+            canvas_->setFillStyle(fill);
+        }
+        else
+        {
+            canvas_->setFillStyle(stops.constFirst().color);
+        }
+    }
+
+    /// Adds `path` as QPainter would fill it: with its own subpath
+    /// directions (the canvas would otherwise force every subpath solid)
+    /// and its fill rule, which fill() then uses.
+    QCanvasPainter::FillRule addPath(const QPainterPath &path)
+    {
+        canvas_->setWindingEnforce(false);
+        canvas_->addPath(path);
+        return path.fillRule() == Qt::OddEvenFill
+                   ? QCanvasPainter::FillRule::EvenOdd
+                   : QCanvasPainter::FillRule::NonZero;
     }
     void drawPixmap(const QRectF &destination, const QPixmap &pixmap,
                     const QRectF &source) override
@@ -173,11 +282,11 @@ public:
         const auto brush = state->brush();
         clipped([&] {
             canvas_->beginPath();
-            canvas_->addPath(path);
+            const auto rule = this->addPath(path);
             if (brush.style() != Qt::NoBrush)
             {
-                canvas_->setFillStyle(brush.color());
-                canvas_->fill();
+                this->setFill(brush);
+                canvas_->fill(rule);
             }
             if (pen.style() != Qt::NoPen)
             {
@@ -209,6 +318,9 @@ public:
 private:
     QCanvasPainter *canvas_;
     TextureCache &cache_;
+    bool clipDirty_ = true;
+    bool clipping_ = false;
+    std::vector<QRectF> clipRects_;
 };
 
 class CanvasDevice final : public QPaintDevice
@@ -359,11 +471,14 @@ void CanvasChatSurface::prePaint(QCanvasPainter *canvas)
         return;
     d_->textures.begin(canvas);
     beginCanvasPainting(d_->retained);
+    // Cleared on whole pixels, the same ones the draws are clipped to (see
+    // CanvasEngine::clipped).
+    const auto dpr = devicePixelRatioF();
     for (const auto &area : dirty)
-        canvas->clearRect(QRectF(area.x() * devicePixelRatioF(),
-                                 area.y() * devicePixelRatioF(),
-                                 area.width() * devicePixelRatioF(),
-                                 area.height() * devicePixelRatioF()));
+        canvas->clearRect(QRectF(QRectF(area.x() * dpr, area.y() * dpr,
+                                        area.width() * dpr,
+                                        area.height() * dpr)
+                                     .toAlignedRect()));
     {
         CanvasDevice device(this, canvas, d_->textures);
         QPainter painter(&device);

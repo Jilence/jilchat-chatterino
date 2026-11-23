@@ -6,17 +6,37 @@
 
 #include "singletons/Theme.hpp"
 
+#include <QHash>
 #include <QSvgRenderer>
+
+#include <memory>
+
+namespace {
+
+/// One parsed renderer per SVG file for the whole app. Every split has the
+/// same buttons; parsing the file per button (and for splits in tabs that
+/// are never looked at) made up a large part of restoring the window.
+QSvgRenderer *sharedRenderer(const QString &path)
+{
+    static QHash<QString, std::shared_ptr<QSvgRenderer>> renderers;
+    auto &renderer = renderers[path];
+    if (!renderer)
+    {
+        renderer = std::make_shared<QSvgRenderer>(path);
+        renderer->setAspectRatioMode(Qt::KeepAspectRatio);
+    }
+    return renderer.get();
+}
+
+}  // namespace
 
 namespace chatterino {
 
 SvgButton::SvgButton(Src source, BaseWidget *parent, QSize padding)
     : Button(parent)
     , source_(std::move(source))
-    , svg_(new QSvgRenderer(this->currentSvgPath(), this))
     , padding_(padding)
 {
-    this->svg_->setAspectRatioMode(Qt::KeepAspectRatio);
     this->setContentCacheEnabled(true);
 }
 
@@ -76,6 +96,11 @@ void SvgButton::paintContent(QPainter &painter)
     QPoint topLeft{actualPadding.width(), actualPadding.height()};
     QSize contentSize = this->size() - 2 * actualPadding;
     auto bounds = QRectF{topLeft, contentSize};
+    // Looked up when first drawn: buttons of hidden tabs never parse it.
+    if (this->svg_ == nullptr)
+    {
+        this->svg_ = sharedRenderer(this->currentSvgPath());
+    }
     this->svg_->render(&painter, bounds);
 
     if (this->color_.has_value())
@@ -100,8 +125,9 @@ QString SvgButton::currentSvgPath() const
 
 void SvgButton::loadSource()
 {
-    this->svg_->load(this->currentSvgPath());
-    this->svg_->setAspectRatioMode(Qt::KeepAspectRatio);
+    // The shared renderer for the current path is looked up on the next
+    // paint.
+    this->svg_ = nullptr;
 }
 
 }  // namespace chatterino

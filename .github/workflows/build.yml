@@ -241,13 +241,13 @@ jobs:
         include:
           # Windows
           - os: windows-latest
-            qt-version: 6.11.2
+            qt-version: 6.12.0
             force-lto: true
             skip-artifact: false
             skip-crashpad: false
           # Windows on ARM
           - os: windows-11-arm
-            qt-version: 6.11.2
+            qt-version: 6.12.0
             force-lto: true
             skip-artifact: false
             skip-crashpad: false

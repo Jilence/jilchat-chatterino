@@ -43,7 +43,7 @@ option(CHATTERINO_USE_GDI_FONTENGINE "Use the legacy GDI fontengine instead of t
 option(CHATTERINO_ALLOW_PRIVATE_QT_API "Allow uses of Qt's private API - when enabling this, Chatterino must use the EXACT Qt version it was compiled against" OFF)
 set(CHATTERINO_THEME_VIDEO "AUTO" CACHE STRING "Enable video backgrounds for themes (requires libvpx, libwebm and libyuv): ON, OFF, or AUTO to enable it when they are found")
 set_property(CACHE CHATTERINO_THEME_VIDEO PROPERTY STRINGS AUTO ON OFF)
-option(CHATTERINO_CANVAS_PAINTER "Use Qt Canvas Painter for GPU chat rendering (Qt 6.11+)" OFF)
+option(CHATTERINO_CANVAS_PAINTER "Use Qt Canvas Painter for GPU chat rendering (Qt 6.11+); turned off when the module is missing" ON)
 option(CHATTERINO_SPELLCHECK "Enable spellchecking in Chatterino (requires Hunspell)" OFF)
 option(CHATTERINO_NIGHTLY_BUILD "Specifies whether this is a nightly build." OFF)
 
@@ -441,7 +441,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(cmake/resources/generate_resources.cmake)
 
 if(CHATTERINO_CANVAS_PAINTER)
-    find_package(Qt6 6.11 REQUIRED COMPONENTS CanvasPainter)
+    find_package(Qt6 6.11 QUIET COMPONENTS CanvasPainter)
+    if(NOT Qt6CanvasPainter_FOUND)
+        message(WARNING "Qt Canvas Painter not found: the chat is drawn on the CPU")
+        set(CHATTERINO_CANVAS_PAINTER OFF)
+    endif()
 endif()
 
 add_subdirectory(src)
