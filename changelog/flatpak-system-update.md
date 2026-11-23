@@ -1,0 +1,1 @@
+Fixed: Updating a system-wide Flatpak install failed because the password prompt wasn't allowed.
