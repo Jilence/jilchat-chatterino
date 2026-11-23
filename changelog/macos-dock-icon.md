@@ -1,0 +1,1 @@
+Changed: The macOS app icon is the JilChat logo on a black tile.
