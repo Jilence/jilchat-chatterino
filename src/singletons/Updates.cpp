@@ -63,13 +63,14 @@ QString appImagePath()
 // aren't always at the same path on the host, so the bundle is copied to a
 // file of the host's own first. Exits with 3 if the installed version is
 // still the running one, so we don't restart into the same version.
+// No --noninteractive: it forbids the password prompt of --system installs.
 const QString FLATPAK_INSTALL_SCRIPT = uR"sh(
 bundle=$(mktemp --suffix=.flatpak) || exit
 if ! cat <&3 >"$bundle"; then
     rm -f "$bundle"
     exit 1
 fi
-flatpak install "$4" -y --noninteractive --reinstall --bundle "$bundle"
+flatpak install "$4" -y --reinstall --bundle "$bundle"
 status=$?
 rm -f "$bundle"
 [ "$status" -eq 0 ] || exit "$status"
