@@ -40,7 +40,7 @@ void RatelimitBucket::handleOne()
     this->budget_--;
     this->callback_(item);
 
-    QTimer::singleShot(this->cooldown_, this, [this] {
+    QTimer::singleShot(this->cooldown_, Qt::PreciseTimer, this, [this] {
         this->budget_++;
         this->handleOne();
     });

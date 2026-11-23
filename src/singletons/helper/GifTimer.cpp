@@ -12,21 +12,47 @@
 
 namespace chatterino {
 
+void GIFTimer::updateTimer()
+{
+    if (!this->initialized_)
+    {
+        return;
+    }
+    const bool shouldRun = getSettings()->animateEmotes &&
+                           (!getSettings()->animationsWhenFocused ||
+                            this->openOverlayWindows_ != 0 ||
+                            QApplication::activeWindow() != nullptr);
+    if (shouldRun && !this->timer.isActive())
+    {
+        this->timer.start();
+    }
+    else if (!shouldRun)
+    {
+        this->timer.stop();
+    }
+}
+
 void GIFTimer::initialize()
 {
     this->timer.setInterval(GIF_FRAME_LENGTH);
     this->timer.setTimerType(Qt::PreciseTimer);
 
-    getSettings()->animateEmotes.connect([this](bool enabled, auto) {
-        if (enabled)
-        {
-            this->timer.start();
-        }
-        else
-        {
-            this->timer.stop();
-        }
+    this->initialized_ = true;
+    getSettings()->animateEmotes.connect([this](auto, auto) {
+        this->updateTimer();
     });
+    getSettings()->animationsWhenFocused.connect([this](auto, auto) {
+        this->updateTimer();
+    });
+    QObject::connect(qApp, &QApplication::focusChanged,
+                     [this](QWidget *, QWidget *) {
+                         this->updateTimer();
+                     });
+    QObject::connect(qApp, &QGuiApplication::applicationStateChanged,
+                     [this](Qt::ApplicationState) {
+                         this->updateTimer();
+                     });
+    this->updateTimer();
 
     QObject::connect(&this->timer, &QTimer::timeout, [this] {
         if (getSettings()->animationsWhenFocused &&
@@ -36,8 +62,7 @@ void GIFTimer::initialize()
             return;
         }
 
-        this->position_ += GIF_FRAME_LENGTH;
-        this->signal.invoke();
+        this->advance();
         getApp()->getWindows()->repaintGifEmotes();
     });
 }

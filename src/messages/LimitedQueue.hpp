@@ -7,6 +7,7 @@
 #include <boost/circular_buffer.hpp>
 
 #include <cassert>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -59,6 +60,7 @@ public:
     std::vector<T> setLimit(size_t limit)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         std::vector<T> removed;
         while (this->buffer_.size() > limit)
@@ -150,6 +152,7 @@ public:
     void clear()
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         this->buffer_.clear();
     }
@@ -164,6 +167,7 @@ public:
     bool pushBack(const T &item, T &deleted)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         bool full = this->buffer_.full();
         if (full)
@@ -183,6 +187,7 @@ public:
     bool pushBack(const T &item)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         bool full = this->buffer_.full();
         this->buffer_.push_back(item);
@@ -192,6 +197,7 @@ public:
     void pushFrontWhile(auto &&next)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         while (!this->buffer_.full())
         {
@@ -217,6 +223,7 @@ public:
     std::vector<T> pushFront(const std::vector<T> &items)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         size_t numToPush = std::min(items.size(), this->space());
         std::vector<T> pushed;
@@ -245,6 +252,7 @@ public:
     int replaceItem(const T &needle, const T &replacement)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         Equals eq;
         for (size_t i = 0; i < this->buffer_.size(); ++i)
@@ -269,6 +277,7 @@ public:
     bool replaceItem(size_t index, const T &replacement, T *prev = nullptr)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         if (index >= this->buffer_.size())
         {
@@ -297,6 +306,7 @@ public:
     int replaceItem(size_t hint, const T &needle, const T &replacement)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         if (hint < this->buffer_.size() && this->buffer_[hint] == needle)
         {
@@ -327,6 +337,7 @@ public:
     bool insertBefore(const T &needle, const T &item)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         Equals eq;
         for (auto it = this->buffer_.begin(); it != this->buffer_.end(); ++it)
@@ -353,6 +364,7 @@ public:
     bool insertAfter(const T &needle, const T &item)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         Equals eq;
         for (auto it = this->buffer_.begin(); it != this->buffer_.end(); ++it)
@@ -366,6 +378,18 @@ public:
         }
 
         return false;
+    }
+
+    // Check and copy under one lock so a mutation cannot be missed.
+    void refreshSnapshot(std::vector<T> &snapshot,
+                         std::optional<uint64_t> &generation) const
+    {
+        std::shared_lock lock(this->mutex_);
+        if (!generation || *generation != this->generation_)
+        {
+            snapshot.assign(this->buffer_.begin(), this->buffer_.end());
+            generation = this->generation_;
+        }
     }
 
     [[nodiscard]] std::vector<T> getSnapshot() const
@@ -443,6 +467,7 @@ public:
     std::optional<std::pair<size_t, T>> find(size_t hint, auto &&predicate)
     {
         std::unique_lock lock(this->mutex_);
+        ++this->generation_;
 
         if (hint < this->buffer_.size() && predicate(this->buffer_[hint]))
         {
@@ -489,6 +514,7 @@ public:
 private:
     mutable std::shared_mutex mutex_;
 
+    uint64_t generation_ = 0;
     size_t limit_;
     boost::circular_buffer<T> buffer_;
 };

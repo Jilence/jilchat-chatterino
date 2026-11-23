@@ -60,7 +60,7 @@ TEST(Image, StaticCachedFrame)
     EXPECT_FALSE(frames.empty());
     EXPECT_FALSE(frames.animated());
 
-    app.emotes.getGIFTimer()->signal.invoke();
+    app.emotes.getGIFTimer()->advance();
     EXPECT_TRUE(hasColor(frames, Qt::red));
 }
 
@@ -73,13 +73,39 @@ TEST(Image, CachedFramesUseSharedTimer)
     });
     ASSERT_TRUE(frames.animated());
     ASSERT_EQ(frames.frameSize(), QSize(1, 1));
-
-    auto *timer = app.emotes.getGIFTimer();
-    timer->signal.invoke();
     EXPECT_TRUE(hasColor(frames, Qt::red));
-    timer->signal.invoke();
+    auto *timer = app.emotes.getGIFTimer();
+    timer->advance();  // 20ms: next frame starts exactly at its boundary.
     EXPECT_TRUE(hasColor(frames, Qt::blue));
+    timer->advance();  // 40ms
+    EXPECT_TRUE(hasColor(frames, Qt::blue));
+    timer->advance();  // 60ms
+    EXPECT_TRUE(hasColor(frames, Qt::blue));
+    timer->advance();  // 80ms: wrap to the first frame.
+    EXPECT_TRUE(hasColor(frames, Qt::red));
     EXPECT_EQ(frames.frameSize(), QSize(1, 1));
+}
+
+TEST(Image, CachedFramesCatchUpWhenNotRequested)
+{
+    ImageApplication app;
+    detail::Frames frames(QList<detail::Frame>{
+        {.image = makePixmap({1, 1}, Qt::red), .duration = 20},
+        {.image = makePixmap({1, 1}, Qt::blue), .duration = 60},
+    });
+    auto *timer = app.emotes.getGIFTimer();
+    EXPECT_TRUE(hasColor(frames, Qt::red));
+    // No current() calls while this image is off screen.
+    for (int tick = 0; tick < 7; ++tick)
+    {
+        timer->advance();
+    }
+    EXPECT_TRUE(hasColor(frames, Qt::blue));
+    detail::Frames second(QList<detail::Frame>{
+        {.image = makePixmap({1, 1}, Qt::red), .duration = 20},
+        {.image = makePixmap({1, 1}, Qt::blue), .duration = 60},
+    });
+    EXPECT_TRUE(hasColor(second, Qt::blue));
 }
 
 TEST(Image, CachedFramesClearDisconnectsTimer)
@@ -96,9 +122,9 @@ TEST(Image, CachedFramesClearDisconnectsTimer)
         EXPECT_FALSE(frames.animated());
         EXPECT_FALSE(frames.current());
         EXPECT_FALSE(frames.frameSize());
-        timer->signal.invoke();
+        timer->advance();
     }
-    timer->signal.invoke();
+    timer->advance();
 }
 
 TEST(Image, BudgetKeepsImagesWithinLimit)

@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: MIT
 
+#ifdef CHATTERINO_MIMALLOC
+#    include <mimalloc.h>
+#endif
+
 #include "BrowserExtension.hpp"
 #include "common/Args.hpp"
 #include "common/Env.hpp"
@@ -153,6 +157,9 @@ bool settingsFileRequestsLegacyScaling(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+#ifdef CHATTERINO_MIMALLOC
+    mi_process_init();
+#endif
     if (argvRequestsLegacyScaling(argc, argv) ||
         settingsFileRequestsLegacyScaling(argc, argv))
     {

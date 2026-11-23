@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <vector>
 
 namespace chatterino {
 
@@ -166,6 +167,10 @@ public:
     bool isModeratorIn(const QString &broadcasterLogin) const override;
 
 private:
+    void queueChannelBootstrap(const std::shared_ptr<TwitchChannel> &channel);
+    std::vector<std::weak_ptr<TwitchChannel>> pendingChannelBootstraps_;
+    bool channelBootstrapQueued_ = false;
+
     Atomic<QString> lastUserThatWhisperedMe;
 
     const ChannelPtr whispersChannel;

@@ -38,6 +38,7 @@
 namespace chatterino {
 
 class Channel;
+class CanvasChatSurface;
 using ChannelPtr = std::shared_ptr<Channel>;
 
 enum class MessagePlatform : uint8_t;
@@ -391,8 +392,7 @@ protected:
                          QPointF &relativePos, int &index);
 
 private:
-    struct InternalCtor {
-    };
+    struct InternalCtor {};
 
     ChannelView(InternalCtor tag, QWidget *parent, Split *split,
                 Context context, size_t messagesLimit);
@@ -428,6 +428,10 @@ private:
                          bool causedByScrollbar, bool disableAnimation);
     void updateScrollWidgetGeometries();
 
+    void paintChat(QPainter &painter, const QRegion &area);
+#ifdef CHATTERINO_CANVAS_PAINTER
+    CanvasChatSurface *canvasSurface_ = nullptr;
+#endif
     void drawMessages(QPainter &painter, const QRegion &area);
     /// Frees the buffers and layout elements of the messages that were on
     /// screen during the last paint
@@ -519,6 +523,7 @@ private:
 
     ThreadGuard snapshotGuard_;
     std::vector<MessageLayoutPtr> snapshot_;
+    std::optional<uint64_t> snapshotGeneration_;
 
     /// @brief The backing (internal) channel
     ///

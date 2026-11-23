@@ -1328,6 +1328,13 @@ list(APPEND SOURCE_FILES ${RES_AUTOGEN_FILES})
 
 add_library(${LIBRARY_PROJECT} OBJECT ${SOURCE_FILES})
 
+if(CHATTERINO_CANVAS_PAINTER)
+    target_sources(${LIBRARY_PROJECT} PRIVATE widgets/helper/CanvasChatSurface.cpp widgets/helper/CanvasChatSurface.hpp)
+    target_link_libraries(${LIBRARY_PROJECT} PUBLIC Qt6::CanvasPainter)
+    target_compile_definitions(${LIBRARY_PROJECT} PUBLIC CHATTERINO_CANVAS_PAINTER)
+endif()
+
+
 if (CHATTERINO_HAVE_THEME_VIDEO)
     target_compile_definitions(${LIBRARY_PROJECT} PUBLIC CHATTERINO_THEME_VIDEO)
     target_link_libraries(${LIBRARY_PROJECT} PUBLIC
@@ -1622,6 +1629,26 @@ if (BUILD_APP)
             PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
     endif()
 endif ()
+
+if(BUILD_APP AND CHATTERINO_MIMALLOC)
+    # Load mimalloc before Qt and the CRT so DLL allocations use the same heap.
+    get_target_property(_app_libraries ${EXECUTABLE_PROJECT} LINK_LIBRARIES)
+    set_property(TARGET ${EXECUTABLE_PROJECT} PROPERTY LINK_LIBRARIES mimalloc ${_app_libraries})
+    add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:mimalloc> $<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>)
+    if(WIN32)
+        # Use mimalloc's own selection (x64, ARM64, ARM64EC or x86).
+        get_directory_property(_mimalloc_redirect_suffix
+            DIRECTORY "${CHATTERINO_MIMALLOC_SOURCE}"
+            DEFINITION MIMALLOC_REDIRECT_SUFFIX)
+        set(_mimalloc_redirect "mimalloc-redirect${_mimalloc_redirect_suffix}.dll")
+        add_custom_command(TARGET ${EXECUTABLE_PROJECT} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CHATTERINO_MIMALLOC_SOURCE}/bin/${_mimalloc_redirect}" $<TARGET_FILE_DIR:${EXECUTABLE_PROJECT}>)
+        target_compile_definitions(${EXECUTABLE_PROJECT} PRIVATE MI_SHARED_LIB)
+    endif()
+    target_compile_definitions(${EXECUTABLE_PROJECT} PRIVATE CHATTERINO_MIMALLOC)
+endif()
 
 if (USE_PRECOMPILED_HEADERS AND NOT APPLE)
     message(STATUS "Building with precompiled headers")

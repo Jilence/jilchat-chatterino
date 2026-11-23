@@ -24,7 +24,7 @@ using namespace chatterino;
 // Ratelimits for joinBucket_
 constexpr int JOIN_RATELIMIT_BUDGET = 18;
 constexpr int BOT_JOIN_RATELIMIT_BUDGET = 2000;
-constexpr int JOIN_RATELIMIT_COOLDOWN = 12500;
+constexpr int JOIN_RATELIMIT_COOLDOWN = 10050;
 
 constexpr size_t CHANNELS_PER_CONNECTION = 18;
 

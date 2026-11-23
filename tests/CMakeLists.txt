@@ -1,5 +1,10 @@
 project(chatterino-test)
 
+# Match chatterino-lib's RelWithDebInfo inlining when reusing its PCH.
+if(MSVC)
+    string(REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+endif()
+
 option(CHATTERINO_TEST_USE_PUBLIC_HTTPBIN "Use public httpbin for testing network requests" OFF)
 
 set(test_SOURCES
@@ -92,6 +97,11 @@ set(test_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/lib/Snapshot.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/lib/Snapshot.hpp
     )
+
+option(CHATTERINO_FOCUSED_PERF_TESTS "Build image and queue regression tests only" OFF)
+if(CHATTERINO_FOCUSED_PERF_TESTS)
+    set(test_SOURCES src/main.cpp src/Test.cpp src/Image.cpp src/LimitedQueue.cpp resources/test-resources.qrc)
+endif()
 
 add_executable(${PROJECT_NAME} ${test_SOURCES})
 

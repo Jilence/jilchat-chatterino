@@ -273,3 +273,33 @@ TEST(LimitedQueue, FirstN)
     SNAPSHOT_EQUALS(empty.firstN(2), {}, "empty");
     SNAPSHOT_EQUALS(empty.firstN(6), {}, "empty");
 }
+
+TEST(LimitedQueue, RefreshSnapshotTracksMutations)
+{
+    LimitedQueue<int> queue(2);
+    std::vector<int> snapshot;
+    std::optional<uint64_t> generation;
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_TRUE(snapshot.empty());
+    queue.pushBack(1);
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_EQ(snapshot, (std::vector<int>{1}));
+    const auto previous = generation;
+    const auto *storage = snapshot.data();
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_EQ(generation, previous);
+    EXPECT_EQ(snapshot.data(), storage);
+    queue.replaceItem(size_t{0}, 2);
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_EQ(snapshot, (std::vector<int>{2}));
+    queue.pushBack(3);
+    queue.pushBack(4);
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_EQ(snapshot, (std::vector<int>{3, 4}));
+    queue.setLimit(1);
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_EQ(snapshot, (std::vector<int>{4}));
+    queue.clear();
+    queue.refreshSnapshot(snapshot, generation);
+    EXPECT_TRUE(snapshot.empty());
+}

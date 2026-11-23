@@ -20,7 +20,6 @@
 #include "util/PostToThread.hpp"
 
 #include <boost/functional/hash.hpp>
-#include <pajlada/signals/scoped-connection.hpp>
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QFile>
@@ -37,15 +36,15 @@
 #include <numeric>
 #include <utility>
 
-const auto IMAGE_POOL_CLEANUP_INTERVAL = std::chrono::minutes(1);
+const auto IMAGE_POOL_CLEANUP_INTERVAL = std::chrono::seconds(30);
 
-const auto IMAGE_POOL_IMAGE_LIFETIME = std::chrono::minutes(2);
+const auto IMAGE_POOL_IMAGE_LIFETIME = std::chrono::minutes(1);
 
 // once decoded frames use more than IMAGE_POOL_MAX_BYTES, the least recently
 // used animated images are evicted until IMAGE_POOL_TARGET_BYTES are left,
 // instead of waiting for IMAGE_POOL_IMAGE_LIFETIME
-constexpr int64_t IMAGE_POOL_MAX_BYTES = 256LL * 1024 * 1024;
-constexpr int64_t IMAGE_POOL_TARGET_BYTES = 192LL * 1024 * 1024;
+constexpr int64_t IMAGE_POOL_MAX_BYTES = 128LL * 1024 * 1024;
+constexpr int64_t IMAGE_POOL_TARGET_BYTES = 96LL * 1024 * 1024;
 // images painted this recently are still on screen, never evict them
 const auto IMAGE_POOL_ACTIVE_IMAGE_GRACE = std::chrono::seconds(5);
 // freeing less than this isn't worth asking the allocator to give memory back
@@ -94,8 +93,6 @@ struct Frames::Storage {
     virtual void start(GIFTimer *timer) = 0;
     virtual std::optional<QPixmap> current() const = 0;
     virtual std::optional<QSize> frameSize() const = 0;
-
-    pajlada::Signals::ScopedConnection gifTimerConnection;
 };
 
 /// Stores all decoded frames in memory.
@@ -141,52 +138,13 @@ struct Frames::CachedFrames : Storage {
             return;
         }
 
-        this->gifTimerConnection = timer->signal.connect([this] {
-            this->advance();
-        });
-
-        const auto totalLength =
-            std::accumulate(this->items.begin(), this->items.end(), 0UL,
-                            [](auto init, auto &&frame) {
-                                return init + frame.duration;
-                            });
-        if (totalLength == 0)
+        this->animationClock = timer->clock();
+        uint64_t end = 0;
+        this->frameEnds.reserve(this->items.size());
+        for (const auto &frame : this->items)
         {
-            this->durationOffset = 0;
-        }
-        else
-        {
-            this->durationOffset =
-                std::min<int>(int(timer->position() % totalLength), 60000);
-        }
-        this->processOffset();
-    }
-
-    void advance()
-    {
-        this->durationOffset += GIF_FRAME_LENGTH;
-        this->processOffset();
-    }
-
-    void processOffset()
-    {
-        if (this->items.isEmpty())
-        {
-            return;
-        }
-
-        while (true)
-        {
-            this->index %= this->items.size();
-            if (this->durationOffset > this->items.at(this->index).duration)
-            {
-                this->durationOffset -= this->items.at(this->index).duration;
-                this->index = (this->index + 1) % this->items.size();
-            }
-            else
-            {
-                break;
-            }
+            end += frame.duration;
+            this->frameEnds.push_back(end);
         }
     }
 
@@ -196,7 +154,24 @@ struct Frames::CachedFrames : Storage {
         {
             return std::nullopt;
         }
-        return this->items[this->index].image;
+        // Resolve requested images against the shared clock without ticking
+        // every loaded image, including images in invisible tabs.
+        if (this->animationClock && !this->frameEnds.empty() &&
+            this->frameEnds.back() > 0)
+        {
+            const auto clock = *this->animationClock;
+            if (this->cachedPosition != clock)
+            {
+                const auto position = clock % this->frameEnds.back();
+                const auto frame = std::upper_bound(
+                    this->frameEnds.begin(), this->frameEnds.end(), position);
+                this->currentIndex =
+                    std::distance(this->frameEnds.begin(), frame);
+                this->cachedPosition = clock;
+            }
+            return this->items[this->currentIndex].image;
+        }
+        return this->items.front().image;
     }
 
     std::optional<QSize> frameSize() const override
@@ -209,8 +184,10 @@ struct Frames::CachedFrames : Storage {
     }
 
     QList<Frame> items;
-    QList<Frame>::size_type index{0};
-    int durationOffset{0};
+    std::shared_ptr<const uint64_t> animationClock;
+    std::vector<uint64_t> frameEnds;
+    mutable uint64_t cachedPosition = ~uint64_t{0};
+    mutable qsizetype currentIndex = 0;
 };
 
 Frames::Frames()
@@ -787,6 +764,11 @@ void Image::actuallyLoad()
                 }
             });
             return;
+        }
+
+        if (needsLimit)
+        {
+            reader.setScaledSize(limitedSize);
         }
 
         auto parsed = detail::readFrames(

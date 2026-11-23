@@ -43,6 +43,7 @@
 #include <pajlada/signals/signalholder.hpp>
 #include <QCoreApplication>
 #include <QMetaEnum>
+#include <QPointer>
 #include <QRandomGenerator>
 #include <QTimer>
 
@@ -51,6 +52,7 @@
 #include <functional>
 #include <mutex>
 #include <ranges>
+#include <utility>
 
 using namespace std::chrono_literals;
 
@@ -61,7 +63,7 @@ using namespace chatterino;
 // Ratelimits for anonymousJoinBucket_
 constexpr int JOIN_RATELIMIT_BUDGET = 18;
 constexpr int BOT_JOIN_RATELIMIT_BUDGET = 2000;
-constexpr int JOIN_RATELIMIT_COOLDOWN = 12500;
+constexpr int JOIN_RATELIMIT_COOLDOWN = 10050;
 
 bool isWarningAcknowledgeNotice(const QString &text)
 {
@@ -576,6 +578,7 @@ std::shared_ptr<Channel> TwitchIrcServer::createChannel(
 {
     auto channel = std::make_shared<TwitchChannel>(channelName, anonymous);
     channel->initialize();
+    this->queueChannelBootstrap(channel);
 
     // We can safely ignore these signal connections since the TwitchIrcServer is only
     // ever destroyed when the full Application state is about to be destroyed, at which point
@@ -602,6 +605,85 @@ std::shared_ptr<Channel> TwitchIrcServer::createChannel(
         });
 
     return channel;
+}
+
+// Resolve channel metadata independently of the throttled IRC JOIN queue.
+// This starts emote/history loading for background tabs without waiting 10s+
+// for their ROOMSTATE. IRC remains the fallback if the API request fails.
+void TwitchIrcServer::queueChannelBootstrap(
+    const std::shared_ptr<TwitchChannel> &channel)
+{
+    if (getApp()->isTest() || channel->getName().startsWith(u'/'))
+    {
+        return;
+    }
+    this->pendingChannelBootstraps_.push_back(channel);
+    if (this->channelBootstrapQueued_)
+    {
+        return;
+    }
+    this->channelBootstrapQueued_ = true;
+    QTimer::singleShot(0, this, [this] {
+        this->channelBootstrapQueued_ = false;
+        auto pending = std::exchange(this->pendingChannelBootstraps_, {});
+        const auto visible = getApp()->getWindows()->getVisibleChannelNames();
+        // We consume from the back: put visible channels there first.
+        std::ranges::stable_partition(pending, [&](const auto &weak) {
+            auto channel = weak.lock();
+            return !channel || !visible.contains(channel->getName());
+        });
+        // The Helix users endpoint accepts up to 100 names per request.
+        while (!pending.empty())
+        {
+            QHash<QString, std::vector<std::weak_ptr<TwitchChannel>>> targets;
+            QStringList names;
+            while (!pending.empty() && names.size() < 100)
+            {
+                auto weak = pending.back();
+                pending.pop_back();
+                if (auto channel = weak.lock();
+                    channel && channel->roomId().isEmpty())
+                {
+                    const auto name = channel->getName();
+                    if (!targets.contains(name))
+                        names.push_back(name);
+                    targets[name].push_back(weak);
+                }
+            }
+            if (names.isEmpty())
+                continue;
+            getHelix()->fetchUsers(
+                {}, names,
+                [guard = QPointer<TwitchIrcServer>(this),
+                 targets =
+                     std::move(targets)](const std::vector<HelixUser> &users) {
+                    if (!guard)
+                        return;
+                    auto ordered = users;
+                    const auto visible =
+                        getApp()->getWindows()->getVisibleChannelNames();
+                    std::ranges::stable_partition(
+                        ordered, [&](const auto &user) {
+                            return visible.contains(user.login);
+                        });
+                    for (const auto &user : ordered)
+                    {
+                        const auto it = targets.constFind(user.login);
+                        if (it == targets.constEnd())
+                            continue;
+                        for (const auto &weak : it.value())
+                        {
+                            if (auto channel = weak.lock();
+                                channel && channel->roomId().isEmpty())
+                            {
+                                channel->setRoomId(user.id);
+                            }
+                        }
+                    }
+                },
+                [] {});
+        }
+    });
 }
 
 void TwitchIrcServer::privateMessageReceived(

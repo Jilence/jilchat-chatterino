@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "widgets/helper/ChannelView.hpp"
+#ifdef CHATTERINO_CANVAS_PAINTER
+#    include "widgets/helper/CanvasChatSurface.hpp"
+#endif
 
 #include "Application.hpp"
 #include "common/Common.hpp"
@@ -2627,6 +2630,33 @@ ChannelView::ChannelView(InternalCtor /*tag*/, QWidget *parent, Split *split,
     this->initializeLayout();
     this->initializeScrollbar();
     this->initializeSignals();
+#ifdef CHATTERINO_CANVAS_PAINTER
+    if (this->context_ == Context::None && tryGetApp() && !getApp()->isTest() &&
+        qEnvironmentVariableIntValue("JILCHAT_ENABLE_CANVAS") &&
+        !qEnvironmentVariableIntValue("JILCHAT_DISABLE_CANVAS"))
+    {
+        this->canvasSurface_ = new CanvasChatSurface(
+            this, [this](QPainter &painter, const QRegion &area) {
+                this->paintChat(painter, area);
+            });
+        this->canvasSurface_->show();
+        this->canvasSurface_->lower();
+        QObject::connect(
+            this->canvasSurface_, &QRhiWidget::renderFailed, this, [this] {
+                QTimer::singleShot(0, this, [this] {
+                    if (auto *surface =
+                            std::exchange(this->canvasSurface_, nullptr))
+                    {
+                        qWarning() << "Canvas Painter initialization failed; "
+                                      "using raster chat rendering";
+                        surface->hide();
+                        surface->deleteLater();
+                        this->update();
+                    }
+                });
+            });
+    }
+#endif
 
     this->cursors_.neutral = QCursor(getResources().scrolling.neutralScroll);
     this->cursors_.up = QCursor(getResources().scrolling.upScroll);
@@ -3365,12 +3395,14 @@ void ChannelView::paintChatFrame(QPainter &painter)
 
 void ChannelView::queueUpdate()
 {
-    this->update();
+    if (this->isVisible())
+        this->update();
 }
 
 void ChannelView::queueUpdate(const QRect &area)
 {
-    this->update(area);
+    if (this->isVisible())
+        this->update(area);
 }
 
 void ChannelView::invalidateBuffers()
@@ -3416,6 +3448,11 @@ void ChannelView::showEvent(QShowEvent * /*event*/)
 
 void ChannelView::performLayout(bool causedByScrollbar, bool disableAnimation)
 {
+    if (!this->isVisible())
+    {
+        this->layoutQueued_ = true;
+        return;
+    }
     // BenchmarkGuard benchmark("layout");
 
     this->layoutQueued_ = false;
@@ -3697,7 +3734,8 @@ std::vector<MessageLayoutPtr> &ChannelView::getMessagesSnapshot()
     this->snapshotGuard_.guard();
     if (!this->paused() /*|| this->scrollBar_->isVisible()*/)
     {
-        this->snapshot_ = this->messages_.getSnapshot();
+        this->messages_.refreshSnapshot(this->snapshot_,
+                                        this->snapshotGeneration_);
     }
 
     return this->snapshot_;
@@ -4579,6 +4617,14 @@ void ChannelView::updateLastReadMessage()
 
 void ChannelView::resizeEvent(QResizeEvent * /*event*/)
 {
+#ifdef CHATTERINO_CANVAS_PAINTER
+    if (this->canvasSurface_)
+    {
+        this->canvasSurface_->setGeometry(this->rect());
+        this->canvasSurface_->lower();
+    }
+#endif
+
     this->updateScrollWidgetGeometries();
 
     this->scrollBar_->raise();
@@ -4783,15 +4829,24 @@ void ChannelView::scrollToMessageLayout(MessageLayout *layout,
 
 void ChannelView::paintEvent(QPaintEvent *event)
 {
-    //    BenchmarkGuard benchmark("paint");
-
+#ifdef CHATTERINO_CANVAS_PAINTER
+    if (this->canvasSurface_)
+    {
+        this->canvasSurface_->repaintRegion(event->region());
+        return;
+    }
+#endif
     QPainter painter(this);
+    this->paintChat(painter, event->region());
+}
 
+void ChannelView::paintChat(QPainter &painter, const QRegion &area)
+{
     const bool rounded = this->ensureChatFramePaths();
     if (rounded)
     {
         painter.save();
-        painter.setClipPath(this->chatFrameContentPath_);
+        painter.setClipPath(this->chatFrameContentPath_, Qt::IntersectClip);
     }
 
     // Clip painting strictly to the widget's bounds to hide wrapped text when collapsed
@@ -4811,7 +4866,7 @@ void ChannelView::paintEvent(QPaintEvent *event)
     }
 
     // draw messages
-    this->drawMessages(painter, event->region());
+    this->drawMessages(painter, area);
 
     // draw paused sign
     if (this->paused())
@@ -7133,6 +7188,7 @@ void ChannelView::refilterMessages()
         // The view stays paused, but on what is left. What was counted for
         // the end of the pause belongs to the messages from before.
         this->snapshot_ = after;
+        this->snapshotGeneration_.reset();
         this->pauseScrollMinimumOffset_ = 0;
         this->pauseScrollMaximumOffset_ = 0;
         this->pauseSelectionOffset_ = 0;
