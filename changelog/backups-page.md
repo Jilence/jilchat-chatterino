@@ -1,1 +1,1 @@
-New: The Backups page exports and imports your own themes with their backgrounds and chat automations too, and reads exports of the former Import/Export page, which it replaces.
+- New The Backups page exports and imports your own themes with their backgrounds and chat automations too, and reads exports of the former Import/Export page, which it replaces.

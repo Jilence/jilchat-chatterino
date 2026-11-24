@@ -8,6 +8,7 @@
 #include <pajlada/signals/signal.hpp>
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 #include <functional>
@@ -60,6 +61,10 @@ public:
     /// are any; otherwise the commits listed there, by their prefix (feat,
     /// fix), leaving out ones users don't notice.
     static std::vector<Change> parseChanges(const QString &notes);
+
+    /// The changes of several releases' notes, newest first, each change once:
+    /// what an update brings when releases in between were skipped
+    static std::vector<Change> mergeChanges(const QStringList &notes);
 
     void deleteOldFiles();
 
@@ -123,8 +128,9 @@ private:
 
     /// Downloads `url`, checks it against the release's checksums and saves
     /// it as `fileName` in the misc directory; `done` gets its path.
-    /// Remembers what `release` offers for this platform
-    void takeRelease(const QJsonObject &release);
+    /// Remembers what `release` offers for this platform; `notes` are the
+    /// notes of all releases since this build, newest first
+    void takeRelease(const QJsonObject &release, const QStringList &notes);
     void downloadVerified(const QString &url, const QString &assetName,
                           const QString &fileName,
                           std::function<void(const QString &)> done);

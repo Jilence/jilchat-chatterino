@@ -1,1 +1,1 @@
-Changed: The JilTV badge is shown right after the 7TV badge instead of last.
+- Changed The JilTV badge is shown right after the 7TV badge instead of last.
