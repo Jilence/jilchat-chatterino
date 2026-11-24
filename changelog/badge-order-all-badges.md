@@ -1,0 +1,1 @@
+- Changed Badge order lists every badge. The Order tab in the badge picker has every kind of badge Chatterino can show, also the ones you have none of yet, so all of them can be put in place.

@@ -1305,9 +1305,9 @@ public:
     QSize sizeHint(const QStyleOptionViewItem &option,
                    const QModelIndex & /*index*/) const override
     {
-        return QSize{option.rect.width(),
-                     std::max(qRound(32 * this->uiScale),
-                              option.fontMetrics.height() + 8)};
+        // No width of its own: the row is as wide as the list
+        return QSize{0, std::max(qRound(32 * this->uiScale),
+                                 option.fontMetrics.height() + 8)};
     }
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
@@ -3019,20 +3019,6 @@ void TwitchBadgePickerDialog::rebuildOrder()
     // Twitch's badges as the user has them in this channel
     const auto entries = ownbadges::entries(
         this->channel_ != nullptr ? this->channel_->getName() : QString{});
-    const auto shown = std::ranges::count_if(entries, [](const auto &entry) {
-        return entry.available;
-    });
-    if (shown == 0)
-    {
-        auto *empty = new QLabel(
-            "Your badges show up here once one of your own messages was "
-            "shown in a chat.",
-            this->contentWidget_);
-        empty->setWordWrap(true);
-        this->contentLayout_->addWidget(empty);
-        return;
-    }
-
     auto *list = new QListWidget(this->contentWidget_);
     list->setObjectName("TwitchBadgePickerOrderList");
     list->setDragDropMode(QAbstractItemView::InternalMove);
@@ -3054,12 +3040,20 @@ void TwitchBadgePickerDialog::rebuildOrder()
         // kept in the list so its place is saved with the others
         item->setHidden(!entry.available);
     }
-    // all rows without a scrollbar of its own: the page scrolls
-    const int rowHeight =
-        std::max(scaledMetric(scale, 32, 26), list->fontMetrics().height() + 8);
-    list->setFixedHeight((rowHeight * static_cast<int>(shown)) +
-                         (2 * list->frameWidth()) + 2);
+    // All rows without scrollbars of its own: the page scrolls, and long
+    // names are cut off at the side instead of scrolling sideways
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    list->setTextElideMode(Qt::ElideRight);
+    int rowsHeight = 0;
+    for (int row = 0; row < list->count(); ++row)
+    {
+        if (!list->item(row)->isHidden())
+        {
+            rowsHeight += list->sizeHintForRow(row);
+        }
+    }
+    list->setFixedHeight(rowsHeight + (2 * list->frameWidth()));
     this->contentLayout_->addWidget(list);
 
     // The list is what is saved: its rows in their order
