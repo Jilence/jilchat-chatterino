@@ -712,9 +712,10 @@ void Updates::checkForUpdates()
                     // from one of them is newer than this build, so its notes
                     // count too when releases were skipped.
                     QSet<QString> newer;
-                    for (const auto &c : json.value("commits"_L1).toArray())
+                    const auto commits = json.value("commits"_L1).toArray();
+                    for (const auto &c : commits)
                     {
-                        newer.insert(c.toObject()["sha"_L1].toString());
+                        newer.insert(c.toObject().value("sha"_L1).toString());
                     }
                     QStringList notes{
                         offered.front()["body"_L1].toString(),
