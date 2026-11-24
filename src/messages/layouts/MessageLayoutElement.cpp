@@ -1945,7 +1945,7 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
                 AnimatedShadowLayer{
                     .pixmap = &layers->glow,
                     .target = pieceTarget({0, 0}, layers->glow.size()),
-                    .cacheIdentity = identity + u"/glow",
+                    .cacheIdentity = identity + QStringLiteral("/glow"),
                 },
                 AnimatedShadowLayer{
                     .pixmap = &layers->name,
