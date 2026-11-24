@@ -219,8 +219,15 @@ QString groupName(QStringView key)
     {
         return QStringLiteral("Twitch: Predictions");
     }
-    const auto it = std::ranges::find(PROVIDERS, key, &Provider::key);
-    return it != PROVIDERS.end() ? it->name.toString() : key.toString();
+    // a loop: std::array's iterator is a pointer only with some compilers
+    for (const auto &provider : PROVIDERS)
+    {
+        if (provider.key == key)
+        {
+            return provider.name.toString();
+        }
+    }
+    return key.toString();
 }
 
 void remember(const QString &key, const QString &label)
@@ -455,6 +462,7 @@ std::vector<Entry> entries(const QString &channelName)
     // Every kind of badge Chatterino can show, also the ones not seen on
     // the user's messages yet, so all of them can be put in place
     std::vector<QString> all(TWITCH_SLOTS.begin(), TWITCH_SLOTS.end());
+    all.reserve(TWITCH_SLOTS.size() + PROVIDERS.size());
     for (const auto &provider : PROVIDERS)
     {
         all.push_back(provider.key.toString());
