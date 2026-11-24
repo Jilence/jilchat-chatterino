@@ -21,6 +21,7 @@
 #include "singletons/Theme.hpp"
 #include "util/Backup.hpp"
 #include "util/CombinePath.hpp"
+#include "util/DebugCount.hpp"
 #include "util/FilesystemHelpers.hpp"
 #include "util/MultiChannel.hpp"
 #include "util/SignalListener.hpp"
@@ -981,6 +982,7 @@ void WindowManager::save()
             if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
             {
                 ec = std::make_error_code(std::errc::io_error);
+                DebugCount::increase(DebugObject::WindowLayoutSaveError);
                 return;
             }
 
@@ -988,7 +990,10 @@ void WindowManager::save()
             if (!file.commit() || file.error() != QFile::NoError)
             {
                 ec = std::make_error_code(std::errc::io_error);
+                DebugCount::increase(DebugObject::WindowLayoutSaveError);
+                return;
             }
+            DebugCount::increase(DebugObject::WindowLayoutSave);
         },
         ec);
 
@@ -1014,6 +1019,8 @@ void WindowManager::sendAlert()
 void WindowManager::queueSave()
 {
     using namespace std::chrono_literals;
+
+    DebugCount::increase(DebugObject::WindowLayoutSaveQueued);
 
     this->saveTimer->start(10s);
 }
