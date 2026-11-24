@@ -1,1 +1,1 @@
-New: Mods and the streamer get End poll, Pay out and Refund buttons under polls and predictions; paying out and refunding need a second click.
+- New Mods and the streamer get End poll, Pay out and Refund buttons under polls and predictions; paying out and refunding need a second click.

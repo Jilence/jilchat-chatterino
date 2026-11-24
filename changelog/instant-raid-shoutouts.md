@@ -1,1 +1,1 @@
-Changed: Automatic raid shoutouts go out right away and also send Twitch's /shoutout, in case the channel has no bot for !so.
+- Changed Automatic raid shoutouts go out right away and also send Twitch's /shoutout, in case the channel has no bot for !so.

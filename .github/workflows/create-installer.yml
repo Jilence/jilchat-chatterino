@@ -428,9 +428,19 @@ jobs:
           set -euo pipefail
           tag="build-${BUILD_RUN_ID}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          # The changes are the commits since the last published release.
-          # A draft has no tag yet, so earlier drafts don't count.
-          previous="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          # The changes are the commits since the last published build
+          # release, pre-releases included: they are all pre-releases. A draft
+          # has no tag yet and the nightly-build tag moves, so neither counts.
+          previous=""
+          for candidate in $(gh release list --exclude-drafts --limit 50 --json tagName --jq '.[].tagName'); do
+            case "$candidate" in build-*) ;; *) continue ;; esac
+            # Another release of this same commit, e.g. a rerun
+            [ "$(git rev-list -n 1 "$candidate" 2>/dev/null)" != "$RELEASE_SHA" ] || continue
+            if git merge-base --is-ancestor "$candidate" "$RELEASE_SHA" 2>/dev/null; then
+              previous="$candidate"
+              break
+            fi
+          done
           if [ -z "$previous" ] || ! git merge-base --is-ancestor "$previous" "$RELEASE_SHA" 2>/dev/null; then
             previous="$(git describe --tags --abbrev=0 --exclude nightly-build "$RELEASE_SHA" 2>/dev/null || true)"
           fi
@@ -455,7 +465,11 @@ jobs:
           fi
           : > highlights.txt
           for file in $notes_files; do
-            git show "$RELEASE_SHA:$file" | grep -E '^\s*[-*]\s+' >> highlights.txt || true
+            # "- New Title. Detail." as changelog/README.md asks, also
+            # without the dash or with a colon after the kind
+            git show "$RELEASE_SHA:$file" |
+              grep -E '^\s*([-*]\s+|(New|Added|Fixed|Changed|Removed)\b)' |
+              sed -E 's/^\s*([-*]\s+)?/- /' >> highlights.txt || true
           done
           {
             if [ -s highlights.txt ]; then

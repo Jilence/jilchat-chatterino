@@ -1,0 +1,1 @@
+- Fixed Release notes and the update window listing every change since an old release. They show what is new since the previous release, and the update window also lists the releases you skipped.

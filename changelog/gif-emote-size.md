@@ -1,1 +1,1 @@
-New: An "Emote size" option for Twitch GIFs shows them inline in the text, as tall as an emote.
+- New An "Emote size" option for Twitch GIFs shows them inline in the text, as tall as an emote.

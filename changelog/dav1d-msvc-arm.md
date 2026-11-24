@@ -1,1 +1,1 @@
-Fixed: The Windows ARM64 build compiles again with Visual Studio 2026.
+- Fixed The Windows ARM64 build compiles again with Visual Studio 2026.

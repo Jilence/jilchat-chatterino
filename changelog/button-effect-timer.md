@@ -1,1 +1,1 @@
-Fixed: Buttons no longer keep a timer running 50 times a second each, which used CPU even when the window was minimized.
+- Fixed Buttons no longer keep a timer running 50 times a second each, which used CPU even when the window was minimized.

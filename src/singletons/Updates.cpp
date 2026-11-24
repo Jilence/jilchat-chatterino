@@ -26,6 +26,7 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 #include <QSettings>
 #include <QtConcurrent>
 #include <QUrl>
@@ -668,7 +669,8 @@ void Updates::checkForUpdates()
             // The newest release, Latest only or also pre-releases with
             // "Receive beta updates"
             const bool beta = getSettings()->betaUpdates;
-            QJsonObject release;
+            // The releases offered here, newest first
+            std::vector<QJsonObject> offered;
             const auto releases = result.parseJsonArray();
             for (const auto &value : releases)
             {
@@ -678,9 +680,10 @@ void Updates::checkForUpdates()
                 {
                     continue;
                 }
-                release = o;
-                break;
+                offered.push_back(o);
             }
+            const auto release =
+                offered.empty() ? QJsonObject{} : offered.front();
             const auto tag = release["tag_name"_L1].toString();
             if (tag.isEmpty())
             {
@@ -697,14 +700,37 @@ void Updates::checkForUpdates()
                     // e.g. this build's commit isn't in the repository
                     this->setStatus_(NoUpdateAvailable);
                 })
-                .onSuccess([this, release](const NetworkResult &compare) {
-                    if (compare.parseJson().value("status"_L1).toString() !=
-                        u"ahead"_s)
+                .onSuccess([this, offered](const NetworkResult &compare) {
+                    const auto json = compare.parseJson();
+                    if (json.value("status"_L1).toString() != u"ahead"_s)
                     {
                         this->setStatus_(NoUpdateAvailable);
                         return;
                     }
-                    this->takeRelease(release);
+                    // The commits after this build's, up to the newest
+                    // release (GitHub lists up to 250). Every release made
+                    // from one of them is newer than this build, so its notes
+                    // count too when releases were skipped.
+                    QSet<QString> newer;
+                    const auto commits = json.value("commits"_L1).toArray();
+                    for (const auto &c : commits)
+                    {
+                        newer.insert(c.toObject().value("sha"_L1).toString());
+                    }
+                    QStringList notes{
+                        offered.front()["body"_L1].toString(),
+                    };
+                    for (size_t i = 1; i < offered.size(); ++i)
+                    {
+                        const auto target =
+                            offered[i]["target_commitish"_L1].toString();
+                        if (!newer.contains(target))
+                        {
+                            break;
+                        }
+                        notes.push_back(offered[i]["body"_L1].toString());
+                    }
+                    this->takeRelease(offered.front(), notes);
                     this->setStatus_(UpdateAvailable);
                 })
                 .execute();
@@ -713,7 +739,7 @@ void Updates::checkForUpdates()
 #endif
 }
 
-void Updates::takeRelease(const QJsonObject &release)
+void Updates::takeRelease(const QJsonObject &release, const QStringList &notes)
 {
     // "Title, tag", or only one of them when the other is missing or the same
     const auto name = release["name"_L1].toString().trimmed();
@@ -731,7 +757,7 @@ void Updates::takeRelease(const QJsonObject &release)
         this->onlineVersion_ = name + u", "_s + tag;
     }
     this->updateGuideLink_ = release["html_url"_L1].toString();
-    this->changes_ = Updates::parseChanges(release["body"_L1].toString());
+    this->changes_ = Updates::mergeChanges(notes);
     this->updateExe_.clear();
     this->updateExeName_.clear();
     this->portableZip_.clear();
@@ -896,6 +922,27 @@ std::vector<Updates::Change> Updates::parseChanges(const QString &notes)
 
     // Every change is shown; the popup's list scrolls
     return fromNotes.empty() ? fromCommits : fromNotes;
+}
+
+std::vector<Updates::Change> Updates::mergeChanges(const QStringList &notes)
+{
+    std::vector<Change> merged;
+    QSet<QString> seen;
+    for (const auto &note : notes)
+    {
+        for (auto &change : Updates::parseChanges(note))
+        {
+            // A change listed again in a later release shows up once
+            const auto key = change.kind + u'|' + change.title;
+            if (seen.contains(key))
+            {
+                continue;
+            }
+            seen.insert(key);
+            merged.push_back(std::move(change));
+        }
+    }
+    return merged;
 }
 
 const std::vector<Updates::Change> &Updates::getChanges() const

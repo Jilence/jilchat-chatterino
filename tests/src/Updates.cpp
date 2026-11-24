@@ -10,6 +10,7 @@
 #include <semver/semver.hpp>
 
 using namespace chatterino;
+using namespace Qt::Literals;
 
 TEST(Updates, MustBeDowngrade)
 {
@@ -47,4 +48,18 @@ TEST(Updates, ValidateCurrentVersion)
                         Version::instance().version().toStdString()))
         << "Current version must be valid semver";
     EXPECT_EQ(Version::instance().version(), CHATTERINO_VERSION);
+}
+
+TEST(Updates, MergeChangesOfSkippedReleases)
+{
+    const auto changes = Updates::mergeChanges({
+        u"### Highlights\n\n- New Raid shoutouts. Detail.\n- Fixed Scrolling."_s,
+        u"- New Raid shoutouts. Detail.\n- Changed Paints. Less CPU."_s,
+    });
+    ASSERT_EQ(changes.size(), 3U);
+    EXPECT_EQ(changes[0].kind, u"new"_s);
+    EXPECT_EQ(changes[0].title, u"Raid shoutouts"_s);
+    EXPECT_EQ(changes[1].kind, u"fixed"_s);
+    EXPECT_EQ(changes[2].kind, u"changed"_s);
+    EXPECT_EQ(changes[2].title, u"Paints"_s);
 }

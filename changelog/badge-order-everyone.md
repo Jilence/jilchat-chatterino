@@ -1,1 +1,1 @@
-New: An option in the badge picker's Order tab sorts everyone's badges like your own, only as you see them.
+- New An option in the badge picker's Order tab sorts everyone's badges like your own, only as you see them.
