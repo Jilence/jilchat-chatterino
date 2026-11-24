@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace chatterino {
@@ -32,22 +33,22 @@ struct Entry {
     bool available = true;
 };
 
-/// Puts the badges of one of the user's own messages in the order they
-/// chose and takes out the ones they hide. Also remembers which badges
-/// there are, for entries().
+/// Remembers which badges one of the user's own messages has, for
+/// entries().
 ///
 /// @param firstBadge Where the badges start in `elements`. Everything
 ///                   from there to the end has to be a badge.
 /// @param channelName Where the message is from, to know which of Twitch's
 ///                    badges the user has there
-void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
-           size_t firstBadge, const QString &channelName = {});
+void note(const std::vector<std::unique_ptr<MessageElement>> &elements,
+          size_t firstBadge, const QString &channelName = {});
 
-/// Puts the badges of someone else's message in the order the user chose
-/// for their own, if they want that for everyone. Nothing is hidden or
-/// remembered.
-void applyToOther(std::vector<std::unique_ptr<MessageElement>> &elements,
-                  size_t firstBadge);
+/// The badges of a message as they are laid out: in the order the user
+/// chose (for others' messages only if they want that for everyone),
+/// without the ones they hide on their own messages. Done when the message
+/// is laid out, so changes show on the messages already there.
+std::vector<MessageElement *> arrange(
+    std::span<const std::unique_ptr<MessageElement>> badges, bool own);
 
 /// One of Twitch's badges the user has in a channel
 struct TwitchBadgeHeld {

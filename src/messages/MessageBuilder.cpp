@@ -2576,17 +2576,13 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendLimerinoBadges(userID);
         builder.appendStreamNookBadges(userID);
         builder.appendJilChatBadges(userID);
+        // Laid out in the order the user wants (see OwnBadgeLayout)
+        builder->ownBadges = senderIsCurrentUser;
         if (senderIsCurrentUser)
         {
-            // the order the user wants their own badges in
-            ownbadges::apply(builder->elements, firstBadge,
-                             twitchChannel != nullptr ? twitchChannel->getName()
-                                                      : QString{});
-        }
-        else
-        {
-            // the same order for everyone else, if the user wants that
-            ownbadges::applyToOther(builder->elements, firstBadge);
+            ownbadges::note(builder->elements, firstBadge,
+                            twitchChannel != nullptr ? twitchChannel->getName()
+                                                     : QString{});
         }
 
         builder.appendUsername(tags, args);
