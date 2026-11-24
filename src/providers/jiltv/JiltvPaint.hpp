@@ -168,8 +168,8 @@ public:
         {
             return std::nullopt;
         }
-        return this->layers(text, font, userColor, textSize, scale, dpr,
-                            false, room);
+        return this->layers(text, font, userColor, textSize, scale, dpr, false,
+                            room);
     }
     QString sourceName() const override;
 

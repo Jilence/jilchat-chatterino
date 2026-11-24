@@ -14,8 +14,8 @@
 
 #include <algorithm>
 #include <array>
-#include <vector>
 #include <cmath>
+#include <vector>
 
 namespace chatterino {
 
@@ -40,8 +40,7 @@ std::array<float, SAMPLES> refractionProfile(float bezel, float thickness)
     constexpr float d = 0.001F;
     for (int i = 0; i < SAMPLES; ++i)
     {
-        const float x =
-            std::clamp(float(i) / float(SAMPLES - 1), d, 1.0F - d);
+        const float x = std::clamp(float(i) / float(SAMPLES - 1), d, 1.0F - d);
         const float slope =
             ((surface(x + d) - surface(x - d)) / (2 * d)) * (thickness / bezel);
         const float incidence = std::atan(slope);
@@ -104,7 +103,8 @@ Rgb sample(const QImage &img, float x, float y)
     const QRgb p11 = row1[x1];
 
     auto mix = [&](int (*channel)(QRgb)) {
-        const float top = float(channel(p00)) * (1 - fx) + float(channel(p10)) * fx;
+        const float top =
+            float(channel(p00)) * (1 - fx) + float(channel(p10)) * fx;
         const float bottom =
             float(channel(p01)) * (1 - fx) + float(channel(p11)) * fx;
         return (top * (1 - fy) + bottom * fy) / 255.0F;
@@ -137,8 +137,8 @@ float frost()
            100.0F;
 }
 
-void paintFloatingCard(QPainter &painter, const QRectF &rect,
-                       QColor background, qreal scale, bool lightTheme)
+void paintFloatingCard(QPainter &painter, const QRectF &rect, QColor background,
+                       qreal scale, bool lightTheme)
 {
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
@@ -147,9 +147,8 @@ void paintFloatingCard(QPainter &painter, const QRectF &rect,
 
     // See-through, so the chat shows behind it, but dense enough to read.
     background.setAlpha(lightTheme ? 225 : 218);
-    painter.setPen(QPen(lightTheme ? QColor(0, 0, 0, 28)
-                                   : QColor(255, 255, 255, 26),
-                        1.0));
+    painter.setPen(QPen(
+        lightTheme ? QColor(0, 0, 0, 28) : QColor(255, 255, 255, 26), 1.0));
     painter.setBrush(background);
     painter.drawRoundedRect(card, radius, radius);
     painter.restore();
@@ -172,7 +171,7 @@ struct LensGeometry {
     std::vector<uint8_t> coverage;  // 0..255
     std::vector<float> offsetX;     // sample at x + offsetX
     std::vector<float> offsetY;
-    std::vector<float> rim;         // specular strength before scaling
+    std::vector<float> rim;  // specular strength before scaling
     /// Rows/columns fully inside the flat top: no offset, no rim there.
     int flatTop = 0;
     int flatBottom = 0;
@@ -183,8 +182,8 @@ struct LensGeometry {
                  float ed) const
     {
         return w == this->width && h == this->height && r == this->radius &&
-               bz == this->bezel && th == this->thickness &&
-               zm == this->zoom && ed == this->edge;
+               bz == this->bezel && th == this->thickness && zm == this->zoom &&
+               ed == this->edge;
     }
 };
 
@@ -292,15 +291,13 @@ QImage refractScaled(const QImage &source, QSize outSize, float sourceScale,
     const float zoom = std::max(0.5F, optics.zoom);
     const float lift = std::clamp(optics.lift, 0.0F, 1.0F);
     const float edge = 1.1F * float(pxScale);
-    const auto &geometry =
-        lensGeometry(w, h, r, bezel, thickness, zoom, edge);
+    const auto &geometry = lensGeometry(w, h, r, bezel, thickness, zoom, edge);
 
     // Clear glass: a light frost of white (more in light themes), a hint of
     // saturation, brighter while lifted. Or tinted with the given colour.
     const bool clear = optics.tintAmount < 0;
-    const float tintAmount =
-        clear ? (lightTheme ? 0.3F : 0.12F) + lift * 0.05F
-              : std::clamp(optics.tintAmount, 0.0F, 1.0F);
+    const float tintAmount = clear ? (lightTheme ? 0.3F : 0.12F) + lift * 0.05F
+                                   : std::clamp(optics.tintAmount, 0.0F, 1.0F);
     const float tr = clear ? 1.0F : float(optics.tint.redF());
     const float tg = clear ? 1.0F : float(optics.tint.greenF());
     const float tb = clear ? 1.0F : float(optics.tint.blueF());
@@ -329,8 +326,8 @@ QImage refractScaled(const QImage &source, QSize outSize, float sourceScale,
             float cr;
             float cg;
             float cb;
-            const bool flat = rowFlat && x >= geometry.flatLeft &&
-                              x < geometry.flatRight;
+            const bool flat =
+                rowFlat && x >= geometry.flatLeft && x < geometry.flatRight;
             if (flat && srcLine != nullptr && x < src.width())
             {
                 // The flat top: nothing bends here.
@@ -365,10 +362,11 @@ QImage refractScaled(const QImage &source, QSize outSize, float sourceScale,
                 cb = 1 - (1 - std::clamp(cb, 0.0F, 1.0F)) * (1 - a);
             }
             const float alpha = float(coverage) / 255.0F;
-            line[x] = qRgba(int(std::clamp(cr, 0.0F, 1.0F) * alpha * 255 + 0.5F),
-                            int(std::clamp(cg, 0.0F, 1.0F) * alpha * 255 + 0.5F),
-                            int(std::clamp(cb, 0.0F, 1.0F) * alpha * 255 + 0.5F),
-                            int(coverage));
+            line[x] =
+                qRgba(int(std::clamp(cr, 0.0F, 1.0F) * alpha * 255 + 0.5F),
+                      int(std::clamp(cg, 0.0F, 1.0F) * alpha * 255 + 0.5F),
+                      int(std::clamp(cb, 0.0F, 1.0F) * alpha * 255 + 0.5F),
+                      int(coverage));
         }
     }
     return out;
@@ -408,14 +406,13 @@ QImage grabBehind(const QWidget *widget, const QRect &rect)
     {
         return {};
     }
-    QImage out = image->copy(pixels)
-                     .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QImage out = image->copy(pixels).convertToFormat(
+        QImage::Format_ARGB32_Premultiplied);
     out.setDevicePixelRatio(dpr);
     return out;
 }
 
-QImage grabFrom(const QWidget *window, const QRect &rect,
-                const QColor &outside)
+QImage grabFrom(const QWidget *window, const QRect &rect, const QColor &outside)
 {
     const qreal dpr = window->devicePixelRatioF();
     const QRect pixels((QPointF(rect.topLeft()) * dpr).toPoint(),
@@ -504,10 +501,9 @@ void paintGlassFrom(QPainter &painter, QWidget *target, const QImage &under,
         optics.tint = background;
         // Clear glass lets the chat through; milky glass hides it more.
         optics.tintAmount = (lightTheme ? 0.18F : 0.12F) + milk * 0.55F;
-        cache->glass =
-            refractScaled(small, full,
-                          float(small.width()) / float(full.width()), radius,
-                          scale * dpr, optics, lightTheme);
+        cache->glass = refractScaled(small, full,
+                                     float(small.width()) / float(full.width()),
+                                     radius, scale * dpr, optics, lightTheme);
         cache->glass.setDevicePixelRatio(dpr);
         cache->source = under;
         cache->tint = background;
@@ -605,8 +601,8 @@ void GlassLens::setTarget(const QRectF &rect, bool animate)
     {
         if (!this->timer_.isActive() || !this->initialized_)
         {
-            for (auto *s : {&this->left_, &this->right_, &this->top_,
-                            &this->bottom_})
+            for (auto *s :
+                 {&this->left_, &this->right_, &this->top_, &this->bottom_})
             {
                 s->pos = s->target;
                 s->vel = 0;
@@ -665,10 +661,10 @@ void GlassLens::tick()
         std::clamp(speed / (700.0 * this->scale_), 0.0, 1.0);
     this->lift_ += (liftTarget - this->lift_) * std::min(1.0, dt * 16);
 
-    const bool settled = stalled ||
-                         (this->left_.settled() && this->right_.settled() &&
-                          this->top_.settled() && this->bottom_.settled() &&
-                          this->lift_ < 0.01);
+    const bool settled =
+        stalled ||
+        (this->left_.settled() && this->right_.settled() &&
+         this->top_.settled() && this->bottom_.settled() && this->lift_ < 0.01);
     if (settled)
     {
         for (auto *s :
@@ -702,8 +698,7 @@ void GlassLens::applyGeometry()
 
 void GlassLens::paintEvent(QPaintEvent * /*event*/)
 {
-    const QRect lens =
-        this->lensRect_.toAlignedRect().translated(-this->pos());
+    const QRect lens = this->lensRect_.toAlignedRect().translated(-this->pos());
     if (lens.width() < 4 || lens.height() < 4)
     {
         return;
@@ -731,8 +726,8 @@ void GlassLens::paintEvent(QPaintEvent * /*event*/)
         optics.thickness = 5.0F + 17.0F * lift;
         optics.zoom = 1.0F + 0.16F * lift;
         const qreal dpr = under.devicePixelRatio();
-        this->glass_ = liquidglass::refract(under, radius * dpr, s * dpr,
-                                            optics, light);
+        this->glass_ =
+            liquidglass::refract(under, radius * dpr, s * dpr, optics, light);
         this->lastSource_ = under;
         this->lastLift_ = this->lift_;
         this->lastLight_ = light;

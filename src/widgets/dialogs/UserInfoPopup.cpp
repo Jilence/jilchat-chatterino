@@ -80,6 +80,7 @@
 #include "widgets/Window.hpp"
 
 #include <IrcMessage>
+#include <QBuffer>
 #include <QCheckBox>
 #include <QColor>
 #include <QCursor>
@@ -103,7 +104,6 @@
 #include <QMessageBox>
 #include <QMetaEnum>
 #include <QMouseEvent>
-#include <QBuffer>
 #include <QMovie>
 #include <QMutex>
 #include <QMutexLocker>

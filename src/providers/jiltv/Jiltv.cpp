@@ -344,8 +344,8 @@ std::pair<QString, bool> takeBatch(QSet<QString> &pending,
 }
 
 /// The lookup URL for the logins of `keys` in `channel`.
-QUrl lookupUrl(const QString &api, const QString &path,
-               const QStringList &keys, const QString &channel, bool fresh)
+QUrl lookupUrl(const QString &api, const QString &path, const QStringList &keys,
+               const QString &channel, bool fresh)
 {
     QStringList logins;
     for (const auto &k : keys)
@@ -436,9 +436,8 @@ void Jiltv::flushLookups()
     {
         const std::scoped_lock lock(this->mutex_);
         this->flushScheduled_ = false;
-        std::tie(channel, fresh) =
-            takeBatch(this->pending_, this->inFlight_, this->fresh_, batch,
-                      LOOKUP_BATCH);
+        std::tie(channel, fresh) = takeBatch(this->pending_, this->inFlight_,
+                                             this->fresh_, batch, LOOKUP_BATCH);
         if (!this->pending_.isEmpty())
         {
             this->flushScheduled_ = true;
@@ -1063,8 +1062,8 @@ void Jiltv::setWorn(const QString &login, const QString &paint,
         }
         for (const auto &key : keys)
         {
-            changed |= this->storeWorn(key, paint, badge, frame, banner,
-                                       badgeChanged);
+            changed |=
+                this->storeWorn(key, paint, badge, frame, banner, badgeChanged);
         }
     }
     if (changed)
@@ -1095,11 +1094,11 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         bool badgeChanged = false;
         {
             const std::scoped_lock lock(this->mutex_);
-            changed = this->storeWorn(key, cosmetics.value("p").toString(),
-                                      cosmetics.value("b").toString(),
-                                      cosmetics.value("d").toString(),
-                                      cosmetics.value("bn").toString(),
-                                      badgeChanged);
+            changed =
+                this->storeWorn(key, cosmetics.value("p").toString(),
+                                cosmetics.value("b").toString(),
+                                cosmetics.value("d").toString(),
+                                cosmetics.value("bn").toString(), badgeChanged);
         }
         if (changed)
         {

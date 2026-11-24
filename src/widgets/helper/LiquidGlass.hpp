@@ -33,8 +33,8 @@ float frost();
 /// Paints a floating banner card over the whole of `rect`: rounded,
 /// slightly see-through `background` and a hairline rim. Fallback for
 /// paintGlassCard while there is nothing to refract yet.
-void paintFloatingCard(QPainter &painter, const QRectF &rect,
-                       QColor background, qreal scale, bool lightTheme);
+void paintFloatingCard(QPainter &painter, const QRectF &rect, QColor background,
+                       qreal scale, bool lightTheme);
 
 /// What is under `rect` (in `widget`'s coordinates) in the window this
 /// frame, read from the backing store; only meaningful inside the widget's

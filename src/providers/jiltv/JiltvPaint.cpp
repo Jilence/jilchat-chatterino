@@ -16,10 +16,10 @@
 #include <QFontMetricsF>
 #include <QHashFunctions>
 #include <QJsonArray>
-#include <QPair>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPair>
 #include <QRadialGradient>
 
 #include <algorithm>
@@ -1544,9 +1544,9 @@ NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
         for (const auto &[id, loop] : this->loops_)
         {
             const auto frame = loop->pixmapOrLoad();
-            images = qHashMulti(images, frame && !frame->isNull()
-                                            ? frame->cacheKey()
-                                            : qint64{0});
+            images =
+                qHashMulti(images, frame && !frame->isNull() ? frame->cacheKey()
+                                                             : qint64{0});
         }
     }
 
@@ -1715,23 +1715,23 @@ NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
     // never the wide, mostly transparent glow room around them.
     const int filterMargin =
         stroked ? static_cast<int>(std::ceil(doc.stroke->x * cssPx)) + 2 : 0;
-    QRect crop = QRect(origin, fillSize)
-                     .adjusted(-filterMargin, -filterMargin, filterMargin,
-                               filterMargin);
+    QRect crop =
+        QRect(origin, fillSize)
+            .adjusted(-filterMargin, -filterMargin, filterMargin, filterMargin);
     if (colon)
     {
         const double colonLeft = nameBox.right();
         const double colonRight =
             colonLeft + metrics.horizontalAdvance(QStringLiteral(":"));
-        crop |= QRect(
-            QPoint(static_cast<int>(std::floor(colonLeft * dpr)) - 1,
-                   static_cast<int>(
-                       std::floor((baseline - metrics.ascent()) * dpr)) -
-                       1),
-            QPoint(static_cast<int>(std::ceil(colonRight * dpr)) + 1,
-                   static_cast<int>(
-                       std::ceil((baseline + metrics.descent()) * dpr)) +
-                       1));
+        crop |=
+            QRect(QPoint(static_cast<int>(std::floor(colonLeft * dpr)) - 1,
+                         static_cast<int>(
+                             std::floor((baseline - metrics.ascent()) * dpr)) -
+                             1),
+                  QPoint(static_cast<int>(std::ceil(colonRight * dpr)) + 1,
+                         static_cast<int>(
+                             std::ceil((baseline + metrics.descent()) * dpr)) +
+                             1));
     }
     crop = crop.intersected(QRect(QPoint(0, 0), devSize));
     if (crop.isEmpty())
@@ -1760,10 +1760,9 @@ NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
                         s.tile.height() != fillSize.height())
                     {
                         const auto tileWidth = std::max(
-                            1, qRound(static_cast<double>(
-                                          textureFrame->width()) *
-                                      fillSize.height() /
-                                      textureFrame->height()));
+                            1,
+                            qRound(static_cast<double>(textureFrame->width()) *
+                                   fillSize.height() / textureFrame->height()));
                         s.tile = textureFrame->scaled(
                             tileWidth, fillSize.height(), Qt::IgnoreAspectRatio,
                             Qt::SmoothTransformation);
@@ -1960,12 +1959,12 @@ NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
         });
     const qint64 bytes =
         (static_cast<qint64>(out.name.width()) * out.name.height() * 4) +
-        (glowMoves ? static_cast<qint64>(out.glow.width()) *
-                         out.glow.height() * 4
-                   : 0);
-    frames.insert(frameKey, new NametagLayers(out),
-                  std::max<qsizetype>(1, static_cast<qsizetype>(
-                                             (bytes + 1023) / 1024)));
+        (glowMoves
+             ? static_cast<qint64>(out.glow.width()) * out.glow.height() * 4
+             : 0);
+    frames.insert(
+        frameKey, new NametagLayers(out),
+        std::max<qsizetype>(1, static_cast<qsizetype>((bytes + 1023) / 1024)));
     return out;
 }
 
@@ -2002,10 +2001,9 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     entry->pixmap = QPixmap::fromImage(std::move(img));
     entry->pixmap.setDevicePixelRatio(dpr);
     const QRect nameRect(l.nameOffset, l.name.size());
-    paintVisiblePixels().insert(entry->pixmap.cacheKey(),
-                                l.glow.isNull()
-                                    ? nameRect
-                                    : l.glowPart.united(nameRect));
+    paintVisiblePixels().insert(
+        entry->pixmap.cacheKey(),
+        l.glow.isNull() ? nameRect : l.glowPart.united(nameRect));
     const auto pixmap = entry->pixmap;
     composed.insert(
         id, entry,

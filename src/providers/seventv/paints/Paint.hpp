@@ -79,9 +79,9 @@ public:
     /// What getNametagPixmap draws, split into glow and letters; nothing for
     /// paints that don't split (the chat then uses getNametagPixmap).
     virtual std::optional<NametagLayers> getNametagLayers(
-        const QString & /*text*/, const QFont & /*font*/,
-        QColor /*userColor*/, QSizeF /*textSize*/, float /*scale*/,
-        float /*dpr*/, QMarginsF /*margins*/) const
+        const QString & /*text*/, const QFont & /*font*/, QColor /*userColor*/,
+        QSizeF /*textSize*/, float /*scale*/, float /*dpr*/,
+        QMarginsF /*margins*/) const
     {
         return std::nullopt;
     }
