@@ -29,6 +29,7 @@
 #include <QUrlQuery>
 
 #include <cstdint>
+#include <tuple>
 #include <vector>
 
 namespace chatterino {
@@ -293,13 +294,92 @@ void Jiltv::applyCatalog(const QJsonObject &root)
     WindowManager::notifyBadgesUpdated();
 }
 
-std::optional<Jiltv::Worn> Jiltv::worn(const QString &login)
+namespace {
+
+/// Cache key of a login in a channel ("login#channel"; channel empty for
+/// none): answers differ per channel (outfits, personal presets).
+QString cacheKey(const QString &login, const QString &channel)
+{
+    return login.toLower() + QChar(u'#') + channel.toLower();
+}
+
+QString keyLogin(const QString &key)
+{
+    return key.section(u'#', 0, 0);
+}
+
+QString keyChannel(const QString &key)
+{
+    return key.section(u'#', 1);
+}
+
+/// Takes up to `limit` keys of one channel out of `pending` (one request
+/// answers one channel). Returns the channel and whether a key in the batch
+/// was in `fresh` (asked past the API's cache).
+std::pair<QString, bool> takeBatch(QSet<QString> &pending,
+                                   QSet<QString> &inFlight,
+                                   QSet<QString> &fresh, QStringList &batch,
+                                   qsizetype limit)
+{
+    if (pending.isEmpty())
+    {
+        return {};
+    }
+    const auto channel = keyChannel(*pending.begin());
+    bool anyFresh = false;
+    for (auto it = pending.begin();
+         it != pending.end() && batch.size() < limit;)
+    {
+        if (keyChannel(*it) != channel)
+        {
+            ++it;
+            continue;
+        }
+        batch.append(*it);
+        inFlight.insert(*it);
+        anyFresh |= fresh.remove(*it);
+        it = pending.erase(it);
+    }
+    return {channel, anyFresh};
+}
+
+/// The lookup URL for the logins of `keys` in `channel`.
+QUrl lookupUrl(const QString &api, const QString &path,
+               const QStringList &keys, const QString &channel, bool fresh)
+{
+    QStringList logins;
+    for (const auto &k : keys)
+    {
+        logins.append(keyLogin(k));
+    }
+    QUrl url(api + path);
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("logins"), logins.join(u','));
+    if (!channel.isEmpty())
+    {
+        query.addQueryItem(QStringLiteral("channel"), channel);
+    }
+    if (fresh)
+    {
+        // Right after a change: past the minute the API's answers are cached.
+        query.addQueryItem(
+            QStringLiteral("t"),
+            QString::number(QDateTime::currentMSecsSinceEpoch()));
+    }
+    url.setQuery(query);
+    return url;
+}
+
+}  // namespace
+
+std::optional<Jiltv::Worn> Jiltv::worn(const QString &login,
+                                       const QString &channel)
 {
     if (!getSettings()->enableJiltv || login.isEmpty())
     {
         return std::nullopt;
     }
-    const auto key = login.toLower();
+    const auto key = cacheKey(login, channel);
     const std::scoped_lock lock(this->mutex_);
     std::optional<Worn> out;
     const auto it = this->worn_.find(key);
@@ -328,19 +408,37 @@ std::optional<Jiltv::Worn> Jiltv::worn(const QString &login)
     return out;
 }
 
+bool Jiltv::storeWorn(const QString &key, const QString &paint,
+                      const QString &badge, const std::optional<QString> &frame,
+                      const std::optional<QString> &banner, bool &badgeChanged)
+{
+    auto &slot = this->worn_[key];
+    const auto newFrame = frame.value_or(slot.frame);
+    const auto newBanner = banner.value_or(slot.banner);
+    const bool changed = slot.paint != paint || slot.badge != badge ||
+                         slot.frame != newFrame || slot.banner != newBanner;
+    badgeChanged |= slot.badge != badge;
+    slot = {
+        .paint = paint,
+        .badge = badge,
+        .fetched = QDateTime::currentDateTimeUtc(),
+        .frame = newFrame,
+        .banner = newBanner,
+    };
+    return changed;
+}
+
 void Jiltv::flushLookups()
 {
     QStringList batch;
+    QString channel;
+    bool fresh = false;
     {
         const std::scoped_lock lock(this->mutex_);
         this->flushScheduled_ = false;
-        for (auto it = this->pending_.begin();
-             it != this->pending_.end() && batch.size() < LOOKUP_BATCH;)
-        {
-            batch.append(*it);
-            this->inFlight_.insert(*it);
-            it = this->pending_.erase(it);
-        }
+        std::tie(channel, fresh) =
+            takeBatch(this->pending_, this->inFlight_, this->fresh_, batch,
+                      LOOKUP_BATCH);
         if (!this->pending_.isEmpty())
         {
             this->flushScheduled_ = true;
@@ -354,41 +452,41 @@ void Jiltv::flushLookups()
         return;
     }
 
-    const auto finish = [this, batch](const QJsonObject &users, bool ok) {
+    // `fresh`: asked again after a change, so names already drawn get their
+    // new badge too (badges are part of the built message).
+    const auto finish = [this, batch, fresh](const QJsonObject &users,
+                                             bool ok) {
         bool changed = false;
+        bool badgeChanged = false;
         {
             const std::scoped_lock lock(this->mutex_);
-            const auto now = QDateTime::currentDateTimeUtc();
-            for (const auto &login : batch)
+            for (const auto &key : batch)
             {
-                this->inFlight_.remove(login);
+                this->inFlight_.remove(key);
                 if (!ok)
                 {
                     continue;  // asked again the next time it's drawn
                 }
-                const auto u = users.value(login).toObject();
-                Worn w{
-                    .paint = u.value("p").toString(),
-                    .badge = u.value("b").toString(),
-                    .fetched = now,
-                    .frame = u.value("d").toString(),
-                    .banner = u.value("bn").toString(),
-                };
-                auto &slot = this->worn_[login];
-                changed |= slot.paint != w.paint || slot.badge != w.badge ||
-                           slot.frame != w.frame || slot.banner != w.banner;
-                slot = w;
+                const auto u = users.value(keyLogin(key)).toObject();
+                changed |= this->storeWorn(
+                    key, u.value("p").toString(), u.value("b").toString(),
+                    u.value("d").toString(), u.value("bn").toString(),
+                    badgeChanged);
             }
         }
         if (changed)
         {
             getApp()->getWindows()->invalidateChannelViewBuffers();
         }
+        if (fresh && badgeChanged)
+        {
+            WindowManager::notifyBadgesUpdated();
+        }
     };
 
-    NetworkRequest(QUrl(this->apiUrl() +
-                        QStringLiteral("/v1/cosmetics/twitch?logins=") +
-                        batch.join(u',')))
+    NetworkRequest(lookupUrl(this->apiUrl(),
+                             QStringLiteral("/v1/cosmetics/twitch"), batch,
+                             channel, fresh))
         .timeout(20000)
         .onSuccess([finish](const NetworkResult &result) {
             finish(result.parseJson().value("users").toObject(), true);
@@ -399,14 +497,41 @@ void Jiltv::flushLookups()
         .execute();
 }
 
-void Jiltv::prefetch(const QString &login)
+void Jiltv::refreshWorn(const QString &login)
 {
-    (void)this->worn(login);
+    const QString prefix = login.toLower() + QChar(u'#');
+    {
+        const std::scoped_lock lock(this->mutex_);
+        bool any = false;
+        for (const auto &[key, w] : this->worn_)
+        {
+            if (key.startsWith(prefix) && !this->inFlight_.contains(key))
+            {
+                this->pending_.insert(key);
+                this->fresh_.insert(key);
+                any = true;
+            }
+        }
+        if (!any || this->flushScheduled_)
+        {
+            return;
+        }
+        this->flushScheduled_ = true;
+    }
+    QTimer::singleShot(0, [this] {
+        this->flushLookups();
+    });
 }
 
-std::shared_ptr<Paint> Jiltv::paint(const QString &login)
+void Jiltv::prefetch(const QString &login, const QString &channel)
 {
-    const auto w = this->worn(login);
+    (void)this->worn(login, channel);
+}
+
+std::shared_ptr<Paint> Jiltv::paint(const QString &login,
+                                    const QString &channel)
+{
+    const auto w = this->worn(login, channel);
     if (!w || w->paint.isEmpty())
     {
         return nullptr;
@@ -416,13 +541,13 @@ std::shared_ptr<Paint> Jiltv::paint(const QString &login)
     return it == this->paints_.end() ? nullptr : it->second;
 }
 
-ImagePtr Jiltv::frame(const QString &login)
+ImagePtr Jiltv::frame(const QString &login, const QString &channel)
 {
     if (!getSettings()->showJiltvFrames)
     {
         return nullptr;
     }
-    const auto w = this->worn(login);
+    const auto w = this->worn(login, channel);
     if (!w || w->frame.isEmpty())
     {
         return nullptr;
@@ -436,7 +561,8 @@ QString Jiltv::bannerUrl(const QString &login)
     {
         return {};
     }
-    const auto w = this->worn(login);
+    // The banner is the same in every channel.
+    const auto w = this->worn(login, {});
     if (!w || w->banner.isEmpty())
     {
         return {};
@@ -464,13 +590,13 @@ std::shared_ptr<Paint> Jiltv::paintById(const QString &id) const
     return it == this->paints_.end() ? nullptr : it->second;
 }
 
-EmotePtr Jiltv::badge(const QString &login)
+EmotePtr Jiltv::badge(const QString &login, const QString &channel)
 {
     if (!getSettings()->showBadgesJiltv)
     {
         return nullptr;
     }
-    const auto w = this->worn(login);
+    const auto w = this->worn(login, channel);
     if (!w || w->badge.isEmpty())
     {
         return nullptr;
@@ -619,19 +745,18 @@ std::shared_ptr<const EmoteMap> Jiltv::channelEmotes(
     return it == this->channels_.end() ? nullptr : it->second;
 }
 
-void Jiltv::loadPersonalEmotes(const QString &login, std::function<void()> done)
+void Jiltv::loadPersonalEmotes(const QString &login, std::function<void()> done,
+                               const QString &channel)
 {
-    const auto key = login.toLower();
-    if (key.isEmpty() || !getSettings()->enableJiltv ||
+    if (login.isEmpty() || !getSettings()->enableJiltv ||
         !getSettings()->enableJiltvEmotes)
     {
         return;
     }
-    QUrl url(this->apiUrl() + QStringLiteral("/v1/personal-emotes/twitch"));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("logins"), key);
-    url.setQuery(query);
-    NetworkRequest(url)
+    const auto key = cacheKey(login, channel);
+    NetworkRequest(lookupUrl(this->apiUrl(),
+                             QStringLiteral("/v1/personal-emotes/twitch"),
+                             {key}, keyChannel(key), false))
         .timeout(30000)
         .onSuccess(
             [this, key, done = std::move(done)](const NetworkResult &result) {
@@ -644,32 +769,34 @@ void Jiltv::loadPersonalEmotes(const QString &login, std::function<void()> done)
         .execute();
 }
 
-void Jiltv::storePersonalEmotes(const QStringList &logins,
+void Jiltv::storePersonalEmotes(const QStringList &keys,
                                 const QJsonObject &root)
 {
     const auto users = root.value("users").toObject();
     const auto cdn = root.value("cdn").toString();
     const auto now = QDateTime::currentDateTimeUtc();
     const std::scoped_lock lock(this->mutex_);
-    for (const auto &login : logins)
+    for (const auto &key : keys)
     {
-        this->personal_[login] = {
-            .emotes = std::make_shared<const EmoteMap>(parseEmotes(
-                users.value(login).toArray(), cdn, QStringLiteral("Personal"))),
+        this->personal_[key] = {
+            .emotes = std::make_shared<const EmoteMap>(
+                parseEmotes(users.value(keyLogin(key)).toArray(), cdn,
+                            QStringLiteral("Personal"))),
             .fetched = now,
         };
     }
 }
 
 std::optional<EmotePtr> Jiltv::personalEmote(const QString &login,
-                                             EmoteNameView name)
+                                             EmoteNameView name,
+                                             const QString &channel)
 {
     if (login.isEmpty() || !getSettings()->enableJiltv ||
         !getSettings()->enableJiltvEmotes)
     {
         return std::nullopt;
     }
-    const auto key = login.toLower();
+    const auto key = cacheKey(login, channel);
     const std::scoped_lock lock(this->mutex_);
     std::shared_ptr<const EmoteMap> emotes;
     bool fresh = false;
@@ -703,16 +830,14 @@ std::optional<EmotePtr> Jiltv::personalEmote(const QString &login,
 void Jiltv::flushPersonalLookups()
 {
     QStringList batch;
+    QString channel;
+    bool fresh = false;
     {
         const std::scoped_lock lock(this->mutex_);
         this->personalFlushScheduled_ = false;
-        for (auto it = this->personalPending_.begin();
-             it != this->personalPending_.end() && batch.size() < LOOKUP_BATCH;)
-        {
-            batch.append(*it);
-            this->personalInFlight_.insert(*it);
-            it = this->personalPending_.erase(it);
-        }
+        std::tie(channel, fresh) =
+            takeBatch(this->personalPending_, this->personalInFlight_,
+                      this->personalFresh_, batch, LOOKUP_BATCH);
         if (!this->personalPending_.isEmpty())
         {
             this->personalFlushScheduled_ = true;
@@ -728,16 +853,14 @@ void Jiltv::flushPersonalLookups()
 
     const auto done = [this, batch] {
         const std::scoped_lock lock(this->mutex_);
-        for (const auto &login : batch)
+        for (const auto &key : batch)
         {
-            this->personalInFlight_.remove(login);
+            this->personalInFlight_.remove(key);
         }
     };
-    QUrl url(this->apiUrl() + QStringLiteral("/v1/personal-emotes/twitch"));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("logins"), batch.join(u','));
-    url.setQuery(query);
-    NetworkRequest(url)
+    NetworkRequest(lookupUrl(this->apiUrl(),
+                             QStringLiteral("/v1/personal-emotes/twitch"),
+                             batch, channel, fresh))
         .timeout(20000)
         .onSuccess([this, batch, done](const NetworkResult &result) {
             this->storePersonalEmotes(batch, result.parseJson());
@@ -749,15 +872,42 @@ void Jiltv::flushPersonalLookups()
         .execute();
 }
 
+void Jiltv::refreshPersonal(const QString &login)
+{
+    const QString prefix = login.toLower() + QChar(u'#');
+    {
+        const std::scoped_lock lock(this->mutex_);
+        bool any = false;
+        for (const auto &[key, p] : this->personal_)
+        {
+            if (key.startsWith(prefix) &&
+                !this->personalInFlight_.contains(key))
+            {
+                this->personalPending_.insert(key);
+                this->personalFresh_.insert(key);
+                any = true;
+            }
+        }
+        if (!any || this->personalFlushScheduled_)
+        {
+            return;
+        }
+        this->personalFlushScheduled_ = true;
+    }
+    QTimer::singleShot(0, [this] {
+        this->flushPersonalLookups();
+    });
+}
+
 std::shared_ptr<const EmoteMap> Jiltv::personalEmotes(
-    const QString &login) const
+    const QString &login, const QString &channel) const
 {
     if (!getSettings()->enableJiltv || !getSettings()->enableJiltvEmotes)
     {
         return nullptr;
     }
     const std::scoped_lock lock(this->mutex_);
-    const auto it = this->personal_.find(login.toLower());
+    const auto it = this->personal_.find(cacheKey(login, channel));
     return it == this->personal_.end() ? nullptr : it->second.emotes;
 }
 
@@ -837,28 +987,54 @@ void Jiltv::followCosmetics()
     this->cosmeticsStream_ = std::make_unique<JiltvStream>(
         this->network_, url,
         [this](const QString &type, const QJsonObject &data) {
+            const auto login = data.value("login").toString().toLower();
+            if (login.isEmpty())
+            {
+                return;
+            }
             if (type == u"user.cosmetics")
             {
-                this->setWorn(
-                    data.value("login").toString(), data.value("p").toString(),
-                    data.value("b").toString(), data.value("d").toString(),
-                    data.value("bn").toString());
+                // "ch": they wear outfits in some channels (not named, so
+                // nobody can list them). The fields are the global look;
+                // every channel they are shown in here is asked again.
+                if (data.value("ch").toBool())
+                {
+                    this->refreshWorn(login);
+                    return;
+                }
+                this->setWorn(login, data.value("p").toString(),
+                              data.value("b").toString(),
+                              data.value("d").toString(),
+                              data.value("bn").toString());
             }
             else if (type == u"user.personal_emotes")
             {
                 // Someone changed their personal emotes: the whole current
                 // list, used from their next message on (and in our own
-                // emote popup and completion when it's us).
-                const auto key = data.value("login").toString().toLower();
-                if (!key.isEmpty())
+                // emote popup and completion when it's us). With presets
+                // assigned to channels ("ch"), each channel is asked again.
+                if (data.value("ch").toBool())
                 {
-                    this->storePersonalEmotes(
-                        {key},
-                        QJsonObject{
-                            {"users", QJsonObject{{key, data.value("emotes")}}},
-                            {"cdn", data.value("cdn")},
-                        });
+                    this->refreshPersonal(login);
+                    return;
                 }
+                QStringList keys{cacheKey(login, {})};
+                {
+                    const std::scoped_lock lock(this->mutex_);
+                    for (const auto &[key, p] : this->personal_)
+                    {
+                        if (keyLogin(key) == login && key != keys.front())
+                        {
+                            keys.append(key);
+                        }
+                    }
+                }
+                this->storePersonalEmotes(
+                    keys,
+                    QJsonObject{
+                        {"users", QJsonObject{{login, data.value("emotes")}}},
+                        {"cdn", data.value("cdn")},
+                    });
             }
         });
 }
@@ -871,21 +1047,25 @@ void Jiltv::setWorn(const QString &login, const QString &paint,
     {
         return;
     }
+    // The global look: without outfits it is the same in every channel.
+    const auto lower = login.toLower();
     bool changed = false;
+    bool badgeChanged = false;
     {
         const std::scoped_lock lock(this->mutex_);
-        auto &slot = this->worn_[login.toLower()];
-        const auto newFrame = frame.value_or(slot.frame);
-        const auto newBanner = banner.value_or(slot.banner);
-        changed = slot.paint != paint || slot.badge != badge ||
-                  slot.frame != newFrame || slot.banner != newBanner;
-        slot = {
-            .paint = paint,
-            .badge = badge,
-            .fetched = QDateTime::currentDateTimeUtc(),
-            .frame = newFrame,
-            .banner = newBanner,
-        };
+        QStringList keys{cacheKey(lower, {})};
+        for (const auto &[key, w] : this->worn_)
+        {
+            if (keyLogin(key) == lower && key != keys.front())
+            {
+                keys.append(key);
+            }
+        }
+        for (const auto &key : keys)
+        {
+            changed |= this->storeWorn(key, paint, badge, frame, banner,
+                                       badgeChanged);
+        }
     }
     if (changed)
     {
@@ -900,21 +1080,40 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
     {
         // A JilTV user arrived: know their cosmetics and personal emotes
         // before they write.
-        const auto login = data.value("login").toString();
-        const auto cosmetics = data.value("cosmetics").toObject();
-        this->setWorn(login, cosmetics.value("p").toString(),
-                      cosmetics.value("b").toString(),
-                      cosmetics.value("d").toString(),
-                      cosmetics.value("bn").toString());
-        if (!login.isEmpty() && data.contains("personal_emotes"))
+        // What they bring is what they wear in this channel (an outfit,
+        // a preset assigned to it).
+        const auto login = data.value("login").toString().toLower();
+        const auto channel =
+            getApp()->getTwitch()->getChannelOrEmptyByID(roomId)->getName();
+        if (login.isEmpty() || channel.isEmpty())
         {
-            const auto key = login.toLower();
+            return;
+        }
+        const auto key = cacheKey(login, channel);
+        const auto cosmetics = data.value("cosmetics").toObject();
+        bool changed = false;
+        bool badgeChanged = false;
+        {
+            const std::scoped_lock lock(this->mutex_);
+            changed = this->storeWorn(key, cosmetics.value("p").toString(),
+                                      cosmetics.value("b").toString(),
+                                      cosmetics.value("d").toString(),
+                                      cosmetics.value("bn").toString(),
+                                      badgeChanged);
+        }
+        if (changed)
+        {
+            getApp()->getWindows()->invalidateChannelViewBuffers();
+        }
+        if (data.contains("personal_emotes"))
+        {
             this->storePersonalEmotes(
-                {key}, QJsonObject{
-                           {"users",
-                            QJsonObject{{key, data.value("personal_emotes")}}},
-                           {"cdn", data.value("cdn")},
-                       });
+                {key},
+                QJsonObject{
+                    {"users",
+                     QJsonObject{{login, data.value("personal_emotes")}}},
+                    {"cdn", data.value("cdn")},
+                });
         }
         return;
     }

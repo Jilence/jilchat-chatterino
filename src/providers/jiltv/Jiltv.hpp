@@ -38,7 +38,9 @@ namespace chatterino {
 /// - the cosmetics catalog (GET /v1/cosmetics/catalog) has every paint and
 ///   badge; it is loaded at start and every ten minutes
 /// - what a chatter wears is looked up by login in batches of up to 100
-///   (GET /v1/cosmetics/twitch?logins=), and kept for five minutes
+///   (GET /v1/cosmetics/twitch?logins=&channel=), and kept for five
+///   minutes. Answers are per channel: Supporters can wear an outfit in
+///   some channels and show other personal emote presets there
 /// - emotes: the global sets (GET /v1/sets/global) and each joined
 ///   channel's set (GET /v1/channels/twitch/{id}/bootstrap)
 /// - live updates: an event stream per channel (emote changes, chatters
@@ -49,14 +51,17 @@ class Jiltv
 public:
     static Jiltv &instance();
 
-    /// The paint `login` wears, or nullptr. Unknown chatters are looked up;
-    /// the chat is redrawn when the answer arrives.
-    std::shared_ptr<Paint> paint(const QString &login);
-    /// The badge `login` wears, or nullptr (looked up like paint()).
-    EmotePtr badge(const QString &login);
+    /// The paint `login` wears in `channel` (its login; empty for no
+    /// particular channel), or nullptr. Unknown chatters are looked up; the
+    /// chat is redrawn when the answer arrives.
+    std::shared_ptr<Paint> paint(const QString &login,
+                                 const QString &channel = {});
+    /// The badge `login` wears in `channel`, or nullptr (looked up like
+    /// paint()).
+    EmotePtr badge(const QString &login, const QString &channel = {});
     /// The frame (avatar decoration) `login` wears around their profile
-    /// picture, or nullptr (looked up like paint()).
-    ImagePtr frame(const QString &login);
+    /// picture in `channel`, or nullptr (looked up like paint()).
+    ImagePtr frame(const QString &login, const QString &channel = {});
     /// URL of the profile banner of `login` for usercards (5:2, 600×240,
     /// animated WebP), or empty (looked up like paint()). Only Supporters
     /// have one, and only once a moderator approved it. A URL rather than an
@@ -72,17 +77,19 @@ public:
                  const QString &badge,
                  const std::optional<QString> &frame = std::nullopt,
                  const std::optional<QString> &banner = std::nullopt);
-    /// Asks for what `login` wears ahead of drawing it, e.g. when their
-    /// message arrives.
-    void prefetch(const QString &login);
+    /// Asks for what `login` wears in `channel` ahead of drawing it, e.g.
+    /// when their message arrives.
+    void prefetch(const QString &login, const QString &channel = {});
 
     std::optional<EmotePtr> channelEmote(const QString &roomId,
                                          EmoteNameView name) const;
     std::optional<EmotePtr> globalEmote(EmoteNameView name) const;
-    /// A personal emote of `login`. Unknown chatters are looked up, so their
-    /// personal emotes show from their next message on.
+    /// A personal emote of `login` in `channel` (a preset can be assigned to
+    /// it). Unknown chatters are looked up, so their personal emotes show
+    /// from their next message on.
     std::optional<EmotePtr> personalEmote(const QString &login,
-                                          EmoteNameView name);
+                                          EmoteNameView name,
+                                          const QString &channel = {});
     std::shared_ptr<const EmoteMap> channelEmotes(const QString &roomId) const;
     std::shared_ptr<const EmoteMap> globalEmotes() const;
     /// The name of a channel's active JilTV emote set, empty when unknown
@@ -94,13 +101,15 @@ public:
                            std::function<void(int)> done = {});
     void loadGlobalEmotes();
 
-    /// The personal emotes of `login`, usable in every channel, or nullptr
-    /// when they weren't loaded
-    std::shared_ptr<const EmoteMap> personalEmotes(const QString &login) const;
-    /// Loads the personal emotes of `login`. `done` runs in the GUI thread
-    /// once they are there.
+    /// The personal emotes of `login` in `channel`, or nullptr when they
+    /// weren't loaded
+    std::shared_ptr<const EmoteMap> personalEmotes(
+        const QString &login, const QString &channel = {}) const;
+    /// Loads the personal emotes of `login` in `channel`. `done` runs in the
+    /// GUI thread once they are there.
     void loadPersonalEmotes(const QString &login,
-                            std::function<void()> done = {});
+                            std::function<void()> done = {},
+                            const QString &channel = {});
     void loadCatalog();
 
     /// Tells JilTV which JilTV channels the signed-in user is in, so other
@@ -129,10 +138,19 @@ private:
         QString banner;
     };
 
-    /// Returns the cached answer for `login`, and queues a lookup when there
-    /// is none or it is old.
-    std::optional<Worn> worn(const QString &login);
+    /// Returns the cached answer for `login` in `channel`, and queues a
+    /// lookup when there is none or it is old.
+    std::optional<Worn> worn(const QString &login, const QString &channel);
     void flushLookups();
+    /// Stores what `login` wears under the cache key `key`; true when it
+    /// changed. Guarded by mutex_ (held by the caller).
+    bool storeWorn(const QString &key, const QString &paint,
+                   const QString &badge, const std::optional<QString> &frame,
+                   const std::optional<QString> &banner, bool &badgeChanged);
+    /// The login has outfits or presets in some channels: every channel it
+    /// is cached for is asked again, past the API's cache. GUI thread.
+    void refreshWorn(const QString &login);
+    void refreshPersonal(const QString &login);
     void applyCatalog(const QJsonObject &root);
 
     mutable std::mutex mutex_;
@@ -142,9 +160,12 @@ private:
     std::unordered_map<QString, ImagePtr> frames_;
     /// Where catalog files live (from the catalog)
     QString cdn_;
+    /// By "login#channel" (channel empty for none).
     std::unordered_map<QString, Worn> worn_;
     QSet<QString> pending_;
     QSet<QString> inFlight_;
+    /// Pending keys to ask for past the API's cache (after a change).
+    QSet<QString> fresh_;
     bool flushScheduled_ = false;
     std::unordered_map<QString, std::shared_ptr<const EmoteMap>> channels_;
     std::shared_ptr<const EmoteMap> global_;
@@ -154,17 +175,17 @@ private:
         std::shared_ptr<const EmoteMap> emotes;
         QDateTime fetched;
     };
-    /// By lowercase login. Guarded by mutex_.
+    /// By "login#channel" like worn_. Guarded by mutex_.
     std::unordered_map<QString, Personal> personal_;
     QSet<QString> personalPending_;
     QSet<QString> personalInFlight_;
+    QSet<QString> personalFresh_;
     bool personalFlushScheduled_ = false;
     void flushPersonalLookups();
-    /// Stores the personal emotes of the logins in `users`, from a response
-    /// of /v1/personal-emotes/twitch. Logins in `logins` that are missing in
-    /// it have none.
-    void storePersonalEmotes(const QStringList &logins,
-                             const QJsonObject &root);
+    /// Stores personal emotes under the cache keys `keys` ("login#channel"),
+    /// from a response of /v1/personal-emotes/twitch (users by login). Keys
+    /// whose login is missing in it have none.
+    void storePersonalEmotes(const QStringList &keys, const QJsonObject &root);
 
     QTimer catalogTimer_;
     QTimer presenceTimer_;

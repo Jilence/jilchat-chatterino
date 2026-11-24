@@ -192,9 +192,9 @@ QRegion paintAnimatedShadow(QPainter &painter,
 
     QString key;
     key.reserve(96 + static_cast<qsizetype>(layers.size()) * 64);
-    key += QString::number(pixelWidth) + u'x' + QString::number(pixelHeight) +
-           u'/' + QString::number(pixelRadius) + u'/' +
-           QString::number(shadow->color.rgba()) + u'/' +
+    key += QString::number(pixelWidth) + QChar(u'x') + QString::number(pixelHeight) +
+           QChar(u'/') + QString::number(pixelRadius) + QChar(u'/') +
+           QString::number(shadow->color.rgba()) + QChar(u'/') +
            QString::number(qRound(dpr * 1000));
     for (const auto &layer : layers)
     {
@@ -212,12 +212,12 @@ QRegion paintAnimatedShadow(QPainter &painter,
         else
         {
             key += QStringLiteral("/s") +
-                   QString::number(layer.cacheIdentity.size()) + u':' +
+                   QString::number(layer.cacheIdentity.size()) + QChar(u':') +
                    layer.cacheIdentity;
         }
-        key += u'@' + QString::number(qRound((target.x() - bounds.x()) * dpr)) +
-               u',' + QString::number(qRound((target.y() - bounds.y()) * dpr)) +
-               u',' + QString::number(qRound(target.width() * dpr)) + u',' +
+        key += QChar(u'@') + QString::number(qRound((target.x() - bounds.x()) * dpr)) +
+               QChar(u',') + QString::number(qRound((target.y() - bounds.y()) * dpr)) +
+               QChar(u',') + QString::number(qRound(target.width() * dpr)) + QChar(u',') +
                QString::number(qRound(target.height() * dpr));
     }
 
@@ -1711,7 +1711,8 @@ void TextLayoutElement::paint(QPainter &painter,
     {
         auto paint = usernamePaint(this->getLink().value.toLower(),
                                    this->getCreator().getFlags().has(
-                                       MessageElementFlag::KickUsername));
+                                       MessageElementFlag::KickUsername),
+                                   this->getCreator().contextChannel());
         if (paint)
         {
             if (paint->animated())
@@ -1868,7 +1869,8 @@ QRegion TextLayoutElement::paintAnimated(QPainter &painter, const qreal yOffset,
     }
     const auto paint = usernamePaint(
         this->getLink().value.toLower(),
-        this->getCreator().getFlags().has(MessageElementFlag::KickUsername));
+        this->getCreator().getFlags().has(MessageElementFlag::KickUsername),
+        this->getCreator().contextChannel());
     if (!paint || !paint->animated())
     {
         return {};

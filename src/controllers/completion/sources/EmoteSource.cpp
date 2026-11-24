@@ -153,14 +153,16 @@ void EmoteSource::initializeFromChannel(const Channel *channel)
 
             // the own JilTV personal emotes, loaded for the next time when
             // they aren't there yet
+            // (the preset assigned to this channel, if there is one)
             const auto login = user->getUserName();
-            if (auto jiltvPersonal = Jiltv::instance().personalEmotes(login))
+            if (auto jiltvPersonal =
+                    Jiltv::instance().personalEmotes(login, tc->getName()))
             {
                 addEmotes(emotes, *jiltvPersonal, "Personal JilTV");
             }
             else
             {
-                Jiltv::instance().loadPersonalEmotes(login);
+                Jiltv::instance().loadPersonalEmotes(login, {}, tc->getName());
             }
             for (const auto &map :
                  app->getSeventvPersonalEmotes()->getEmoteSetsForTwitchUser(

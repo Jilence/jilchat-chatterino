@@ -726,12 +726,13 @@ bool usernamePaintsEnabled()
            UsernamePaintSource::Off;
 }
 
-std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick)
+std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick,
+                                     const QString &channel)
 {
     const auto source = getSettings()->usernamePaintSource.getEnum();
     const bool jiltv = !kick && getSettings()->enableJiltv;
     const auto jiltvPaint = [&] {
-        return Jiltv::instance().paint(userName);
+        return Jiltv::instance().paint(userName, channel);
     };
 
     // Automatic draws a JilTV paint before a 7TV or BetterTTV one

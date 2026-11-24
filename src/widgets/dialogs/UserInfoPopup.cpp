@@ -4515,9 +4515,13 @@ void UserInfoPopup::updateUserData()
                         !shown && this->ui_.ivrBanner->hasPixmap());
                 }
             });
+        // The frame they wear in this channel (outfits differ per channel).
         this->ui_.avatarFrame->setSource(
-            [login = user.login] {
-                return Jiltv::instance().frame(login);
+            [login = user.login,
+             channel = this->underlyingChannel_
+                           ? this->underlyingChannel_->getName()
+                           : QString()] {
+                return Jiltv::instance().frame(login, channel);
             },
             [this](bool framed) {
                 auto *avatar = this->ui_.avatarButton;

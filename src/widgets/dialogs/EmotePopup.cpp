@@ -733,7 +733,8 @@ void EmotePopup::loadChannel(ChannelPtr channel)
                 {
                     self->reloadEmotes();
                 }
-            });
+            },
+            this->twitchChannel_->getName());
     }
 }
 
@@ -924,8 +925,10 @@ void EmotePopup::reloadEmotes()
                       "7TV");
         }
 
+        // (the preset assigned to this channel, if there is one)
         if (auto jiltvPersonal = Jiltv::instance().personalEmotes(
-                getApp()->getAccounts()->twitch.getCurrent()->getUserName()))
+                getApp()->getAccounts()->twitch.getCurrent()->getUserName(),
+                this->twitchChannel_->getName()))
         {
             addEmotes(*subChannel, *jiltvPersonal, "JilTV (Personal)");
         }

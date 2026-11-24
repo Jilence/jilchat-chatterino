@@ -711,7 +711,8 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
         if (jiltvFirstHere)
         {
             // A user's personal emote wins over a channel emote of the same name.
-            emote = jiltv.personalEmote(login, name);
+            emote = jiltv.personalEmote(login, name,
+                                       twitchChannel->getName());
             if (emote)
             {
                 return *emote;
@@ -758,7 +759,8 @@ EmotePtr parseEmote(TwitchChannel *twitchChannel, const QString &userID,
         if (!jiltvFirstHere)
         {
             // A user's personal emote wins over a channel emote of the same name.
-            emote = jiltv.personalEmote(login, name);
+            emote = jiltv.personalEmote(login, name,
+                                       twitchChannel->getName());
             if (emote)
             {
                 return *emote;
@@ -1585,6 +1587,11 @@ MessagePtrMut MessageBuilder::release()
     if (this->message_ != nullptr)
     {
         this->flushPendingModifiers();
+        // Names are painted in what the chatter wears in this channel.
+        for (auto &element : this->message_->elements)
+        {
+            element->setContextChannel(this->message_->channelName);
+        }
     }
     std::shared_ptr<Message> ptr;
     this->message_.swap(ptr);
@@ -1638,7 +1645,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendSolrinoBadges(message.userID);
     builder.appendWydiosBadges(message.userID);
     builder.appendSeventvBadges(message.userID);
-    builder.appendJiltvBadges(message.loginName);
+    builder.appendJiltvBadges(message.loginName, message.channelName);
     builder.appendDankChatBadges(message.userID);
     builder.appendChatleeBadges(message.userID);
     builder.appendChatsenBadges(message.userID);
@@ -2561,7 +2568,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendSolrinoBadges(userID);
         builder.appendWydiosBadges(userID);
         builder.appendSeventvBadges(userID);
-        builder.appendJiltvBadges(builder->loginName);
+        builder.appendJiltvBadges(builder->loginName, builder->channelName);
         builder.appendDankChatBadges(userID);
         builder.appendChatleeBadges(userID);
         builder.appendChatsenBadges(userID);
@@ -4361,9 +4368,10 @@ void MessageBuilder::appendJilChatBadges(const QString &userID)
     }
 }
 
-void MessageBuilder::appendJiltvBadges(const QString &login)
+void MessageBuilder::appendJiltvBadges(const QString &login,
+                                       const QString &channel)
 {
-    if (auto badge = Jiltv::instance().badge(login))
+    if (auto badge = Jiltv::instance().badge(login, channel))
     {
         this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeJiltv);
         this->message().externalBadges.emplace_back(badge->name.string);
@@ -4660,7 +4668,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendSolrinoBadges(userId);
     builder.appendWydiosBadges(userId);
     builder.appendSeventvBadges(userId);
-    builder.appendJiltvBadges(loginName);
+    builder.appendJiltvBadges(loginName, builder->channelName);
     builder.appendDankChatBadges(userId);
     builder.appendChatleeBadges(userId);
     builder.appendChatsenBadges(userId);

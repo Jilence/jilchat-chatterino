@@ -250,6 +250,17 @@ void MessageElement::cloneFrom(const MessageElement &source)
     this->flags_ = source.flags_;
     this->trailingSpace = source.trailingSpace;
     this->exhaustiveFlags = source.exhaustiveFlags;
+    this->contextChannel_ = source.contextChannel_;
+}
+
+const QString &MessageElement::contextChannel() const
+{
+    return this->contextChannel_;
+}
+
+void MessageElement::setContextChannel(const QString &channel)
+{
+    this->contextChannel_ = channel;
 }
 
 bool MessageElement::matchesFlags(MessageElementFlags contextFlags) const

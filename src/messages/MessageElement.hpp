@@ -206,6 +206,12 @@ public:
     MessageElementFlags getFlags() const;
     void addFlags(MessageElementFlags flags);
 
+    /// The login of the channel the message was written in (empty when
+    /// unknown). Names are painted in what the chatter wears there: JilTV
+    /// outfits can differ per channel.
+    const QString &contextChannel() const;
+    void setContextChannel(const QString &channel);
+
     virtual void addToContainer(MessageLayoutContainer &container,
                                 const MessageLayoutContext &ctx) = 0;
 
@@ -239,6 +245,7 @@ private:
     Link link_;
     QString tooltip_;
     MessageElementFlags flags_;
+    QString contextChannel_;
 };
 
 // contains a simple image

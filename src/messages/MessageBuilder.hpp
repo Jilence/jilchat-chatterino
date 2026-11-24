@@ -425,7 +425,8 @@ private:
     void appendJilChatBadges(const QString &userID);
     /// The JilTV badge of the chatter `login` (by login, as JilTV looks
     /// chatters up).
-    void appendJiltvBadges(const QString &login);
+    /// The JilTV badge `login` wears in `channel` (outfits differ per channel).
+    void appendJiltvBadges(const QString &login, const QString &channel);
     void appendBluzyrinoBadges(const QString &userID);
 
     [[nodiscard]] static bool isIgnored(const QString &originalMessage,

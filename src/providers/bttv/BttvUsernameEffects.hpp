@@ -88,6 +88,9 @@ bool usernamePaintsEnabled();
 
 /// The paint for the name of the user with the login `userName`: the 7TV
 /// paint or the BetterTTV username effect, whichever the user chose to see.
-std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick);
+/// `channel` is the login of the channel the name shows in (JilTV outfits
+/// differ per channel); empty when there is none.
+std::shared_ptr<Paint> usernamePaint(const QString &userName, bool kick,
+                                     const QString &channel = {});
 
 }  // namespace chatterino
