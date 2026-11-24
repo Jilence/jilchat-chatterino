@@ -20,16 +20,16 @@ Shaders are checked in as `.qsb`. After editing `shaders/glass.*`, run
 
 ## Controls
 
-| Key | |
-|---|---|
-| Ctrl+G | glass on/off (flat comparison) |
-| Ctrl+F | frost 0–4 |
-| Ctrl+D | prism (chromatic dispersion) |
-| Ctrl+S | stress: 40 synthetic msg/s + moving lens |
-| Ctrl+L | draggable lens |
-| Ctrl+W | background on/off |
-| Ctrl+H | HUD |
-| `/join name` | new tab |
+| Key          |                                          |
+| ------------ | ---------------------------------------- |
+| Ctrl+G       | glass on/off (flat comparison)           |
+| Ctrl+F       | frost 0–4                                |
+| Ctrl+D       | prism (chromatic dispersion)             |
+| Ctrl+S       | stress: 40 synthetic msg/s + moving lens |
+| Ctrl+L       | draggable lens                           |
+| Ctrl+W       | background on/off                        |
+| Ctrl+H       | HUD                                      |
+| `/join name` | new tab                                  |
 
 ## Benchmark
 

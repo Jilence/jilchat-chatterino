@@ -197,10 +197,10 @@ public:
             gradient->spread() != QGradient::PadSpread ||
             gradient->stops().isEmpty())
         {
-            canvas_->setFillStyle(
-                gradient != nullptr && !gradient->stops().isEmpty()
-                    ? gradient->stops().constFirst().second
-                    : brush.color());
+            canvas_->setFillStyle(gradient != nullptr &&
+                                          !gradient->stops().isEmpty()
+                                      ? gradient->stops().constFirst().second
+                                      : brush.color());
             return;
         }
         // The canvas has no brush transform: a moved or scaled brush moves
@@ -476,8 +476,7 @@ void CanvasChatSurface::prePaint(QCanvasPainter *canvas)
     const auto dpr = devicePixelRatioF();
     for (const auto &area : dirty)
         canvas->clearRect(QRectF(QRectF(area.x() * dpr, area.y() * dpr,
-                                        area.width() * dpr,
-                                        area.height() * dpr)
+                                        area.width() * dpr, area.height() * dpr)
                                      .toAlignedRect()));
     {
         CanvasDevice device(this, canvas, d_->textures);

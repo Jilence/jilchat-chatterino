@@ -4860,8 +4860,7 @@ void ChannelView::paintChat(QPainter &painter, const QRegion &area)
         // each; the corners are cut out once at the end instead.
         if (!onCanvas)
         {
-            painter.setClipPath(this->chatFrameContentPath_,
-                                Qt::IntersectClip);
+            painter.setClipPath(this->chatFrameContentPath_, Qt::IntersectClip);
         }
     }
 
@@ -4927,7 +4926,8 @@ void ChannelView::paintChat(QPainter &painter, const QRegion &area)
             // Exactly what the rounded clip keeps: erase what lies outside.
             painter.setClipRect(this->rect(), Qt::IntersectClip);
             painter.setRenderHint(QPainter::Antialiasing, true);
-            painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+            painter.setCompositionMode(
+                QPainter::CompositionMode_DestinationOut);
             painter.fillPath(this->chatFrameOutsidePath_, Qt::black);
         }
         painter.restore();

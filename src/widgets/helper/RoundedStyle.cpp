@@ -8,8 +8,8 @@
 
 #include <QApplication>
 #include <QCheckBox>
-#include <QMenu>
 #include <QEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyleOption>
@@ -105,8 +105,8 @@ void paintSurface(QPainter *painter, const QRectF &bounds, qreal radius,
             fill = dark ? mix(window, Qt::white, 0.105) : QColor(Qt::white);
             if (state.pressed)
             {
-                fill = dark ? mix(window, Qt::white, 0.19)
-                            : QColor(232, 232, 236);
+                fill =
+                    dark ? mix(window, Qt::white, 0.19) : QColor(232, 232, 236);
             }
             else if (state.hover)
             {
@@ -154,9 +154,9 @@ void paintSurface(QPainter *painter, const QRectF &bounds, qreal radius,
         painter->setClipPath(path);
         QLinearGradient top(rect.topLeft(),
                             QPointF(rect.left(), rect.top() + 3));
-        top.setColorAt(0, QColor(255, 255, 255,
-                                 surface == Surface::Accent ? 70
-                                                            : (dark ? 30 : 0)));
+        top.setColorAt(
+            0, QColor(255, 255, 255,
+                      surface == Surface::Accent ? 70 : (dark ? 30 : 0)));
         top.setColorAt(1, QColor(255, 255, 255, 0));
         painter->fillRect(QRectF(rect.left(), rect.top(), rect.width(), 3),
                           top);
@@ -174,8 +174,10 @@ void paintSurface(QPainter *painter, const QRectF &bounds, qreal radius,
     }
     else
     {
-        edge.setColorAt(0, QColor(0, 0, 0, surface == Surface::Field ? 45 : 22));
-        edge.setColorAt(1, QColor(0, 0, 0, surface == Surface::Field ? 30 : 40));
+        edge.setColorAt(0,
+                        QColor(0, 0, 0, surface == Surface::Field ? 45 : 22));
+        edge.setColorAt(1,
+                        QColor(0, 0, 0, surface == Surface::Field ? 30 : 40));
     }
     if (surface != Surface::Accent)
     {
@@ -205,10 +207,10 @@ void paintSwitch(QPainter *painter, const QRectF &bounds,
     const QColor window = palette.color(QPalette::Window);
     const QColor accent = palette.color(QPalette::Highlight);
     const bool dark = isDark(window);
-    const QRectF track = QRectF(0, 0, SWITCH_WIDTH - 2, SWITCH_HEIGHT - 2)
-                             .translated(bounds.left() + 1,
-                                         bounds.center().y() -
-                                             (SWITCH_HEIGHT - 2) / 2.0);
+    const QRectF track =
+        QRectF(0, 0, SWITCH_WIDTH - 2, SWITCH_HEIGHT - 2)
+            .translated(bounds.left() + 1,
+                        bounds.center().y() - (SWITCH_HEIGHT - 2) / 2.0);
     const qreal radius = track.height() / 2;
 
     painter->save();
@@ -218,9 +220,9 @@ void paintSwitch(QPainter *painter, const QRectF &bounds,
         painter->setOpacity(0.45);
     }
 
-    QColor trackColor = on ? accent
-                           : (dark ? mix(window, Qt::white, 0.17)
-                                   : QColor(220, 220, 225));
+    QColor trackColor =
+        on ? accent
+           : (dark ? mix(window, Qt::white, 0.17) : QColor(220, 220, 225));
     if (hover)
     {
         trackColor = dark ? trackColor.lighter(110) : trackColor.darker(103);
@@ -231,8 +233,8 @@ void paintSwitch(QPainter *painter, const QRectF &bounds,
     // Recessed: a little shade along the top inside the track.
     painter->save();
     painter->setClipPath(trackPath);
-    QLinearGradient shade(track.topLeft(), QPointF(track.left(),
-                                                   track.top() + 4));
+    QLinearGradient shade(track.topLeft(),
+                          QPointF(track.left(), track.top() + 4));
     shade.setColorAt(0, QColor(0, 0, 0, 45));
     shade.setColorAt(1, QColor(0, 0, 0, 0));
     painter->fillRect(track, shade);
@@ -279,8 +281,8 @@ void paintChevron(QPainter *painter, const QRectF &area, const QColor &color)
     const QPointF c = area.center() + QPointF(0, w * 0.12);
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap,
-                         Qt::RoundJoin));
+    painter->setPen(
+        QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter->setBrush(Qt::NoBrush);
     QPainterPath chevron;
     chevron.moveTo(c + QPointF(-w / 2, -w / 4));
@@ -299,8 +301,8 @@ SurfaceState stateOf(const QStyleOption *option)
 {
     SurfaceState state;
     state.enabled = (option->state & QStyle::State_Enabled) != 0;
-    state.hover = (option->state & QStyle::State_MouseOver) != 0 &&
-                  state.enabled;
+    state.hover =
+        (option->state & QStyle::State_MouseOver) != 0 && state.enabled;
     state.pressed =
         (option->state & (QStyle::State_Sunken | QStyle::State_On)) != 0;
     state.focus = (option->state & QStyle::State_HasFocus) != 0 &&
@@ -348,8 +350,7 @@ void RoundedStyle::drawPrimitive(PrimitiveElement element,
             if (frame != nullptr && frame->lineWidth <= 0)
             {
                 // Frameless line edits (e.g. inside other controls).
-                painter->fillRect(option->rect,
-                                  palette.brush(QPalette::Base));
+                painter->fillRect(option->rect, palette.brush(QPalette::Base));
                 return;
             }
             SurfaceState state = stateOf(option);
@@ -369,10 +370,9 @@ void RoundedStyle::drawPrimitive(PrimitiveElement element,
             const bool partial = (option->state & State_NoChange) != 0;
             if (isSwitch(widget))
             {
-                paintSwitch(painter, rect, palette, on, partial, enabled,
-                            hover,
-                            focus && (option->state &
-                                      State_KeyboardFocusChange) != 0);
+                paintSwitch(
+                    painter, rect, palette, on, partial, enabled, hover,
+                    focus && (option->state & State_KeyboardFocusChange) != 0);
                 return;
             }
 
@@ -385,17 +385,15 @@ void RoundedStyle::drawPrimitive(PrimitiveElement element,
                             QColor());
                 painter->save();
                 painter->setRenderHint(QPainter::Antialiasing);
-                painter->setPen(QPen(Qt::white,
-                                     std::max(1.5, box.width() / 7.0),
-                                     Qt::SolidLine, Qt::RoundCap,
-                                     Qt::RoundJoin));
+                painter->setPen(
+                    QPen(Qt::white, std::max(1.5, box.width() / 7.0),
+                         Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
                 if (partial)
                 {
-                    painter->drawLine(
-                        QPointF(box.left() + box.width() * 0.28,
-                                box.center().y()),
-                        QPointF(box.right() - box.width() * 0.28,
-                                box.center().y()));
+                    painter->drawLine(QPointF(box.left() + box.width() * 0.28,
+                                              box.center().y()),
+                                      QPointF(box.right() - box.width() * 0.28,
+                                              box.center().y()));
                 }
                 else
                 {
@@ -462,7 +460,8 @@ void RoundedStyle::drawControl(ControlElement element,
 {
     if (element == CE_MenuItem)
     {
-        const auto *item = qstyleoption_cast<const QStyleOptionMenuItem *>(option);
+        const auto *item =
+            qstyleoption_cast<const QStyleOptionMenuItem *>(option);
         const bool selected = (option->state & State_Selected) != 0;
         const bool enabled = (option->state & State_Enabled) != 0;
         if (item != nullptr && selected && enabled &&
@@ -503,9 +502,8 @@ void RoundedStyle::drawComplexControl(ComplexControl control,
             state.pressed = (option->state & State_On) != 0;
             paintSurface(painter, option->rect, FIELD_RADIUS, option->palette,
                          Surface::Raised, state);
-            const QRect arrow =
-                this->subControlRect(CC_ComboBox, option, SC_ComboBoxArrow,
-                                     widget);
+            const QRect arrow = this->subControlRect(CC_ComboBox, option,
+                                                     SC_ComboBoxArrow, widget);
             auto chevron = option->palette.color(QPalette::ButtonText);
             chevron.setAlpha(170);
             paintChevron(painter, arrow, chevron);
@@ -578,17 +576,18 @@ QRect RoundedStyle::subControlRect(ComplexControl control,
             int pos = 0;
             if (range > 0)
             {
-                thumb = std::max(minThumb,
-                                 int(qint64(length) * bar->pageStep /
-                                     std::max(1, range + bar->pageStep)));
+                thumb =
+                    std::max(minThumb, int(qint64(length) * bar->pageStep /
+                                           std::max(1, range + bar->pageStep)));
                 thumb = std::min(thumb, length);
                 pos = QStyle::sliderPositionFromValue(
                     bar->minimum, bar->maximum, bar->sliderPosition,
                     length - thumb, bar->upsideDown);
             }
             auto along = [&](int start, int size) {
-                return horizontal ? QRect(r.x() + start, r.y(), size, r.height())
-                                  : QRect(r.x(), r.y() + start, r.width(), size);
+                return horizontal
+                           ? QRect(r.x() + start, r.y(), size, r.height())
+                           : QRect(r.x(), r.y() + start, r.width(), size);
             };
             switch (subControl)
             {
@@ -660,9 +659,10 @@ namespace {
 
 #ifdef USEWINSDK
 // Not in older SDKs.
-constexpr DWORD CORNER_PREFERENCE_ATTRIBUTE = 33;  // DWMWA_WINDOW_CORNER_PREFERENCE
-constexpr int CORNER_ROUND = 2;                    // DWMWCP_ROUND
-constexpr int CORNER_ROUND_SMALL = 3;              // DWMWCP_ROUNDSMALL
+constexpr DWORD CORNER_PREFERENCE_ATTRIBUTE =
+    33;                                // DWMWA_WINDOW_CORNER_PREFERENCE
+constexpr int CORNER_ROUND = 2;        // DWMWCP_ROUND
+constexpr int CORNER_ROUND_SMALL = 3;  // DWMWCP_ROUNDSMALL
 
 class RoundedWindowFilter : public QObject
 {
