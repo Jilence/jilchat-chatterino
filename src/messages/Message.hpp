@@ -3,7 +3,6 @@
 #include "messages/MessageFlag.hpp"
 #include "providers/twitch/api/HelixEnums.hpp"
 #include "providers/twitch/ChannelPointReward.hpp"
-#include "util/DebugCount.hpp"
 #include "util/QStringHash.hpp"
 
 #include <QColor>
@@ -108,7 +107,7 @@ struct Message {
         Android,
         // UUID4 (standard) uppercase
         IOS,
-        // [a-z0-9]{8,12}
+        // [a-z0-9]{8,13}
         MobileNew,
         // Does not match any of the known clients
         Abnormal,
