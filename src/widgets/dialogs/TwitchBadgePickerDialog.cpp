@@ -3022,16 +3022,6 @@ void TwitchBadgePickerDialog::rebuildOrder()
     const auto shown = std::ranges::count_if(entries, [](const auto &entry) {
         return entry.available;
     });
-    if (shown == 0)
-    {
-        auto *empty = new QLabel(
-            "Your badges show up here once one of your own messages was "
-            "shown in a chat.",
-            this->contentWidget_);
-        empty->setWordWrap(true);
-        this->contentLayout_->addWidget(empty);
-        return;
-    }
 
     auto *list = new QListWidget(this->contentWidget_);
     list->setObjectName("TwitchBadgePickerOrderList");

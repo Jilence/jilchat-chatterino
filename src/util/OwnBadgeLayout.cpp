@@ -95,10 +95,10 @@ constexpr std::array PROVIDERS{
              .name = u"Chatsen"},
     Provider{.flag = MessageElementFlag::BadgeHomiesCustom,
              .key = u"hc",
-             .name = u"Homies"},
+             .name = u"Homies Custom"},
     Provider{.flag = MessageElementFlag::BadgeHomiesSupporter,
              .key = u"hs",
-             .name = u"Homies"},
+             .name = u"Homies Supporter"},
     Provider{.flag = MessageElementFlag::BadgeHomies,
              .key = u"h",
              .name = u"Homies"},
@@ -197,6 +197,30 @@ QHash<QString, QHash<QString, QString>> &twitchSlotsByChannel()
 bool isTwitchSlot(QStringView key)
 {
     return std::ranges::find(TWITCH_SLOTS, key) != TWITCH_SLOTS.end();
+}
+
+/// What to call a group of badges nobody's badge of was seen yet, e.g.
+/// "Twitch: Subscriber" or "7TV"
+QString groupName(QStringView key)
+{
+    if (key == u"ta")
+    {
+        return QStringLiteral("Twitch: Roles (Broadcaster, Moderator, VIP)");
+    }
+    if (key == u"ts")
+    {
+        return QStringLiteral("Twitch: Subscriber");
+    }
+    if (key == u"tv")
+    {
+        return QStringLiteral("Twitch: Vanity");
+    }
+    if (key == u"tp")
+    {
+        return QStringLiteral("Twitch: Predictions");
+    }
+    const auto it = std::ranges::find(PROVIDERS, key, &Provider::key);
+    return it != PROVIDERS.end() ? it->name.toString() : key.toString();
 }
 
 void remember(const QString &key, const QString &label)
@@ -378,18 +402,20 @@ std::vector<Entry> entries(const QString &channelName)
             channelSlots = twitchSlotsByChannel().value(channelName.toLower());
         }
     }
-    // Twitch's badges as they are in that channel, the others everywhere
+    // Twitch's badges as they are in that channel, the others everywhere.
+    // Every group is listed, also the ones the user has no badge of there.
     const auto fitChannel = [&](Entry &entry) {
         if (channelName.isEmpty() || !isTwitchSlot(entry.key))
         {
             return;
         }
         const auto found = channelSlots.constFind(entry.key);
-        entry.available = found != channelSlots.cend();
-        if (entry.available && !found->isEmpty())
+        if (found == channelSlots.cend() || found->isEmpty())
         {
-            entry.label = *found;
+            entry.label = groupName(entry.key);
+            return;
         }
+        entry.label = *found;
     };
 
     const auto saved = savedOrder();
@@ -424,6 +450,32 @@ std::vector<Entry> entries(const QString &channelName)
             });
             fitChannel(result.back());
         }
+    }
+
+    // Every kind of badge Chatterino can show, also the ones not seen on
+    // the user's messages yet, so all of them can be put in place
+    std::vector<QString> all(TWITCH_SLOTS.begin(), TWITCH_SLOTS.end());
+    for (const auto &provider : PROVIDERS)
+    {
+        all.push_back(provider.key.toString());
+    }
+    for (const auto &key : all)
+    {
+        if (std::ranges::find(result, key, &Entry::key) != result.end())
+        {
+            continue;
+        }
+        Entry entry{
+            .key = key,
+            .label = groupName(key),
+            .visible = isVisible(key),
+        };
+        fitChannel(entry);
+        // where it would be shown: before the first one that comes later
+        const auto place = std::ranges::find_if(result, [&](const auto &e) {
+            return defaultRank(e.key) > defaultRank(key);
+        });
+        result.insert(place, std::move(entry));
     }
     return result;
 }
