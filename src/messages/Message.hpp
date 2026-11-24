@@ -122,6 +122,9 @@ struct Message {
     MessagePlatform platform = MessagePlatform::AnyOrTwitch;
 
     std::vector<std::unique_ptr<MessageElement>> elements;
+    /// The user wrote it: the badges they hide are left out when it's laid
+    /// out (see OwnBadgeLayout)
+    bool ownBadges = false;
     ClientDetectionStatus clientDetection = ClientDetectionStatus::Unknown;
 
     ScrollbarHighlight getScrollBarHighlight() const;

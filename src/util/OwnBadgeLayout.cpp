@@ -4,9 +4,11 @@
 
 #include "util/OwnBadgeLayout.hpp"
 
+#include "Application.hpp"
 #include "messages/Emote.hpp"
 #include "messages/MessageElement.hpp"
 #include "singletons/Settings.hpp"
+#include "singletons/WindowManager.hpp"
 
 #include <QChar>
 #include <QHash>
@@ -237,27 +239,23 @@ std::vector<std::pair<QString, QString>> savedOrder()
     return order;
 }
 
-/// Sorts the badges from `firstBadge` on by `order`, the others after them
-/// in their usual order
-void sortBadges(std::vector<std::unique_ptr<MessageElement>> &elements,
-                size_t firstBadge,
-                const std::vector<std::pair<QString, QString>> &order);
+void relayout()
+{
+    if (auto *app = tryGetApp(); app != nullptr && app->getWindows() != nullptr)
+    {
+        app->getWindows()->forceLayoutChannelViews();
+    }
+}
 
 }  // namespace
 
-void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
-           size_t firstBadge, const QString &channelName)
+void note(const std::vector<std::unique_ptr<MessageElement>> &elements,
+          size_t firstBadge, const QString &channelName)
 {
-    if (firstBadge >= elements.size())
-    {
-        return;
-    }
-    const auto begin = elements.begin() + static_cast<ptrdiff_t>(firstBadge);
-
     QHash<QString, QString> channelSlots;
-    for (auto it = begin; it != elements.end(); ++it)
+    for (size_t index = firstBadge; index < elements.size(); ++index)
     {
-        const auto [key, label] = describe(**it);
+        const auto [key, label] = describe(*elements[index]);
         if (!key.isEmpty())
         {
             remember(key, label);
@@ -273,47 +271,37 @@ void apply(std::vector<std::unique_ptr<MessageElement>> &elements,
         std::scoped_lock lock(SEEN_MUTEX);
         twitchSlotsByChannel().insert(channelName.toLower(), channelSlots);
     }
-
-    const auto hidden = getSettings()->ownBadgeHidden.getValue();
-    const auto order = savedOrder();
-    if (hidden.empty() && order.empty())
-    {
-        return;
-    }
-
-    elements.erase(std::remove_if(begin, elements.end(),
-                                  [&](const auto &element) {
-                                      const auto key = describe(*element).first;
-                                      return !key.isEmpty() &&
-                                             std::ranges::find(hidden, key) !=
-                                                 hidden.end();
-                                  }),
-                   elements.end());
-
-    sortBadges(elements, firstBadge, order);
 }
 
-void applyToOther(std::vector<std::unique_ptr<MessageElement>> &elements,
-                  size_t firstBadge)
+std::vector<MessageElement *> arrange(
+    std::span<const std::unique_ptr<MessageElement>> badges, bool own)
 {
-    if (firstBadge >= elements.size() ||
-        !getSettings()->ownBadgeOrderForEveryone)
+    std::vector<MessageElement *> result;
+    result.reserve(badges.size());
+    for (const auto &badge : badges)
     {
-        return;
+        result.push_back(badge.get());
     }
-    const auto order = savedOrder();
-    if (!order.empty())
+
+    const auto order = own || getSettings()->ownBadgeOrderForEveryone
+                           ? savedOrder()
+                           : std::vector<std::pair<QString, QString>>{};
+    const auto hidden =
+        own ? getSettings()->ownBadgeHidden.getValue() : std::vector<QString>{};
+    if (order.empty() && hidden.empty())
     {
-        sortBadges(elements, firstBadge, order);
+        return result;
     }
-}
 
-namespace {
+    std::erase_if(result, [&](const MessageElement *element) {
+        const auto key = describe(*element).first;
+        return !key.isEmpty() && std::ranges::find(hidden, key) != hidden.end();
+    });
+    if (order.empty())
+    {
+        return result;
+    }
 
-void sortBadges(std::vector<std::unique_ptr<MessageElement>> &elements,
-                size_t firstBadge,
-                const std::vector<std::pair<QString, QString>> &order)
-{
     QHash<QString, int> ranks;
     for (size_t index = 0; index < order.size(); ++index)
     {
@@ -329,15 +317,12 @@ void sortBadges(std::vector<std::unique_ptr<MessageElement>> &elements,
         return ranks.value(key,
                            static_cast<int>(order.size()) + defaultRank(key));
     };
-
     // stable: badges with the same rank keep the order they came in
-    std::stable_sort(elements.begin() + static_cast<ptrdiff_t>(firstBadge),
-                     elements.end(), [&](const auto &left, const auto &right) {
-                         return rankOf(*left) < rankOf(*right);
-                     });
+    std::ranges::stable_sort(result, [&](const auto *left, const auto *right) {
+        return rankOf(*left) < rankOf(*right);
+    });
+    return result;
 }
-
-}  // namespace
 
 void noteChannelBadges(const QString &channelName,
                        const std::vector<TwitchBadgeHeld> &badges)
@@ -447,12 +432,16 @@ void save(const std::vector<Entry> &entries)
     }
     getSettings()->ownBadgeOrder.setValue(order);
     getSettings()->ownBadgeHidden.setValue(hidden);
+    // the messages already there show the change too
+    relayout();
 }
 
 void reset()
 {
     getSettings()->ownBadgeOrder.setValue(std::vector<QString>{});
     getSettings()->ownBadgeHidden.setValue(std::vector<QString>{});
+    // the messages already there show the change too
+    relayout();
 }
 
 bool isCustomized()

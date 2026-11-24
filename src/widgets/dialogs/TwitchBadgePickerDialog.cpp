@@ -3092,12 +3092,14 @@ void TwitchBadgePickerDialog::rebuildOrder()
     everyone->setChecked(getSettings()->ownBadgeOrderForEveryone);
     QObject::connect(everyone, &QCheckBox::toggled, this, [](bool checked) {
         getSettings()->ownBadgeOrderForEveryone = checked;
+        // the messages already there are sorted again
+        getApp()->getWindows()->forceLayoutChannelViews();
     });
     this->contentLayout_->addWidget(everyone);
 
     auto *note = new QLabel(
         "This only changes how you see the badges, others still see them in "
-        "their usual order. It applies to messages that arrive from now on.",
+        "their usual order.",
         this->contentWidget_);
     note->setWordWrap(true);
     this->contentLayout_->addWidget(note);

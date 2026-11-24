@@ -1,0 +1,1 @@
+- Changed Badge order applies right away. Hiding, showing or moving a badge in the badge picker's Order tab also changes the messages already in the chat.

@@ -18,6 +18,7 @@
 #include "singletons/ThemeCustomization.hpp"
 #include "singletons/WindowManager.hpp"
 #include "util/DebugCount.hpp"
+#include "util/OwnBadgeLayout.hpp"
 
 #include <QApplication>
 #include <QDebug>
@@ -31,6 +32,7 @@
 #include <cassert>
 #include <cmath>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace chatterino {
@@ -254,30 +256,29 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
                           this->centerBadges_, messageFlags);
 
     ctx.resetMessageTextCursor();
-    for (const auto &element : this->message_->elements)
-    {
+    const auto layoutElement = [&](MessageElement *element) {
         if (element->getFlags().has(
                 MessageElementFlag::AutoModReviewExpanded) &&
             !this->flags.has(MessageLayoutFlag::AutoModReviewSelected))
         {
-            continue;
+            return;
         }
         if (hideModerated && this->message_->flags.has(MessageFlag::Disabled))
         {
-            continue;
+            return;
         }
 
         if (hideBlockedTermAutomodMessages &&
             this->message_->flags.has(MessageFlag::AutoModBlockedTerm))
         {
-            continue;
+            return;
         }
 
         if (this->message_->flags.has(MessageFlag::RestrictedMessage))
         {
             if (getApp()->getStreamerMode()->shouldHideRestrictedUsers())
             {
-                continue;
+                return;
             }
         }
 
@@ -286,28 +287,60 @@ void MessageLayout::actuallyLayout(const MessageLayoutContext &ctx)
             if (hideModerationActions ||
                 getApp()->getStreamerMode()->shouldHideModActions())
             {
-                continue;
+                return;
             }
         }
 
         if (hideSimilar && this->message_->flags.has(MessageFlag::Similar))
         {
-            continue;
+            return;
         }
 
         if (hideReplies &&
             element->getFlags().has(MessageElementFlag::RepliedMessage))
         {
-            continue;
+            return;
         }
 
         if (hideGigantifyReward &&
             element->getFlags().has(MessageElementFlag::ChannelPointReward))
         {
-            continue;
+            return;
         }
 
         element->addToContainer(container, ctx);
+    };
+
+    // The badges in the order the user chose, without those they hide: the
+    // first run of badges (found here, as elements before them can be taken
+    // out after the message was built, e.g. for a pinned message)
+    const auto &elements = this->message_->elements;
+    const auto isBadge = [](const auto &element) {
+        return dynamic_cast<const BadgeElement *>(element.get()) != nullptr;
+    };
+    const auto firstBadge = std::ranges::find_if(elements, isBadge);
+    const auto afterBadges =
+        std::find_if_not(firstBadge, elements.end(), isBadge);
+    const auto badgesBegin =
+        static_cast<size_t>(std::distance(elements.begin(), firstBadge));
+    const auto badgesEnd =
+        static_cast<size_t>(std::distance(elements.begin(), afterBadges));
+    for (size_t index = 0; index < elements.size(); ++index)
+    {
+        if (index == badgesBegin && badgesBegin < badgesEnd)
+        {
+            const auto badges =
+                ownbadges::arrange(std::span(elements).subspan(
+                                       badgesBegin, badgesEnd - badgesBegin),
+                                   this->message_->ownBadges);
+            for (auto *badge : badges)
+            {
+                layoutElement(badge);
+            }
+            index = badgesEnd - 1;
+            continue;
+        }
+        layoutElement(elements[index].get());
     }
 
     if (this->height_ != container.getHeight())

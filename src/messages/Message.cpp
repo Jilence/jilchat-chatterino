@@ -86,6 +86,7 @@ std::shared_ptr<Message> Message::clone() const
     cloned->announcementColor = this->announcementColor;
     cloned->platform = this->platform;
     cloned->clientDetection = this->clientDetection;
+    cloned->ownBadges = this->ownBadges;
     std::ranges::transform(this->elements, std::back_inserter(cloned->elements),
                            [](const auto &element) {
                                return element->clone();
