@@ -13,11 +13,14 @@
 #include "messages/ImageSet.hpp"
 #include "singletons/WindowManager.hpp"
 
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
+
+#include <utility>
 
 namespace chatterino {
 
@@ -99,7 +102,7 @@ void fail(const std::shared_ptr<Loading> &loading, bool *flag,
 
 EnhancerBadges::EnhancerBadges()
 {
-    QTimer::singleShot(4000, [this] {
+    QTimer::singleShot(4000, QCoreApplication::instance(), [this] {
         this->load();
     });
 }
@@ -144,9 +147,12 @@ void EnhancerBadges::load(const std::function<void(bool)> &onDone)
             {
                 loading->done(true);
             }
-            // Last, as it ends this function: breaks the reference cycle
-            auto self = fetchUsers;
-            *self = nullptr;
+            // Last, as it ends this function: takes this function out of
+            // `fetchUsers` to break the reference cycle; it is destroyed
+            // when `finished` goes out of scope, after which nothing here is
+            // used
+            [[maybe_unused]] const auto finished =
+                std::exchange(*fetchUsers, nullptr);
             return;
         }
         const auto &id = loading->badges[loading->badge].first;
@@ -155,7 +161,8 @@ void EnhancerBadges::load(const std::function<void(bool)> &onDone)
             .onSuccess([loading, fetchUsers](const NetworkResult &result) {
                 const auto root = result.parseJson();
                 const auto &badge = loading->badges[loading->badge].second;
-                for (const auto &value : root.value("users").toArray())
+                const auto users = root.value("users").toArray();
+                for (const auto &value : users)
                 {
                     const auto user = value.toObject();
                     if (user.value("platform").toString() == u"twitch")
@@ -192,7 +199,8 @@ void EnhancerBadges::load(const std::function<void(bool)> &onDone)
             .onSuccess([loading, fetchBadges,
                         fetchUsers](const NetworkResult &result) {
                 const auto root = result.parseJson();
-                for (const auto &value : root.value("badges").toArray())
+                const auto badges = root.value("badges").toArray();
+                for (const auto &value : badges)
                 {
                     const auto badge = value.toObject();
                     // Nobody shows it: no need to ask who does
