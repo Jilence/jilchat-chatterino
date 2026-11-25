@@ -123,6 +123,7 @@ MessageElementFlags pinnedMessageFlags()
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeWydios);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeStreamNook);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeChatsen);
+    setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeEnhancer);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeBluzyrino);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeJilChat);
     setPinnedBadgeFlag(flags, wordFlags, MessageElementFlag::BadgeBadgeHQ);

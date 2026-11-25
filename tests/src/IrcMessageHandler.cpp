@@ -25,6 +25,7 @@
 #include "providers/bttv/BttvBadges.hpp"
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
+#include "providers/enhancer/EnhancerBadges.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
@@ -208,6 +209,11 @@ public:
         return &this->chatsenBadges;
     }
 
+    EnhancerBadges *getEnhancerBadges() override
+    {
+        return &this->enhancerBadges;
+    }
+
     mock::EmptyLogging logging;
     AccountController accounts;
     mock::EmoteController emotes;
@@ -233,6 +239,7 @@ public:
     FfzApBadges ffzApBadges;
     DankChatBadges dankChatBadges;
     ChatsenBadges chatsenBadges;
+    EnhancerBadges enhancerBadges;
 };
 
 std::pair<const EmoteName, EmotePtr> makeEmote(Emote &&emote)

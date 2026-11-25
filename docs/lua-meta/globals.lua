@@ -889,6 +889,7 @@ c2.MessageElementFlag = {
     BadgeSolrino = 0,
     BadgeWydios = 0,
     BadgeChatlee = 0,
+    BadgeEnhancer = 0,
     Badges = 0,
     ChannelName = 0,
     BitsAmount = 0,

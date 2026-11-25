@@ -241,6 +241,12 @@ public:
         return nullptr;
     }
 
+    EnhancerBadges *getEnhancerBadges() override
+    {
+        assert(!"getEnhancerBadges was called without being initialized");
+        return nullptr;
+    }
+
     LimerinoBadges *getLimerinoBadges() override
     {
         return nullptr;

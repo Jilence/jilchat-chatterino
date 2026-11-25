@@ -34,6 +34,7 @@
 #include "providers/colors/ColorProvider.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
 #include "providers/emoji/Emojis.hpp"
+#include "providers/enhancer/EnhancerBadges.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffz/FfzEmotes.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
@@ -1647,6 +1648,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
         MessageElementFlag::BadgeDankChat,
         MessageElementFlag::BadgeChatlee,
         MessageElementFlag::BadgeChatsen,
+        MessageElementFlag::BadgeEnhancer,
         MessageElementFlag::BadgeHomiesSupporter,
         MessageElementFlag::BadgeHomiesCustom,
         MessageElementFlag::BadgeFolhinha,
@@ -1673,6 +1675,7 @@ void MessageBuilder::refreshThirdPartyBadges(Message &message,
     builder.appendChatleeBadges(message.userID);
     builder.appendChatsenBadges(message.userID);
     builder.appendHomiesBadges(message.userID);
+    builder.appendEnhancerBadges(message.userID);
     builder.appendFolhinhaBadges(message.userID);
     builder.appendBadgeHQBadges(message.userID);
     builder.appendLimerinoBadges(message.userID);
@@ -2596,6 +2599,7 @@ std::pair<MessagePtrMut, HighlightAlert> MessageBuilder::makeIrcMessage(
         builder.appendChatleeBadges(userID);
         builder.appendChatsenBadges(userID);
         builder.appendHomiesBadges(userID);
+        builder.appendEnhancerBadges(userID);
         builder.appendFolhinhaBadges(userID);
         builder.appendBadgeHQBadges(userID);
         builder.appendLimerinoBadges(userID);
@@ -4325,6 +4329,15 @@ void MessageBuilder::appendChatsenBadges(const QString &userID)
     }
 }
 
+void MessageBuilder::appendEnhancerBadges(const QString &userID)
+{
+    for (const auto &badge : getApp()->getEnhancerBadges()->getBadges(userID))
+    {
+        this->emplace<BadgeElement>(badge, MessageElementFlag::BadgeEnhancer);
+        this->message().externalBadges.emplace_back(badge->name.string);
+    }
+}
+
 void MessageBuilder::appendBadgeHQBadges(const QString &userID)
 {
     auto *provider = getApp()->getBadgeHQBadges();
@@ -4696,6 +4709,7 @@ MessagePtr MessageBuilder::makeSelfBadgePreviewMessage(
     builder.appendChatleeBadges(userId);
     builder.appendChatsenBadges(userId);
     builder.appendHomiesBadges(userId);
+    builder.appendEnhancerBadges(userId);
     builder.appendFolhinhaBadges(userId);
     builder.appendBadgeHQBadges(userId);
     builder.appendLimerinoBadges(userId);

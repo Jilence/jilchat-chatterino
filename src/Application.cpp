@@ -53,6 +53,7 @@
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
+#include "providers/enhancer/EnhancerBadges.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
@@ -241,6 +242,7 @@ Application::Application(Settings &_settings, const Paths &paths,
     , chatleeBadges(new ChatleeBadges)
     , streamNookBadges(new StreamNookBadges)
     , chatsenBadges(new ChatsenBadges)
+    , enhancerBadges(new EnhancerBadges)
     , limerinoBadges(new LimerinoBadges)
     , badgeHQBadges(new BadgeHQBadges)
     , moltorinoSupporterBadges(new MoltorinoSupporterBadges)
@@ -654,6 +656,12 @@ ChatsenBadges *Application::getChatsenBadges()
     return this->chatsenBadges.get();
 }
 
+EnhancerBadges *Application::getEnhancerBadges()
+{
+    assert(this->enhancerBadges);
+    return this->enhancerBadges.get();
+}
+
 LimerinoBadges *Application::getLimerinoBadges()
 {
     assert(this->limerinoBadges);
@@ -985,6 +993,7 @@ void Application::stop()
     this->wydiosBadges.reset();
     this->streamNookBadges.reset();
     this->chatsenBadges.reset();
+    this->enhancerBadges.reset();
     this->limerinoBadges.reset();
     this->badgeHQBadges.reset();
     this->twitch.reset();

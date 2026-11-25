@@ -12,6 +12,7 @@
 #include "providers/chatsen/ChatsenBadges.hpp"
 #include "providers/chatterino/ChatterinoBadges.hpp"
 #include "providers/dankchat/DankChatBadges.hpp"
+#include "providers/enhancer/EnhancerBadges.hpp"
 #include "providers/ffz/FfzBadges.hpp"
 #include "providers/ffzap/FfzApBadges.hpp"
 #include "providers/folhinha/FolhinhaBadges.hpp"
@@ -144,6 +145,11 @@ void reloadBadgeProviders(const ChannelPtr &channel)
     if (settings->showBadgesChatsen)
     {
         app->getChatsenBadges()->load(reloadMessage(channel, "Chatsen badges"));
+    }
+    if (settings->showBadgesEnhancer)
+    {
+        app->getEnhancerBadges()->load(
+            reloadMessage(channel, "Enhancer badges"));
     }
 }
 

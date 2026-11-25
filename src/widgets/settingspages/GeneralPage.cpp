@@ -1365,6 +1365,11 @@ void GeneralPage::initLayout(GeneralPageView &layout)
         ->addKeywords({"chatsen"})
         ->setTooltip("Developer, supporter, artist, and Patreon badges.")
         ->addTo(layout);
+    SettingWidget::checkbox("Enhancer", s.showBadgesEnhancer)
+        ->addKeywords({"enhancer", "supporter", "founder"})
+        ->setTooltip("Enhancer's global badges: developer, founder and the "
+                     "supporter milestones.")
+        ->addTo(layout);
     SettingWidget::checkbox("JilChat", s.showBadgesJilChat)
         ->addKeywords({"jilchat", "jil"})
         ->setTooltip("JilChat badges")

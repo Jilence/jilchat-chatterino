@@ -521,6 +521,9 @@ set(SOURCE_FILES
         providers/chatsen/ChatsenBadges.cpp
         providers/chatsen/ChatsenBadges.hpp
 
+        providers/enhancer/EnhancerBadges.cpp
+        providers/enhancer/EnhancerBadges.hpp
+
         providers/bluzyrino/BluzyrinoBadges.cpp
         providers/bluzyrino/BluzyrinoBadges.hpp
 
