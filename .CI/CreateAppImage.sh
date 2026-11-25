@@ -99,6 +99,25 @@ esac
 mkdir -p appdir/usr/share/doc/libc6/
 cp /usr/share/doc/libc6/copyright appdir/usr/share/doc/libc6/
 
+# linuxdeployqt only bundles the X11 platform plugin. Without the Wayland ones,
+# Qt can't start natively on Wayland ("Could not find the Qt platform plugin
+# \"wayland\"") and falls back to XWayland. Only the ones Qt has are passed.
+extra_plugins=""
+for plugin in platforms/libqwayland-generic.so platforms/libqwayland-egl.so \
+    wayland-decoration-client wayland-graphics-integration-client \
+    wayland-shell-integration; do
+    if [ -e "${_QT_DIR}/plugins/${plugin}" ]; then
+        extra_plugins="${extra_plugins:+${extra_plugins},}${plugin}"
+    else
+        echo "Qt has no ${plugin}, not bundling it"
+    fi
+done
+extra_plugins_arg=""
+if [ -n "$extra_plugins" ]; then
+    echo "Bundling extra Qt plugins: $extra_plugins"
+    extra_plugins_arg="-extra-plugins=$extra_plugins"
+fi
+
 echo "Run LinuxDeployQT"
 host_runtime_exclude_libs="libglib-2.0.so.0,libgobject-2.0.so.0,libgio-2.0.so.0,libgmodule-2.0.so.0,libgthread-2.0.so.0,libffi.so.8,libpcre.so.3,libpcre2-8.so.0,libselinux.so.1,libmount.so.1,libsystemd.so.0,libgcrypt.so.20,libgpg-error.so.0,libcap.so.2,liblz4.so.1,liblzma.so.5,libzstd.so.1,libdbus-1.so.3,libblkid.so.1"
 "$linuxdeployqt_path" \
@@ -107,7 +126,8 @@ host_runtime_exclude_libs="libglib-2.0.so.0,libgobject-2.0.so.0,libgio-2.0.so.0,
     -no-translations \
     -bundle-non-qt-libs \
     -exclude-libs="$host_runtime_exclude_libs" \
-    -unsupported-allow-new-glibc
+    -unsupported-allow-new-glibc \
+    ${extra_plugins_arg:+"$extra_plugins_arg"}
 
 rm -rf appdir/home
 rm -f appdir/AppRun

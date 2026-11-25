@@ -1,0 +1,1 @@
+- Fixed The AppImage on Wayland. It brings Qt's Wayland plugin along, so it starts natively on Wayland instead of saying it can't find the "wayland" platform plugin and falling back to X11.
