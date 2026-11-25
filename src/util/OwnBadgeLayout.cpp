@@ -449,8 +449,13 @@ std::vector<Entry> entries(const QString &channelName)
 
     // Every kind of badge Chatterino can show, also the ones not seen on
     // the user's messages yet, so all of them can be put in place
-    std::vector<QString> all(TWITCH_SLOTS.begin(), TWITCH_SLOTS.end());
+    // QString can't be built from a QStringView implicitly with every Qt
+    std::vector<QString> all;
     all.reserve(TWITCH_SLOTS.size() + PROVIDERS.size());
+    for (const auto &slot : TWITCH_SLOTS)
+    {
+        all.push_back(slot.toString());
+    }
     for (const auto &provider : PROVIDERS)
     {
         all.push_back(provider.key.toString());

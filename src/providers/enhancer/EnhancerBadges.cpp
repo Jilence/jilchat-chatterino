@@ -149,7 +149,7 @@ void EnhancerBadges::load(const std::function<void(bool)> &onDone)
             *self = nullptr;
             return;
         }
-        const auto &[id, emote] = loading->badges[loading->badge];
+        const auto &id = loading->badges[loading->badge].first;
         NetworkRequest(pageUrl(u"/badge/"_s + id + u"/users"_s, cursor))
             .timeout(15000)
             .onSuccess([loading, fetchUsers](const NetworkResult &result) {
