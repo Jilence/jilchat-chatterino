@@ -419,6 +419,7 @@ private:
     void appendWydiosBadges(const QString &userID);
     void appendStreamNookBadges(const QString &userID);
     void appendChatsenBadges(const QString &userID);
+    void appendEnhancerBadges(const QString &userID);
     void appendBadgeHQBadges(const QString &userID);
     void appendLimerinoBadges(const QString &userID);
     void appendMoltorinoBadges(const QString &userID);

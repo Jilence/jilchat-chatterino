@@ -596,6 +596,7 @@ public:
     BoolSetting showBadgesWydios = {"/appearance/badges/wydios", true};
     BoolSetting showBadgesStreamNook = {"/appearance/badges/streamnook", true};
     BoolSetting showBadgesChatsen = {"/appearance/badges/chatsen", true};
+    BoolSetting showBadgesEnhancer = {"/appearance/badges/enhancer", true};
     BoolSetting showBadgesBadgeHQ = {"/appearance/badges/badgehq", true};
     BoolSetting showBadgesLimerino = {"/appearance/badges/limerino", true};
     BoolSetting showSelectBadgeButton = {"/client/showSelectBadgeButton", true};

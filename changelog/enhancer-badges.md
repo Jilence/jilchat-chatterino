@@ -1,0 +1,1 @@
+- New Enhancer badges. The global Enhancer badges show in chat, like Founder and the supporter milestones, after the Homies badges. They can be turned off under General, Visible badges.
