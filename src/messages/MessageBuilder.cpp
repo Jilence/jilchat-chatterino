@@ -374,10 +374,22 @@ void appendLiveUpdateAddRemoveElements(
             builder.emplaceSystemTextAndUpdate(sep, messageText);
         }
 
-        messageText.append(emotes[i].name);
-        messageText.append(' ');
-        auto *el = builder.emplace<EmoteLinkElement>(
-            emotes[i].emote, MessageElementFlag::Text, MessageColor::System);
+        MessageElement *el = nullptr;
+        if (emotes[i].emote)
+        {
+            messageText.append(emotes[i].name);
+            messageText.append(' ');
+            el = builder.emplace<EmoteLinkElement>(
+                emotes[i].emote, MessageElementFlag::Text,
+                MessageColor::System);
+        }
+        else
+        {
+            // Only the name is known (e.g. the emote is no longer in the
+            // reloaded set): plain text, an EmoteLinkElement needs an emote.
+            el = builder.emplaceSystemTextAndUpdate(emotes[i].name,
+                                                    messageText);
+        }
         if (i == emotes.size() - 1)
         {
             el->setTrailingSpace(false);
