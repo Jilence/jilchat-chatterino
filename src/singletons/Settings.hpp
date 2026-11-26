@@ -941,6 +941,7 @@ public:
 
     /// URL Shortener
     BoolSetting urlShortenerEnabled = {"/external/urlShortener/enabled", false};
+    IntSetting urlShortenerMinLength = {"/external/urlShortener/minLength", 30};
     QStringSetting urlShortenerUrl = {"/external/urlShortener/url", ""};
     QStringSetting urlShortenerHeaders = {"/external/urlShortener/headers", ""};
     QStringSetting urlShortenerLink = {"/external/urlShortener/link", ""};

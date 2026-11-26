@@ -528,8 +528,10 @@ void ResizingTextEdit::insertFromMimeData(const QMimeData *source)
     const QString pastedText = source->text().trimmed();
     static const QRegularExpression urlRegex(R"(https?://[^\s]+)");
     const auto match = urlRegex.match(pastedText);
+    const int minLength = getSettings()->urlShortenerMinLength.getValue();
     if (getSettings()->urlShortenerEnabled && match.hasMatch() &&
-        match.captured(0) == pastedText)
+        match.captured(0) == pastedText &&
+        (pastedText.length() - pastedText.indexOf("://") - 3) > minLength)
     {
         QTextCursor cursor = this->textCursor();
         cursor.insertText(pastedText);
