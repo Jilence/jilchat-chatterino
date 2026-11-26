@@ -242,7 +242,9 @@ void StreamerMode::start()
 
 StreamerModePrivate::StreamerModePrivate(StreamerMode *parent)
     : parent_(parent)
-    , timer_(new QTimer(&this->thread_))
+    // No parent: an object with one can't be moved to the thread, and the
+    // checks would run on the GUI thread. Deleted in the destructor.
+    , timer_(new QTimer)
 {
     this->thread_.setObjectName("StreamerMode");
     this->timer_->moveToThread(&this->thread_);
