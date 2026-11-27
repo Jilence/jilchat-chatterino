@@ -25,9 +25,11 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 
+#include <algorithm>
 #include <cstdint>
 #include <tuple>
 #include <vector>
@@ -122,6 +124,15 @@ EmoteMap parseEmotes(const QJsonArray &emotes, const QString &cdn,
     }
     return map;
 }
+
+/// One emote change announced in chat after a live update.
+struct LiveChange {
+    enum class Kind : std::uint8_t { Added, Removed, Renamed };
+    Kind kind;
+    QString name;
+    QString oldName;
+    EmotePtr old;
+};
 
 /// The emotes of a bootstrap answer: `{set: {emotes}}` or `{sets: [...]}`.
 EmoteMap parseBootstrap(const QJsonObject &root, const QString &kind)
@@ -1072,6 +1083,115 @@ void Jiltv::setWorn(const QString &login, const QString &paint,
     }
 }
 
+namespace {
+
+/// Reloads the channel's set, then says in chat what changed. Added and
+/// renamed emotes need the new set to show their image: if it still lacks
+/// one (a cache answered with the old set), it is loaded again shortly, so
+/// the message never ends up as plain text that only F5 would fix.
+void announceLiveChanges(const QString &roomId, const QString &actor,
+                         std::vector<LiveChange> changes, bool switched,
+                         int attempt)
+{
+    using Change = LiveChange;
+    Jiltv::instance().loadChannelEmotes(roomId, [roomId, actor, changes,
+                                                 switched, attempt](int) {
+        const auto now = Jiltv::instance().channelEmotes(roomId);
+        const bool missing = std::ranges::any_of(changes, [&now](const auto &c) {
+            return c.kind != Change::Kind::Removed &&
+                   (!now || !now->contains(EmoteName{c.name}));
+        });
+        if (missing && attempt < 2)
+        {
+            QTimer::singleShot(2000, [roomId, actor, changes, switched,
+                                      attempt]() mutable {
+                announceLiveChanges(roomId, actor, std::move(changes),
+                                    switched, attempt + 1);
+            });
+            return;
+        }
+        auto channel = getApp()->getTwitch()->getChannelOrEmptyByID(roomId);
+        auto *twitch = dynamic_cast<TwitchChannel *>(channel.get());
+        if (twitch == nullptr)
+        {
+            return;
+        }
+        const auto emoteNamed = [&now](const QString &name) -> EmotePtr {
+            if (!now)
+            {
+                return nullptr;
+            }
+            const auto it = now->find(EmoteName{name});
+            return it == now->end() ? nullptr : it->second;
+        };
+        const auto liveEmote = [](const EmotePtr &emote, const QString &name) {
+            if (emote)
+            {
+                return LiveUpdateEmote{emote};
+            }
+            LiveUpdateEmote e;
+            e.name = name;
+            return e;
+        };
+
+        for (const auto &change : changes)
+        {
+            switch (change.kind)
+            {
+                case Change::Kind::Added:
+                    twitch->addJiltvEmoteUpdate(
+                        true, actor,
+                        liveEmote(emoteNamed(change.name), change.name));
+                    break;
+                case Change::Kind::Removed:
+                    twitch->addJiltvEmoteUpdate(
+                        false, actor, liveEmote(change.old, change.name));
+                    break;
+                case Change::Kind::Renamed: {
+                    auto emote = emoteNamed(change.name);
+                    twitch->addMessage(
+                        MessageBuilder(liveUpdatesUpdateEmoteMessage,
+                                       QStringLiteral("JilTV"), actor,
+                                       change.name, change.oldName,
+                                       emote ? emote : change.old)
+                            .release(),
+                        MessageContext::Original);
+                }
+                break;
+            }
+        }
+        if (switched)
+        {
+            // The new set's name comes with the bootstrap just reloaded
+            const auto setName = Jiltv::instance().channelSetName(roomId);
+            if (!actor.isEmpty() && !setName.isEmpty())
+            {
+                twitch->addMessage(
+                    MessageBuilder(liveUpdatesUpdateEmoteSetMessage,
+                                   QStringLiteral("JilTV"), actor, setName)
+                        .release(),
+                    MessageContext::Original);
+            }
+            else if (!setName.isEmpty())
+            {
+                twitch->addSystemMessage(
+                    u"The active JilTV Emote Set was switched to \"%1\"."_s.arg(
+                        setName));
+            }
+            else
+            {
+                twitch->addSystemMessage(
+                    actor.isEmpty()
+                        ? QStringLiteral("The JilTV Emote Set was turned off.")
+                        : actor + QStringLiteral(
+                                      " turned off the JilTV Emote Set."));
+            }
+        }
+    });
+}
+
+}  // namespace
+
 void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
                            const QJsonObject &data)
 {
@@ -1145,13 +1265,7 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
     };
     const auto actor = data.value("actor").toObject().value("name").toString();
 
-    struct Change {
-        enum class Kind : std::uint8_t { Added, Removed, Renamed };
-        Kind kind;
-        QString name;
-        QString oldName;
-        EmotePtr old;
-    };
+    using Change = LiveChange;
     std::vector<Change> changes;
     const auto removed = [&](const QString &id) {
         changes.push_back({
@@ -1215,86 +1329,7 @@ void Jiltv::onChannelEvent(const QString &roomId, const QString &type,
         switched = true;
     }
 
-    this->loadChannelEmotes(roomId, [roomId, actor, changes, switched](int) {
-        auto channel = getApp()->getTwitch()->getChannelOrEmptyByID(roomId);
-        auto *twitch = dynamic_cast<TwitchChannel *>(channel.get());
-        if (twitch == nullptr)
-        {
-            return;
-        }
-        const auto now = Jiltv::instance().channelEmotes(roomId);
-        const auto emoteNamed = [&now](const QString &name) -> EmotePtr {
-            if (!now)
-            {
-                return nullptr;
-            }
-            const auto it = now->find(EmoteName{name});
-            return it == now->end() ? nullptr : it->second;
-        };
-        const auto liveEmote = [](const EmotePtr &emote, const QString &name) {
-            if (emote)
-            {
-                return LiveUpdateEmote{emote};
-            }
-            LiveUpdateEmote e;
-            e.name = name;
-            return e;
-        };
-
-        for (const auto &change : changes)
-        {
-            switch (change.kind)
-            {
-                case Change::Kind::Added:
-                    twitch->addJiltvEmoteUpdate(
-                        true, actor,
-                        liveEmote(emoteNamed(change.name), change.name));
-                    break;
-                case Change::Kind::Removed:
-                    twitch->addJiltvEmoteUpdate(
-                        false, actor, liveEmote(change.old, change.name));
-                    break;
-                case Change::Kind::Renamed: {
-                    auto emote = emoteNamed(change.name);
-                    twitch->addMessage(
-                        MessageBuilder(liveUpdatesUpdateEmoteMessage,
-                                       QStringLiteral("JilTV"), actor,
-                                       change.name, change.oldName,
-                                       emote ? emote : change.old)
-                            .release(),
-                        MessageContext::Original);
-                }
-                break;
-            }
-        }
-        if (switched)
-        {
-            // The new set's name comes with the bootstrap just reloaded
-            const auto setName = Jiltv::instance().channelSetName(roomId);
-            if (!actor.isEmpty() && !setName.isEmpty())
-            {
-                twitch->addMessage(
-                    MessageBuilder(liveUpdatesUpdateEmoteSetMessage,
-                                   QStringLiteral("JilTV"), actor, setName)
-                        .release(),
-                    MessageContext::Original);
-            }
-            else if (!setName.isEmpty())
-            {
-                twitch->addSystemMessage(
-                    u"The active JilTV Emote Set was switched to \"%1\"."_s.arg(
-                        setName));
-            }
-            else
-            {
-                twitch->addSystemMessage(
-                    actor.isEmpty()
-                        ? QStringLiteral("The JilTV Emote Set was turned off.")
-                        : actor + QStringLiteral(
-                                      " turned off the JilTV Emote Set."));
-            }
-        }
-    });
+    announceLiveChanges(roomId, actor, std::move(changes), switched, 0);
 }
 
 bool jiltvFirst()
