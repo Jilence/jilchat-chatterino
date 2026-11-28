@@ -1,0 +1,1 @@
+- Fixed Link previews of long links. The URL of an unshortened link like amzn.eu breaks into lines instead of making the preview wider than the screen.
