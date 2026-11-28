@@ -1143,17 +1143,18 @@ void announceLiveChanges(const QString &roomId, const QString &actor,
     Jiltv::instance().loadChannelEmotes(roomId, [roomId, actor, changes,
                                                  switched, attempt](int) {
         const auto now = Jiltv::instance().channelEmotes(roomId);
-        const bool missing = std::ranges::any_of(changes, [&now](const auto &c) {
-            return c.kind != Change::Kind::Removed &&
-                   (!now || !now->contains(EmoteName{c.name}));
-        });
+        const bool missing =
+            std::ranges::any_of(changes, [&now](const auto &c) {
+                return c.kind != Change::Kind::Removed &&
+                       (!now || !now->contains(EmoteName{c.name}));
+            });
         if (missing && attempt < 2)
         {
-            QTimer::singleShot(2000, [roomId, actor, changes, switched,
-                                      attempt]() mutable {
-                announceLiveChanges(roomId, actor, std::move(changes),
-                                    switched, attempt + 1);
-            });
+            QTimer::singleShot(
+                2000, [roomId, actor, changes, switched, attempt]() mutable {
+                    announceLiveChanges(roomId, actor, std::move(changes),
+                                        switched, attempt + 1);
+                });
             return;
         }
         auto channel = getApp()->getTwitch()->getChannelOrEmptyByID(roomId);
