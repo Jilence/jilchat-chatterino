@@ -30,6 +30,7 @@
 #include <QUrlQuery>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <tuple>
 #include <vector>
@@ -1151,7 +1152,8 @@ void announceLiveChanges(const QString &roomId, const QString &actor,
         if (missing && attempt < 2)
         {
             QTimer::singleShot(
-                2000, [roomId, actor, changes, switched, attempt]() mutable {
+                std::chrono::seconds(2), QCoreApplication::instance(),
+                [roomId, actor, changes, switched, attempt]() mutable {
                     announceLiveChanges(roomId, actor, std::move(changes),
                                         switched, attempt + 1);
                 });
