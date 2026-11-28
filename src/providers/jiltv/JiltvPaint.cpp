@@ -21,6 +21,7 @@
 #include <QPainterPath>
 #include <QPair>
 #include <QRadialGradient>
+#include <QTime>
 
 #include <algorithm>
 #include <array>
@@ -1002,7 +1003,21 @@ Doc Doc::parse(const QJsonObject &json)
         }
     }
     d.fallback = hex(json, "fallback", {1, 1, 1, 1});
+    if (const auto b = json.value("base").toObject();
+        b.value("mode").toString() == u"contrast")
+    {
+        d.base = ContrastBase{
+            .onLight = hex(b, "onLight", {0, 0, 0, 1}),
+            .onDark = hex(b, "onDark", {1, 1, 1, 1}),
+            .threshold = std::clamp(num(b, "threshold", 60), 5.0, 95.0),
+        };
+    }
     return d;
+}
+
+double lightness(const Rgba &c)
+{
+    return rgbToOklab(c)[0] * 100;
 }
 
 Doc Doc::frameAt(double t) const
@@ -1024,13 +1039,42 @@ Doc Doc::frameAt(double t) const
 using namespace jiltv;
 
 JiltvPaint::JiltvPaint(QString id, QString name, const QJsonObject &data,
-                       const QString &cdn, const QJsonObject &texture)
+                       const QString &cdn, const QJsonObject &texture,
+                       const QJsonObject &phaseTextures)
     : Paint(std::move(id), std::move(name))
     , doc_(Doc::parse(data))
     , hasTracks_(!this->doc_.tracks.empty())
 {
     static quint64 instances = 0;
     this->cacheId_ = QString::number(++instances) + u':' + this->id;
+
+    // Day phases: each own look is a paint of its own, with its own texture.
+    if (const auto phases = data.value("phases").toObject(); !phases.isEmpty())
+    {
+        static const std::array<QString, 4> names{u"morning"_s, u"midday"_s,
+                                                  u"evening"_s, u"night"_s};
+        const auto starts = phases.value("starts").toArray();
+        if (starts.size() == 4)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                this->phaseStarts_[i] = starts[i].toInt();
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                const auto look = phases.value(names[i]).toObject();
+                if (look.isEmpty())
+                {
+                    continue;
+                }
+                this->phases_[i] = std::make_shared<JiltvPaint>(
+                    this->id, this->name, look, cdn,
+                    phaseTextures.value(names[i]).toObject());
+                this->hasPhases_ = true;
+            }
+            this->updatePhase();
+        }
+    }
 
     auto textureUrl = texture.value("url").toString();
     auto stillUrl = texture.value("still").toString();
@@ -1600,9 +1644,10 @@ NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
     const QPoint origin(static_cast<int>(std::floor(nameBox.left() * dpr)),
                         static_cast<int>(std::floor(nameBox.top() * dpr)));
 
-    // Below the layers lies the user's own color, which shows where the
-    // paint is (partly) transparent, as on the website.
-    const auto base = userColor.isValid() ? userColor : this->fallbackColor();
+    // Below the layers lies the user's own color (or the contrast color
+    // picked from it), which shows where the paint is (partly) transparent,
+    // as on the website.
+    const auto base = this->baseFor(userColor);
     const auto fills = baked ? std::vector<Fill>{} : this->fills(doc, base);
 
     auto &states = nameStates();
@@ -1968,11 +2013,52 @@ NametagLayers JiltvPaint::layers(const QString &text, const QFont &font,
     return out;
 }
 
+bool JiltvPaint::updatePhase()
+{
+    if (!this->hasPhases_)
+    {
+        return false;
+    }
+    const auto now = QTime::currentTime();
+    const int minutes = now.hour() * 60 + now.minute();
+    int phase = 3;  // night runs past midnight up to morning
+    for (int i = 0; i < 4; i++)
+    {
+        if (minutes >= this->phaseStarts_[i])
+        {
+            phase = i;
+        }
+    }
+    const int shown = this->phases_[phase] ? phase : -1;
+    return this->phase_.exchange(shown) != shown;
+}
+
+QColor JiltvPaint::baseFor(QColor userColor) const
+{
+    if (!userColor.isValid())
+    {
+        return this->fallbackColor();
+    }
+    if (!this->doc_.base)
+    {
+        return userColor;
+    }
+    const Rgba name{userColor.redF(), userColor.greenF(), userColor.blueF(),
+                    userColor.alphaF()};
+    const auto &b = *this->doc_.base;
+    return toQColor(lightness(name) >= b.threshold ? b.onLight : b.onDark);
+}
+
 QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
                               QColor userColor, QSizeF size, float scale,
                               float dpr, bool centerVertically,
                               qreal padding) const
 {
+    if (const auto *look = this->phaseLook())
+    {
+        return look->getPixmap(text, font, userColor, size, scale, dpr,
+                               centerVertically, padding);
+    }
     const auto l = this->layers(text, font, userColor, size, scale, dpr,
                                 centerVertically, padding);
     if (l.glow.isNull() && l.nameOffset.isNull() && l.name.size() == l.size)
@@ -2015,8 +2101,12 @@ QPixmap JiltvPaint::getPixmap(const QString &text, const QFont &font,
     return pixmap;
 }
 
-QBrush JiltvPaint::asBrush(QColor /*userColor*/, QRectF /*drawingRect*/) const
+QBrush JiltvPaint::asBrush(QColor userColor, QRectF drawingRect) const
 {
+    if (const auto *look = this->phaseLook())
+    {
+        return look->asBrush(userColor, drawingRect);
+    }
     // getPixmap draws the paint; this is only asked for a plain color.
     return {this->fallbackColor()};
 }
@@ -2030,6 +2120,10 @@ const std::vector<PaintDropShadow> &JiltvPaint::getDropShadows() const
 
 bool JiltvPaint::animated() const
 {
+    if (const auto *look = this->phaseLook())
+    {
+        return look->animated();
+    }
     if (this->hasTracks_ || (this->texture_ && !this->loops_.empty()))
     {
         return true;
@@ -2044,8 +2138,12 @@ bool JiltvPaint::shadowsEnabled() const
     return getSettings()->jiltvPaintShadows;
 }
 
-qreal JiltvPaint::overflow(float /*scale*/) const
+qreal JiltvPaint::overflow(float scale) const
 {
+    if (const auto *look = this->phaseLook())
+    {
+        return look->overflow(scale);
+    }
     if (!this->shadowsEnabled())
     {
         return 0;
@@ -2075,6 +2173,10 @@ QString JiltvPaint::sourceName() const
 
 QColor JiltvPaint::fallbackColor() const
 {
+    if (const auto *look = this->phaseLook())
+    {
+        return look->fallbackColor();
+    }
     return toQColor(this->doc_.fallback);
 }
 

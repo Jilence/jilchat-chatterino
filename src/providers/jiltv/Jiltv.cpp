@@ -46,6 +46,8 @@ constexpr qint64 WORN_TTL_SECS = 5 * 60;
 constexpr int CATALOG_INTERVAL_MS = 10 * 60 * 1000;
 /// A presence expires after 10 minutes
 constexpr int PRESENCE_INTERVAL_MS = 5 * 60 * 1000;
+/// How often paints with day phases check whether the next phase started.
+constexpr int PHASE_CHECK_MS = 30 * 1000;
 constexpr auto PRESENCE_MUTATION =
     "mutation($c: ID!) { updatePresence(channelId: $c) { lastSeenAt } }";
 
@@ -178,6 +180,14 @@ Jiltv::Jiltv()
                          this->updatePresence();
                      });
     this->presenceTimer_.start();
+    // Paints with looks by time of day switch when a phase starts; the
+    // chat is drawn again then, so names on screen change too.
+    this->phaseTimer_.setInterval(PHASE_CHECK_MS);
+    QObject::connect(&this->phaseTimer_, &QTimer::timeout, &this->phaseTimer_,
+                     [this] {
+                         this->updatePhases();
+                     });
+    this->phaseTimer_.start();
     this->network_ = new QNetworkAccessManager();
     QObject::connect(QCoreApplication::instance(),
                      &QCoreApplication::aboutToQuit, [this] {
@@ -222,6 +232,26 @@ void Jiltv::loadCatalog()
         .execute();
 }
 
+void Jiltv::updatePhases()
+{
+    bool changed = false;
+    {
+        const std::scoped_lock lock(this->mutex_);
+        for (const auto &[id, paint] : this->paints_)
+        {
+            if (auto *jp = dynamic_cast<JiltvPaint *>(paint.get());
+                jp != nullptr && jp->hasPhases())
+            {
+                changed = jp->updatePhase() || changed;
+            }
+        }
+    }
+    if (changed)
+    {
+        getApp()->getWindows()->invalidateChannelViewBuffers();
+    }
+}
+
 void Jiltv::applyCatalog(const QJsonObject &root)
 {
     const auto cdn = root.value("cdn").toString();
@@ -239,9 +269,9 @@ void Jiltv::applyCatalog(const QJsonObject &root)
         {
             name += QStringLiteral(" (") + r + QStringLiteral(")");
         }
-        paints[id] =
-            std::make_shared<JiltvPaint>(id, name, p.value("data").toObject(),
-                                         cdn, p.value("texture").toObject());
+        paints[id] = std::make_shared<JiltvPaint>(
+            id, name, p.value("data").toObject(), cdn,
+            p.value("texture").toObject(), p.value("phaseTextures").toObject());
     }
 
     std::unordered_map<QString, EmotePtr> badges;

@@ -152,6 +152,9 @@ private:
     void refreshWorn(const QString &login);
     void refreshPersonal(const QString &login);
     void applyCatalog(const QJsonObject &root);
+    /// Points paints with day phases at the look for now; repaints the chat
+    /// when one changed.
+    void updatePhases();
 
     mutable std::mutex mutex_;
     /// Guarded by mutex_.
@@ -189,6 +192,8 @@ private:
 
     QTimer catalogTimer_;
     QTimer presenceTimer_;
+    /// Switches paints with looks by time of day (updatePhases).
+    QTimer phaseTimer_;
     /// Reports being in one channel, when signed in with JilTV.
     void reportPresence(const QString &roomId);
     /// The JilTV channel ID of each channel using JilTV, by room ID.
