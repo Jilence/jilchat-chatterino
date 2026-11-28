@@ -97,6 +97,8 @@ public:
 
     /// Loads a joined channel's JilTV emotes (nothing if it doesn't use
     /// JilTV). `done` gets the number of emotes, from the GUI thread.
+    /// A closed chat: drops its event stream and emotes (GUI thread).
+    void unfollow(const QString &roomId);
     void loadChannelEmotes(const QString &roomId,
                            std::function<void(int)> done = {});
     void loadGlobalEmotes();

@@ -14,6 +14,8 @@
 #include "util/RatelimitBucket.hpp"
 
 #include <boost/unordered/unordered_flat_map.hpp>
+#include <boost/unordered/unordered_flat_set.hpp>
+#include <QTimer>
 
 #include <span>
 
@@ -24,7 +26,11 @@ using namespace chatterino;
 // Ratelimits for joinBucket_
 constexpr int JOIN_RATELIMIT_BUDGET = 18;
 constexpr int BOT_JOIN_RATELIMIT_BUDGET = 2000;
-constexpr int JOIN_RATELIMIT_COOLDOWN = 10050;
+// Chatterino's margin over Twitch's 20 joins per 10 s: closer to the limit
+// (10050 was tried) Twitch drops JOINs now and then without a word.
+constexpr int JOIN_RATELIMIT_COOLDOWN = 12500;
+// A JOIN Twitch hasn't answered by then is sent again (see actuallyJoin).
+constexpr int JOIN_CONFIRM_TIMEOUT_MS = 15000;
 
 constexpr size_t CHANNELS_PER_CONNECTION = 18;
 
@@ -92,6 +98,8 @@ private:
 
     pajlada::Signals::SignalHolder signalHolder;
     boost::unordered_flat_map<QString, std::weak_ptr<TwitchChannel>> channels;
+    /// Channels Twitch confirmed the JOIN for on the current connection.
+    boost::unordered_flat_set<QString> joined;
 
     TwitchIrcServer *server;
 };
@@ -112,6 +120,16 @@ TwitchReadConnectionPoolSingle::TwitchReadConnectionPoolSingle(
         }
         qCDebug(chatterinoIrc) << "Joining" << name;
         this->connection->sendRaw("JOIN #" + name);
+        // A dropped JOIN left the chat at "connected" until a restart: ask
+        // again when Twitch hasn't confirmed it in time.
+        QTimer::singleShot(JOIN_CONFIRM_TIMEOUT_MS, this, [this, name] {
+            if (this->channels.contains(name) && !this->joined.contains(name) &&
+                this->connection->isConnected())
+            {
+                qCDebug(chatterinoIrc) << "JOIN not confirmed, again" << name;
+                this->joinBucket->send(name);
+            }
+        });
     };
     const int joinBudget = getSettings()->useBotLimitsJoin
                                ? BOT_JOIN_RATELIMIT_BUDGET
@@ -159,9 +177,14 @@ void TwitchReadConnectionPoolSingle::onChannelCreated(TwitchChannel &channel)
     {
         this->joinBucket->send(channel.getName());
     }
+    this->signalHolder.managedConnect(channel.joined,
+                                      [this, name = channel.getName()] {
+                                          this->joined.insert(name);
+                                      });
     this->signalHolder.managedConnect(
         channel.destroyed, [this, name = channel.getName()] {
             this->channels.erase(name);
+            this->joined.erase(name);
             qCDebug(chatterinoIrc) << "[read] parting" << name;
             this->connection->sendRaw("PART #" + name);
         });
@@ -203,6 +226,7 @@ void TwitchReadConnectionPoolSingle::onMessageReceived(Communi::IrcMessage *msg)
 
 void TwitchReadConnectionPoolSingle::onConnected()
 {
+    this->joined.clear();
     std::vector<ChannelPtr> activeChannels;
     activeChannels.reserve(this->channels.size());
     for (const auto &[name, weak] : this->channels)
@@ -231,6 +255,8 @@ void TwitchReadConnectionPoolSingle::onConnected()
 
 void TwitchReadConnectionPoolSingle::onDisconnected()
 {
+    // A new connection joins every channel again.
+    this->joined.clear();
     MessageBuilder b(systemMessage, "disconnected");
     b->flags.set(MessageFlag::DisconnectedMessage);
     auto disconnectedMsg = b.release();

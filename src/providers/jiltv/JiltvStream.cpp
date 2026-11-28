@@ -18,9 +18,8 @@ constexpr int WATCHDOG_MS = 60000;
 
 }  // namespace
 
-JiltvStream::JiltvStream(QNetworkAccessManager *network, QUrl url,
-                         Handler handler)
-    : network_(network)
+JiltvStream::JiltvStream(QUrl url, Handler handler)
+    : network_(std::make_unique<QNetworkAccessManager>())
     , url_(std::move(url))
     , handler_(std::move(handler))
 {

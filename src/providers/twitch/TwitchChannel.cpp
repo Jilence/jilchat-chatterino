@@ -953,6 +953,11 @@ TwitchChannel::~TwitchChannel()
             this->roomId());
     }
 
+    if (!this->roomId().isEmpty())
+    {
+        Jiltv::instance().unfollow(this->roomId());
+    }
+
     this->destroyed.invoke();
 }
 

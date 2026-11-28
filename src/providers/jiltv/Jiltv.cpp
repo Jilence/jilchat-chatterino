@@ -705,7 +705,14 @@ void Jiltv::loadChannelEmotes(const QString &roomId,
                 this->channelSetNames_[roomId] = std::move(setName);
                 this->channelIds_[roomId] = channelId;
             }
-            this->follow(roomId);
+            // Closed while loading: no stream for a chat that's gone.
+            if (!getApp()
+                     ->getTwitch()
+                     ->getChannelOrEmptyByID(roomId)
+                     ->isEmpty())
+            {
+                this->follow(roomId);
+            }
             this->reportPresence(roomId);
             if (done)
             {
@@ -1007,10 +1014,20 @@ void Jiltv::follow(const QString &roomId)
         return;
     }
     stream = std::make_unique<JiltvStream>(
-        this->network_, url,
-        [this, roomId](const QString &type, const QJsonObject &data) {
+        url, [this, roomId](const QString &type, const QJsonObject &data) {
             this->onChannelEvent(roomId, type, data);
         });
+}
+
+void Jiltv::unfollow(const QString &roomId)
+{
+    // The chat was closed: its stream and emotes go. Opened again, the
+    // channel loads its emotes fresh and follows anew (loadChannelEmotes).
+    this->channelStreams_.erase(roomId);
+    const std::scoped_lock lock(this->mutex_);
+    this->channels_.erase(roomId);
+    this->channelSetNames_.erase(roomId);
+    this->channelIds_.erase(roomId);
 }
 
 void Jiltv::followCosmetics()
@@ -1025,8 +1042,7 @@ void Jiltv::followCosmetics()
         return;
     }
     this->cosmeticsStream_ = std::make_unique<JiltvStream>(
-        this->network_, url,
-        [this](const QString &type, const QJsonObject &data) {
+        url, [this](const QString &type, const QJsonObject &data) {
             const auto login = data.value("login").toString().toLower();
             if (login.isEmpty())
             {

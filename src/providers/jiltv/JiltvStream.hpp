@@ -13,6 +13,7 @@
 #include <QUrl>
 
 #include <functional>
+#include <memory>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -23,13 +24,17 @@ namespace chatterino {
 /// /v1/events/channels/twitch/{id} or /v1/events/cosmetics. Reconnects on
 /// its own with backoff and resumes after the last event it saw
 /// (Last-Event-ID), so nothing is missed across short drops. GUI thread.
+///
+/// Each stream has its own network manager: Qt allows six connections per
+/// host over HTTP/1.1, and a stream holds one for good, so streams sharing a
+/// manager left the seventh (a newly opened chat) waiting forever.
 class JiltvStream
 {
 public:
     using Handler =
         std::function<void(const QString &type, const QJsonObject &data)>;
 
-    JiltvStream(QNetworkAccessManager *network, QUrl url, Handler handler);
+    JiltvStream(QUrl url, Handler handler);
     ~JiltvStream();
 
     JiltvStream(const JiltvStream &) = delete;
@@ -43,7 +48,7 @@ private:
     void onFinished();
     void dispatch();
 
-    QNetworkAccessManager *network_;
+    std::unique_ptr<QNetworkAccessManager> network_;
     QUrl url_;
     Handler handler_;
     /// Context for the reply's and timers' connections.
